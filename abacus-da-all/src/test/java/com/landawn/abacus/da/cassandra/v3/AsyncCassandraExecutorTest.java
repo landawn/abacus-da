@@ -101,7 +101,18 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
     @Test
     public void testConstructor_rejectsNullExecutor() {
-        assertThrows(NullPointerException.class, () -> new AsyncCassandraExecutor(null));
+        assertThrows(IllegalArgumentException.class, () -> new AsyncCassandraExecutor(null));
+    }
+
+    @Test
+    public void testNullStatementAndTargetClass_ThrowIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> async.execute((Statement) null));
+        assertThrows(IllegalArgumentException.class, () -> async.stream(Object.class, (Statement) null));
+        assertThrows(IllegalArgumentException.class, () -> async.get((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.gett((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.exists((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.delete((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.delete((Class<?>) null, (java.util.Collection<String>) null, 1L));
     }
 
     @Test
@@ -200,7 +211,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
     @Test
     public void testNullFunctionalInterfaceArguments() {
         assertThrows(IllegalArgumentException.class, () -> async.stream("SELECT * FROM t", (BiFunction<ColumnDefinitions, Row, Object>) null));
-        assertThrows(NullPointerException.class, () -> async.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
 
         assertThrows(IllegalArgumentException.class, () -> async.stream(mockStatement, (BiFunction<ColumnDefinitions, Row, Object>) null));
 
@@ -215,10 +226,10 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
 
         final CassandraExecutor executor = new CassandraExecutor(session);
-        assertThrows(NullPointerException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null, null));
         assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap(mock(Row.class), null));
         assertThrows(IllegalArgumentException.class, () -> executor.stream("SELECT * FROM t", (BiFunction<ColumnDefinitions, Row, Object>) null));
-        assertThrows(NullPointerException.class, () -> executor.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
     }
 
     /**
@@ -245,6 +256,39 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Class<Object>) null, "SELECT * FROM t"));
         assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue((Class<Object>) null, "SELECT id FROM t"));
         assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull((Class<Object>) null, "SELECT id FROM t"));
+    }
+
+    /** A null required argument of the v3 sync executor's public API is rejected with IllegalArgumentException, not NullPointerException. */
+    @Test
+    public void testSyncNullRequiredArgumentsThrowIAE() {
+        final Session session = mock(Session.class);
+        final Cluster cluster = mock(Cluster.class);
+        final Configuration configuration = mock(Configuration.class);
+        final ProtocolOptions protocolOptions = mock(ProtocolOptions.class);
+        when(session.getCluster()).thenReturn(cluster);
+        when(cluster.getConfiguration()).thenReturn(configuration);
+        when(configuration.getCodecRegistry()).thenReturn(mock(CodecRegistry.class));
+        when(configuration.getProtocolOptions()).thenReturn(protocolOptions);
+        when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
+
+        final CassandraExecutor executor = new CassandraExecutor(session);
+
+        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.extractData((ResultSet) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.extractData((ResultSet) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList((ResultSet) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity((Row) null, Object.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.registerTypeCodec((CodecRegistry) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.registerTypeCodec(mock(CodecRegistry.class), null));
+        assertThrows(IllegalArgumentException.class, () -> executor.registerTypeCodec(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.mapper(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.execute((Statement) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create((com.datastax.driver.core.UserType) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create((Cluster) null, "ks", "udt", Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(cluster, null, "udt", Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(cluster, "ks", null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(cluster, "ks", "udt", null));
     }
 
     @Test

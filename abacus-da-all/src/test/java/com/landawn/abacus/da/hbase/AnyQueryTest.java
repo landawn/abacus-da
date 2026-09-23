@@ -79,14 +79,14 @@ public class AnyQueryTest extends TestBase {
     }
 
     /**
-     * {@code setAuthorizations} is a straight delegation to the wrapped HBase {@code Query}, which
-     * dereferences the argument immediately; the driver's {@code NullPointerException} is the
-     * documented contract.
+     * A null {@code authorizations} is rejected with {@code IllegalArgumentException} before it
+     * reaches the wrapped HBase {@code Query}.
      */
     @Test
-    public void testSetAuthorizations_null_throwsNpe() {
+    public void testSetAuthorizations_null_throwsIae() {
         AnyGet get = AnyGet.of("row");
-        assertThrows(NullPointerException.class, () -> get.setAuthorizations(null));
+        assertThrows(IllegalArgumentException.class, () -> get.setAuthorizations(null));
+        assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setAuthorizations(null));
     }
 
     // ---------------------------------------------------------------------
@@ -116,16 +116,22 @@ public class AnyQueryTest extends TestBase {
     }
 
     /**
-     * Both {@code setACL} overloads are straight delegations to the wrapped HBase {@code Query},
-     * which dereferences its arguments immediately; the driver's {@code NullPointerException} is
-     * the documented contract.
+     * Null direct arguments of both {@code setACL} overloads are rejected with
+     * {@code IllegalArgumentException}; a null key or value inside the map is still reported by the
+     * wrapped HBase {@code Query} with {@code NullPointerException}.
      */
     @Test
-    public void testSetACL_nullArguments_throwNpe() {
+    public void testSetACL_nullArguments_throwIae() {
         AnyGet get = AnyGet.of("row");
-        assertThrows(NullPointerException.class, () -> get.setACL(null, new Permission(Permission.Action.READ)));
-        assertThrows(NullPointerException.class, () -> get.setACL("alice", (Permission) null));
-        assertThrows(NullPointerException.class, () -> get.setACL((Map<String, Permission>) null));
+        assertThrows(IllegalArgumentException.class, () -> get.setACL(null, new Permission(Permission.Action.READ)));
+        assertThrows(IllegalArgumentException.class, () -> get.setACL("alice", (Permission) null));
+        assertThrows(IllegalArgumentException.class, () -> get.setACL((Map<String, Permission>) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setACL((Map<String, Permission>) null));
+        assertNull(get.getACL());
+
+        Map<String, Permission> nullValue = new HashMap<>();
+        nullValue.put("alice", null);
+        assertThrows(NullPointerException.class, () -> get.setACL(nullValue));
     }
 
     // ---------------------------------------------------------------------
@@ -178,14 +184,33 @@ public class AnyQueryTest extends TestBase {
     }
 
     /**
-     * {@code setIsolationLevel} is a straight delegation to the wrapped HBase {@code Query}, which
-     * encodes the level immediately; the driver's {@code NullPointerException} is the documented
-     * contract.
+     * A null {@code level} is rejected with {@code IllegalArgumentException} before it reaches the
+     * wrapped HBase {@code Query}.
      */
     @Test
-    public void testSetIsolationLevel_null_throwsNpe() {
+    public void testSetIsolationLevel_null_throwsIae() {
         AnyGet get = AnyGet.of("row");
-        assertThrows(NullPointerException.class, () -> get.setIsolationLevel(null));
+        assertThrows(IllegalArgumentException.class, () -> get.setIsolationLevel(null));
+        assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setIsolationLevel(null));
+        assertEquals(IsolationLevel.READ_COMMITTED, get.getIsolationLevel());
+    }
+
+    /**
+     * Null-tolerant paths inherited from HBase are preserved: a null filter clears the filter, a
+     * null consistency is stored as-is, and a null column family is accepted for a per-family time
+     * range.
+     */
+    @Test
+    public void testNullTolerantSetters_preserved() {
+        AnyGet get = AnyGet.of("row").setFilter(new FirstKeyOnlyFilter()).setFilter(null);
+        assertNull(get.getFilter());
+
+        get.setConsistency(null);
+        assertNull(get.getConsistency());
+
+        get.setColumnFamilyTimeRange((String) null, 1L, 2L);
+        get.setColumnFamilyTimeRange((byte[]) null, 1L, 2L);
+        assertEquals(1, get.getColumnFamilyTimeRange().size());
     }
 
     // ---------------------------------------------------------------------

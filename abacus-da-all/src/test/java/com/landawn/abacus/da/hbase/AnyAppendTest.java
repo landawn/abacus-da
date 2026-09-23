@@ -157,6 +157,23 @@ public class AnyAppendTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> AnyAppend.of("row").add(null));
     }
 
+    /**
+     * A {@code null} row key, family map or source {@code Append} is rejected with an
+     * {@code IllegalArgumentException} by every {@code of(...)} overload (previously some overloads
+     * leaked HBase's {@code NullPointerException}).
+     */
+    @Test
+    public void testOf_nullArguments_throwIae() {
+        final java.util.NavigableMap<byte[], java.util.List<Cell>> familyMap = new java.util.TreeMap<>(Bytes.BYTES_COMPARATOR);
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of((byte[]) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of((byte[]) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of((Object) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of((byte[]) null, 1L, familyMap));
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of(Bytes.toBytes("r"), 1L, null));
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of((org.apache.hadoop.hbase.client.Append) null));
+    }
+
     // ---------------------------------------------------------------------
     // Time range
     // ---------------------------------------------------------------------

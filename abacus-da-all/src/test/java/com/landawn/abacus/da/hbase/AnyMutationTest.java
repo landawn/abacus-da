@@ -119,18 +119,23 @@ public class AnyMutationTest extends TestBase {
     }
 
     /**
-     * {@code setClusterIds}, {@code setCellVisibility} and both {@code setACL} overloads are
-     * straight delegations to the wrapped HBase {@code Mutation}, which dereferences their
-     * arguments immediately; the driver's {@code NullPointerException} is the documented contract.
+     * {@code setClusterIds}, {@code setCellVisibility} and both {@code setACL} overloads validate
+     * their (always-required) arguments up front and reject {@code null} with an
+     * {@code IllegalArgumentException}, leaving the mutation's attributes untouched. Null elements
+     * inside the list/map are still reported by HBase with a {@code NullPointerException}.
      */
     @Test
-    public void testNullArguments_onPassThroughSetters_throwNpe() {
+    public void testNullArguments_onPassThroughSetters_throwIae() {
         AnyPut put = AnyPut.of("row");
-        assertThrows(NullPointerException.class, () -> put.setClusterIds(null));
-        assertThrows(NullPointerException.class, () -> put.setCellVisibility(null));
-        assertThrows(NullPointerException.class, () -> put.setACL(null, new Permission(Permission.Action.READ)));
-        assertThrows(NullPointerException.class, () -> put.setACL("alice", (Permission) null));
-        assertThrows(NullPointerException.class, () -> put.setACL((Map<String, Permission>) null));
+        assertThrows(IllegalArgumentException.class, () -> put.setClusterIds(null));
+        assertThrows(IllegalArgumentException.class, () -> put.setCellVisibility(null));
+        assertThrows(IllegalArgumentException.class, () -> put.setACL(null, new Permission(Permission.Action.READ)));
+        assertThrows(IllegalArgumentException.class, () -> put.setACL("alice", (Permission) null));
+        assertThrows(IllegalArgumentException.class, () -> put.setACL((Map<String, Permission>) null));
+        assertTrue(put.getClusterIds().isEmpty());
+        assertNull(put.getACL());
+
+        assertThrows(NullPointerException.class, () -> put.setClusterIds(java.util.Arrays.asList((java.util.UUID) null)));
     }
 
     @Test

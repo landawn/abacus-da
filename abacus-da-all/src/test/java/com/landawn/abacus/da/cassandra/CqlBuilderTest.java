@@ -4274,4 +4274,26 @@ public class CqlBuilderTest extends TestBase {
 
         assertThrows(IllegalArgumentException.class, () -> PSC.renderCondition(null, null));
     }
+
+    /**
+     * The protected rendering hooks reject a {@code null} argument with {@link IllegalArgumentException}
+     * (not a bare NullPointerException), matching the public entry points ({@code onlyIf(Condition)},
+     * {@code renderCondition}, {@code from(...)}) and the parent builder's hook contract. The rejected call
+     * leaves the builder usable.
+     */
+    @Test
+    public void test_protectedHooks_nullArgument_throwIAE() {
+        final CqlBuilder conditionBuilder = PSC.select("id").from("account");
+        assertThrows(IllegalArgumentException.class, () -> conditionBuilder.appendCondition(null));
+        assertEquals("SELECT id FROM account", conditionBuilder.build().query());
+
+        final CqlBuilder fromBuilder = PSC.select("id");
+        assertThrows(IllegalArgumentException.class, () -> fromBuilder.appendOperationBeforeFrom(null));
+        assertEquals("SELECT id FROM account", fromBuilder.from("account").build().query());
+
+        // State is still checked before the argument: an UPDATE builder reports IllegalStateException.
+        final CqlBuilder updateBuilder = PSC.update("account").set("firstName");
+        assertThrows(IllegalStateException.class, () -> updateBuilder.appendOperationBeforeFrom(null));
+        updateBuilder.build();
+    }
 }

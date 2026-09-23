@@ -104,7 +104,7 @@ public class CassandraExecutorTest extends TestBase {
 
     @Test
     public void test_constructor_rejectsNullSession() {
-        assertThrows(NullPointerException.class, () -> new CassandraExecutor(null));
+        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null));
     }
 
     @Test

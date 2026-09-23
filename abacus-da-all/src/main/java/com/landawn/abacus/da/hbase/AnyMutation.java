@@ -259,11 +259,14 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param clusterIds the cluster UUIDs to record; must not be {@code null} (pass an empty list
      *                   to clear the recorded clusters)
      * @return this mutation instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code clusterIds} is {@code null} or contains a {@code null} UUID
+     * @throws IllegalArgumentException if {@code clusterIds} is {@code null}
+     * @throws NullPointerException if {@code clusterIds} contains a {@code null} UUID
      * @see #getClusterIds()
      * @see UUID
      */
     public AM setClusterIds(final List<UUID> clusterIds) {
+        N.checkArgNotNull(clusterIds, cs.clusterIds);
+
         mutation.setClusterIds(clusterIds);
 
         return (AM) this;
@@ -304,12 +307,13 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param expression the {@link CellVisibility} expression to apply; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code expression} is {@code null} (raised by the wrapped
-     *         {@link Mutation#setCellVisibility(CellVisibility)} while reading its expression)
+     * @throws IllegalArgumentException if {@code expression} is {@code null}
      * @see #getCellVisibility()
      * @see CellVisibility
      */
     public AM setCellVisibility(final CellVisibility expression) {
+        N.checkArgNotNull(expression, cs.expression);
+
         mutation.setCellVisibility(expression);
 
         return (AM) this;
@@ -336,13 +340,15 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param user the username to grant permissions to; must not be {@code null}
      * @param perms the {@link Permission} defining the allowed actions; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code user} or {@code perms} is {@code null} (raised by the
-     *         wrapped {@link Mutation#setACL(String, Permission)} while serializing the ACL)
+     * @throws IllegalArgumentException if {@code user} or {@code perms} is {@code null}
      * @see #getACL()
      * @see #setACL(Map)
      * @see Permission
      */
     public AM setACL(final String user, final Permission perms) {
+        N.checkArgNotNull(user, cs.user);
+        N.checkArgNotNull(perms, cs.perms);
+
         mutation.setACL(user, perms);
 
         return (AM) this;
@@ -363,18 +369,21 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * acl.put("bob", new Permission(Permission.Action.READ));
      * mutation.setACL(acl);
      *
-     * // Edge: a null map is rejected by the underlying HBase client.
-     * mutation.setACL((Map<String, Permission>) null);   // throws NullPointerException
+     * // Edge: a null map is rejected.
+     * mutation.setACL((Map<String, Permission>) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param perms a map of username to {@link Permission}; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code perms}, a username key, or a permission value is {@code null}
+     * @throws IllegalArgumentException if {@code perms} is {@code null}
+     * @throws NullPointerException if a username key or a permission value in {@code perms} is {@code null}
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
      */
     public AM setACL(final Map<String, Permission> perms) {
+        N.checkArgNotNull(perms, cs.perms);
+
         mutation.setACL(perms);
 
         return (AM) this;

@@ -102,6 +102,11 @@ public final class cs { // NOSONAR
     public static final String append = "append";
 
     /**
+     * Parameter name for an HBase {@code Append} operation to copy.
+     */
+    public static final String appendToCopy = "appendToCopy";
+
+    /**
      * Parameter name for the executor that runs asynchronous tasks.
      */
     public static final String asyncExecutor = "asyncExecutor";
@@ -132,6 +137,11 @@ public final class cs { // NOSONAR
     public static final String attrValues = "attrValues";
 
     /**
+     * Parameter name for HBase visibility-label authorizations.
+     */
+    public static final String authorizations = "authorizations";
+
+    /**
      * Parameter name for a DynamoDB batch-get-item request.
      */
     public static final String batchGetItemRequest = "batchGetItemRequest";
@@ -140,6 +150,16 @@ public final class cs { // NOSONAR
      * Parameter name for a DynamoDB batch-write-item request.
      */
     public static final String batchWriteItemRequest = "batchWriteItemRequest";
+
+    /**
+     * Parameter name for a BSON value.
+     */
+    public static final String bson = "bson";
+
+    /**
+     * Parameter name for a BSON object.
+     */
+    public static final String bsonObject = "bsonObject";
 
     /**
      * Parameter name for a task that returns a result.
@@ -152,9 +172,34 @@ public final class cs { // NOSONAR
     public static final String callback = "callback";
 
     /**
+     * Parameter name for a Cassandra executor.
+     */
+    public static final String cassandraExecutor = "cassandraExecutor";
+
+    /**
+     * Parameter name for an HBase {@code Cell}.
+     */
+    public static final String cell = "cell";
+
+    /**
      * Parameter name for Class objects (camelCase {@code cls} form).
      */
     public static final String cls = "cls";
+
+    /**
+     * Parameter name for a Cassandra cluster.
+     */
+    public static final String cluster = "cluster";
+
+    /**
+     * Parameter name for the HBase replication cluster IDs recorded on a mutation.
+     */
+    public static final String clusterIds = "clusterIds";
+
+    /**
+     * Parameter name for a Cassandra codec registry.
+     */
+    public static final String codecRegistry = "codecRegistry";
 
     /**
      * Parameter name for a collection of elements.
@@ -177,9 +222,19 @@ public final class cs { // NOSONAR
     public static final String conn = "conn";
 
     /**
+     * Parameter name for Cosmos DB patch operations.
+     */
+    public static final String cosmosPatchOperations = "cosmosPatchOperations";
+
+    /**
      * Parameter name for count values or counting operations.
      */
     public static final String count = "count";
+
+    /**
+     * Parameter name for a CQL statement and its bound parameters.
+     */
+    public static final String cp = "cp";
 
     /**
      * Parameter name for a CQL statement string.
@@ -187,9 +242,39 @@ public final class cs { // NOSONAR
     public static final String cql = "cql";
 
     /**
+     * Parameter name for an HBase scan cursor.
+     */
+    public static final String cursor = "cursor";
+
+    /**
+     * Parameter name for a Cypher query string.
+     */
+    public static final String cypher = "cypher";
+
+    /**
+     * Parameter name for an HBase {@code Delete} operation.
+     */
+    public static final String delete = "delete";
+
+    /**
      * Parameter name for a DynamoDB delete-item request.
      */
     public static final String deleteItemRequest = "deleteItemRequest";
+
+    /**
+     * Parameter name for a list of HBase {@code Delete} operations.
+     */
+    public static final String deletes = "deletes";
+
+    /**
+     * Parameter name for an HBase {@code Delete} operation to copy.
+     */
+    public static final String deleteToCopy = "deleteToCopy";
+
+    /**
+     * Parameter name for a MongoDB document.
+     */
+    public static final String doc = "doc";
 
     /**
      * Parameter name for the class that documents are decoded into.
@@ -225,6 +310,11 @@ public final class cs { // NOSONAR
      * Parameter name for a query or table expression.
      */
     public static final String expr = "expr";
+
+    /**
+     * Parameter name for an HBase cell-visibility expression.
+     */
+    public static final String expression = "expression";
 
     /**
      * Parameter name for a map from HBase column families to their cells or qualifiers.
@@ -272,14 +362,34 @@ public final class cs { // NOSONAR
     public static final String filter = "filter";
 
     /**
+     * Parameter name for a collection of query filters.
+     */
+    public static final String filters = "filters";
+
+    /**
+     * Parameter name for a MongoDB query result iterable.
+     */
+    public static final String findIterable = "findIterable";
+
+    /**
      * Parameter name for the complete text emitted after a FROM keyword.
      */
     public static final String fromClause = "fromClause";
 
     /**
+     * Parameter name for an HBase {@code Get} operation.
+     */
+    public static final String get = "get";
+
+    /**
      * Parameter name for a DynamoDB get-item request.
      */
     public static final String getItemRequest = "getItemRequest";
+
+    /**
+     * Parameter name for a list of HBase {@code Get} operations.
+     */
+    public static final String gets = "gets";
 
     /**
      * Parameter name for an {@code HBaseExecutor} instance.
@@ -292,6 +402,11 @@ public final class cs { // NOSONAR
     public static final String id = "id";
 
     /**
+     * Parameter name for the name of the property mapped to a document identifier.
+     */
+    public static final String idPropertyName = "idPropertyName";
+
+    /**
      * Parameter name for a collection of identifiers.
      */
     public static final String ids = "ids";
@@ -300,6 +415,11 @@ public final class cs { // NOSONAR
      * Parameter name for an HBase {@code Increment} operation.
      */
     public static final String increment = "increment";
+
+    /**
+     * Parameter name for an HBase {@code Increment} operation to copy.
+     */
+    public static final String incrementToCopy = "incrementToCopy";
 
     /**
      * Parameter name for an input stream.
@@ -322,6 +442,16 @@ public final class cs { // NOSONAR
     public static final String itemIdentityList = "itemIdentityList";
 
     /**
+     * Parameter name for an iterable of query results.
+     */
+    public static final String iter = "iter";
+
+    /**
+     * Parameter name for the Java class a codec maps to.
+     */
+    public static final String javaClazz = "javaClazz";
+
+    /**
      * Parameter name for a key.
      */
     public static final String key = "key";
@@ -335,6 +465,16 @@ public final class cs { // NOSONAR
      * Parameter name for the second key name.
      */
     public static final String keyName2 = "keyName2";
+
+    /**
+     * Parameter name for a Cassandra keyspace name.
+     */
+    public static final String keySpace = "keySpace";
+
+    /**
+     * Parameter name for an isolation level.
+     */
+    public static final String level = "level";
 
     /**
      * Parameter name for a map function.
@@ -352,6 +492,16 @@ public final class cs { // NOSONAR
     public static final String mongoDB = "mongoDB";
 
     /**
+     * Parameter name for a single HBase {@code Mutation}.
+     */
+    public static final String mutation = "mutation";
+
+    /**
+     * Parameter name for a list of HBase {@code Mutation}s.
+     */
+    public static final String mutations = "mutations";
+
+    /**
      * Parameter name for an array of alternating names and values.
      */
     public static final String nameValuePairs = "nameValuePairs";
@@ -362,9 +512,19 @@ public final class cs { // NOSONAR
     public static final String namingPolicy = "namingPolicy";
 
     /**
+     * Parameter name for a new item that replaces an existing one.
+     */
+    public static final String newItem = "newItem";
+
+    /**
      * Parameter name for an object.
      */
     public static final String obj = "obj";
+
+    /**
+     * Parameter name for an entity, entity array, or entity collection to persist or delete.
+     */
+    public static final String object = "object";
 
     /**
      * Parameter name for a MongoDB object identifier.
@@ -392,6 +552,11 @@ public final class cs { // NOSONAR
     public static final String os = "os";
 
     /**
+     * Parameter name for a map of named query parameters.
+     */
+    public static final String parameters = "parameters";
+
+    /**
      * Parameter name for a parsed CQL statement.
      */
     public static final String parsedCql = "parsedCql";
@@ -400,6 +565,11 @@ public final class cs { // NOSONAR
      * Parameter name for a partition key.
      */
     public static final String partitionKey = "partitionKey";
+
+    /**
+     * Parameter name for HBase ACL permissions.
+     */
+    public static final String perms = "perms";
 
     /**
      * Parameter name for an aggregation pipeline.
@@ -417,9 +587,24 @@ public final class cs { // NOSONAR
     public static final String props = "props";
 
     /**
+     * Parameter name for an HBase {@code Put} operation.
+     */
+    public static final String put = "put";
+
+    /**
      * Parameter name for a DynamoDB put-item request.
      */
     public static final String putItemRequest = "putItemRequest";
+
+    /**
+     * Parameter name for a list of HBase {@code Put} operations.
+     */
+    public static final String puts = "puts";
+
+    /**
+     * Parameter name for an HBase {@code Put} operation to copy.
+     */
+    public static final String putToCopy = "putToCopy";
 
     /**
      * Parameter name for a query object or query string.
@@ -435,6 +620,11 @@ public final class cs { // NOSONAR
      * Parameter name for a query request.
      */
     public static final String queryRequest = "queryRequest";
+
+    /**
+     * Parameter name for a query result or response.
+     */
+    public static final String queryResult = "queryResult";
 
     /**
      * Parameter name for a query specification.
@@ -462,14 +652,34 @@ public final class cs { // NOSONAR
     public static final String requests = "requests";
 
     /**
+     * Parameter name for an HBase {@code Result}.
+     */
+    public static final String result = "result";
+
+    /**
+     * Parameter name for a query result set.
+     */
+    public static final String resultSet = "resultSet";
+
+    /**
      * Parameter name for an HBase {@code RowMutations} instance.
      */
     public static final String rm = "rm";
 
     /**
+     * Parameter name for a single result row.
+     */
+    public static final String row = "row";
+
+    /**
      * Parameter name for the class that rows are converted to.
      */
     public static final String rowClass = "rowClass";
+
+    /**
+     * Parameter name for an HBase row key.
+     */
+    public static final String rowKey = "rowKey";
 
     /**
      * Parameter name for the name of the row-key property.
@@ -497,9 +707,19 @@ public final class cs { // NOSONAR
     public static final String scanRequest = "scanRequest";
 
     /**
+     * Parameter name for a scan result or response.
+     */
+    public static final String scanResult = "scanResult";
+
+    /**
      * Parameter name for a schema definition.
      */
     public static final String schema = "schema";
+
+    /**
+     * Parameter name for a database session.
+     */
+    public static final String session = "session";
 
     /**
      * Parameter name for the SQL dialect used to generate statements.
@@ -565,6 +785,21 @@ public final class cs { // NOSONAR
      * Parameter name for a DynamoDB update-item request.
      */
     public static final String updateItemRequest = "updateItemRequest";
+
+    /**
+     * Parameter name for a user name.
+     */
+    public static final String user = "user";
+
+    /**
+     * Parameter name for a Cassandra user-defined type.
+     */
+    public static final String userType = "userType";
+
+    /**
+     * Parameter name for the name of a Cassandra user-defined type.
+     */
+    public static final String userTypeName = "userTypeName";
 
     /**
      * Parameter name for the class that values are converted to.

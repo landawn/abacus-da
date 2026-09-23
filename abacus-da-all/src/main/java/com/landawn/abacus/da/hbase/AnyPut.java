@@ -183,11 +183,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Package-private constructor backing {@link #of(Object)}.
      *
      * @param rowKey the row key, converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyPut(final Object rowKey) {
-        super(new Put(toRowKeyBytes(rowKey)));
+        super(new Put(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
         put = (Put) mutation;
     }
 
@@ -196,11 +195,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key, converted to bytes
      * @param timestamp the timestamp assigned to all cells added to this Put
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
+     *         {@code timestamp} is negative
      */
     AnyPut(final Object rowKey, final long timestamp) {
-        super(new Put(toRowKeyBytes(rowKey), timestamp));
+        super(new Put(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp));
         put = (Put) mutation;
     }
 
@@ -294,10 +293,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * themselves are shared with the source).
      *
      * @param putToCopy the existing HBase Put to copy
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code putToCopy} is {@code null}
      */
     AnyPut(final Put putToCopy) {
-        super(new Put(putToCopy));
+        super(new Put(N.checkArgNotNull(putToCopy, cs.putToCopy)));
         put = (Put) mutation;
     }
 
@@ -319,7 +318,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut numericKey = AnyPut.of(12345);   // row key = bytes of "12345"
      *
      * // Edge: a null row key is rejected.
-     * AnyPut.of((Object) null);           // throws NullPointerException
+     * AnyPut.of((Object) null);           // throws IllegalArgumentException
      *
      * // Edge: an empty byte[] row key is rejected (row length is 0).
      * AnyPut.of(new byte[0]);             // throws IllegalArgumentException
@@ -327,8 +326,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.); must not be {@code null}
      * @return a new AnyPut instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @see #of(Object, long)
      * @see #of(ByteBuffer)
      */
@@ -358,7 +356,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of("user123", -1L);   // throws IllegalArgumentException
      *
      * // Edge: a null row key is rejected.
-     * AnyPut.of((Object) null, eventTime);   // throws NullPointerException
+     * AnyPut.of((Object) null, eventTime);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes; must not
@@ -366,8 +364,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the specified default timestamp
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
+     *         {@code timestamp} is negative
      * @see #of(Object)
      * @see #addColumn(String, String, long, Object)
      */
@@ -608,13 +606,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * boolean origUnchanged = !existingPut.has(Bytes.toBytes("info"), Bytes.toBytes("email")); // true
      *
      * // Edge: a null Put is rejected.
-     * AnyPut.of((Put) null);   // throws NullPointerException
+     * AnyPut.of((Put) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param putToCopy the existing HBase Put object to copy; must not be null
      * @return a new AnyPut instance with independent collection structure; contained
      *         {@link Cell} instances are shared with the specified put
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code putToCopy} is {@code null}
      * @see Put
      * @see #val()
      */
@@ -1389,14 +1387,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param cell the Cell to add; must not be null and must have the same row key as this put
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code cell} is {@code null}
+     * @throws IllegalArgumentException if {@code cell} is {@code null}, or the matching cell has a null or empty column family
      * @throws IOException if the cell's row key does not match this mutation's row key
-     * @throws IllegalArgumentException if the matching cell has a null or empty column family
      * @see Cell
      * @see Put#add(Cell)
      * @see #addColumn(String, String, Object)
      */
     public AnyPut add(final Cell cell) throws IOException {
+        N.checkArgNotNull(cell, cs.cell);
+
         put.add(cell);
 
         return this;

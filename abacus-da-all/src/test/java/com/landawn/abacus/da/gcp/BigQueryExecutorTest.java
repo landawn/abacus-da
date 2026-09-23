@@ -2000,6 +2000,13 @@ public class BigQueryExecutorTest extends TestBase {
         assertTrue(ex.getMessage().contains("No @Id-annotated or id-named property"));
     }
 
+    // idsToCondition: a null targetClass is rejected with IAE (was a bare NPE from the key-name cache)
+    @Test
+    public void testIdsToCondition_NullTargetClassThrowsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.idsToCondition(null, "x"));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.idsToCondition(null, new Object[0]));
+    }
+
     // prepareUpdate: a null key value fails fast with a clear message
     // (was a confusing generic error from buildQueryParameterValue)
     @Test

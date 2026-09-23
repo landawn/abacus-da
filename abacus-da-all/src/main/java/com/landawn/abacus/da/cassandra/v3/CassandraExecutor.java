@@ -25,7 +25,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -327,11 +326,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <pre>{@code
      * Cluster cluster = Cluster.builder().addContactPoint("127.0.0.1").build();
      * Session session = cluster.connect("mykeyspace");
-     * CassandraExecutor executor = new CassandraExecutor(session); // ready to use; null session throws NullPointerException
+     * CassandraExecutor executor = new CassandraExecutor(session); // ready to use; null session throws IllegalArgumentException
      * }</pre>
      *
      * @param session the Cassandra session from Driver 3.x (com.datastax.driver.core.Session)
-     * @throws NullPointerException if session is null
+     * @throws IllegalArgumentException if {@code session} is {@code null}
      * @throws RuntimeException if the session's cluster was closed or failed to initialize (an
      *         {@link IllegalStateException}), or the driver cannot initialize a not-yet-initialized {@code session}
      *         (for example, a {@link NoHostAvailableException} when no host can be reached)
@@ -358,7 +357,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
-     * @throws NullPointerException if session is null
+     * @throws IllegalArgumentException if {@code session} is {@code null}
      * @throws RuntimeException if the session's cluster was closed or failed to initialize (an
      *         {@link IllegalStateException}), or the driver cannot initialize a not-yet-initialized {@code session}
      *         (for example, a {@link NoHostAvailableException} when no host can be reached)
@@ -385,7 +384,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
      * @param cqlMapper mapper containing pre-configured CQL statements, or null if not needed
-     * @throws NullPointerException if session is null
+     * @throws IllegalArgumentException if {@code session} is {@code null}
      * @throws RuntimeException if the session's cluster was closed or failed to initialize (an
      *         {@link IllegalStateException}), or the driver cannot initialize a not-yet-initialized {@code session}
      *         (for example, a {@link NoHostAvailableException} when no host can be reached)
@@ -432,8 +431,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param namingPolicy policy for mapping Java property names to Cassandra column names,
      *                     or null for SNAKE_CASE
      * @throws IllegalArgumentException if {@code namingPolicy} is not {@code SNAKE_CASE},
-     *         {@code SCREAMING_SNAKE_CASE} or {@code CAMEL_CASE} (checked before {@code session})
-     * @throws NullPointerException if session is null
+     *         {@code SCREAMING_SNAKE_CASE} or {@code CAMEL_CASE} (checked before {@code session}), or
+     *         {@code session} is {@code null}
      * @throws RuntimeException if the session's cluster was closed or failed to initialize (an
      *         {@link IllegalStateException}), or the driver cannot initialize a not-yet-initialized {@code session}
      *         (for example, a {@link NoHostAvailableException} when no host can be reached)
@@ -442,7 +441,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     public CassandraExecutor(final Session session, final StatementSettings settings, final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
         super(cqlMapper, namingPolicy);
-        this.session = Objects.requireNonNull(session, "session");
+        this.session = N.checkArgNotNull(session, cs.session);
         cluster = this.session.getCluster();
         codecRegistry = cluster.getConfiguration().getCodecRegistry();
         mappingManager = new MappingManager(this.session);
@@ -555,12 +554,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param <T> the type of the entity
      * @param targetClass the entity class (must carry driver 3.x mapping annotations)
      * @return the DataStax {@link Mapper} for the entity class
-     * @throws NullPointerException if {@code targetClass} is {@code null}
-     * @throws IllegalArgumentException if {@code targetClass} lacks the driver's {@code @Table} annotation, carries
-     *         invalid mapping annotations, has no resolvable keyspace, or maps to a keyspace, table, or column that
-     *         does not exist
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, lacks the driver's {@code @Table}
+     *         annotation, carries invalid mapping annotations, has no resolvable keyspace, or maps to a keyspace,
+     *         table, or column that does not exist
      */
     public <T> Mapper<T> mapper(final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return mappingManager.mapper(targetClass);
     }
 
@@ -591,8 +591,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param javaClazz the Java class for which to register a string-based codec
-     * @throws NullPointerException if {@code javaClazz} is {@code null}
-     * @throws IllegalArgumentException if {@code javaClazz} is a primitive type
+     * @throws IllegalArgumentException if {@code javaClazz} is {@code null} or a primitive type
      * @see #registerTypeCodec(CodecRegistry, Class)
      * @see StringCodec
      */
@@ -612,17 +611,20 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * CodecRegistry registry = cluster.getConfiguration().getCodecRegistry();
      * CassandraExecutor.registerTypeCodec(registry, CustomData.class); // CustomData now (de)serializes as JSON varchar
      *
-     * CassandraExecutor.registerTypeCodec(registry, null);                         // throws NullPointerException (null class)
-     * CassandraExecutor.registerTypeCodec((CodecRegistry) null, CustomData.class); // throws NullPointerException (null registry)
+     * CassandraExecutor.registerTypeCodec(registry, null);                         // throws IllegalArgumentException (null class)
+     * CassandraExecutor.registerTypeCodec((CodecRegistry) null, CustomData.class); // throws IllegalArgumentException (null registry)
      * }</pre>
      *
      * @param codecRegistry the codec registry to register the codec in
      * @param javaClazz the Java class to register a codec for
-     * @throws NullPointerException if {@code codecRegistry} or {@code javaClazz} is {@code null}
-     * @throws IllegalArgumentException if {@code javaClazz} is a primitive type
+     * @throws IllegalArgumentException if {@code codecRegistry} or {@code javaClazz} is {@code null}, or
+     *         {@code javaClazz} is a primitive type
      * @see StringCodec
      */
     public static void registerTypeCodec(final CodecRegistry codecRegistry, final Class<?> javaClazz) {
+        N.checkArgNotNull(codecRegistry, cs.codecRegistry);
+        N.checkArgNotNull(javaClazz, cs.javaClazz);
+
         codecRegistry.register(new StringCodec<>(javaClazz));
     }
 
@@ -647,7 +649,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param resultSet the Cassandra ResultSet to extract data from
      * @return a {@link Dataset} containing all rows from the ResultSet
-     * @throws NullPointerException if {@code resultSet} is {@code null}
+     * @throws IllegalArgumentException if {@code resultSet} is {@code null}
      * @throws RuntimeException if the driver fails to fetch a remaining result page
      * @see #extractData(ResultSet, Class)
      */
@@ -686,11 +688,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *                    or {@code null} for no type hint
      * @return a {@link Dataset} containing all rows from the ResultSet, with values converted
      *         to match {@code targetClass} property types when applicable
-     * @throws NullPointerException if {@code resultSet} is {@code null}
+     * @throws IllegalArgumentException if {@code resultSet} is {@code null}
      * @throws RuntimeException if the driver fails to fetch a remaining result page, or a column value cannot be
      *         converted to the type of the matching {@code targetClass} property
      */
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) {
+        N.checkArgNotNull(resultSet, cs.resultSet);
+
         final boolean isEntity = Beans.isBeanClass(targetClass);
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
         final ColumnDefinitions columnDefinitions = resultSet.getColumnDefinitions();
@@ -784,14 +788,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param resultSet the Cassandra ResultSet to convert
      * @param targetClass the per-row target type (see supported types above); must not be {@code null}
      * @return a list of converted rows
-     * @throws NullPointerException if {@code resultSet} is {@code null}
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or if
+     * @throws IllegalArgumentException if {@code resultSet} or {@code targetClass} is {@code null}, or if
      *         {@code targetClass} is a single-value type but the result set has more than one column
      * @throws RuntimeException if the driver fails to fetch a remaining result page, a column value cannot be converted
      *         to the requested Java type, or a bean property cannot be read or written
      */
     public static <T> List<T> toList(final ResultSet resultSet, final Class<T> targetClass) {
-        Objects.requireNonNull(resultSet, "resultSet");
+        N.checkArgNotNull(resultSet, cs.resultSet);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         if (targetClass.isAssignableFrom(Row.class)) {
@@ -854,8 +857,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     System.out.println(user);
      * }
      *
-     * // Edge case: a null row throws NullPointerException
-     * CassandraExecutor.toEntity((Row) null, User.class); // throws NullPointerException
+     * // Edge case: a null row throws IllegalArgumentException
+     * CassandraExecutor.toEntity((Row) null, User.class); // throws IllegalArgumentException
      *
      * // Edge case: a null entity class is rejected as an illegal argument
      * CassandraExecutor.toEntity(row, (Class<User>) null); // throws IllegalArgumentException ('entityClass' cannot be null)
@@ -865,13 +868,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row to convert
      * @param entityClass the target entity class with getter/setter methods (must not be {@code null})
      * @return an instance of the entity class populated with row data
-     * @throws NullPointerException if {@code row} is {@code null}
-     * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not a bean class (it has no property
-     *         getter/setter methods or public fields)
+     * @throws IllegalArgumentException if {@code row} or {@code entityClass} is {@code null}, or {@code entityClass} is
+     *         not a bean class (it has no property getter/setter methods or public fields)
      * @throws RuntimeException if a column value cannot be converted to the requested Java type or a bean property cannot be read or written
      */
     public static <T> T toEntity(final Row row, final Class<T> entityClass) {
-        Objects.requireNonNull(row, "row");
+        N.checkArgNotNull(row, cs.row);
         N.checkArgNotNull(entityClass, cs.entityClass);
 
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
@@ -931,12 +933,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Map<String, Object> map = CassandraExecutor.toMap(row); // returns a HashMap of column name -> value (column order NOT preserved)
      * Object value = map.get("column_name");
      *
-     * CassandraExecutor.toMap((Row) null); // throws NullPointerException (null row)
+     * CassandraExecutor.toMap((Row) null); // throws IllegalArgumentException (null row)
      * }</pre>
      *
      * @param row the Cassandra Row to convert
      * @return a {@link HashMap} containing all column name-value pairs from the row
-     * @throws NullPointerException if {@code row} is {@code null}
+     * @throws IllegalArgumentException if {@code row} is {@code null}
      * @see #toMap(Row, IntFunction)
      */
     public static Map<String, Object> toMap(final Row row) {
@@ -965,12 +967,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row to convert
      * @param supplier factory invoked with the expected column count to create the target map
      * @return a Map containing all column name-value pairs from the row
-     * @throws NullPointerException if {@code row} is {@code null}, or {@code supplier} returns {@code null} for a nonempty row
-     * @throws IllegalArgumentException if {@code supplier} is {@code null}
+     * @throws IllegalArgumentException if {@code row} or {@code supplier} is {@code null}
+     * @throws NullPointerException if {@code supplier} returns {@code null} for a nonempty row
      * @throws RuntimeException if {@code supplier} fails to create a map or the supplied map rejects a column entry
      */
     public static Map<String, Object> toMap(final Row row, final IntFunction<? extends Map<String, Object>> supplier) throws IllegalArgumentException {
-        Objects.requireNonNull(row, "row");
+        N.checkArgNotNull(row, cs.row);
         N.checkArgNotNull(supplier, cs.supplier);
 
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
@@ -1481,12 +1483,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param statement the statement to execute
      * @param rowMapper function to convert column definitions and rows to result objects
      * @return a Stream of mapped results
-     * @throws NullPointerException if statement is null
-     * @throws IllegalArgumentException if rowMapper is null
+     * @throws IllegalArgumentException if {@code statement} or {@code rowMapper} is {@code null}
      * @throws RuntimeException if the session is closed or the driver rejects request submission or statement execution
      */
     public <T> Stream<T> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) throws IllegalArgumentException {
-        java.util.Objects.requireNonNull(statement, "statement");
+        N.checkArgNotNull(statement, cs.statement);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return Stream.of(execute(statement).iterator()).map(createRowMapper(rowMapper));
@@ -1686,12 +1687,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param statement the configured CQL Statement to execute
      * @return the ResultSet containing execution results
-     * @throws NullPointerException if statement is null
+     * @throws IllegalArgumentException if {@code statement} is {@code null}
      * @throws NoHostAvailableException if all contact points are unreachable
      * @throws RuntimeException if the session is closed or the driver rejects request submission or statement execution
      */
     @Override
     public ResultSet execute(final Statement statement) {
+        N.checkArgNotNull(statement, cs.statement);
+
         return session.execute(statement);
     }
 
@@ -2438,12 +2441,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param userType the Cassandra user type definition the codec encodes/decodes
          * @param javaClazz the Java class the codec maps to (a {@link Collection},
          *                  {@link Map}, or bean class)
-         * @throws NullPointerException if {@code userType} or {@code javaClazz} is {@code null}
-         * @throws IllegalArgumentException if {@code javaClazz} is a primitive type, which the driver codec contract
-         *         does not support
+         * @throws IllegalArgumentException if {@code userType} or {@code javaClazz} is {@code null}, or
+         *         {@code javaClazz} is a primitive type, which the driver codec contract does not support
          */
         protected UDTCodec(final UserType userType, final Class<T> javaClazz) {
-            super(userType, javaClazz);
+            super(N.checkArgNotNull(userType, cs.userType), N.checkArgNotNull(javaClazz, cs.javaClazz));
             this.userType = userType;
             udtValueTypeCodec = TypeCodec.userType(userType);
         }
@@ -2476,8 +2478,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param userType the Cassandra user type
          * @param javaClazz the Java class to map to (a {@link Collection}, {@link Map}, or bean class)
          * @return a new UDT codec instance
-         * @throws NullPointerException if {@code userType} or {@code javaClazz} is {@code null}
-         * @throws IllegalArgumentException if {@code javaClazz} is a primitive type, which the driver codec contract does not support
+         * @throws IllegalArgumentException if {@code userType} or {@code javaClazz} is {@code null}, or {@code javaClazz}
+         *         is a primitive type, which the driver codec contract does not support
          */
         public static <T> UDTCodec<T> create(final UserType userType, final Class<T> javaClazz) {
             return new UDTCodec<>(userType, javaClazz) {
@@ -2610,11 +2612,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param userTypeName the name of the user type within {@code keySpace}
          * @param javaClazz the Java class to map to (a {@link Collection}, {@link Map}, or bean class)
          * @return a new UDT codec instance
-         * @throws NullPointerException if {@code cluster}, {@code keySpace}, {@code userTypeName}, or {@code javaClazz}
-         *         is {@code null}, or the keyspace or user type cannot be found in the metadata
-         * @throws IllegalArgumentException if {@code javaClazz} is a primitive type, which the driver codec contract does not support
+         * @throws IllegalArgumentException if {@code cluster}, {@code keySpace}, {@code userTypeName}, or
+         *         {@code javaClazz} is {@code null}, or the keyspace is found but the named user type is not (the
+         *         lookup then yields a {@code null} user type), or {@code javaClazz} is a primitive type, which the
+         *         driver codec contract does not support
+         * @throws NullPointerException if the keyspace cannot be found in the metadata
          */
         public static <T> UDTCodec<T> create(final Cluster cluster, final String keySpace, final String userTypeName, final Class<T> javaClazz) {
+            N.checkArgNotNull(cluster, cs.cluster);
+            N.checkArgNotNull(keySpace, cs.keySpace);
+            N.checkArgNotNull(userTypeName, cs.userTypeName);
+            N.checkArgNotNull(javaClazz, cs.javaClazz);
+
             return create(cluster.getMetadata().getKeyspace(keySpace).getUserType(userTypeName), javaClazz);
         }
 

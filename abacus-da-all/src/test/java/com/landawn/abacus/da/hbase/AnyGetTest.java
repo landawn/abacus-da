@@ -408,6 +408,25 @@ public class AnyGetTest extends TestBase {
     }
 
     @Test
+    public void testNullRowKey_rejectedWithIae() {
+        // HBase's own row check reports a null row key with IllegalArgumentException on every factory.
+        assertThrows(IllegalArgumentException.class, () -> AnyGet.of((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyGet.of((Object) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyGet.of((ByteBuffer) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyGet.of((Get) null));
+    }
+
+    @Test
+    public void testNullFamilyAndQualifier_tolerated() {
+        // HBase tolerates null family/qualifier (byte[] comparator handles null; null qualifier -> empty).
+        AnyGet get = AnyGet.of("row").addFamily((String) null).addFamily((byte[]) null);
+        assertEquals(1, get.numFamilies());
+
+        AnyGet cols = AnyGet.of("row").addColumn((String) null, null).addColumn("cf", (String) null).addColumn(Bytes.toBytes("cf2"), null);
+        assertEquals(3, cols.numFamilies());
+    }
+
+    @Test
     public void testOf_existingGet_wrapsSameInstance() {
         // AnyGet.of(Get) wraps the provided Get directly (does NOT deep-copy).
         Get orig = new Get(Bytes.toBytes("k"));

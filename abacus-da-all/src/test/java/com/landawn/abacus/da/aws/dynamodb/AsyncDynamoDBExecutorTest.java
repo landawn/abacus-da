@@ -81,6 +81,24 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
     }
 
     @Test
+    public void testNullRequestObjectIsReportedThroughFutureAsIAE() {
+        final com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient client = org.mockito.Mockito
+                .mock(com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient.class);
+        final AsyncDynamoDBExecutor async = new DynamoDBExecutor(client).async();
+
+        final List<ContinuableFuture<?>> futures = List.of(async.getItem((GetItemRequest) null), async.getItem((GetItemRequest) null, Map.class),
+                async.putItem((PutItemRequest) null), async.batchWriteItem((BatchWriteItemRequest) null), async.updateItem((UpdateItemRequest) null),
+                async.deleteItem((DeleteItemRequest) null));
+
+        for (final ContinuableFuture<?> future : futures) {
+            final ExecutionException e = assertThrows(ExecutionException.class, future::get);
+            assertTrue(e.getCause() instanceof IllegalArgumentException, String.valueOf(e.getCause()));
+        }
+
+        org.mockito.Mockito.verifyNoInteractions(client);
+    }
+
+    @Test
     public void testGetItemWithTableNameAndKey() throws InterruptedException, ExecutionException {
         String tableName = "TestTable";
         Map<String, AttributeValue> key = new HashMap<>();

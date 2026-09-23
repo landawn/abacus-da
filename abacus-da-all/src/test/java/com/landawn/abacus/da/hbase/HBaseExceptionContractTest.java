@@ -52,7 +52,7 @@ class HBaseExceptionContractTest {
         assertThrows(IllegalArgumentException.class, () -> executor.get("table", List.of(get), null));
         assertThrows(IllegalArgumentException.class, () -> executor.get("table", anyGet, null));
         assertThrows(IllegalArgumentException.class, () -> executor.get("table", anyGets, null));
-        assertThrows(NullPointerException.class, () -> executor.get(null, get, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.get(null, get, null));
         verify(connection, never()).getTable(any(TableName.class));
     }
 

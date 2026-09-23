@@ -2168,9 +2168,8 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities to insert
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertManyResult} when the operation completes, then completes
-     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList) {
@@ -2201,9 +2200,8 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities to insert
      * @param options the insert options to apply (can be null)
      * @return a Mono that emits the insert result when the operation completes
-     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see InsertManyOptions
      */
@@ -2897,9 +2895,8 @@ public final class MongoCollectionMapper<T> {
      * @param entities the collection of entities to insert (must not be null or empty)
      * @return a {@code Mono} that, on subscription, emits exactly one {@link BulkWriteResult}
      *         (use {@link BulkWriteResult#getInsertedCount()} for the inserted count), then completes
-     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#bulkInsert(Collection)
      */
@@ -2928,9 +2925,8 @@ public final class MongoCollectionMapper<T> {
      * @param options configuration options for the bulk write operation (may be null to use defaults)
      * @return a Mono emitting the {@link BulkWriteResult} (use {@link BulkWriteResult#getInsertedCount()}
      *         for the inserted count)
-     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
@@ -2973,7 +2969,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param requests list of write operations to execute (must not be null or empty)
      * @return a Mono emitting BulkWriteResult with detailed operation statistics
-     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalArgumentException if {@code requests} is null or empty, or if it contains a null element
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
@@ -3002,7 +2998,7 @@ public final class MongoCollectionMapper<T> {
      * @param requests list of write operations to execute
      * @param options configuration for the bulk write behavior (may be null to use defaults)
      * @return a Mono emitting BulkWriteResult with operation statistics
-     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalArgumentException if {@code requests} is null or empty, or if it contains a null element
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {

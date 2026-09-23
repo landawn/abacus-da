@@ -1240,9 +1240,9 @@ public final class DynamoDBExecutor {
      *
      * @param entities the entities, maps, or {@code Object[]} property pairs to convert
      * @return a list of item maps in iteration order; never {@code null}
-     * @throws NullPointerException if {@code entities} is null
-     * @throws IllegalArgumentException if an element is null, is not an Entity, Map, or Object[], or is an Object[] with an odd length or a
-     *         non-String name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
+     * @throws IllegalArgumentException if {@code entities} is null, or an element is null, is not an Entity, Map, or Object[], or is an
+     *         Object[] with an odd length or a non-String name, or if a value being converted is {@code Float.NaN},
+     *         {@code Double.NaN}, or a floating-point infinity
      */
     static List<Map<String, AttributeValue>> toItem(final Collection<?> entities) {
         return toItem(entities, NamingPolicy.CAMEL_CASE);
@@ -1255,12 +1255,14 @@ public final class DynamoDBExecutor {
      * @param entities the entities, maps, or {@code Object[]} property pairs to convert
      * @param namingPolicy naming policy applied to attribute names
      * @return a list of item maps in iteration order; never {@code null}
-     * @throws NullPointerException if {@code entities} is null
-     * @throws IllegalArgumentException if {@code entities} is non-empty and {@code namingPolicy} is null, an element is null, is not an
-     *         Entity, Map, or Object[], or is an Object[] with an odd length or a non-String name, or if a value being converted is
-     *         {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
+     * @throws IllegalArgumentException if {@code entities} is null, if {@code entities} is non-empty and {@code namingPolicy} is
+     *         null, or if an element is null, is not an Entity, Map, or Object[], or is an Object[] with an odd length or a
+     *         non-String name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a floating-point
+     *         infinity
      */
     static List<Map<String, AttributeValue>> toItem(final Collection<?> entities, final NamingPolicy namingPolicy) {
+        N.checkArgNotNull(entities, cs.entities);
+
         final List<Map<String, AttributeValue>> attrsList = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
@@ -1277,9 +1279,9 @@ public final class DynamoDBExecutor {
      *
      * @param entities the entities, maps, or {@code Object[]} property pairs to convert
      * @return a list of update-item maps in iteration order; never {@code null}
-     * @throws NullPointerException if {@code entities} is null
-     * @throws IllegalArgumentException if an element is null, is not an Entity, Map, or Object[], or is an Object[] with an odd length or a
-     *         non-String name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
+     * @throws IllegalArgumentException if {@code entities} is null, or an element is null, is not an Entity, Map, or Object[], or is an
+     *         Object[] with an odd length or a non-String name, or if a value being converted is {@code Float.NaN},
+     *         {@code Double.NaN}, or a floating-point infinity
      */
     static List<Map<String, AttributeValueUpdate>> toUpdateItem(final Collection<?> entities) {
         return toUpdateItem(entities, NamingPolicy.CAMEL_CASE);
@@ -1293,12 +1295,14 @@ public final class DynamoDBExecutor {
      * @param entities the entities, maps, or {@code Object[]} property pairs to convert
      * @param namingPolicy naming policy applied to attribute names
      * @return a list of update-item maps in iteration order; never {@code null}
-     * @throws NullPointerException if {@code entities} is null
-     * @throws IllegalArgumentException if {@code entities} is non-empty and {@code namingPolicy} is null, an element is null, is not an
-     *         Entity, Map, or Object[], or is an Object[] with an odd length or a non-String name, or if a value being converted is
-     *         {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
+     * @throws IllegalArgumentException if {@code entities} is null, if {@code entities} is non-empty and {@code namingPolicy} is
+     *         null, or if an element is null, is not an Entity, Map, or Object[], or is an Object[] with an odd length or a
+     *         non-String name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a floating-point
+     *         infinity
      */
     static List<Map<String, AttributeValueUpdate>> toUpdateItem(final Collection<?> entities, final NamingPolicy namingPolicy) {
+        N.checkArgNotNull(entities, cs.entities);
+
         final List<Map<String, AttributeValueUpdate>> attrsList = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
@@ -2067,13 +2071,13 @@ public final class DynamoDBExecutor {
      * // No items -> empty Dataset (size 0)
      * Dataset empty = extractData(QueryResponse.builder().build()); // empty.size()==0
      *
-     * Dataset n = extractData((QueryResponse) null);   // throws NullPointerException
+     * Dataset n = extractData((QueryResponse) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param queryResult the QueryResponse containing the items to convert. Must not be {@code null}.
      * @return a Dataset containing the items from this single response page, never {@code null};
      *         empty when the response carries no items
-     * @throws NullPointerException if {@code queryResult} is {@code null}
+     * @throws IllegalArgumentException if {@code queryResult} is {@code null}
      * @see #extractData(QueryResponse, int, int)
      */
     public static Dataset extractData(final QueryResponse queryResult) {
@@ -2097,17 +2101,18 @@ public final class DynamoDBExecutor {
      * Dataset ds = extractData(qr, 1, 2);              // ds.size()==2 (rows 2 and 3)
      *
      * Dataset bad = extractData(qr, -1, 1);                // throws IllegalArgumentException
-     * Dataset n = extractData((QueryResponse) null, 0, 1); // throws NullPointerException
+     * Dataset n = extractData((QueryResponse) null, 0, 1); // throws IllegalArgumentException
      * }</pre>
      *
-     * @param queryResult the QueryResponse containing the items to convert
+     * @param queryResult the QueryResponse containing the items to convert. Must not be {@code null}.
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
      * @return a Dataset containing the sliced page, never null
-     * @throws NullPointerException if {@code queryResult} is {@code null}
-     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws IllegalArgumentException if {@code queryResult} is {@code null}, or {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final QueryResponse queryResult, final int offset, final int count) {
+        N.checkArgNotNull(queryResult, cs.queryResult);
+
         return extractData(queryResult.items(), offset, count);
     }
 
@@ -2127,13 +2132,13 @@ public final class DynamoDBExecutor {
      * Dataset ds = extractData(sr);                    // ds.size()==2; column: id
      *
      * Dataset empty = extractData(ScanResponse.builder().build()); // empty.size()==0
-     * Dataset n = extractData((ScanResponse) null);                // throws NullPointerException
+     * Dataset n = extractData((ScanResponse) null);                // throws IllegalArgumentException
      * }</pre>
      *
      * @param scanResult the ScanResponse containing the items to convert. Must not be {@code null}.
      * @return a Dataset containing the items from this single response page, never {@code null};
      *         empty when the response carries no items
-     * @throws NullPointerException if {@code scanResult} is {@code null}
+     * @throws IllegalArgumentException if {@code scanResult} is {@code null}
      * @see #extractData(ScanResponse, int, int)
      */
     public static Dataset extractData(final ScanResponse scanResult) {
@@ -2159,14 +2164,15 @@ public final class DynamoDBExecutor {
      * Dataset bad = extractData(sr, 0, -1);            // throws IllegalArgumentException
      * }</pre>
      *
-     * @param scanResult the ScanResponse containing the items to convert
+     * @param scanResult the ScanResponse containing the items to convert. Must not be {@code null}.
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
      * @return a Dataset containing the sliced page, never null
-     * @throws NullPointerException if {@code scanResult} is {@code null}
-     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws IllegalArgumentException if {@code scanResult} is {@code null}, or {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final ScanResponse scanResult, final int offset, final int count) {
+        N.checkArgNotNull(scanResult, cs.scanResult);
+
         return extractData(scanResult.items(), offset, count);
     }
 
@@ -2368,7 +2374,7 @@ public final class DynamoDBExecutor {
      *
      * @param getItemRequest the complete request with all parameters. Must not be null.
      * @return the item as a Map of attribute names to values, or null if the item doesn't exist
-     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws IllegalArgumentException if {@code getItemRequest} is null
      * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
      *         or service limits
      */
@@ -2476,13 +2482,13 @@ public final class DynamoDBExecutor {
      * @return an instance of {@code targetClass} containing the item data, or {@code null} for
      *         reference types when the item doesn't exist (primitive {@code targetClass} returns its
      *         default value such as {@code 0} or {@code false})
-     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
-     * @throws IllegalArgumentException if {@code targetClass} is null, or the returned item cannot be converted to {@code targetClass}
+     * @throws IllegalArgumentException if {@code getItemRequest} or {@code targetClass} is null, or the returned item cannot be converted to
+     *         {@code targetClass}
      * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
      *         or service limits
      */
     public <T> T getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
-        Objects.requireNonNull(getItemRequest, "getItemRequest");
+        N.checkArgNotNull(getItemRequest, cs.getItemRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return readRow(dynamoDBClient.getItem(getItemRequest), targetClass);
@@ -2867,11 +2873,13 @@ public final class DynamoDBExecutor {
      *
      * @param putItemRequest the complete request with all parameters. Must not be null.
      * @return a {@link PutItemResponse} containing operation metadata and optional return values
-     * @throws NullPointerException if {@code putItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws IllegalArgumentException if {@code putItemRequest} is null
      * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
      *         or service limits
      */
     public PutItemResponse putItem(final PutItemRequest putItemRequest) {
+        N.checkArgNotNull(putItemRequest, cs.putItemRequest);
+
         return dynamoDBClient.putItem(putItemRequest);
     }
 
@@ -3009,11 +3017,13 @@ public final class DynamoDBExecutor {
      *
      * @param batchWriteItemRequest the complete batch write request. Must not be null.
      * @return a {@link BatchWriteItemResponse} with unprocessed items and optional metrics
-     * @throws NullPointerException if {@code batchWriteItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws IllegalArgumentException if {@code batchWriteItemRequest} is null
      * @throws SdkException if the SDK cannot send the batchWriteItem request or DynamoDB rejects it because of credentials, table/key data,
      *         conditions, or service limits
      */
     public BatchWriteItemResponse batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
+        N.checkArgNotNull(batchWriteItemRequest, cs.batchWriteItemRequest);
+
         return dynamoDBClient.batchWriteItem(batchWriteItemRequest);
     }
 
@@ -3157,11 +3167,13 @@ public final class DynamoDBExecutor {
      *
      * @param updateItemRequest the complete update request. Must not be null.
      * @return an {@link UpdateItemResponse} containing operation results
-     * @throws NullPointerException if {@code updateItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws IllegalArgumentException if {@code updateItemRequest} is null
      * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
      *         conditions, or service limits
      */
     public UpdateItemResponse updateItem(final UpdateItemRequest updateItemRequest) {
+        N.checkArgNotNull(updateItemRequest, cs.updateItemRequest);
+
         return dynamoDBClient.updateItem(updateItemRequest);
     }
 
@@ -3279,11 +3291,13 @@ public final class DynamoDBExecutor {
      *
      * @param deleteItemRequest the complete delete request. Must not be null.
      * @return a {@link DeleteItemResponse} containing operation results
-     * @throws NullPointerException if {@code deleteItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws IllegalArgumentException if {@code deleteItemRequest} is null
      * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
      *         conditions, or service limits
      */
     public DeleteItemResponse deleteItem(final DeleteItemRequest deleteItemRequest) {
+        N.checkArgNotNull(deleteItemRequest, cs.deleteItemRequest);
+
         return dynamoDBClient.deleteItem(deleteItemRequest);
     }
 

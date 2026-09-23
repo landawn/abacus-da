@@ -1758,11 +1758,12 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for key name resolution), must not be {@code null}
      * @param ids the primary key values in order corresponding to the key fields, must not be {@code null} or empty
      * @return a Condition suitable for WHERE clauses
-     * @throws IllegalArgumentException if ids is null or empty, or if the number of IDs doesn't match the primary key structure
-     * @throws NullPointerException if {@code targetClass} is null and {@code ids} is not empty (the key-name cache rejects a null key)
+     * @throws IllegalArgumentException if {@code targetClass} is null, if ids is null or empty, or if the number of IDs doesn't match the
+     *         primary key structure
      * @see #entityToCondition(Object)
      */
     static Condition idsToCondition(final Class<?> targetClass, final Object... ids) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotEmpty(ids, cs.ids);
 
         final ImmutableList<String> keyNames = getKeyNames(targetClass);

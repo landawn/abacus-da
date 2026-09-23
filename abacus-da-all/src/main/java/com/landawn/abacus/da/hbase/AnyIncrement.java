@@ -27,6 +27,8 @@ import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.io.TimeRange;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
+import com.landawn.abacus.util.N;
 
 /**
  * Wrapper around HBase's {@link Increment} that exposes the same fluent / type-converting API as
@@ -65,11 +67,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the increment operation
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyIncrement(final Object rowKey) {
-        super(new Increment(toRowKeyBytes(rowKey)));
+        super(new Increment(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
         increment = (Increment) mutation;
     }
 
@@ -78,11 +79,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * for the given byte-array row key.
      *
      * @param rowKey the row key for the increment operation, as a byte array
-     * @throws NullPointerException if {@code rowKey} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty or longer than 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      */
     AnyIncrement(final byte[] rowKey) {
-        super(new Increment(rowKey));
+        super(new Increment(N.checkArgNotNull(rowKey, cs.rowKey)));
         increment = (Increment) mutation;
     }
 
@@ -126,11 +126,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param rowKey the row key as a byte array
      * @param timestamp the timestamp to apply to every cell in this increment
      * @param familyMap a pre-populated map of column families to their cells
-     * @throws NullPointerException if {@code rowKey} or {@code familyMap} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
     AnyIncrement(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
-        super(new Increment(rowKey, timestamp, familyMap));
+        super(new Increment(N.checkArgNotNull(rowKey, cs.rowKey), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
         increment = (Increment) mutation;
     }
 
@@ -139,10 +138,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * existing HBase {@link Increment}, so subsequent modifications do not touch the original.
      *
      * @param incrementToCopy the existing {@link Increment} to copy
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code incrementToCopy} is {@code null}
      */
     AnyIncrement(final Increment incrementToCopy) {
-        super(new Increment(incrementToCopy));
+        super(new Increment(N.checkArgNotNull(incrementToCopy, cs.incrementToCopy)));
         increment = (Increment) mutation;
     }
 
@@ -167,14 +166,13 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                    .addColumn("counters", "signups", 1L);
      * metrics.getFamilyMapOfLongs().size(); // returns 1
      *
-     * // Edge: null row key is rejected by the underlying HBase Increment constructor
-     * AnyIncrement.of((Object) null);       // throws NullPointerException
+     * // Edge: a null row key is rejected
+     * AnyIncrement.of((Object) null);       // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the increment operation; automatically converted to bytes
      * @return a new AnyIncrement instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @see #of(byte[])
      * @see #addColumn(String, String, long)
      */
@@ -197,8 +195,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                      .addColumn("metrics", "hits", 1L);
      * increment.getRow(); // returns keyBytes ("counter_row_123")
      *
-     * // Edge: a null row key is rejected by the HBase Increment constructor
-     * AnyIncrement.of((byte[]) null); // throws NullPointerException
+     * // Edge: a null row key is rejected
+     * AnyIncrement.of((byte[]) null); // throws IllegalArgumentException
      *
      * // Edge: an empty (zero-length) row key is rejected with IllegalArgumentException
      * AnyIncrement.of(new byte[0]);   // throws IllegalArgumentException
@@ -206,8 +204,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param rowKey the row key for the increment operation as a byte array
      * @return a new AnyIncrement instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty or longer than 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      * @see #of(Object)
      */
     public static AnyIncrement of(final byte[] rowKey) {
@@ -304,16 +301,15 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * AnyIncrement.of(new byte[0], timestamp, familyMap);                  // throws IllegalArgumentException
      *
      * // Edge: a null row key or null family map is rejected
-     * AnyIncrement.of((byte[]) null, timestamp, familyMap);                // throws NullPointerException
-     * AnyIncrement.of(Bytes.toBytes("r"), timestamp, (NavigableMap) null); // throws NullPointerException
+     * AnyIncrement.of((byte[]) null, timestamp, familyMap);                // throws IllegalArgumentException
+     * AnyIncrement.of(Bytes.toBytes("r"), timestamp, (NavigableMap) null); // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the increment operation as a byte array
      * @param timestamp the timestamp to apply to all cells in this increment operation
      * @param familyMap a pre-populated NavigableMap of column families to their Cell lists
      * @return a new AnyIncrement instance with the specified configuration
-     * @throws NullPointerException if {@code rowKey} or {@code familyMap} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      * @see #of(Increment)
      */
     public static AnyIncrement of(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
@@ -343,12 +339,12 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * existingIncrement.getFamilyMapOfLongs().size(); // returns 1 (source map is unchanged)
      *
      * // Edge: a null source increment is rejected
-     * AnyIncrement.of((Increment) null);            // throws NullPointerException
+     * AnyIncrement.of((Increment) null);            // throws IllegalArgumentException
      * }</pre>
      *
      * @param incrementToCopy the HBase Increment object to copy; must not be {@code null}
      * @return a new AnyIncrement instance backed by a fresh Increment copied from {@code incrementToCopy}
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code incrementToCopy} is {@code null}
      * @see Increment
      */
     public static AnyIncrement of(final Increment incrementToCopy) {
@@ -405,13 +401,14 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param cell the {@link Cell} to add; must not be {@code null}
      * @return this AnyIncrement instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code cell} is {@code null}
+     * @throws IllegalArgumentException if {@code cell} is {@code null}, or the matching cell has a null or empty column family
      * @throws IOException if the cell's row key does not match this mutation's row key
-     * @throws IllegalArgumentException if the matching cell has a null or empty column family
      * @see Cell
      * @see #addColumn(String, String, long)
      */
     public AnyIncrement add(final Cell cell) throws IOException {
+        N.checkArgNotNull(cell, cs.cell);
+
         increment.add(cell);
 
         return this;

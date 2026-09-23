@@ -1053,6 +1053,31 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testExecutorNullRequestObjectsThrowIllegalArgumentExceptionBeforeCallingClient() {
+        assertThrows(IllegalArgumentException.class, () -> executor.getItem((GetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.getItem((GetItemRequest) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.putItem((PutItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.batchWriteItem((BatchWriteItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.updateItem((UpdateItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.deleteItem((DeleteItemRequest) null));
+
+        org.mockito.Mockito.verifyNoInteractions(mockDynamoDbClient);
+    }
+
+    @Test
+    public void testExtractDataNullResponseThrowsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((QueryResponse) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((QueryResponse) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((ScanResponse) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((ScanResponse) null, 0, 1));
+        // The null response is reported before the offset/count range check (signature order).
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((QueryResponse) null, -1, 1)).getMessage()
+                .contains("queryResult"));
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((ScanResponse) null, 0, -1)).getMessage()
+                .contains("scanResult"));
+    }
+
+    @Test
     public void testMapperGetItem() {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 

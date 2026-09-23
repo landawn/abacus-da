@@ -81,6 +81,41 @@ public class MongoDBBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toMap(new Document(), null));
     }
 
+    @Test
+    public void testNullRequiredArgumentsAreIllegalArguments() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toMap((Document) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toMap(null, IntFunctions.ofMap()));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toJson((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toJson((org.bson.BSONObject) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toBson((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toBson(new Object[] { null }));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDocument((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDocument(new Object[] { null }));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDocument(null, false));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toBSONObject((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toBSONObject(new Object[] { null }));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDBObject((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDBObject(new Object[] { null }));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData((MongoIterable<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData((MongoIterable<?>) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(null, (MongoIterable<?>) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.stream((MongoIterable<Document>) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.stream((MongoIterable<Document>) null, Document.class));
+
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDocument((Object) null));
+        assertTrue(e.getMessage().contains("obj"), e.getMessage());
+    }
+
+    @Test
+    public void testNullArgumentsStillAcceptedWhereDocumented() {
+        assertEquals("", MongoDBBase.toJson((BasicDBObject) null));
+        assertTrue(MongoDBBase.toDocument((Object[]) null).isEmpty());
+        assertEquals(0, MongoDBBase.stream((MongoCursor<Document>) null).count());
+        assertNull(MongoDBBase.toEntity(null, TestEntity.class));
+    }
+
     // -- toEntity edge cases --
 
     @Test
@@ -650,6 +685,14 @@ public class MongoDBBaseTest extends TestBase {
 
         assertNotNull(out);
         assertEquals("alice", out.getName());
+    }
+
+    @Test
+    public void testGeneralCodecEncodeNullValueIsIllegalArgument() {
+        final org.bson.BsonDocumentWriter writer = new org.bson.BsonDocumentWriter(new org.bson.BsonDocument());
+        final org.bson.codecs.EncoderContext ctx = org.bson.codecs.EncoderContext.builder().build();
+
+        assertThrows(IllegalArgumentException.class, () -> new MongoDBBase.GeneralCodec<>(TestEntity.class).encode(writer, null, ctx));
     }
 
     @Test

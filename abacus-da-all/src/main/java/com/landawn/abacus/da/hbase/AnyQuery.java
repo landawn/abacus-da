@@ -27,6 +27,9 @@ import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.visibility.Authorizations;
 
+import com.landawn.abacus.da.cs;
+import com.landawn.abacus.util.N;
+
 /**
  * Abstract base wrapper for HBase {@link Query} operations — the read-side counterpart of
  * {@link AnyMutation}. Concrete subclasses are {@link AnyGet} and {@link AnyScan}.
@@ -192,18 +195,19 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * Authorizations auths = new Authorizations("PUBLIC", "INTERNAL");
      * query.setAuthorizations(auths);
      *
-     * // Edge: a null value is rejected by the underlying HBase client.
-     * query.setAuthorizations(null);   // throws NullPointerException
+     * // Edge: a null value is rejected.
+     * query.setAuthorizations(null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param authorizations the {@link Authorizations} to apply; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code authorizations} is {@code null} (raised by the wrapped
-     *         {@link Query#setAuthorizations(Authorizations)} while serializing the labels)
+     * @throws IllegalArgumentException if {@code authorizations} is {@code null}
      * @see #getAuthorizations()
      * @see Authorizations
      */
     public AQ setAuthorizations(final Authorizations authorizations) {
+        N.checkArgNotNull(authorizations, cs.authorizations);
+
         query.setAuthorizations(authorizations);
 
         return (AQ) this;
@@ -233,20 +237,22 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * query.setACL("alice", new Permission(Permission.Action.READ));
      *
      * // Edge: neither argument may be null.
-     * query.setACL(null, new Permission(Permission.Action.READ));   // throws NullPointerException
-     * query.setACL("alice", (Permission) null);                     // throws NullPointerException
+     * query.setACL(null, new Permission(Permission.Action.READ));   // throws IllegalArgumentException
+     * query.setACL("alice", (Permission) null);                     // throws IllegalArgumentException
      * }</pre>
      *
      * @param user the username to grant permissions to; must not be {@code null}
      * @param perms the {@link Permission} defining the allowed actions; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code user} or {@code perms} is {@code null} (raised by the
-     *         wrapped {@link Query#setACL(String, Permission)} while serializing the ACL)
+     * @throws IllegalArgumentException if {@code user} or {@code perms} is {@code null}
      * @see #getACL()
      * @see #setACL(Map)
      * @see Permission
      */
     public AQ setACL(final String user, final Permission perms) {
+        N.checkArgNotNull(user, cs.user);
+        N.checkArgNotNull(perms, cs.perms);
+
         query.setACL(user, perms);
 
         return (AQ) this;
@@ -263,18 +269,23 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * acl.put("bob", new Permission(Permission.Action.READ));
      * query.setACL(acl);
      *
-     * // Edge: a null map is rejected by the underlying HBase client.
-     * query.setACL((Map<String, Permission>) null);   // throws NullPointerException
+     * // Edge: a null map is rejected.
+     * query.setACL((Map<String, Permission>) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param perms a map of username to {@link Permission}; must not be {@code null}
+     * @param perms a map of username to {@link Permission}; must not be {@code null} and must not
+     *              contain {@code null} keys or values
      * @return this query instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code perms}, a username key, or a permission value is {@code null}
+     * @throws IllegalArgumentException if {@code perms} is {@code null}
+     * @throws NullPointerException if a username key or a permission value in {@code perms} is
+     *         {@code null} (raised by the wrapped {@link Query#setACL(Map)} while serializing the ACL)
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
      */
     public AQ setACL(final Map<String, Permission> perms) {
+        N.checkArgNotNull(perms, cs.perms);
+
         query.setACL(perms);
 
         return (AQ) this;
@@ -304,7 +315,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * <p>Combine with {@link #setReplicaId(int)} to pin a TIMELINE read to a specific replica.</p>
      *
-     * @param consistency the consistency level to apply
+     * @param consistency the consistency level to apply; not validated here — a {@code null} value
+     *                    is stored as-is by the underlying {@link Query}
      * @return this query instance, to allow fluent method chaining
      * @see #getConsistency()
      * @see #setReplicaId(int)
@@ -381,12 +393,13 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * @param level the isolation level to apply; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code level} is {@code null} (raised by the wrapped
-     *         {@link Query#setIsolationLevel(IsolationLevel)} while encoding the level)
+     * @throws IllegalArgumentException if {@code level} is {@code null}
      * @see #getIsolationLevel()
      * @see IsolationLevel
      */
     public AQ setIsolationLevel(final IsolationLevel level) {
+        N.checkArgNotNull(level, cs.level);
+
         query.setIsolationLevel(level);
 
         return (AQ) this;
@@ -515,7 +528,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * }</pre>
      *
      * @param cf the column-family name; converted to bytes via
-     *           {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *           {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} name is
+     *           tolerated and forwarded to the underlying {@link Query} as a {@code null} array)
      * @param minStamp minimum timestamp, in milliseconds, inclusive
      * @param maxStamp maximum timestamp, in milliseconds, exclusive
      * @return this query instance, to allow fluent method chaining
@@ -556,7 +570,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * query.setColumnFamilyTimeRange(cfBytes, startTime, endTime);
      * }</pre>
      *
-     * @param cf the column-family name as a byte array
+     * @param cf the column-family name as a byte array; forwarded to the underlying {@link Query}
+     *           (a {@code null} array is tolerated)
      * @param minStamp minimum timestamp, in milliseconds, inclusive
      * @param maxStamp maximum timestamp, in milliseconds, exclusive
      * @return this query instance, to allow fluent method chaining

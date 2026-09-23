@@ -128,7 +128,7 @@ public class CassandraExecutor01Test extends TestBase {
         CassandraExecutor executor4 = new CassandraExecutor(mockSession, settings, mapper, NamingPolicy.SNAKE_CASE);
         assertNotNull(executor4);
 
-        assertThrows(NullPointerException.class, () -> new CassandraExecutor(null));
+        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null));
     }
 
     @Test
@@ -141,6 +141,32 @@ public class CassandraExecutor01Test extends TestBase {
 
         final CassandraExecutor readOnlyExecutor = new CassandraExecutor(session);
         assertThrows(IllegalStateException.class, () -> readOnlyExecutor.registerTypeCodec(TestEntity.class));
+    }
+
+    /** A null required argument of the v4 executor's public API is rejected with IllegalArgumentException, not NullPointerException. */
+    @Test
+    public void testNullRequiredArgumentsThrowIAE() {
+        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.registerTypeCodec(null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.registerTypeCodec((MutableCodecRegistry) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.registerTypeCodec(mockCodecRegistry, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.extractData((ResultSet) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.extractData((ResultSet) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList((ResultSet) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity((Row) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.execute((Statement<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett(null, "id-1"));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, Filters.eq("id", 1)));
+        assertThrows(IllegalArgumentException.class,
+                () -> CassandraExecutor.UDTCodec.create((com.datastax.oss.driver.api.core.type.UserDefinedType) null, (Class<Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create((com.datastax.oss.driver.api.core.session.Session) null, "ks", "udt", Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(mockSession, null, "udt", Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(mockSession, "ks", null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(mockSession, "ks", "udt", null));
+
+        // A null user type is still accepted at construction (the driver's udtOf codec does not validate it).
+        assertNotNull(CassandraExecutor.UDTCodec.create((com.datastax.oss.driver.api.core.type.UserDefinedType) null, Map.class));
     }
 
     @Test
@@ -356,7 +382,7 @@ public class CassandraExecutor01Test extends TestBase {
 
     @Test
     public void testNullFunctionalInterfaceArguments() {
-        assertThrows(NullPointerException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null, null));
         assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap(mock(Row.class), null));
         assertThrows(IllegalArgumentException.class, () -> executor.stream("SELECT * FROM test", (BiFunction<ColumnDefinitions, Row, Object>) null));
         assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement<?>) null, (BiFunction<ColumnDefinitions, Row, Object>) null));

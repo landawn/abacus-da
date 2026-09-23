@@ -2655,6 +2655,32 @@ public class DynamoDBExecutor01Test extends TestBase {
     }
 
     @Test
+    public void testRequestObjectOverloads_NullRequestThrowsIAEBeforeClientCall() {
+        assertThrows(IllegalArgumentException.class, () -> executor.getItem((GetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.getItem((GetItemRequest) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.putItem((PutItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.batchWriteItem((BatchWriteItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.updateItem((UpdateItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.deleteItem((DeleteItemRequest) null));
+
+        org.mockito.Mockito.verifyNoInteractions(mockDynamoDBClient);
+    }
+
+    @Test
+    public void testStaticHelpers_NullRequiredArgumentThrowsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((QueryResult) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((QueryResult) null, -1, 1));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((ScanResult) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData((ScanResult) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValueUpdate("v", null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValueUpdate(null, null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem((java.util.Collection<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem((java.util.Collection<?>) null, NamingPolicy.CAMEL_CASE));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem((java.util.Collection<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem((java.util.Collection<?>) null, NamingPolicy.CAMEL_CASE));
+    }
+
+    @Test
     public void testMapper_NullKeyMapThrowsIAE() {
         final DynamoDBExecutor.Mapper<TestEntityWithUserId> mapper = executor.mapper(TestEntityWithUserId.class);
 

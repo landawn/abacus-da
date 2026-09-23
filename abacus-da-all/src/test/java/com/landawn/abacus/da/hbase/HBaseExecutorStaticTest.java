@@ -32,9 +32,15 @@ import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
+import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Increment;
+import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
 
@@ -1454,6 +1460,81 @@ public class HBaseExecutorStaticTest extends TestBase {
             assertThrows(IllegalArgumentException.class, () -> executor.scan("tbl", (AnyScan) null));
             assertThrows(IllegalArgumentException.class, () -> executor.scan(null, AnyScan.create()));
             assertThrows(IllegalArgumentException.class, () -> executor.scan("tbl", "info", (Class<PlainBean>) null));
+        } finally {
+            executor.close();
+        }
+    }
+
+    @Test
+    public void testToEntity_nullResult_throwsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toEntity(null, PlainBean.class));
+        assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toEntity(null, String.class));
+    }
+
+    @Test
+    public void testNullTableName_throwsIllegalArgumentExceptionBeforeAcquiringTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        final Get get = new Get(Bytes.toBytes("row"));
+        final Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("f"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        final Delete delete = new Delete(Bytes.toBytes("row"));
+
+        try {
+            assertThrows(IllegalArgumentException.class, () -> executor.getTable(null));
+            assertThrows(IllegalArgumentException.class, () -> executor.exists(null, get));
+            assertThrows(IllegalArgumentException.class, () -> executor.exists(null, List.of(get)));
+            assertThrows(IllegalArgumentException.class, () -> executor.exists(null, AnyGet.of("row")));
+            assertThrows(IllegalArgumentException.class, () -> executor.exists(null, "row"));
+            assertThrows(IllegalArgumentException.class, () -> executor.get(null, get));
+            assertThrows(IllegalArgumentException.class, () -> executor.get(null, List.of(get)));
+            assertThrows(IllegalArgumentException.class, () -> executor.get(null, AnyGet.of("row"), PlainBean.class));
+            assertThrows(IllegalArgumentException.class, () -> executor.get(null, "row"));
+            assertThrows(IllegalArgumentException.class, () -> executor.put(null, put));
+            assertThrows(IllegalArgumentException.class, () -> executor.put(null, List.of(put)));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete(null, delete));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete(null, List.of(delete)));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete(null, "row"));
+            assertThrows(IllegalArgumentException.class, () -> executor.mutateRow(null, new RowMutations(Bytes.toBytes("row"))));
+            assertThrows(IllegalArgumentException.class, () -> executor.append(null, new Append(Bytes.toBytes("row"))));
+            assertThrows(IllegalArgumentException.class, () -> executor.increment(null, new Increment(Bytes.toBytes("row"))));
+            assertThrows(IllegalArgumentException.class, () -> executor.incrementColumnValue(null, "row", "f", "q", 1L));
+            assertThrows(IllegalArgumentException.class, () -> executor.coprocessorService(null, "row"));
+            assertThrows(IllegalArgumentException.class, () -> executor.batchCoprocessorService(null, null, null, null, null, null));
+
+            verify(conn, times(0)).getTable(any(TableName.class));
+        } finally {
+            executor.close();
+        }
+    }
+
+    @Test
+    public void testNullRawOperationArgs_throwIllegalArgumentExceptionBeforeAcquiringTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+
+        try {
+            assertThrows(IllegalArgumentException.class, () -> executor.exists("tbl", (Get) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.exists("tbl", (List<Get>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.get("tbl", (Get) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.get("tbl", (List<Get>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.get("tbl", (Get) null, PlainBean.class));
+            assertThrows(IllegalArgumentException.class, () -> executor.get("tbl", (List<Get>) null, PlainBean.class));
+            assertThrows(IllegalArgumentException.class, () -> executor.put("tbl", (Put) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.put("tbl", (List<Put>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete("tbl", (Delete) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete("tbl", (List<Delete>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.mutateRow("tbl", (RowMutations) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.append("tbl", (Append) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.increment("tbl", (Increment) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete("tbl", (Object) null));
+
+            verify(conn, times(0)).getTable(any(TableName.class));
         } finally {
             executor.close();
         }

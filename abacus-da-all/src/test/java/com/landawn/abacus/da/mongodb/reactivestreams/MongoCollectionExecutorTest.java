@@ -1236,6 +1236,19 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testInsertNullElementIsIllegalArgument() {
+        // A null element is rejected eagerly (MongoDBBase.toDocument), before the driver is called.
+        final List<Document> docs = Arrays.asList(new Document("id", 1), null);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs));
+        assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs, new InsertManyOptions()));
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs));
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs, new BulkWriteOptions()));
+        verify(mockCollection, org.mockito.Mockito.never()).insertMany(anyList());
+        verify(mockCollection, org.mockito.Mockito.never()).bulkWrite(anyList());
+    }
+
+    @Test
     public void testBulkInsertRejectsEmptyEntities() {
         assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(List.of()));
     }

@@ -929,6 +929,27 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(TestEntity.class));
     }
 
+    /** A null entity class / entity / SP argument is rejected with IllegalArgumentException, not NullPointerException. */
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testNullClassOrEntityArguments_throwIAE() {
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(null, Arrays.asList("id")));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.getKeyNames(null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.getKeyNameSet(null));
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToCondition(null));
+
+        assertThrows(IllegalArgumentException.class, () -> executor.get((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.get((Class<Object>) null, (Collection<String>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett((Class<Object>) null, (Collection<String>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Class<?>) null, (Collection<String>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.execute((SP) null));
+    }
+
     @Test
     public void testEntityToCondition_singleKey() {
         TestEntity e = new TestEntity();

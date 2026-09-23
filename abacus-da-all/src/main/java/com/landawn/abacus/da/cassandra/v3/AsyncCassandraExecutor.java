@@ -14,7 +14,6 @@
 package com.landawn.abacus.da.cassandra.v3;
 
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.BiFunction;
 
 import com.datastax.driver.core.BatchStatement;
@@ -60,7 +59,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * direct use.
      *
      * @param cassandraExecutor the synchronous executor to delegate to; must not be {@code null}
-     * @throws NullPointerException if {@code cassandraExecutor} is {@code null}
+     * @throws IllegalArgumentException if {@code cassandraExecutor} is {@code null}
      */
     AsyncCassandraExecutor(final CassandraExecutor cassandraExecutor) {
         super(cassandraExecutor);
@@ -196,24 +195,23 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Statement none = new SimpleStatement("SELECT id FROM users WHERE id = ?", -1);
      * long n = async.stream(none, (defs, row) -> row.getInt("id")).map(Stream::count).get(); // n == 0
      *
-     * // Edge: a null statement throws NullPointerException synchronously from async.stream(...)
+     * // Edge: a null statement throws IllegalArgumentException synchronously from async.stream(...)
      * // (validated before the row mapper and before a future is created).
-     * async.stream((Statement) null, mapper);             // throws NullPointerException
+     * async.stream((Statement) null, mapper);             // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the type of objects in the returned stream
      * @param statement the CQL statement to execute
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @return a future that completes with a Stream of mapped objects
-     * @throws NullPointerException if {@code statement} is {@code null}
-     * @throws IllegalArgumentException if {@code rowMapper} is {@code null}
+     * @throws IllegalArgumentException if {@code statement} or {@code rowMapper} is {@code null}
      * @throws RuntimeException if the driver rejects the statement while building the request (for example, a
      *         feature unsupported by the negotiated protocol version); failures after submission, including
      *         execution on a closed session, are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper)
             throws IllegalArgumentException {
-        Objects.requireNonNull(statement, "statement");
+        N.checkArgNotNull(statement, cs.statement);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
@@ -486,20 +484,22 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Statement none = new SimpleStatement("SELECT id FROM users WHERE id = ?", -1);
      * boolean hasRows = async.execute(none).get().iterator().hasNext(); // returns false
      *
-     * // Edge: a null statement throws NullPointerException synchronously from async.execute(...)
-     * // (the driver dereferences the statement before any future is created).
-     * async.execute((Statement) null);                    // throws NullPointerException
+     * // Edge: a null statement throws IllegalArgumentException synchronously from async.execute(...)
+     * // (validated before any future is created).
+     * async.execute((Statement) null);                    // throws IllegalArgumentException
      * }</pre>
      *
      * @param statement the CQL statement to execute
      * @return a future that completes with the {@link ResultSet} produced by the driver
-     * @throws NullPointerException if {@code statement} is {@code null}
+     * @throws IllegalArgumentException if {@code statement} is {@code null}
      * @throws RuntimeException if the driver rejects the statement while building the request (for example, a
      *         feature unsupported by the negotiated protocol version); failures after submission, including
      *         execution on a closed session, are reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final Statement statement) {
+        N.checkArgNotNull(statement, cs.statement);
+
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(statement));
     }
 }

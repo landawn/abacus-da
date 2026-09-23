@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.InvocationTargetException;
@@ -865,13 +866,34 @@ public class CosmosContainerExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.deleteAllItemsByPartitionKey(null, itemRequestOptions));
     }
 
+    /** The SDK would reject a null item with a NullPointerException; the executor rejects it up front with an IllegalArgumentException. */
+    @Test
+    public void testCreateAndUpsertRejectNullItem() {
+        assertThrows(IllegalArgumentException.class, () -> executor.createItem(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.createItem(null, partitionKey, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.createItem(null, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.upsertItem(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.upsertItem(null, partitionKey, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.upsertItem(null, itemRequestOptions));
+        verifyNoInteractions(mockCosmosContainer);
+    }
+
     @Test
     public void testReplaceAndPatchRejectNullArguments() {
+        final CosmosPatchOperations patchOperations = CosmosPatchOperations.create();
+
         assertThrows(IllegalArgumentException.class, () -> executor.replaceItem(null, partitionKey, testItem, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.replaceItem("id1", partitionKey, null, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.patchItem(null, partitionKey, patchOperations, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.patchItem("id1", null, patchOperations, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.patchItem("id1", partitionKey, null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.patchItem("id1", partitionKey, patchOperations, (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.patchItem(null, partitionKey, patchOperations, patchRequestOptions, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.patchItem("id1", null, patchOperations, patchRequestOptions, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.patchItem("id1", partitionKey, null, patchRequestOptions, TestItem.class));
         assertThrows(IllegalArgumentException.class,
-                () -> executor.patchItem("id1", partitionKey, CosmosPatchOperations.create(), (Class<TestItem>) null));
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.patchItem("id1", partitionKey, CosmosPatchOperations.create(), patchRequestOptions, (Class<TestItem>) null));
+                () -> executor.patchItem("id1", partitionKey, patchOperations, patchRequestOptions, (Class<TestItem>) null));
+        verifyNoInteractions(mockCosmosContainer);
     }
 
     @Test

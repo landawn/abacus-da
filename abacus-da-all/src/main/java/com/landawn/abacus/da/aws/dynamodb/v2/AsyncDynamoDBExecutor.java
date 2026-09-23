@@ -31,7 +31,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -562,7 +561,7 @@ public final class AsyncDynamoDBExecutor {
      * @param getItemRequest the complete GetItemRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing the item as a Map of attribute names to values,
      *         or null if not found
-     * @throws NullPointerException if {@code getItemRequest} is null — it is rejected before the request is sent, so this is thrown
+     * @throws IllegalArgumentException if {@code getItemRequest} is null — it is rejected before the request is sent, so this is thrown
      *         synchronously instead of being reported through the returned {@code CompletableFuture}
      */
     public CompletableFuture<Map<String, Object>> getItem(final GetItemRequest getItemRequest) {
@@ -728,12 +727,11 @@ public final class AsyncDynamoDBExecutor {
      *         {@code targetClass} yields its default value such as {@code 0} or {@code false}),
      *         or completes exceptionally with the underlying SDK exception wrapped in
      *         {@link java.util.concurrent.CompletionException}
-     * @throws NullPointerException if {@code getItemRequest} is null — it is rejected before the request is sent, so this is thrown
-     *         synchronously instead of being reported through the returned {@code CompletableFuture}
-     * @throws IllegalArgumentException if {@code targetClass} is null
+     * @throws IllegalArgumentException if {@code getItemRequest} or {@code targetClass} is null — the null argument is rejected before
+     *         the request is sent, so this is thrown synchronously instead of being reported through the returned {@code CompletableFuture}
      */
     public <T> CompletableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
-        Objects.requireNonNull(getItemRequest, "getItemRequest");
+        N.checkArgNotNull(getItemRequest, cs.getItemRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return dynamoDBClient.getItem(getItemRequest).thenApply(getItemResponse -> readRow(getItemResponse, targetClass));
@@ -1214,12 +1212,14 @@ public final class AsyncDynamoDBExecutor {
      *         completes exceptionally (wrapped in {@link java.util.concurrent.CompletionException})
      *         on SDK error — common causes include
      *         {@link software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException}
-     * @throws NullPointerException if {@code putItemRequest} is null — the AWS SDK v2 async client dereferences the request before it builds the
-     *         future, so this is thrown synchronously instead of being reported through the returned {@code CompletableFuture}
+     * @throws IllegalArgumentException if {@code putItemRequest} is null — it is rejected before the request is sent, so this is thrown
+     *         synchronously instead of being reported through the returned {@code CompletableFuture}
      * @see PutItemRequest
      * @see PutItemResponse
      */
     public CompletableFuture<PutItemResponse> putItem(final PutItemRequest putItemRequest) {
+        N.checkArgNotNull(putItemRequest, cs.putItemRequest);
+
         return dynamoDBClient.putItem(putItemRequest);
     }
 
@@ -1381,10 +1381,12 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param batchWriteItemRequest the complete BatchWriteItemRequest. Must not be null.
      * @return a CompletableFuture containing BatchWriteItemResponse with operation results
-     * @throws NullPointerException if {@code batchWriteItemRequest} is null — the AWS SDK v2 async client dereferences the request before it
-     *         builds the future, so this is thrown synchronously instead of being reported through the returned {@code CompletableFuture}
+     * @throws IllegalArgumentException if {@code batchWriteItemRequest} is null — it is rejected before the request is sent, so this is thrown
+     *         synchronously instead of being reported through the returned {@code CompletableFuture}
      */
     public CompletableFuture<BatchWriteItemResponse> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
+        N.checkArgNotNull(batchWriteItemRequest, cs.batchWriteItemRequest);
+
         return dynamoDBClient.batchWriteItem(batchWriteItemRequest);
     }
 
@@ -1549,12 +1551,14 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param updateItemRequest the complete UpdateItemRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing the UpdateItemResponse with operation results
-     * @throws NullPointerException if {@code updateItemRequest} is null — the AWS SDK v2 async client dereferences the request before it builds
-     *         the future, so this is thrown synchronously instead of being reported through the returned {@code CompletableFuture}
+     * @throws IllegalArgumentException if {@code updateItemRequest} is null — it is rejected before the request is sent, so this is thrown
+     *         synchronously instead of being reported through the returned {@code CompletableFuture}
      * @see UpdateItemRequest
      * @see UpdateItemResponse
      */
     public CompletableFuture<UpdateItemResponse> updateItem(final UpdateItemRequest updateItemRequest) {
+        N.checkArgNotNull(updateItemRequest, cs.updateItemRequest);
+
         return dynamoDBClient.updateItem(updateItemRequest);
     }
 
@@ -1682,10 +1686,12 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param deleteItemRequest the complete DeleteItemRequest. Must not be null.
      * @return a CompletableFuture containing DeleteItemResponse with operation results
-     * @throws NullPointerException if {@code deleteItemRequest} is null — the AWS SDK v2 async client dereferences the request before it builds
-     *         the future, so this is thrown synchronously instead of being reported through the returned {@code CompletableFuture}
+     * @throws IllegalArgumentException if {@code deleteItemRequest} is null — it is rejected before the request is sent, so this is thrown
+     *         synchronously instead of being reported through the returned {@code CompletableFuture}
      */
     public CompletableFuture<DeleteItemResponse> deleteItem(final DeleteItemRequest deleteItemRequest) {
+        N.checkArgNotNull(deleteItemRequest, cs.deleteItemRequest);
+
         return dynamoDBClient.deleteItem(deleteItemRequest);
     }
 

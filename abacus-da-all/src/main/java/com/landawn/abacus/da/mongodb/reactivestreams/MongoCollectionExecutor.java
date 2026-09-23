@@ -2494,9 +2494,8 @@ public final class MongoCollectionExecutor {
      *                must not be null or empty
      * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertManyResult}, then
      *         completes
-     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #insertMany(Collection, InsertManyOptions)
      */
@@ -2527,9 +2526,8 @@ public final class MongoCollectionExecutor {
      * @param options the options to apply to the insert operation; may be null for driver defaults
      * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertManyResult}, then
      *         completes
-     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<InsertManyResult> insertMany(final Collection<?> objList, final InsertManyOptions options) {
@@ -3449,9 +3447,8 @@ public final class MongoCollectionExecutor {
      * @param entities collection of documents or entities to insert; must not be null or empty
      * @return a {@code Mono} that, on subscription, emits exactly one {@link BulkWriteResult}
      *         (use {@link BulkWriteResult#getInsertedCount()} for the inserted count), then completes
-     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #bulkWrite(List)
@@ -3485,9 +3482,8 @@ public final class MongoCollectionExecutor {
      *                or validation bypass; may be null to use default options
      * @return a Mono that emits the {@link BulkWriteResult} (use {@link BulkWriteResult#getInsertedCount()}
      *         for the inserted count)
-     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {

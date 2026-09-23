@@ -390,14 +390,31 @@ public class AnyDeleteTest extends TestBase {
     }
 
     /**
-     * {@code AnyDelete.add(Cell)} is a straight delegation to {@code Delete.add(Cell)}, which
-     * dereferences the cell immediately; the driver's {@code NullPointerException} is the documented
-     * contract. ({@code AnyAppend.add(Cell)} deliberately differs -- it inspects the cell itself and
-     * so rejects {@code null} with an {@code IllegalArgumentException}.)
+     * {@code AnyDelete.add(Cell)} validates the cell up front, so a {@code null} cell is rejected with
+     * an {@code IllegalArgumentException} -- the same contract as {@code AnyPut}/{@code AnyIncrement}/
+     * {@code AnyAppend.add(Cell)}.
      */
     @Test
-    public void testAddCell_nullCell_throwsNpe() {
+    public void testAddCell_nullCell_throwsIae() {
         AnyDelete delete = AnyDelete.of("rk");
-        assertThrows(NullPointerException.class, () -> delete.add((Cell) null));
+        assertThrows(IllegalArgumentException.class, () -> delete.add((Cell) null));
+        assertEquals(0, delete.size());
+    }
+
+    /**
+     * A {@code null} row key, family map or source {@code Delete} is rejected with an
+     * {@code IllegalArgumentException} by every {@code of(...)} overload (previously some overloads
+     * leaked HBase's {@code NullPointerException}).
+     */
+    @Test
+    public void testOf_nullArguments_throwIae() {
+        final java.util.NavigableMap<byte[], java.util.List<Cell>> familyMap = new java.util.TreeMap<>(Bytes.BYTES_COMPARATOR);
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of((Object) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of((Object) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of((Object) null, 0, 1, 1L));
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of((Object) null, 1L, familyMap));
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of("rk", 1L, null));
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of((org.apache.hadoop.hbase.client.Delete) null));
     }
 }

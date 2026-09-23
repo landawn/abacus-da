@@ -18,6 +18,9 @@ import java.util.Map;
 
 import org.apache.hadoop.hbase.client.OperationWithAttributes;
 
+import com.landawn.abacus.da.cs;
+import com.landawn.abacus.util.N;
+
 /**
  * Abstract wrapper around HBase {@link OperationWithAttributes} that exposes attribute, operation
  * identifier, and priority management through a fluent API with automatic value conversion.
@@ -93,7 +96,8 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * {@link #setAttribute(String, Object)} will need to decode the bytes back to the original
      * type themselves.
      *
-     * @param name the name of the attribute to retrieve
+     * @param name the name of the attribute to retrieve; {@code null} handling is delegated to the
+     *             underlying {@link OperationWithAttributes}, which is not validated here
      * @return the attribute value as a byte array, or {@code null} if no attribute with the given
      *         name is set
      * @see #setAttribute(String, Object)
@@ -181,18 +185,19 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * // Custom format with context
      * operation.setId("batch-user-updates-" + System.currentTimeMillis());
      *
-     * // Edge: a null id is rejected by the underlying HBase client.
-     * operation.setId(null);   // throws NullPointerException
+     * // Edge: a null id is rejected.
+     * operation.setId(null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param id the identifier to assign; must not be {@code null} — once set, the id cannot be
      *           cleared via this API
      * @return this instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code id} is {@code null} (raised by the wrapped
-     *         {@link OperationWithAttributes#setId(String)} while converting it to bytes)
+     * @throws IllegalArgumentException if {@code id} is {@code null}
      * @see #getId()
      */
     public AOWA setId(final String id) {
+        N.checkArgNotNull(id, cs.id);
+
         owa.setId(id);
 
         return (AOWA) this;

@@ -814,13 +814,15 @@ public final class HBaseExecutor {
      *                    single-value type (e.g. {@code String}, {@code Integer}, {@code Date}).
      *                    {@link Map} types are not supported. Must not be {@code null}.
      * @return the converted entity, or the type's default value if the result is empty
-     * @throws IllegalArgumentException if {@code targetType} is {@code null} or a {@link Map}, a scalar result contains more than one cell, or the
-     *         target bean declares multiple row-key properties, an unsupported row-key type, or a row-key property without both a getter and setter
-     * @throws NullPointerException if {@code result} is {@code null}
+     * @throws IllegalArgumentException if {@code result} or {@code targetType} is {@code null}, {@code targetType} is a {@link Map}, a scalar
+     *         result contains more than one cell, or the target bean declares multiple row-key properties, an unsupported row-key type, or a
+     *         row-key property without both a getter and setter
      * @throws UncheckedIOException if reading cells from {@code result} fails with an {@link IOException}
      * @see Result
      */
     public static <T> T toEntity(final Result result, final Class<T> targetType) {
+        N.checkArgNotNull(result, cs.result);
+
         return toValue(result, targetType);
     }
 
@@ -1398,13 +1400,14 @@ public final class HBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @return a new {@link Table} handle for {@code tableName}
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
      * @throws UncheckedIOException if obtaining the table from the connection fails with an {@link IOException}
      * @see Table
      * @see org.apache.hadoop.hbase.TableName
      */
     public Table getTable(final String tableName) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
+
         final TableName hbaseTableName = TableName.valueOf(tableName);
 
         if (logger.isDebugEnabled()) {
@@ -1536,12 +1539,12 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param rowKey the row key to check
      * @return {@code true} if the row has one or more cells, {@code false} otherwise
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
      */
     boolean exists(final String tableName, final Object rowKey) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         return exists(tableName, AnyGet.of(rowKey));
@@ -1562,15 +1565,17 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param get the Get operation to test for existence
+     * @param get the Get operation to test for existence; must not be {@code null}
      * @return {@code true} if the Get operation would return results, {@code false} otherwise
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code get}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code get} is {@code null}
      * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
      * @see Get
      */
     public boolean exists(final String tableName, final Get get) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(get, cs.get);
 
         final Table table = getTable(tableName);
 
@@ -1603,20 +1608,22 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param gets the list of Get operations to test for existence
+     * @param gets the list of Get operations to test for existence; must not be {@code null}
      * @return a list of Boolean values in the same order as {@code gets}, where the i-th entry
      *         is {@code true} if the i-th Get would match one or more cells, {@code false}
      *         otherwise; an empty input produces an empty list
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code gets} or a null
-     *         operation in that list
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code gets} is {@code null}
+     * @throws NullPointerException if the HBase client dereferences a null operation in {@code gets}
      * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
      * @see Get
      */
     public List<Boolean> exists(final String tableName, final List<Get> gets) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(gets, cs.gets);
 
-        if (gets != null && gets.isEmpty()) {
+        if (gets.isEmpty()) {
             return new ArrayList<>();
         }
 
@@ -1648,14 +1655,14 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param anyGet the AnyGet operation to test for existence; must not be {@code null}
      * @return {@code true} if the Get operation would return results, {@code false} otherwise
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyGet} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyGet} is {@code null}
      * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
      * @see AnyGet
      * @see #exists(String, Get)
      */
     public boolean exists(final String tableName, final AnyGet anyGet) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(anyGet, cs.anyGet);
@@ -1683,14 +1690,14 @@ public final class HBaseExecutor {
      * @param anyGets the collection of AnyGet operations to test for existence; must not be
      *        {@code null} and must not contain {@code null} elements
      * @return a list of Boolean values corresponding to each AnyGet operation
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyGets} is {@code null} or contains a {@code null} element
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyGets} is {@code null} or contains a {@code null} element
      * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
      * @see AnyGet
      * @see #exists(String, List)
      */
     public List<Boolean> exists(final String tableName, final Collection<AnyGet> anyGets) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         return exists(tableName, AnyGet.toGet(anyGets));
@@ -1707,12 +1714,12 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param rowKey the row key of the row to retrieve
      * @return the HBase Result containing the retrieved data, or a present-but-{@linkplain Result#isEmpty() empty} Result if the row does not exist
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      */
     Result get(final String tableName, final Object rowKey) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         return get(tableName, AnyGet.of(rowKey));
@@ -1733,16 +1740,18 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param get the Get operation specifying what data to retrieve
+     * @param get the Get operation specifying what data to retrieve; must not be {@code null}
      * @return the HBase Result containing the retrieved data, or empty Result if no data found
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code get}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code get} is {@code null}
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see Get
      * @see Result
      */
     public Result get(final String tableName, final Get get) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(get, cs.get);
 
         final Table table = getTable(tableName);
 
@@ -1773,21 +1782,23 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param gets the list of Get operations to execute
+     * @param gets the list of Get operations to execute; must not be {@code null}
      * @return a list of Results in the same order as {@code gets}; entries for rows that
      *         do not exist are present in the list but are {@linkplain Result#isEmpty() empty};
      *         an empty input produces an empty list
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code gets} or a null
-     *         operation in that list
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code gets} is {@code null}
+     * @throws NullPointerException if the HBase client dereferences a null operation in {@code gets}
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see Get
      * @see Result
      */
     public List<Result> get(final String tableName, final List<Get> gets) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(gets, cs.gets);
 
-        if (gets != null && gets.isEmpty()) {
+        if (gets.isEmpty()) {
             return new ArrayList<>();
         }
 
@@ -1822,14 +1833,14 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param anyGet the AnyGet operation specifying what data to retrieve; must not be {@code null}
      * @return the HBase Result containing the retrieved data, or a present-but-{@linkplain Result#isEmpty() empty} Result if the row does not exist
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyGet} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyGet} is {@code null}
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see AnyGet
      * @see #get(String, Get)
      */
     public Result get(final String tableName, final AnyGet anyGet) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(anyGet, cs.anyGet);
@@ -1858,14 +1869,14 @@ public final class HBaseExecutor {
      *        must not contain {@code null} elements
      * @return a list of Results positionally aligned with {@code anyGets}; entries for rows that
      *         do not exist are present in the list but are {@linkplain Result#isEmpty() empty}
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyGets} is {@code null} or contains a {@code null} element
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyGets} is {@code null} or contains a {@code null} element
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see AnyGet
      * @see #get(String, List)
      */
     public List<Result> get(final String tableName, final Collection<AnyGet> anyGets) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         return get(tableName, AnyGet.toGet(anyGets));
@@ -1885,14 +1896,14 @@ public final class HBaseExecutor {
      * @param rowKey the row key of the row to retrieve
      * @param targetType the class to convert the result to
      * @return the converted object of the specified type, or the type's default value if the row does not exist
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes; also if {@code targetType} is
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes; also if {@code targetType} is
      *         {@code null}, a result is requested as a {@link Map}, a scalar result contains more than one cell, or the target bean has invalid
      *         row-key metadata
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      */
     <T> T get(final String tableName, final Object rowKey, final Class<T> targetType) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         return get(tableName, AnyGet.of(rowKey), targetType);
@@ -1921,20 +1932,21 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table
-     * @param get the Get operation specifying what data to retrieve
+     * @param get the Get operation specifying what data to retrieve; must not be {@code null}
      * @param targetType the class to convert the result to
      * @return the converted object of the specified type, or null/default if no data found
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code get}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code targetType} is {@code null}, a result is requested as a {@link Map}, a scalar result contains more than one cell, or the
-     *         target bean has invalid row-key metadata
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code get} or {@code targetType} is {@code null}, a result is requested as a {@link Map}, a scalar result contains more
+     *         than one cell, or the target bean has invalid row-key metadata
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see #get(String, Get)
      * @see #toEntity(Result, Class)
      */
     public <T> T get(final String tableName, final Get get, final Class<T> targetType) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
+        N.checkArgNotNull(get, cs.get);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return toValue(get(tableName, get), targetType);
@@ -1957,23 +1969,24 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table
-     * @param gets the list of Get operations to execute
+     * @param gets the list of Get operations to execute; must not be {@code null}
      * @param targetType the class to convert each result to
      * @return a list of converted objects of the specified type. Empty results (rows that
      *         did not exist) are skipped, so the returned list may contain fewer elements
      *         than {@code gets} and does not necessarily correspond positionally to it.
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code gets} or a null
-     *         operation in that list
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code targetType} is {@code null}, a nonempty result is requested as a {@link Map}, a scalar result contains more than one cell,
-     *         or the target bean has invalid row-key metadata
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code gets} or {@code targetType} is {@code null}, a nonempty result is requested as a {@link Map}, a scalar result
+     *         contains more than one cell, or the target bean has invalid row-key metadata
+     * @throws NullPointerException if the HBase client dereferences a null operation in {@code gets}
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see #get(String, List)
      * @see #toEntity(Result, Class)
      */
     public <T> List<T> get(final String tableName, final List<Get> gets, final Class<T> targetType) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
+        N.checkArgNotNull(gets, cs.gets);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return toList(get(tableName, gets), targetType);
@@ -1998,15 +2011,15 @@ public final class HBaseExecutor {
      * @param anyGet the AnyGet operation specifying what data to retrieve; must not be {@code null}
      * @param targetType the class to convert the result to; must not be {@code null}
      * @return the converted object of the specified type
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyGet} is {@code null}; also if {@code targetType} is {@code null}, a result is requested as a {@link Map}, a scalar
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyGet} is {@code null}; also if {@code targetType} is {@code null}, a result is requested as a {@link Map}, a scalar
      *         result contains more than one cell, or the target bean has invalid row-key metadata
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see AnyGet
      * @see #get(String, Get, Class)
      */
     public <T> T get(final String tableName, final AnyGet anyGet, final Class<T> targetType) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(anyGet, cs.anyGet);
@@ -2039,15 +2052,15 @@ public final class HBaseExecutor {
      * @return a list of converted objects of the specified type. Empty results (rows that
      *         did not exist) are skipped, so the returned list may contain fewer elements
      *         than {@code anyGets} and does not necessarily correspond positionally to it.
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyGets} is {@code null} or contains a {@code null} element; also if {@code targetType} is {@code null}, a nonempty result is
-     *         requested as a {@link Map}, a scalar result contains more than one cell, or the target bean has invalid row-key metadata
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyGets} is {@code null} or contains a {@code null} element; also if {@code targetType} is {@code null}, a nonempty
+     *         result is requested as a {@link Map}, a scalar result contains more than one cell, or the target bean has invalid row-key metadata
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      * @see AnyGet
      * @see #get(String, List, Class)
      */
     public <T> List<T> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetType) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(anyGets, cs.anyGets);
@@ -2502,15 +2515,16 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param put the Put operation containing the data to store
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code put}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if HBase
-     *         rejects an empty mutation or a cell exceeds the configured maximum KeyValue size
+     * @param put the Put operation containing the data to store; must not be {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code put} is {@code null}; also if HBase rejects an empty mutation or a cell exceeds the configured maximum KeyValue size
      * @throws UncheckedIOException if acquiring the table or writing the supplied mutations fails with an {@link IOException}
      * @see Put
      */
     public void put(final String tableName, final Put put) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(put, cs.put);
 
         final Table table = getTable(tableName);
 
@@ -2542,18 +2556,19 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param puts the list of Put operations to execute
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code puts} or a null
-     *         operation in that list
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if HBase
-     *         rejects an empty mutation or a cell exceeds the configured maximum KeyValue size
+     * @param puts the list of Put operations to execute; must not be {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code puts} is {@code null}; also if HBase rejects an empty mutation or a cell exceeds the configured maximum KeyValue size
+     * @throws NullPointerException if the HBase client dereferences a null operation in {@code puts}
      * @throws UncheckedIOException if acquiring the table or writing the supplied mutations fails with an {@link IOException}
      * @see Put
      */
     public void put(final String tableName, final List<Put> puts) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(puts, cs.puts);
 
-        if (puts != null && puts.isEmpty()) {
+        if (puts.isEmpty()) {
             return;
         }
 
@@ -2586,15 +2601,15 @@ public final class HBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param anyPut the AnyPut operation containing the data to store; must not be {@code null}
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyPut} is {@code null}; also if HBase rejects a mutation with no cells or a cell exceeds the configured maximum KeyValue
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyPut} is {@code null}; also if HBase rejects a mutation with no cells or a cell exceeds the configured maximum KeyValue
      *         size
      * @throws UncheckedIOException if acquiring the table or writing the supplied mutations fails with an {@link IOException}
      * @see AnyPut
      * @see #put(String, Put)
      */
     public void put(final String tableName, final AnyPut anyPut) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(anyPut, cs.anyPut);
@@ -2621,15 +2636,15 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param anyPuts the collection of AnyPut operations to execute; must not be {@code null} and
      *        must not contain {@code null} elements
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyPuts} is {@code null} or contains a {@code null} element; also if HBase rejects a mutation with no cells or a cell exceeds
-     *         the configured maximum KeyValue size
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyPuts} is {@code null} or contains a {@code null} element; also if HBase rejects a mutation with no cells or a cell
+     *         exceeds the configured maximum KeyValue size
      * @throws UncheckedIOException if acquiring the table or writing the supplied mutations fails with an {@link IOException}
      * @see AnyPut
      * @see #put(String, List)
      */
     public void put(final String tableName, final Collection<AnyPut> anyPuts) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(anyPuts, cs.anyPuts);
@@ -2647,12 +2662,12 @@ public final class HBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param rowKey the row key of the row to delete
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if {@code rowKey} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if the
-     *         byte representation of {@code rowKey} is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
      */
     void delete(final String tableName, final Object rowKey) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         delete(tableName, AnyDelete.of(rowKey));
@@ -2677,14 +2692,16 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param delete the Delete operation specifying what data to remove
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code delete}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @param delete the Delete operation specifying what data to remove; must not be {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code delete} is {@code null}
      * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
      * @see Delete
      */
     public void delete(final String tableName, final Delete delete) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(delete, cs.delete);
 
         final Table table = getTable(tableName);
 
@@ -2715,18 +2732,20 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param deletes the list of Delete operations to execute
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code deletes} or a null
-     *         operation in that list
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @param deletes the list of Delete operations to execute; must not be {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code deletes} is {@code null}
+     * @throws NullPointerException if the HBase client dereferences a null operation in {@code deletes}
      * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
      * @throws UnsupportedOperationException if HBase tries to remove successful deletions from a list that does not support removal
      * @see Delete
      */
     public void delete(final String tableName, final List<Delete> deletes) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(deletes, cs.deletes);
 
-        if (deletes != null && deletes.isEmpty()) {
+        if (deletes.isEmpty()) {
             return;
         }
 
@@ -2758,14 +2777,14 @@ public final class HBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param anyDelete the AnyDelete operation specifying what data to remove; must not be {@code null}
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyDelete} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyDelete} is {@code null}
      * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
      * @see AnyDelete
      * @see #delete(String, Delete)
      */
     public void delete(final String tableName, final AnyDelete anyDelete) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(anyDelete, cs.anyDelete);
@@ -2791,14 +2810,14 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param anyDeletes the collection of AnyDelete operations to execute; must not be {@code null}
      *        and must not contain {@code null} elements
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code anyDeletes} is {@code null} or contains a {@code null} element
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code anyDeletes} is {@code null} or contains a {@code null} element
      * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
      * @see AnyDelete
      * @see #delete(String, List)
      */
     public void delete(final String tableName, final Collection<AnyDelete> anyDeletes) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         delete(tableName, AnyDelete.toDelete(anyDeletes));
@@ -2822,14 +2841,14 @@ public final class HBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param rm the AnyRowMutations containing the atomic mutations to perform; must not be {@code null}
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code rm} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rm} is {@code null}
      * @throws UncheckedIOException if acquiring the table or applying the row mutations fails with an {@link IOException}
      * @see AnyRowMutations
      * @see #mutateRow(String, RowMutations)
      */
     public void mutateRow(final String tableName, final AnyRowMutations rm) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(rm, cs.rm);
@@ -2854,14 +2873,16 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param rm the RowMutations containing the atomic mutations to perform
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code rm}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @param rm the RowMutations containing the atomic mutations to perform; must not be {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rm} is {@code null}
      * @throws UncheckedIOException if acquiring the table or applying the row mutations fails with an {@link IOException}
      * @see RowMutations
      */
     public void mutateRow(final String tableName, final RowMutations rm) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(rm, cs.rm);
 
         final Table table = getTable(tableName);
 
@@ -2890,14 +2911,14 @@ public final class HBaseExecutor {
      * @param append the AnyAppend operation specifying the values to append; must not be {@code null}
      * @return the post-append values when return-results is enabled; HBase may return
      *         {@code null} when {@link Append#setReturnResults(boolean)} is set to {@code false}
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code append} is {@code null}; also if HBase rejects a mutation with no cells
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code append} is {@code null}; also if HBase rejects a mutation with no cells
      * @throws UncheckedIOException if acquiring the table or appending the cell values fails with an {@link IOException}
      * @see AnyAppend
      * @see #append(String, Append)
      */
     public Result append(final String tableName, final AnyAppend append) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(append, cs.append);
@@ -2921,17 +2942,18 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param append the Append operation specifying the values to append
+     * @param append the Append operation specifying the values to append; must not be {@code null}
      * @return the post-append values when return-results is enabled; HBase may return
      *         {@code null} when {@link Append#setReturnResults(boolean)} is set to {@code false}
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code append}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if HBase
-     *         rejects an empty mutation
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code append} is {@code null}; also if HBase rejects an empty mutation
      * @throws UncheckedIOException if acquiring the table or appending the cell values fails with an {@link IOException}
      * @see Append
      */
     public Result append(final String tableName, final Append append) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(append, cs.append);
 
         final Table table = getTable(tableName);
 
@@ -2962,14 +2984,14 @@ public final class HBaseExecutor {
      * @param increment the AnyIncrement operation specifying the values to increment; must not be {@code null}
      * @return the post-increment values when return-results is enabled; callers that set
      *         {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on returned values
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code increment} is {@code null}; also if HBase rejects a mutation with no cells
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code increment} is {@code null}; also if HBase rejects a mutation with no cells
      * @throws UncheckedIOException if acquiring the table or incrementing the cell values fails with an {@link IOException}
      * @see AnyIncrement
      * @see #increment(String, Increment)
      */
     public Result increment(final String tableName, final AnyIncrement increment) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(increment, cs.increment);
@@ -2992,17 +3014,18 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param increment the Increment operation specifying the values to increment
+     * @param increment the Increment operation specifying the values to increment; must not be {@code null}
      * @return the post-increment values when return-results is enabled; callers that set
      *         {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on returned values
-     * @throws NullPointerException if {@code tableName} is {@code null}; also if the HBase client dereferences a null {@code increment}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if HBase
-     *         rejects an empty mutation
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code increment} is {@code null}; also if HBase rejects an empty mutation
      * @throws UncheckedIOException if acquiring the table or incrementing the cell values fails with an {@link IOException}
      * @see Increment
      */
     public Result increment(final String tableName, final Increment increment) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
+        N.checkArgNotNull(increment, cs.increment);
 
         final Table table = getTable(tableName);
 
@@ -3036,13 +3059,13 @@ public final class HBaseExecutor {
      * @param qualifier the column qualifier name (converted to bytes via {@link #toFamilyQualifierBytes(String)})
      * @param amount the amount to add (negative values decrement)
      * @return the value of the column after the increment
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier, final long amount)
             throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         return incrementColumnValue(tableName, rowKey, toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), amount);
@@ -3068,14 +3091,14 @@ public final class HBaseExecutor {
      * @param amount the amount to add (negative values decrement)
      * @param durability the durability level to use for the WAL write
      * @return the value of the column after the increment
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      * @see Durability
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier, final long amount,
             final Durability durability) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         return incrementColumnValue(tableName, rowKey, toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), amount, durability);
@@ -3099,13 +3122,13 @@ public final class HBaseExecutor {
      * @param qualifier the column qualifier bytes (used as-is)
      * @param amount the amount to add (negative values decrement)
      * @return the value of the column after the increment
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier, final long amount)
             throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         final Table table = getTable(tableName);
@@ -3140,14 +3163,14 @@ public final class HBaseExecutor {
      * @param amount the amount to add (negative values decrement)
      * @param durability the durability level to use for the WAL write
      * @return the value of the column after the increment
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      * @see Durability
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier, final long amount,
             final Durability durability) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         final Table table = getTable(tableName);
@@ -3180,12 +3203,12 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param rowKey the row key identifying the target region (converted via {@link #toRowKeyBytes(Object)})
      * @return a CoprocessorRpcChannel pointed at the region hosting {@code rowKey}
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
      * @throws UncheckedIOException if acquiring the table fails with an {@link IOException}
      * @see CoprocessorRpcChannel
      */
     public CoprocessorRpcChannel coprocessorService(final String tableName, final Object rowKey) throws UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         // The returned CoprocessorRpcChannel uses the underlying Connection (not the Table)
@@ -3225,9 +3248,8 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the per-region callable to execute
      * @return a map from region name bytes to the result returned by {@code callable} for that region
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code callable} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code callable} is {@code null}
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws RuntimeException if the coprocessor invocation throws a non-{@link IOException} {@link Throwable} (wrapped via
      *         {@code ExceptionUtil.toRuntimeException})
@@ -3236,6 +3258,7 @@ public final class HBaseExecutor {
      */
     public <T extends Service, R> Map<byte[], R> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
             final Object endRowKey, final Batch.Call<T, R> callable) throws IllegalArgumentException, UncheckedIOException {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(callable, cs.callable);
@@ -3283,9 +3306,8 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the per-region callable to execute
      * @param callback the callback that receives each region's result
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code callable} or {@code callback} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code callable} or {@code callback} is {@code null}
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws Exception if the coprocessor invocation throws a non-{@link IOException} {@link Throwable} : it is rethrown as-is if it is already an
      *         {@link Exception}, otherwise wrapped in a new {@link Exception} (an {@link Error} is always rethrown unchanged)
@@ -3295,6 +3317,7 @@ public final class HBaseExecutor {
      */
     public <T extends Service, R> void coprocessorService(final String tableName, final Class<T> service, final Object startRowKey, final Object endRowKey,
             final Batch.Call<T, R> callable, final Batch.Callback<R> callback) throws IllegalArgumentException, UncheckedIOException, Exception {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(callable, cs.callable);
@@ -3344,8 +3367,7 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @return a map of region names (byte arrays) to their corresponding response messages
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws Exception if the coprocessor execution throws a {@link Throwable} other than {@link IOException} : it is rethrown as-is if it is
      *         already an {@link Exception}, otherwise wrapped in a new {@link Exception} (an {@link Error} is always rethrown unchanged)
@@ -3354,6 +3376,7 @@ public final class HBaseExecutor {
      */
     public <R extends Message> Map<byte[], R> batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor,
             final Message request, final Object startRowKey, final Object endRowKey, final R responsePrototype) throws UncheckedIOException, Exception {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         final Table table = getTable(tableName);
@@ -3400,9 +3423,8 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @param callback the callback to receive response messages from each region
-     * @throws NullPointerException if {@code tableName} is {@code null}
-     * @throws IllegalArgumentException if {@code tableName} is empty or violates HBase's namespace or table-qualifier naming rules; also if
-     *         {@code callback} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code callback} is {@code null}
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws Exception if the coprocessor execution throws a {@link Throwable} other than {@link IOException} : it is rethrown as-is if it is
      *         already an {@link Exception}, otherwise wrapped in a new {@link Exception} (an {@link Error} is always rethrown unchanged)
@@ -3413,6 +3435,7 @@ public final class HBaseExecutor {
     public <R extends Message> void batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor, final Message request,
             final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
             throws IllegalArgumentException, UncheckedIOException, Exception {
+        N.checkArgNotNull(tableName, cs.tableName);
         TableName.valueOf(tableName);
 
         N.checkArgNotNull(callback, cs.callback);
@@ -3864,9 +3887,8 @@ public final class HBaseExecutor {
          * }</pre>
          *
          * @param entityToDelete the entity to delete; must not be {@code null}
-         * @throws IllegalArgumentException if {@code entityToDelete} is {@code null}, or the byte representation of its row-key value is empty
-         *         or exceeds 32,767 bytes
-         * @throws NullPointerException if the row-key value of {@code entityToDelete} is {@code null}
+         * @throws IllegalArgumentException if {@code entityToDelete} is {@code null}, its row-key value is {@code null}, or the byte
+         *         representation of its row-key value is empty or exceeds 32,767 bytes
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
          */
         @SuppressWarnings("unchecked")
@@ -3885,9 +3907,8 @@ public final class HBaseExecutor {
          *
          * @param entitiesToDelete the collection of entities to delete; {@code null} is treated as an
          *        empty collection and is a no-op
-         * @throws IllegalArgumentException if any element of {@code entitiesToDelete} is {@code null}, or the byte representation of an
-         *         entity's row-key value is empty or exceeds 32,767 bytes
-         * @throws NullPointerException if the row-key value of an element of {@code entitiesToDelete} is {@code null}
+         * @throws IllegalArgumentException if any element of {@code entitiesToDelete} is {@code null}, an element's row-key value is
+         *         {@code null}, or the byte representation of an entity's row-key value is empty or exceeds 32,767 bytes
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
          */
         @SuppressWarnings("unchecked")
@@ -3903,9 +3924,8 @@ public final class HBaseExecutor {
          * mapper.deleteByRowKey("user123");   // void; row "user123" removed (no-op if absent)
          * }</pre>
          *
-         * @param rowKey the row key of the entity to delete
-         * @throws NullPointerException if a row key converts to {@code null}
-         * @throws IllegalArgumentException if a converted row key is empty or exceeds 32,767 bytes
+         * @param rowKey the row key of the entity to delete; must not be {@code null}
+         * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
          */
         public void deleteByRowKey(final K rowKey) throws UncheckedIOException {
@@ -3924,8 +3944,7 @@ public final class HBaseExecutor {
          *
          * @param rowKeys the collection of row keys to delete; {@code null} is treated as an empty
          *        collection and is a no-op
-         * @throws NullPointerException if a row key converts to {@code null}
-         * @throws IllegalArgumentException if a converted row key is empty or exceeds 32,767 bytes
+         * @throws IllegalArgumentException if a row key is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
          */
         public void deleteByRowKey(final Collection<? extends K> rowKeys) throws UncheckedIOException {

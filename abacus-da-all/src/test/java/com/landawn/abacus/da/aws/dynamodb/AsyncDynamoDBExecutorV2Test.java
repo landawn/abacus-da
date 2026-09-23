@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -822,6 +823,20 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         BatchGetItemRequest batchGetItemRequest = BatchGetItemRequest.builder().build();
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchGetItem((BatchGetItemRequest) null, Map.class));
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchGetItem(batchGetItemRequest, (Class<?>) null));
+    }
+
+    @Test
+    public void testRequestOverloads_NullRequestThrowsIllegalArgumentExceptionEagerly() {
+        // A null request object is rejected synchronously (before any future is built) with IAE — the same
+        // exception type as the batchGetItem/list/query/stream/scan request overloads and the Mapper request overloads.
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.getItem((GetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.getItem((GetItemRequest) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchGetItem((BatchGetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.putItem((PutItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchWriteItem((BatchWriteItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.updateItem((UpdateItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.deleteItem((DeleteItemRequest) null));
+        verifyNoInteractions(mockDynamoDbAsyncClient);
     }
 
     @Test

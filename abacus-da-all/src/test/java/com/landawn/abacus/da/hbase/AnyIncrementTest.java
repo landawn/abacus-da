@@ -284,14 +284,31 @@ public class AnyIncrementTest extends TestBase {
     }
 
     /**
-     * {@code AnyIncrement.add(Cell)} is a straight delegation to {@code Increment.add(Cell)}, which
-     * dereferences the cell immediately; the driver's {@code NullPointerException} is the documented
-     * contract. ({@code AnyAppend.add(Cell)} deliberately differs -- it inspects the cell itself and
-     * so rejects {@code null} with an {@code IllegalArgumentException}.)
+     * {@code AnyIncrement.add(Cell)} validates the cell up front, so a {@code null} cell is rejected
+     * with an {@code IllegalArgumentException} -- the same contract as {@code AnyPut}/{@code AnyDelete}/
+     * {@code AnyAppend.add(Cell)}.
      */
     @Test
-    public void testAdd_nullCell_throwsNpe() {
+    public void testAdd_nullCell_throwsIae() {
         AnyIncrement inc = AnyIncrement.of("row");
-        assertThrows(NullPointerException.class, () -> inc.add((Cell) null));
+        assertThrows(IllegalArgumentException.class, () -> inc.add((Cell) null));
+        assertEquals(0, inc.size());
+    }
+
+    /**
+     * A {@code null} row key, family map or source {@code Increment} is rejected with an
+     * {@code IllegalArgumentException} by every {@code of(...)} overload (previously some overloads
+     * leaked HBase's {@code NullPointerException}).
+     */
+    @Test
+    public void testOf_nullArguments_throwIae() {
+        final java.util.NavigableMap<byte[], java.util.List<Cell>> familyMap = new java.util.TreeMap<>(Bytes.BYTES_COMPARATOR);
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((Object) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null, 1L, familyMap));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(Bytes.toBytes("r"), 1L, null));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((org.apache.hadoop.hbase.client.Increment) null));
     }
 }

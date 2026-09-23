@@ -2252,9 +2252,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objList collection of entities to insert
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
-     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2285,9 +2284,8 @@ public final class MongoCollectionMapper<T> {
      * @param objList collection of entities to insert
      * @param options additional options for the insert operation (null uses defaults)
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
-     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3000,9 +2998,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param entities collection of entities to insert in bulk
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3032,9 +3029,8 @@ public final class MongoCollectionMapper<T> {
      * @param entities collection of entities to insert in bulk
      * @param options additional options for the bulk write operation (null uses defaults)
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
-     *         array of String name/value pairs
-     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error

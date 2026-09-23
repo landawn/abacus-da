@@ -27,6 +27,7 @@ import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.io.TimeRange;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.N;
 
 /**
@@ -130,11 +131,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the append operation
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyAppend(final Object rowKey) {
-        super(new Append(toRowKeyBytes(rowKey)));
+        super(new Append(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
         append = (Append) mutation;
     }
 
@@ -143,11 +143,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * for the given byte-array row key.
      *
      * @param rowKey the row key as a byte array; must not be {@code null}
-     * @throws NullPointerException if {@code rowKey} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty or longer than 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      */
     AnyAppend(final byte[] rowKey) {
-        super(new Append(rowKey));
+        super(new Append(N.checkArgNotNull(rowKey, cs.rowKey)));
         append = (Append) mutation;
     }
 
@@ -191,11 +190,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param rowKey the row key as a byte array
      * @param timestamp the timestamp to apply to every cell in this append
      * @param familyMap a pre-populated map of column families to their cells
-     * @throws NullPointerException if {@code rowKey} or {@code familyMap} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
     AnyAppend(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
-        super(new Append(rowKey, timestamp, familyMap));
+        super(new Append(N.checkArgNotNull(rowKey, cs.rowKey), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
         append = (Append) mutation;
     }
 
@@ -204,10 +202,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * HBase {@link Append}, so subsequent modifications do not touch the original.
      *
      * @param appendToCopy the existing {@link Append} to copy
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code appendToCopy} is {@code null}
      */
     AnyAppend(final Append appendToCopy) {
-        super(new Append(appendToCopy));
+        super(new Append(N.checkArgNotNull(appendToCopy, cs.appendToCopy)));
         append = (Append) mutation;
     }
 
@@ -224,13 +222,12 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * append.addColumn("logs", "activity", "login;");        // returns the same AnyAppend (for chaining); queues the append
      *
      * AnyAppend numKey = AnyAppend.of(1001L);                // returns a new AnyAppend; numeric key encoded to bytes
-     * AnyAppend.of((Object) null);                           // throws NullPointerException (row bytes resolve to null)
+     * AnyAppend.of((Object) null);                           // throws IllegalArgumentException (null row key)
      * }</pre>
      *
      * @param rowKey the row key to append data to; converted to bytes automatically
      * @return a new AnyAppend instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @see #addColumn(String, String, Object)
      */
     public static AnyAppend of(final Object rowKey) {
@@ -250,14 +247,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * AnyAppend append = AnyAppend.of(keyBytes);             // returns a new AnyAppend; row = keyBytes
      * append.addColumn("logs", "activity", "login;");        // returns the same AnyAppend (for chaining)
      *
-     * AnyAppend.of((byte[]) null);                           // throws NullPointerException
+     * AnyAppend.of((byte[]) null);                           // throws IllegalArgumentException (null row key)
      * AnyAppend.of(new byte[0]);                             // throws IllegalArgumentException (empty row key)
      * }</pre>
      *
      * @param rowKey the row key as a byte array; must not be {@code null} or empty
      * @return a new AnyAppend instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty or longer than 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      * @see #of(Object)
      */
     public static AnyAppend of(final byte[] rowKey) {
@@ -341,7 +337,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * AnyAppend append = AnyAppend.of(Bytes.toBytes("user123"), ts, familyMap);
      * // returns a new AnyAppend; row = "user123", timestamp = ts
      *
-     * AnyAppend.of(Bytes.toBytes("k"), ts, null);            // throws NullPointerException (familyMap is null)
+     * AnyAppend.of(Bytes.toBytes("k"), ts, null);            // throws IllegalArgumentException (familyMap is null)
      * AnyAppend.of(new byte[0], ts, familyMap);              // throws IllegalArgumentException (empty row key)
      * }</pre>
      *
@@ -349,8 +345,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param timestamp the timestamp for all append operations (milliseconds since epoch)
      * @param familyMap a map of column family names to lists of cells to append
      * @return a new AnyAppend instance configured with the specified data
-     * @throws NullPointerException if {@code rowKey} or {@code familyMap} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} is empty
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      * @see #of(Object)
      * @see org.apache.hadoop.hbase.Cell
      */
@@ -377,12 +372,12 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * assert append.val() != existingAppend;                 // true: the wrapped Append is a distinct copy
      * append.addColumn("logs", "activity", "logout;");       // returns the same AnyAppend; does not mutate existingAppend
      *
-     * AnyAppend.of((Append) null);                           // throws NullPointerException
+     * AnyAppend.of((Append) null);                           // throws IllegalArgumentException
      * }</pre>
      *
      * @param appendToCopy the existing HBase {@link Append} to copy; must not be {@code null}
      * @return a new AnyAppend instance backed by a fresh Append copied from {@code appendToCopy}
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code appendToCopy} is {@code null}
      * @see org.apache.hadoop.hbase.client.Append
      */
     public static AnyAppend of(final Append appendToCopy) {
@@ -648,7 +643,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @see #addColumn(String, String, Object)
      */
     public AnyAppend add(final Cell cell) {
-        N.checkArgument(cell != null, "cell cannot be null");
+        N.checkArgNotNull(cell, cs.cell);
 
         N.checkArgument(CellUtil.matchingRows(cell, append.getRow()), "The cell row does not match this append's row");
 

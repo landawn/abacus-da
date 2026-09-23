@@ -20,6 +20,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 import org.apache.hadoop.hbase.client.Consistency;
+import org.apache.hadoop.hbase.client.Cursor;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.IsolationLevel;
 import org.apache.hadoop.hbase.client.Scan;
@@ -90,6 +91,16 @@ public class AnyScanTest extends TestBase {
         assertNotNull(scan);
         assertNotNull(scan.val());
         assertArrayEquals(Bytes.toBytes("row-from-get"), scan.getStartRow());
+    }
+
+    @Test
+    public void testOf_nullGet_throwsIae() {
+        assertThrows(IllegalArgumentException.class, () -> AnyScan.of((Get) null));
+    }
+
+    @Test
+    public void testCreateScanFromCursor_nullCursor_throwsIae() {
+        assertThrows(IllegalArgumentException.class, () -> AnyScan.createScanFromCursor((Cursor) null));
     }
 
     // ---------------------------------------------------------------------

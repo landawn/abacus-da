@@ -101,11 +101,11 @@ public class AnyOperationWithAttributesTest extends TestBase {
     }
 
     @Test
-    public void testSetId_nullId_throwsNpe() {
-        // HBase's OperationWithAttributes.setId(null) throws NPE; this is the
-        // observable behavior of the wrapped Operation.
+    public void testSetId_nullId_throwsIae() {
+        // A null id is rejected up front instead of surfacing HBase's NPE from Bytes.toBytes(null).
         AnyGet get = AnyGet.of("row");
-        assertThrows(NullPointerException.class, () -> get.setId(null));
+        assertThrows(IllegalArgumentException.class, () -> get.setId(null));
+        assertNull(get.getId());
     }
 
     @Test

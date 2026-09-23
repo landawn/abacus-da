@@ -199,7 +199,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     /**
      * Constructs a new CqlBuilder with the specified dialect (naming policy + parameter style).
      *
-     * @param sqlDialect the dialect for this builder
+     * @param sqlDialect the dialect for this builder; {@code null} is accepted and, as in the parent builder, treated as
+     *        an all-defaults dialect ({@code SNAKE_CASE} naming, {@code RAW_SQL} parameter style)
      */
     protected CqlBuilder(final SqlDialect sqlDialect) {
         super(sqlDialect);
@@ -1464,9 +1465,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * Emits the {@code SELECT} or {@code DELETE} keyword (plus any select modifier) that precedes the FROM clause.
      * Unlike the parent builder, DELETE is accepted because CQL supports {@code DELETE col1, col2 FROM tbl}.
      *
-     * @param tableName the single table reference already validated by {@code from(...)}
+     * @param tableName the single table reference already validated by {@code from(...)}; must not be {@code null}
      * @throws IllegalStateException if the operation is not SELECT or DELETE, {@code from(...)} was already called for
      *         the current query segment, or a SELECT has no columns
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      */
     @Override
     protected void appendOperationBeforeFrom(final String tableName) {
@@ -1481,6 +1483,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         if (_op == OperationType.QUERY && N.isEmpty(_propOrColumnNames) && N.isEmpty(_propOrColumnNameAliases) && N.isEmpty(_multiSelects)) {
             throw new IllegalStateException("No columns selected. Call select() to specify columns before building query");
         }
+
+        N.checkArgNotNull(tableName, cs.tableName);
 
         // CQL has no table aliases. from(...) validates the complete reference before rendering, so
         // quoted identifiers containing spaces must remain intact rather than being split as aliases.
@@ -1510,8 +1514,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * Renders {@code cond} using Cassandra CQL relation syntax; relations of a junction are joined without SQL-style
      * parentheses.
      *
-     * @param cond the condition to render
-     * @throws IllegalArgumentException if {@code cond} or a nested condition is not supported by CQL (a binary
+     * @param cond the condition to render; must not be {@code null}
+     * @throws IllegalArgumentException if {@code cond} is {@code null}; if {@code cond} or a nested condition is not supported by CQL (a binary
      *         operator other than {@code =}, {@code !=}, {@code >}, {@code >=}, {@code <}, {@code <=} or {@code LIKE};
      *         {@code LIKE} in an IF clause; BETWEEN, NOT BETWEEN, NOT IN, a sub-query, HAVING or another clause
      *         condition; a composable predicate such as NOT or EXISTS; an OR junction; or an unrecognized condition
@@ -1521,6 +1525,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Override
     protected void appendCondition(final Condition cond) {
+        N.checkArgNotNull(cond, cs.cond);
+
         if (cond instanceof final Binary binary) {
             final String propName = binary.propName();
             final Operator operator = binary.operator();

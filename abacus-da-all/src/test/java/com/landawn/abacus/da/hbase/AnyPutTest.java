@@ -415,15 +415,33 @@ public class AnyPutTest extends TestBase {
     }
 
     /**
-     * {@code AnyPut.add(Cell)} is a straight delegation to {@code Put.add(Cell)}, which dereferences
-     * the cell immediately; the driver's {@code NullPointerException} is the documented contract.
-     * ({@code AnyAppend.add(Cell)} deliberately differs -- it inspects the cell itself and so
-     * rejects {@code null} with an {@code IllegalArgumentException}.)
+     * {@code AnyPut.add(Cell)} validates the cell up front, so a {@code null} cell is rejected with an
+     * {@code IllegalArgumentException} -- the same contract as {@code AnyDelete}/{@code AnyIncrement}/
+     * {@code AnyAppend.add(Cell)}.
      */
     @Test
-    public void testAdd_nullCell_throwsNpe() {
+    public void testAdd_nullCell_throwsIae() {
         AnyPut put = AnyPut.of("row");
-        assertThrows(NullPointerException.class, () -> put.add((Cell) null));
+        assertThrows(IllegalArgumentException.class, () -> put.add((Cell) null));
+        assertEquals(0, put.size());
+    }
+
+    /**
+     * A {@code null} row key or source {@code Put} is rejected with an {@code IllegalArgumentException}
+     * by every {@code of(...)} overload (previously some overloads leaked HBase's
+     * {@code NullPointerException}).
+     */
+    @Test
+    public void testOf_nullArguments_throwIae() {
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((Object) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((Object) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((Object) null, 0, 1, 1L));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((Object) null, true));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((Object) null, 1L, true));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((java.nio.ByteBuffer) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((java.nio.ByteBuffer) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> AnyPut.of((org.apache.hadoop.hbase.client.Put) null));
     }
 
     // ---------------------------------------------------------------------

@@ -54,7 +54,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * direct use.
      *
      * @param cassandraExecutor the synchronous executor to delegate to; must not be {@code null}
-     * @throws NullPointerException if {@code cassandraExecutor} is {@code null}
+     * @throws IllegalArgumentException if {@code cassandraExecutor} is {@code null}
      */
     AsyncCassandraExecutor(final CassandraExecutor cassandraExecutor) {
         super(cassandraExecutor);
@@ -190,8 +190,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Statement<?> none = SimpleStatement.newInstance("SELECT id FROM users WHERE id = ?", -1);
      * long n = async.stream(none, (defs, row) -> row.getInt("id")).map(Stream::count).get(); // n == 0
      *
-     * // Edge: a null statement is rejected synchronously by the driver's request dispatch
-     * // (no request processor matches a null statement); no future is created.
+     * // Edge: a null statement is rejected synchronously (before the row mapper is checked);
+     * // no future is created.
      * async.stream((Statement<?>) null, mapper);        // throws IllegalArgumentException
      * }</pre>
      *
@@ -491,20 +491,21 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Statement<?> none = SimpleStatement.newInstance("SELECT id FROM users WHERE id = ?", -1);
      * boolean hasRows = async.execute(none).get().iterator().hasNext(); // returns false
      *
-     * // Edge: a null statement is rejected synchronously by the driver's request dispatch
-     * // (no request processor matches a null statement); no future is created.
+     * // Edge: a null statement is rejected synchronously; no future is created.
      * async.execute((Statement<?>) null);               // throws IllegalArgumentException
      * }</pre>
      *
      * @param statement the CQL statement to execute
      * @return a future that completes with a synchronous-style {@link ResultSet}
-     * @throws IllegalArgumentException if {@code statement} is {@code null} (no driver request processor accepts it)
+     * @throws IllegalArgumentException if {@code statement} is {@code null}
      * @throws RuntimeException if the driver rejects request submission (for example, the statement names an
      *         unknown execution profile); failures after submission, including execution on a closed session, are
      *         reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final Statement<?> statement) {
+        N.checkArgNotNull(statement, cs.statement);
+
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(statement).toCompletableFuture()).map(ResultSets::wrap);
     }
 }

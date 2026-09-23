@@ -295,7 +295,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
      *         service limits, or a returned item cannot be converted to the requested Java representation. A null {@code getItemRequest} is also
-     *         rejected inside the submitted task and reported through the future.</p>
+     *         rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the item as a Map of attribute names to values,
@@ -471,7 +471,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
      *         service limits, or a returned item cannot be converted to the requested Java representation. A null {@code getItemRequest} is also
-     *         rejected inside the submitted task and reported through the future.</p>
+     *         rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param <T> the type to convert the item to
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
@@ -1010,7 +1010,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>The returned future completes exceptionally if the SDK cannot send the putItem request, DynamoDB rejects its table, key, conditions, or
      *         service limits, or a returned item cannot be converted to the requested Java representation. A null {@code putItemRequest} is also
-     *         rejected inside the submitted task and reported through the future.</p>
+     *         rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param putItemRequest the complete PutItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the PutItemResult with operation results
@@ -1210,7 +1210,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>The returned future completes exceptionally if the SDK cannot send the batchWriteItem request, DynamoDB rejects its table, key,
      *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code
-     *         batchWriteItemRequest} is also rejected inside the submitted task and reported through the future.</p>
+     *         batchWriteItemRequest} is also rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported
+     *         through the future.</p>
      *
      * @param batchWriteItemRequest the complete BatchWriteItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the BatchWriteItemResult with consumed capacity,
@@ -1397,7 +1398,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request, DynamoDB rejects its table, key, conditions,
      *         or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code updateItemRequest}
-     *         is also rejected inside the submitted task and reported through the future.</p>
+     *         is also rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param updateItemRequest the complete UpdateItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the UpdateItemResult with operation results
@@ -1570,7 +1571,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request, DynamoDB rejects its table, key, conditions,
      *         or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code deleteItemRequest}
-     *         is also rejected inside the submitted task and reported through the future.</p>
+     *         is also rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param deleteItemRequest the complete DeleteItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the DeleteItemResult with operation results

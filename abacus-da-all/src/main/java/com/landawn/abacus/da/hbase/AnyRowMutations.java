@@ -26,6 +26,7 @@ import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.N;
 
 /**
@@ -295,7 +296,7 @@ public final class AnyRowMutations implements Row {
      * @see #add(List)
      */
     public AnyRowMutations add(final Mutation mutation) throws IOException {
-        N.checkArgument(mutation != null, "mutation cannot be null");
+        N.checkArgNotNull(mutation, cs.mutation);
 
         rowMutations.add(mutation);
 
@@ -347,10 +348,10 @@ public final class AnyRowMutations implements Row {
      * @see #add(Mutation)
      */
     public AnyRowMutations add(final List<? extends Mutation> mutations) throws IOException {
-        N.checkArgument(mutations != null, "mutations cannot be null");
+        N.checkArgNotNull(mutations, cs.mutations);
 
         for (final Mutation mutation : mutations) {
-            N.checkArgument(mutation != null, "mutation cannot be null");
+            N.checkArgNotNull(mutation, cs.mutation);
         }
 
         rowMutations.add(mutations);

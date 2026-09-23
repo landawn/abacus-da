@@ -602,6 +602,20 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testInsertNullElementIsIllegalArgument() {
+        // A null element is rejected like the update family (updateOne/updateMany(filter, objList)):
+        // IllegalArgumentException, before anything is sent to the driver.
+        final List<Document> docs = Arrays.asList(new Document("id", 1), null);
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs, new InsertManyOptions()));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs, null));
+        verify(mockCollection, never()).insertMany(anyList());
+        verify(mockCollection, never()).bulkWrite(anyList());
+    }
+
+    @Test
     public void testUpdateOneWithStringObjectId() {
         String objectId = "507f1f77bcf86cd799439011";
         Document update = new Document("name", "updated");

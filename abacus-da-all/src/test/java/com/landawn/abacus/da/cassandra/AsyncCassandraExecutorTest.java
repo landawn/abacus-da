@@ -123,7 +123,22 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
     @Test
     public void testConstructor_rejectsNullExecutor() {
-        assertThrows(NullPointerException.class, () -> new AsyncCassandraExecutor(null));
+        assertThrows(IllegalArgumentException.class, () -> new AsyncCassandraExecutor(null));
+    }
+
+    @Test
+    public void testNullRequiredArguments_ThrowIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> async.execute((Statement<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.execute((com.landawn.abacus.query.AbstractQueryBuilder.SP) null));
+        assertThrows(IllegalArgumentException.class, () -> async.stream(Object.class, (Statement<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.get((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.get((Class<Object>) null, Arrays.asList("id"), 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.gett((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.gett((Class<Object>) null, Arrays.asList("id"), 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.exists((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.exists((Class<?>) null, (com.landawn.abacus.query.condition.Condition) null));
+        assertThrows(IllegalArgumentException.class, () -> async.delete((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> async.delete((Class<?>) null, Arrays.asList("name"), 1L));
     }
 
     @Test

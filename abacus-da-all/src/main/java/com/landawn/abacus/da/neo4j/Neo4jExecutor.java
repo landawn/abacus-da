@@ -87,26 +87,25 @@ import com.landawn.abacus.util.u.Optional;
  * conventional.</p>
  *
  * <h2>Null Arguments</h2>
- * <p>This executor is a pass-through facade. Apart from the {@link SessionFactory} handed to the
- * constructor and the {@code action} callback of {@link #run(Consumer)} / {@link #call(Function)}
- * &mdash; both rejected with an {@link IllegalArgumentException} &mdash; arguments are forwarded
- * unvalidated to the OGM {@link Session}, so a {@code null} is reported by whatever that session
- * does with it. With Neo4j-OGM 5.x that is:</p>
+ * <p>A {@code null} argument that Neo4j-OGM can never accept is rejected up front with an
+ * {@link IllegalArgumentException}, before a session is borrowed: the {@link SessionFactory} handed to
+ * the constructor, the {@code action} callback of {@link #run(Consumer)} / {@link #call(Function)},
+ * every {@code targetClass} (entity or query target class), the {@code id} of a {@code load} overload,
+ * a single {@link Filter}, the saved/deleted {@code object}, the {@code filters} argument of
+ * {@link #count(Class, Iterable)}, and the {@code cypher} and {@code parameters} of the query methods.
+ * The remaining arguments are forwarded unvalidated to the OGM {@link Session}. With Neo4j-OGM 5.x a
+ * {@code null} there is:</p>
  * <ul>
- *   <li>a {@link NullPointerException} for a {@code null} entity class, saved/deleted
- *       {@code object}, {@code ids} collection, single {@link Filter}, {@code filters} argument of
- *       {@link #count(Class, Iterable)}, or the {@code sortOrder} of an {@code ids}/{@code objects}
- *       overload;</li>
- *   <li>for a {@code null} {@code id} of a {@code load} overload, a {@link NullPointerException} when the
- *       entity class declares a primary index, otherwise an {@link IllegalArgumentException} (a native graph ID
- *       must be a {@code Long});</li>
- *   <li>a plain {@link RuntimeException} &mdash; <i>not</i> an {@link IllegalArgumentException}
- *       &mdash; for a {@code null} {@code cypher}, {@code parameters} map, or query target
- *       class;</li>
  *   <li>silently accepted, with the meaning documented on that parameter, for a {@code null}
  *       {@link Filters} (no filtering, so <i>every</i> node of the type is loaded),
- *       {@link Pagination} (no paging), {@code objects} collection (returned as-is) or
- *       {@code possibleEntity} in {@link #getGraphId(Object)} ({@code null} is returned).</li>
+ *       {@link Pagination} (no paging), {@link SortOrder} of a class-based {@code loadAll} overload (no
+ *       ordering), {@code objects} collection (returned as-is) or {@code possibleEntity} in
+ *       {@link #getGraphId(Object)} ({@code null} is returned);</li>
+ *   <li>not rejected by this executor for the {@code ids} collection or the {@link SortOrder} of an
+ *       {@code ids}/{@code objects} overload, because OGM tolerates it on some paths (an unmapped
+ *       {@code targetClass} returns an empty collection before either is read, and a {@code null} or empty
+ *       {@code objects} collection is returned before {@code sortOrder} is read); otherwise OGM typically
+ *       fails with a {@link NullPointerException}.</li>
  * </ul>
  *
  * <p><b>Usage Examples:</b></p>
@@ -381,12 +380,16 @@ public final class Neo4jExecutor {
      * @param id the configured primary-index value, or a native graph ID for an entity class
      *           without a primary index
      * @return the loaded entity, or {@code null} if no node with that ID exists
+     * @throws IllegalArgumentException if {@code targetClass} or {@code id} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #load(Class, Serializable, int)
      * @see #loadAll(Class, Collection)
      */
-    public <T> T load(final Class<T> targetClass, final Serializable id) {
+    public <T> T load(final Class<T> targetClass, final Serializable id) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(id, cs.id);
+
         final Session session = getSession();
 
         try {
@@ -419,12 +422,16 @@ public final class Neo4jExecutor {
      * @param depth the depth of relationships to traverse: {@code 0} for the node only, a positive
      *              integer for that many hops, or {@code -1} for unlimited
      * @return the loaded entity, or {@code null} if no node with that ID exists
+     * @throws IllegalArgumentException if {@code targetClass} or {@code id} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #load(Class, Serializable)
      * @see #loadAll(Class, Collection, int)
      */
-    public <T> T load(final Class<T> targetClass, final Serializable id, final int depth) {
+    public <T> T load(final Class<T> targetClass, final Serializable id, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(id, cs.id);
+
         final Session session = getSession();
 
         try {
@@ -461,12 +468,15 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @return collection of loaded node entities, or an empty collection if no nodes are found
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, int)
      * @see #load(Class, Serializable)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -501,12 +511,16 @@ public final class Neo4jExecutor {
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, may be empty if no nodes found
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection)
      * @see #load(Class, Serializable, int)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -543,12 +557,16 @@ public final class Neo4jExecutor {
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @return collection of loaded node entities sorted as specified, may be empty if no nodes found
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -584,12 +602,16 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, sorted as specified
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -625,12 +647,16 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return collection of loaded node entities for the specified page, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -667,12 +693,16 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships for the specified page
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -710,6 +740,7 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return collection of loaded, sorted node entities for the specified page
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, SortOrder, Pagination, int)
@@ -717,7 +748,9 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder,
-            final Pagination pagination) {
+            final Pagination pagination) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -758,6 +791,7 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded, sorted node entities with relationships for the specified page
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, SortOrder, Pagination)
@@ -765,7 +799,9 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder,
-            final Pagination pagination, final int depth) {
+            final Pagination pagination, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1141,12 +1177,15 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @return collection of all nodes of the specified type, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, int)
      * @see #loadAll(Class, Pagination)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1177,12 +1216,15 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of all nodes of the specified type with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class)
      * @see #loadAll(Class, Pagination, int)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1213,14 +1255,17 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @return collection of all sorted nodes of the specified type, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1249,15 +1294,18 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of all sorted nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1291,12 +1339,15 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of nodes of the specified type, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1329,12 +1380,15 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1365,17 +1419,20 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of sorted nodes of the specified type, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final Pagination pagination) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1406,18 +1463,22 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of sorted nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final Pagination pagination, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1449,14 +1510,18 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
      * @return collection of nodes matching the filter criteria, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, int)
      * @see org.neo4j.ogm.cypher.Filter
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1486,15 +1551,19 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filter
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1527,16 +1596,20 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
-     * @param sortOrder the sort order specification for results
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @return collection of filtered, sorted nodes, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, SortOrder, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1567,17 +1640,22 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
-     * @param sortOrder the sort order specification for results
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered, sorted nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, SortOrder)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1608,17 +1686,21 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final Pagination pagination) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1648,18 +1730,23 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, Pagination)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final Pagination pagination, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1692,11 +1779,12 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
-     * @param sortOrder the sort order specification for results
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered, sorted nodes, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, SortOrder, Pagination, int)
@@ -1704,7 +1792,11 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final Pagination pagination)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1736,12 +1828,13 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes
-     * @param sortOrder the sort order specification for results
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, SortOrder, Pagination)
@@ -1749,7 +1842,11 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final Pagination pagination, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filter, cs.filter);
+
         final Session session = getSession();
 
         try {
@@ -1787,13 +1884,16 @@ public final class Neo4jExecutor {
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
      * @return collection of entities matching the combined filter expression, possibly empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, int)
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filters
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1829,12 +1929,15 @@ public final class Neo4jExecutor {
      *                or empty, in which case every node of {@code targetClass} is loaded
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters)
      * @see org.neo4j.ogm.cypher.Filters
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1871,15 +1974,18 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @return collection of filtered, sorted nodes, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, SortOrder, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1914,16 +2020,20 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered, sorted nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, SortOrder)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -1960,13 +2070,16 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final Pagination pagination) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -2003,13 +2116,17 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, Pagination)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final Pagination pagination, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -2045,10 +2162,11 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered, sorted nodes, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, SortOrder, Pagination, int)
@@ -2056,7 +2174,10 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final Pagination pagination)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -2092,11 +2213,12 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, SortOrder, Pagination)
@@ -2104,8 +2226,10 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final Pagination pagination,
-            final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final Pagination pagination, final int depth)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -2139,11 +2263,14 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
-     *               entities
+     *               entities; must not be {@code null}
+     * @throws IllegalArgumentException if {@code object} is {@code null}
      * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object, int)
      */
-    public void save(final Object object) {
+    public void save(final Object object) throws IllegalArgumentException {
+        N.checkArgNotNull(object, cs.object);
+
         final Session session = getSession();
 
         try {
@@ -2175,13 +2302,16 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
-     *               entities
+     *               entities; must not be {@code null}
      * @param depth the depth of related entities to traverse and persist: {@code 0} for the node
      *              only, a positive integer for that many hops, or {@code -1} for unlimited
+     * @throws IllegalArgumentException if {@code object} is {@code null}
      * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object)
      */
-    public void save(final Object object, final int depth) {
+    public void save(final Object object, final int depth) throws IllegalArgumentException {
+        N.checkArgNotNull(object, cs.object);
+
         final Session session = getSession();
 
         try {
@@ -2213,11 +2343,14 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
-     *               entities to delete
+     *               entities to delete; must not be {@code null}
+     * @throws IllegalArgumentException if {@code object} is {@code null}
      * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #deleteAll(Class)
      */
-    public void delete(final Object object) {
+    public void delete(final Object object) throws IllegalArgumentException {
+        N.checkArgNotNull(object, cs.object);
+
         final Session session = getSession();
 
         try {
@@ -2250,10 +2383,13 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param targetClass the OGM-mapped entity class to delete
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #delete(Object)
      */
-    public void deleteAll(final Class<?> targetClass) {
+    public void deleteAll(final Class<?> targetClass) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {
@@ -2301,14 +2437,18 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return an {@link Optional} describing the single mapped result, or an empty {@code Optional} if
      *         the query returns no rows
-     * @throws RuntimeException if {@code cypher} is {@code null} or empty, {@code parameters} is {@code null}, or
-     *         {@code targetClass} is {@code null} or a void type (Neo4j-OGM rejects these with a plain
-     *         {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; if the query
-     *         returns more than one row; or if the result cannot be mapped to {@code targetClass}
+     * @throws IllegalArgumentException if {@code targetClass}, {@code cypher}, or {@code parameters} is {@code null}
+     * @throws RuntimeException if {@code cypher} is empty or {@code targetClass} is a void type (Neo4j-OGM rejects these
+     *         with a plain {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; if the
+     *         query returns more than one row; or if the result cannot be mapped to {@code targetClass}
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> Optional<T> findOnly(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
+    public <T> Optional<T> findOnly(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(cypher, cs.cypher);
+        N.checkArgNotNull(parameters, cs.parameters);
+
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2349,14 +2489,17 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return a {@link Stream} over the already-fetched result rows, each row a {@code Map} keyed by
      *         the {@code RETURN}-clause aliases; it does not retain the borrowed session
-     * @throws RuntimeException if {@code cypher} is {@code null} or empty or {@code parameters} is {@code null}
-     *         (Neo4j-OGM rejects these with a plain {@code RuntimeException}); if the database cannot be reached or
-     *         Neo4j rejects the query; or if the result rows cannot be mapped
+     * @throws IllegalArgumentException if {@code cypher} or {@code parameters} is {@code null}
+     * @throws RuntimeException if {@code cypher} is empty (Neo4j-OGM rejects it with a plain {@code RuntimeException});
+     *         if the database cannot be reached or Neo4j rejects the query; or if the result rows cannot be mapped
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map, boolean)
      * @see #findOnly(Class, String, Map)
      */
-    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters) {
+    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters) throws IllegalArgumentException {
+        N.checkArgNotNull(cypher, cs.cypher);
+        N.checkArgNotNull(parameters, cs.parameters);
+
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2411,14 +2554,17 @@ public final class Neo4jExecutor {
      *                 routing); must be {@code false} for queries that write to the graph
      * @return a {@link Stream} over the already-fetched result rows; it does not retain the borrowed
      *         session
-     * @throws RuntimeException if {@code cypher} is {@code null} or empty or {@code parameters} is {@code null}
-     *         (Neo4j-OGM rejects these with a plain {@code RuntimeException}); if the database cannot be reached or
-     *         Neo4j rejects the query (depending on the deployment, this includes a write query submitted with
-     *         {@code readOnly == true}); or if the result rows cannot be mapped
+     * @throws IllegalArgumentException if {@code cypher} or {@code parameters} is {@code null}
+     * @throws RuntimeException if {@code cypher} is empty (Neo4j-OGM rejects it with a plain {@code RuntimeException});
+     *         if the database cannot be reached or Neo4j rejects the query (depending on the deployment, this includes a
+     *         write query submitted with {@code readOnly == true}); or if the result rows cannot be mapped
      * @see #stream(String, Map)
      * @see #stream(Class, String, Map)
      */
-    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters, final boolean readOnly) {
+    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters, final boolean readOnly) throws IllegalArgumentException {
+        N.checkArgNotNull(cypher, cs.cypher);
+        N.checkArgNotNull(parameters, cs.parameters);
+
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2462,14 +2608,18 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; it does
      *         not retain the borrowed session
-     * @throws RuntimeException if {@code cypher} is {@code null} or empty, {@code parameters} is {@code null}, or
-     *         {@code targetClass} is {@code null} or a void type (Neo4j-OGM rejects these with a plain
-     *         {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; or if a result
-     *         row cannot be mapped to {@code targetClass} (for example, a scalar query returns more than one column)
+     * @throws IllegalArgumentException if {@code targetClass}, {@code cypher}, or {@code parameters} is {@code null}
+     * @throws RuntimeException if {@code cypher} is empty or {@code targetClass} is a void type (Neo4j-OGM rejects these
+     *         with a plain {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; or if
+     *         a result row cannot be mapped to {@code targetClass} (for example, a scalar query returns more than one column)
      * @see #findOnly(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> Stream<T> stream(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
+    public <T> Stream<T> stream(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(cypher, cs.cypher);
+        N.checkArgNotNull(parameters, cs.parameters);
+
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2517,11 +2667,15 @@ public final class Neo4jExecutor {
      *                of {@code loadAll}, a {@code null} iterable is <i>not</i> accepted here
      * @return the number of entities of {@code targetClass} that satisfy the supplied filter
      *         expression
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filters} is {@code null}
      * @throws RuntimeException if OGM cannot map the target class or filters, the database cannot be reached, or Neo4j rejects the count query
      * @see #count(Class)
      * @see org.neo4j.ogm.cypher.Filter
      */
-    public long count(final Class<?> targetClass, final Iterable<Filter> filters) {
+    public long count(final Class<?> targetClass, final Iterable<Filter> filters) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(filters, cs.filters);
+
         final Session session = getSession();
 
         try {
@@ -2561,10 +2715,13 @@ public final class Neo4jExecutor {
      * @param targetClass the OGM-mapped class whose entities are counted
      * @return the total number of entities mapped by {@code targetClass}, or {@code 0} if the class
      *         is not mapped
-     * @throws RuntimeException if OGM cannot map the target class or filters, the database cannot be reached, or Neo4j rejects the count query
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws RuntimeException if OGM cannot map the target class, the database cannot be reached, or Neo4j rejects the count query
      * @see #count(Class, Iterable)
      */
-    public long count(final Class<?> targetClass) {
+    public long count(final Class<?> targetClass) throws IllegalArgumentException {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final Session session = getSession();
 
         try {

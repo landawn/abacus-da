@@ -21,7 +21,6 @@ import java.net.HttpURLConnection;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Set;
 
 import com.azure.cosmos.CosmosContainer;
@@ -354,11 +353,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the item to create
      * @param item the item to create (must not be null)
      * @return a CosmosItemResponse containing the created item and metadata including RU consumption
-     * @throws NullPointerException if {@code item} is null (rejected by the Azure Cosmos SDK)
+     * @throws IllegalArgumentException if {@code item} is null
      * @throws CosmosException if Cosmos rejects the create request because the item already exists, its data or partition key is invalid, or
      *         authorization fails
      */
     public <T> CosmosItemResponse<T> createItem(final T item) {
+        N.checkArgNotNull(item, cs.item);
+
         return cosmosContainer.createItem(item);
     }
 
@@ -401,11 +402,13 @@ public class CosmosContainerExecutor {
      *                     is extracted from the item content by the Azure Cosmos SDK)
      * @param options additional options for the create operation (can be null for default behavior)
      * @return a CosmosItemResponse containing the created item and metadata
-     * @throws NullPointerException if {@code item} is null (rejected by the Azure Cosmos SDK)
+     * @throws IllegalArgumentException if {@code item} is null
      * @throws CosmosException if Cosmos rejects the create request because the item already exists, its data or partition key is invalid, or
      *         authorization fails
      */
     public <T> CosmosItemResponse<T> createItem(final T item, final PartitionKey partitionKey, final CosmosItemRequestOptions options) {
+        N.checkArgNotNull(item, cs.item);
+
         return cosmosContainer.createItem(item, partitionKey, options);
     }
 
@@ -435,11 +438,13 @@ public class CosmosContainerExecutor {
      * @param item the item to create (must not be null)
      * @param options additional options for the create operation (can be null for default behavior)
      * @return a CosmosItemResponse containing the created item and metadata
-     * @throws NullPointerException if {@code item} is null (rejected by the Azure Cosmos SDK)
+     * @throws IllegalArgumentException if {@code item} is null
      * @throws CosmosException if Cosmos rejects the create request because the item already exists, its data or partition key is invalid, or
      *         authorization fails
      */
     public <T> CosmosItemResponse<T> createItem(final T item, final CosmosItemRequestOptions options) {
+        N.checkArgNotNull(item, cs.item);
+
         return cosmosContainer.createItem(item, options);
     }
 
@@ -478,7 +483,7 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the item to upsert
      * @param item the item to create or update (must not be null)
      * @return a CosmosItemResponse containing the upserted item and metadata
-     * @throws NullPointerException if {@code item} is null (rejected by the Azure Cosmos SDK)
+     * @throws IllegalArgumentException if {@code item} is null
      * @throws CosmosException if Cosmos rejects the upsert request because its data or partition key is invalid, its access condition fails, or
      *         authorization fails
      *
@@ -486,6 +491,8 @@ public class CosmosContainerExecutor {
      * @see #replaceItem(String, PartitionKey, Object, CosmosItemRequestOptions) for replace-only operations
      */
     public <T> CosmosItemResponse<T> upsertItem(final T item) {
+        N.checkArgNotNull(item, cs.item);
+
         return cosmosContainer.upsertItem(item);
     }
 
@@ -531,11 +538,13 @@ public class CosmosContainerExecutor {
      *                     is extracted from the item content by the Azure Cosmos SDK)
      * @param options additional options for the upsert operation (can be null for default behavior)
      * @return a CosmosItemResponse containing the upserted item and metadata
-     * @throws NullPointerException if {@code item} is null (rejected by the Azure Cosmos SDK)
+     * @throws IllegalArgumentException if {@code item} is null
      * @throws CosmosException if Cosmos rejects the upsert request because its data or partition key is invalid, its access condition fails, or
      *         authorization fails
      */
     public <T> CosmosItemResponse<T> upsertItem(final T item, final PartitionKey partitionKey, final CosmosItemRequestOptions options) {
+        N.checkArgNotNull(item, cs.item);
+
         return cosmosContainer.upsertItem(item, partitionKey, options);
     }
 
@@ -565,11 +574,13 @@ public class CosmosContainerExecutor {
      * @param item the item to create or update (must not be null)
      * @param options additional options for the upsert operation (can be null for default behavior)
      * @return a CosmosItemResponse containing the upserted item and metadata
-     * @throws NullPointerException if {@code item} is null (rejected by the Azure Cosmos SDK)
+     * @throws IllegalArgumentException if {@code item} is null
      * @throws CosmosException if Cosmos rejects the upsert request because its data or partition key is invalid, its access condition fails, or
      *         authorization fails
      */
     public <T> CosmosItemResponse<T> upsertItem(final T item, final CosmosItemRequestOptions options) {
+        N.checkArgNotNull(item, cs.item);
+
         return cosmosContainer.upsertItem(item, options);
     }
 
@@ -617,9 +628,8 @@ public class CosmosContainerExecutor {
      * @param options additional options for the replace operation (can be null for default behavior)
      * @return a {@link CosmosItemResponse} containing the replaced item and metadata such as
      *         RU charge, ETag, and status code
-     * @throws IllegalArgumentException if {@code oldItemId} is null. The SDK does not check it: a null id is rendered as the literal
-     *         {@code "null"} in the item link and reported as a 404 CosmosException.
-     * @throws NullPointerException if {@code newItem} is null (rejected by the Azure Cosmos SDK)
+     * @throws IllegalArgumentException if {@code oldItemId} or {@code newItem} is null. The SDK does not check the id: a null id is rendered as
+     *         the literal {@code "null"} in the item link and reported as a 404 CosmosException.
      * @throws CosmosException if the item is absent, an ETag condition fails, or Cosmos rejects the replacement data or partition key
      *
      * @see #upsertItem(Object) for create-or-replace operations
@@ -627,6 +637,7 @@ public class CosmosContainerExecutor {
     public <T> CosmosItemResponse<T> replaceItem(final String oldItemId, final PartitionKey partitionKey, final T newItem,
             final CosmosItemRequestOptions options) {
         N.checkArgNotNull(oldItemId, cs.oldItemId);
+        N.checkArgNotNull(newItem, cs.newItem);
 
         return cosmosContainer.replaceItem(newItem, oldItemId, partitionKey, options);
     }
@@ -678,19 +689,18 @@ public class CosmosContainerExecutor {
      * @param cosmosPatchOperations the patch operations to apply (must not be null)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
-     * @throws NullPointerException if {@code itemId}, {@code partitionKey}, or {@code cosmosPatchOperations} is null (rejected by the Azure
-     *         Cosmos SDK)
-     * @throws IllegalArgumentException if {@code targetClass} is null. The SDK stores the result type without checking it, so a null type would
-     *         only fail later, when {@code getItem()} is called.
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, {@code cosmosPatchOperations}, or {@code targetClass} is null.
+     *         The SDK stores the result type without checking it, so a null type would otherwise only fail later, when {@code getItem()} is
+     *         called.
      * @throws CosmosException if the item or patch path is absent, an access condition fails, or Cosmos rejects the patch operations
      *
      * @see CosmosPatchOperations for available patch operations
      */
     public <T> CosmosItemResponse<T> patchItem(final String itemId, final PartitionKey partitionKey, final CosmosPatchOperations cosmosPatchOperations,
             final Class<T> targetClass) {
-        Objects.requireNonNull(itemId, "itemId");
-        Objects.requireNonNull(partitionKey, "partitionKey");
-        Objects.requireNonNull(cosmosPatchOperations, "cosmosPatchOperations");
+        N.checkArgNotNull(itemId, cs.itemId);
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
+        N.checkArgNotNull(cosmosPatchOperations, cs.cosmosPatchOperations);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.patchItem(itemId, partitionKey, cosmosPatchOperations, targetClass);
@@ -743,10 +753,9 @@ public class CosmosContainerExecutor {
      * @param options additional options for the patch operation (can be null for default behavior)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
-     * @throws NullPointerException if {@code itemId}, {@code partitionKey}, or {@code cosmosPatchOperations} is null (rejected by the Azure
-     *         Cosmos SDK)
-     * @throws IllegalArgumentException if {@code targetClass} is null. The SDK stores the result type without checking it, so a null type would
-     *         only fail later, when {@code getItem()} is called.
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, {@code cosmosPatchOperations}, or {@code targetClass} is null.
+     *         The SDK stores the result type without checking it, so a null type would otherwise only fail later, when {@code getItem()} is
+     *         called.
      * @throws CosmosException if the item or patch path is absent, an access condition fails, or Cosmos rejects the patch operations
      *
      * @see CosmosPatchOperations for available patch operations
@@ -754,9 +763,9 @@ public class CosmosContainerExecutor {
      */
     public <T> CosmosItemResponse<T> patchItem(final String itemId, final PartitionKey partitionKey, final CosmosPatchOperations cosmosPatchOperations,
             final CosmosPatchItemRequestOptions options, final Class<T> targetClass) {
-        Objects.requireNonNull(itemId, "itemId");
-        Objects.requireNonNull(partitionKey, "partitionKey");
-        Objects.requireNonNull(cosmosPatchOperations, "cosmosPatchOperations");
+        N.checkArgNotNull(itemId, cs.itemId);
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
+        N.checkArgNotNull(cosmosPatchOperations, cs.cosmosPatchOperations);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.patchItem(itemId, partitionKey, cosmosPatchOperations, options, targetClass);

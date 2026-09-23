@@ -150,6 +150,112 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
+    public void testNullRequiredArgumentsRejectedWithIae() {
+        final Filter filter = new Filter("name", ComparisonOperator.EQUALS, "x");
+        final SortOrder sortOrder = new SortOrder();
+        final Pagination pagination = new Pagination(0, 10);
+        final List<Long> ids = List.of(1L);
+        final Map<String, Object> params = Collections.emptyMap();
+        final Class<Person> nullClass = null;
+
+        // load: targetClass and id
+        assertThrows(IllegalArgumentException.class, () -> executor.load(nullClass, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.load(nullClass, 1L, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.load(Person.class, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.load(Person.class, null, 1));
+
+        // loadAll by ids: targetClass
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids, sortOrder));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids, sortOrder, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids, pagination));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids, pagination, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids, sortOrder, pagination));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, ids, sortOrder, pagination, 1));
+
+        // loadAll by class: targetClass
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, sortOrder));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, sortOrder, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, pagination));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, pagination, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, sortOrder, pagination));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, sortOrder, pagination, 1));
+
+        // loadAll by single Filter: targetClass and filter
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, filter));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null, sortOrder));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null, sortOrder, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null, pagination));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null, pagination, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null, sortOrder, pagination));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(Person.class, (Filter) null, sortOrder, pagination, 1));
+
+        // loadAll by Filters: targetClass
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, new Filters()));
+        assertThrows(IllegalArgumentException.class, () -> executor.loadAll(nullClass, new Filters(), sortOrder, pagination, 1));
+
+        // save / delete / deleteAll
+        assertThrows(IllegalArgumentException.class, () -> executor.save(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.save(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.deleteAll(null));
+
+        // query methods: targetClass, cypher, parameters
+        assertThrows(IllegalArgumentException.class, () -> executor.findOnly(nullClass, "RETURN 1", params));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOnly(Person.class, null, params));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOnly(Person.class, "RETURN 1", null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(null, params));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream("RETURN 1", null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(null, params, true));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream("RETURN 1", null, true));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(nullClass, "RETURN 1", params));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(Person.class, null, params));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(Person.class, "RETURN 1", null));
+
+        // count
+        assertThrows(IllegalArgumentException.class, () -> executor.count(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.count(null, List.of(filter)));
+        assertThrows(IllegalArgumentException.class, () -> executor.count(Person.class, null));
+
+        // Validation happens before a session is borrowed.
+        verify(mockSessionFactory, never()).openSession();
+    }
+
+    @Test
+    public void testNullTolerantArgumentsAreForwarded() {
+        final Collection<Person> expected = Collections.emptyList();
+        final Class<Person> type = Person.class;
+
+        when(mockSession.loadAll(type, (Filters) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (Filters) null));
+
+        when(mockSession.loadAll(type, (SortOrder) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (SortOrder) null));
+
+        when(mockSession.loadAll(type, (Pagination) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (Pagination) null));
+
+        // ids / sortOrder of the ids overloads are not validated here (OGM tolerates them for unmapped types)
+        when(mockSession.loadAll(type, (Collection<Long>) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (Collection<Long>) null));
+
+        // objects overloads: null is passed through (OGM returns it as-is)
+        executor.loadAll((Collection<Person>) null);
+        verify(mockSession).loadAll((Collection<Person>) null);
+        executor.loadAll((Collection<Person>) null, (SortOrder) null);
+        verify(mockSession).loadAll((Collection<Person>) null, (SortOrder) null);
+
+        // getGraphId: null is passed through (OGM returns null for it)
+        executor.getGraphId(null);
+        verify(mockSession).resolveGraphIdFor(null);
+    }
+
+    @Test
     public void testRun_PropagatesException() {
         // Session must still be cleared even if the action throws.
         assertThrows(RuntimeException.class, () -> executor.run(s -> {

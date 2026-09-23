@@ -156,11 +156,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * whose timestamp is in the future relative to the server clock are not affected.</p>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyDelete(final Object rowKey) {
-        super(new Delete(toRowKeyBytes(rowKey)));
+        super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
         delete = (Delete) mutation;
     }
 
@@ -175,11 +174,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
+     *         {@code timestamp} is negative
      */
     AnyDelete(final Object rowKey, final long timestamp) {
-        super(new Delete(toRowKeyBytes(rowKey), timestamp));
+        super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp));
         delete = (Delete) mutation;
     }
 
@@ -224,11 +223,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowKey the row key object for the delete operation
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}, or {@code familyMap} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} converts to an empty byte array
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
      */
     AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
-        super(new Delete(toRowKeyBytes(rowKey), timestamp, familyMap));
+        super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
         delete = (Delete) mutation;
     }
 
@@ -241,10 +239,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * {@code addColumn}/{@code addFamily} calls on the wrapper do not affect the source delete.</p>
      *
      * @param deleteToCopy the HBase Delete object to copy
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code deleteToCopy} is {@code null}
      */
     AnyDelete(final Delete deleteToCopy) {
-        super(new Delete(deleteToCopy));
+        super(new Delete(N.checkArgNotNull(deleteToCopy, cs.deleteToCopy)));
         delete = (Delete) mutation;
     }
 
@@ -263,8 +261,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * // A byte[] row key is used as-is (no string conversion)
      * AnyDelete byKey = AnyDelete.of(new byte[] {1, 2, 3});   // returns AnyDelete for the 3-byte row
      *
-     * // Edge: a null row key throws NullPointerException (the single-arg Delete ctor)
-     * AnyDelete.of((Object) null);                  // throws NullPointerException
+     * // Edge: a null row key throws IllegalArgumentException
+     * AnyDelete.of((Object) null);                  // throws IllegalArgumentException
      *
      * // Edge: an empty byte[] row key throws IllegalArgumentException ("Row length is 0")
      * AnyDelete.of(new byte[0]);                     // throws IllegalArgumentException
@@ -272,8 +270,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @return a new AnyDelete instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @see #of(Object, long)
      * @see #addColumn(String, String)
      * @see #addFamily(String)
@@ -301,8 +298,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * // Edge: a negative timestamp throws IllegalArgumentException ("Timestamp cannot be negative")
      * AnyDelete.of("user123", -1L);                                   // throws IllegalArgumentException
      *
-     * // Edge: a null row key throws NullPointerException
-     * AnyDelete.of((Object) null, oneDayAgo);                         // throws NullPointerException
+     * // Edge: a null row key throws IllegalArgumentException
+     * AnyDelete.of((Object) null, oneDayAgo);                         // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
@@ -310,8 +307,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  reused as the exact version timestamp by no-timestamp {@code addColumn} and
      *                  as an inclusive upper bound by no-timestamp {@code addColumns}/{@code addFamily}
      * @return a new AnyDelete instance configured for timestamp-based deletion
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}
-     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
+     *         {@code timestamp} is negative
      * @see #of(Object)
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
@@ -339,8 +336,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * // Edge: a length that exceeds the available bytes throws ArrayIndexOutOfBoundsException
      * AnyDelete.of("abc", 0, 10);                          // throws ArrayIndexOutOfBoundsException
      *
-     * // Edge: a null row key throws IllegalArgumentException ("Row buffer is null") -- NOT NPE,
-     * // because this 3-arg Delete ctor validates the row via Mutation.checkRow
+     * // Edge: a null row key throws IllegalArgumentException ("Row buffer is null")
      * AnyDelete.of((Object) null, 0, 1);                   // throws IllegalArgumentException
      * }</pre>
      *
@@ -415,19 +411,18 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * byte[] row = complexDelete.getRow();            // row equals Bytes.toBytes("complex_row")
      * long ts = complexDelete.getTimestamp();         // ts == operationTimestamp
      *
-     * // Edge: a null familyMap throws NullPointerException
-     * AnyDelete.of("complex_row", operationTimestamp, null);   // throws NullPointerException
+     * // Edge: a null familyMap throws IllegalArgumentException
+     * AnyDelete.of("complex_row", operationTimestamp, null);   // throws IllegalArgumentException
      *
-     * // Edge: a null row key throws NullPointerException
-     * AnyDelete.of((Object) null, operationTimestamp, familyMap);   // throws NullPointerException
+     * // Edge: a null row key throws IllegalArgumentException
+     * AnyDelete.of((Object) null, operationTimestamp, familyMap);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object for the delete operation, automatically converted to bytes
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @return a new AnyDelete instance with the specified configuration
-     * @throws NullPointerException if {@code rowKey} converts to {@code null}, or {@code familyMap} is {@code null}
-     * @throws IllegalArgumentException if {@code rowKey} converts to an empty byte array
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
      * @see #of(Object)
      * @see #of(Delete)
      * @see NavigableMap
@@ -458,13 +453,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * boolean different = extendedDelete.val() != existingDelete;   // different == true
      * int srcFamilies = existingDelete.getFamilyCellMap().size();   // srcFamilies == 1 (unchanged)
      *
-     * // Edge: a null source Delete throws NullPointerException
-     * AnyDelete.of((Delete) null);                                  // throws NullPointerException
+     * // Edge: a null source Delete throws IllegalArgumentException
+     * AnyDelete.of((Delete) null);                                  // throws IllegalArgumentException
      * }</pre>
      *
      * @param deleteToCopy the HBase Delete object to copy; must not be null
      * @return a new AnyDelete instance backed by a fresh Delete copied from {@code deleteToCopy}
-     * @throws NullPointerException if the operation to copy is {@code null}
+     * @throws IllegalArgumentException if {@code deleteToCopy} is {@code null}
      * @see Delete
      * @see #val()
      */
@@ -524,13 +519,14 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param cell an existing Cell to attach to this delete; must not be {@code null} and should be
      *             a delete-type cell whose row matches this delete's row
      * @return this AnyDelete instance for method chaining
-     * @throws NullPointerException if {@code cell} is {@code null}
+     * @throws IllegalArgumentException if {@code cell} is {@code null}, or the matching cell has a null or empty column family
      * @throws IOException if the cell's row key does not match this mutation's row key
-     * @throws IllegalArgumentException if the matching cell has a null or empty column family
      * @see Cell
      * @see Delete#add(Cell)
      */
     public AnyDelete add(final Cell cell) throws IOException {
+        N.checkArgNotNull(cell, cs.cell);
+
         delete.add(cell);
         return this;
     }

@@ -189,18 +189,16 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p>This constructor converts a point lookup into a single-row scan, preserving the families,
      * qualifiers, time range and other settings configured on the {@link Get}. The conversion is
-     * delegated to the underlying {@link Scan#Scan(Get)} constructor. No null-check is performed;
-     * passing {@code null} will result in a {@link NullPointerException} from that constructor.
-     * Package-private; callers should use {@link #of(Get)}.</p>
+     * delegated to the underlying {@link Scan#Scan(Get)} constructor after {@code get} is validated
+     * to be non-{@code null}. Package-private; callers should use {@link #of(Get)}.</p>
      *
      * @param get the {@link Get} operation to convert to a {@link Scan}; must not be {@code null}
-     * @throws NullPointerException if {@code get} is {@code null} (raised by the wrapped {@link Scan#Scan(Get)}
-     *         constructor)
+     * @throws IllegalArgumentException if {@code get} is {@code null}
      * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid
      *         isolation-level ordinal
      */
     AnyScan(final Get get) {
-        this(new Scan(get));
+        this(new Scan(N.checkArgNotNull(get, cs.get)));
     }
 
     /**
@@ -267,17 +265,18 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }
      *
      * // A null cursor is rejected.
-     * AnyScan.createScanFromCursor((Cursor) null);   // throws NullPointerException
+     * AnyScan.createScanFromCursor((Cursor) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param cursor the non-null server-progress cursor whose row becomes the inclusive start row
      * @return a new AnyScan configured only with the cursor row as its start row
-     * @throws NullPointerException if {@code cursor} is {@code null} (raised by the wrapped
-     *         {@link Scan#createScanFromCursor(Cursor)})
-     * @throws IllegalArgumentException if the cursor's row key exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code cursor} is {@code null}, or the cursor's row key exceeds
+     *         32,767 bytes
      * @see #setNeedCursorResult(boolean)
      */
     public static AnyScan createScanFromCursor(final Cursor cursor) {
+        N.checkArgNotNull(cursor, cs.cursor);
+
         return new AnyScan(Scan.createScanFromCursor(cursor));
     }
 
@@ -402,14 +401,13 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * byte[] start = scan.getStartRow();   // returns the bytes of "row1"
      * boolean getScan = scan.isGetScan();  // returns true (single-row scan)
      *
-     * // A null Get is rejected by the underlying Scan constructor.
-     * AnyScan.of((Get) null);              // throws NullPointerException
+     * // A null Get is rejected.
+     * AnyScan.of((Get) null);              // throws IllegalArgumentException
      * }</pre>
      *
      * @param get the Get operation to convert to a Scan; must not be null
      * @return a new AnyScan instance created from the Get operation
-     * @throws NullPointerException if {@code get} is {@code null} (raised by the wrapped {@link Scan#Scan(Get)}
-     *         constructor)
+     * @throws IllegalArgumentException if {@code get} is {@code null}
      * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid
      *         isolation-level ordinal
      */
@@ -690,7 +688,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan.create().setColumnFamilyTimeRange("cf", -1L, 100L);    // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name
+     * @param family the column family name; converted to bytes and forwarded to the underlying
+     *               {@link Scan} (a {@code null} family is tolerated)
      * @param minTimestamp the minimum timestamp (inclusive)
      * @param maxTimestamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining
@@ -724,7 +723,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan.create().setColumnFamilyTimeRange(family, -1L, 100L);    // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name as byte array
+     * @param family the column family name as byte array; forwarded to the underlying {@link Scan}
+     *               (a {@code null} array is tolerated)
      * @param minTimestamp the minimum timestamp (inclusive)
      * @param maxTimestamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining

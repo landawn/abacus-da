@@ -2091,7 +2091,7 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected results
@@ -2125,7 +2125,7 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
      * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
@@ -2161,9 +2161,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing sorted projected results
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
@@ -2197,9 +2197,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
      * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
@@ -2237,9 +2237,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
      *
-     * @param projection the BSON projection specification
+     * @param projection the BSON projection specification (null for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected and sorted results
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
@@ -2274,9 +2274,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
      * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
      *
-     * @param projection the BSON projection specification
+     * @param projection the BSON projection specification (null for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
@@ -2412,7 +2412,7 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected typed Stream
@@ -2447,7 +2447,7 @@ public final class AsyncMongoCollectionExecutor {
      * consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
@@ -2484,9 +2484,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a sorted projected typed Stream
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
@@ -2521,9 +2521,9 @@ public final class AsyncMongoCollectionExecutor {
      * consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
@@ -2560,9 +2560,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
-     * @param projection the BSON projection specification
+     * @param projection the BSON projection specification (null for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected and sorted typed Stream
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
@@ -2601,9 +2601,9 @@ public final class AsyncMongoCollectionExecutor {
      * consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
-     * @param projection the BSON projection specification
+     * @param projection the BSON projection specification (null for all fields)
      * @param filter the query filter to match documents (must not be null)
-     * @param sort the sort specification
+     * @param sort the sort specification (null for natural order)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
@@ -2851,7 +2851,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code insertMany} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null document.</p>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
      * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
@@ -2887,7 +2887,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code insertMany} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null document.</p>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
      * @param options the options to apply to the insert operation (null uses defaults)
@@ -3101,7 +3101,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param filter the query filter to select the document to update
      * @param objList the collection of update operations to apply
@@ -3141,7 +3141,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param filter the query filter to select the document to update
      * @param objList the collection of update operations to apply
@@ -3265,7 +3265,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code updateMany} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param filter the query filter to select documents to update
      * @param objList the collection of update operations to apply
@@ -3304,7 +3304,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code updateMany} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param filter the query filter to select documents to update
      * @param objList the collection of update operations to apply
@@ -3722,7 +3722,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code bulkInsert} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code entities} contains a null document.</p>
      *
      * @param entities the collection of documents to insert
      * @return a ContinuableFuture that completes with the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
@@ -3754,7 +3754,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code bulkInsert} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code entities} contains a null document.</p>
      *
      * @param entities the collection of documents to insert
      * @param options the options to apply to the bulk insert operation (null uses defaults)
@@ -3791,7 +3791,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code bulkWrite} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code requests} contains a null write model.</p>
      *
      * @param requests the list of write operations to perform
      * @return a ContinuableFuture that completes with BulkWriteResult containing operation details
@@ -3826,7 +3826,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code bulkWrite} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code requests} contains a null write model.</p>
      *
      * @param requests the list of write operations to perform
      * @param options the options to apply to the bulk write operation (null uses defaults)
@@ -4011,7 +4011,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
@@ -4047,7 +4047,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4086,7 +4086,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
@@ -4124,7 +4124,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
