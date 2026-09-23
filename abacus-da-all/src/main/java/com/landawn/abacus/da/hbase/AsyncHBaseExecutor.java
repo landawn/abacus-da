@@ -34,10 +34,10 @@ import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.google.protobuf.Service;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
@@ -145,8 +145,8 @@ public final class AsyncHBaseExecutor {
      * @throws IllegalArgumentException if either argument is {@code null}
      */
     AsyncHBaseExecutor(final HBaseExecutor hbaseExecutor, final AsyncExecutor asyncExecutor) {
-        N.checkArgNotNull(hbaseExecutor, "hbaseExecutor");
-        N.checkArgNotNull(asyncExecutor, "asyncExecutor");
+        N.checkArgNotNull(hbaseExecutor, cs.hbaseExecutor);
+        N.checkArgNotNull(asyncExecutor, cs.asyncExecutor);
 
         this.hbaseExecutor = hbaseExecutor;
         this.asyncExecutor = asyncExecutor;
@@ -289,7 +289,7 @@ public final class AsyncHBaseExecutor {
      * @see AnyGet
      */
     public ContinuableFuture<Boolean> exists(final String tableName, final AnyGet anyGet) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyGet, "anyGet");
+        N.checkArgNotNull(anyGet, cs.anyGet);
 
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, anyGet));
     }
@@ -334,7 +334,7 @@ public final class AsyncHBaseExecutor {
      */
     public ContinuableFuture<List<Boolean>> exists(final String tableName, final Collection<AnyGet> anyGets)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyGets, "anyGets");
+        N.checkArgNotNull(anyGets, cs.anyGets);
 
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, anyGets));
     }
@@ -455,7 +455,7 @@ public final class AsyncHBaseExecutor {
      * @see AnyGet
      */
     public ContinuableFuture<Result> get(final String tableName, final AnyGet anyGet) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyGet, "anyGet");
+        N.checkArgNotNull(anyGet, cs.anyGet);
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGet));
     }
@@ -496,7 +496,7 @@ public final class AsyncHBaseExecutor {
      */
     public ContinuableFuture<List<Result>> get(final String tableName, final Collection<AnyGet> anyGets)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyGets, "anyGets");
+        N.checkArgNotNull(anyGets, cs.anyGets);
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGets));
     }
@@ -626,7 +626,7 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<T> get(final String tableName, final AnyGet anyGet, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyGet, "anyGet");
+        N.checkArgNotNull(anyGet, cs.anyGet);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGet, targetType));
@@ -671,7 +671,7 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<List<T>> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyGets, "anyGets");
+        N.checkArgNotNull(anyGets, cs.anyGets);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGets, targetType));
@@ -720,7 +720,7 @@ public final class AsyncHBaseExecutor {
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family));
     }
@@ -769,7 +769,7 @@ public final class AsyncHBaseExecutor {
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family, final String qualifier)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier));
     }
@@ -817,7 +817,7 @@ public final class AsyncHBaseExecutor {
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family));
     }
@@ -869,7 +869,7 @@ public final class AsyncHBaseExecutor {
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family, final byte[] qualifier)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier));
     }
@@ -916,8 +916,8 @@ public final class AsyncHBaseExecutor {
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final AnyScan anyScan) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(anyScan, "anyScan");
+        N.checkArgNotNull(tableName, cs.tableName);
+        N.checkArgNotNull(anyScan, cs.anyScan);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, anyScan));
     }
@@ -965,8 +965,8 @@ public final class AsyncHBaseExecutor {
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final Scan scan) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(scan, "scan");
+        N.checkArgNotNull(tableName, cs.tableName);
+        N.checkArgNotNull(scan, cs.scan);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, scan));
     }
@@ -1013,7 +1013,7 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetType));
@@ -1066,7 +1066,7 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final String qualifier, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetType));
@@ -1118,7 +1118,7 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetType));
@@ -1172,7 +1172,7 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetType));
@@ -1214,7 +1214,7 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, AnyScan, Class)}.
-     * @throws IllegalArgumentException if {@code tableName} , {@code anyScan} or {@code targetType} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName}, {@code anyScan} or {@code targetType} is {@code null}
      * @throws IllegalStateException if the configured asynchronous executor has already been shut down
      * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, AnyScan, Class)
@@ -1222,8 +1222,8 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final AnyScan anyScan, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(anyScan, "anyScan");
+        N.checkArgNotNull(tableName, cs.tableName);
+        N.checkArgNotNull(anyScan, cs.anyScan);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, anyScan, targetType));
@@ -1266,7 +1266,7 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, Scan, Class)}.
-     * @throws IllegalArgumentException if {@code tableName} , {@code scan} or {@code targetType} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName}, {@code scan} or {@code targetType} is {@code null}
      * @throws IllegalStateException if the configured asynchronous executor has already been shut down
      * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, Scan, Class)
@@ -1274,8 +1274,8 @@ public final class AsyncHBaseExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Scan scan, final Class<T> targetType)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(scan, "scan");
+        N.checkArgNotNull(tableName, cs.tableName);
+        N.checkArgNotNull(scan, cs.scan);
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, scan, targetType));
@@ -1399,7 +1399,7 @@ public final class AsyncHBaseExecutor {
      * @see AnyPut
      */
     public ContinuableFuture<Void> put(final String tableName, final AnyPut anyPut) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyPut, "anyPut");
+        N.checkArgNotNull(anyPut, cs.anyPut);
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.put(tableName, anyPut);
@@ -1445,7 +1445,7 @@ public final class AsyncHBaseExecutor {
      * @see AnyPut
      */
     public ContinuableFuture<Void> put(final String tableName, final Collection<AnyPut> anyPuts) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyPuts, "anyPuts");
+        N.checkArgNotNull(anyPuts, cs.anyPuts);
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.put(tableName, anyPuts);
@@ -1573,7 +1573,7 @@ public final class AsyncHBaseExecutor {
      * @see AnyDelete
      */
     public ContinuableFuture<Void> delete(final String tableName, final AnyDelete anyDelete) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyDelete, "anyDelete");
+        N.checkArgNotNull(anyDelete, cs.anyDelete);
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.delete(tableName, anyDelete);
@@ -1619,7 +1619,7 @@ public final class AsyncHBaseExecutor {
      */
     public ContinuableFuture<Void> delete(final String tableName, final Collection<AnyDelete> anyDeletes)
             throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(anyDeletes, "anyDeletes");
+        N.checkArgNotNull(anyDeletes, cs.anyDeletes);
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.delete(tableName, anyDeletes);
@@ -1667,7 +1667,7 @@ public final class AsyncHBaseExecutor {
      * @see AnyRowMutations
      */
     public ContinuableFuture<Void> mutateRow(final String tableName, final AnyRowMutations rm) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(rm, "rm");
+        N.checkArgNotNull(rm, cs.rm);
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.mutateRow(tableName, rm);
@@ -1760,7 +1760,7 @@ public final class AsyncHBaseExecutor {
      * @see Result
      */
     public ContinuableFuture<Result> append(final String tableName, final AnyAppend append) throws IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(append, "append");
+        N.checkArgNotNull(append, cs.append);
 
         return asyncExecutor.execute(() -> hbaseExecutor.append(tableName, append));
     }
@@ -2198,7 +2198,7 @@ public final class AsyncHBaseExecutor {
             final Object endRowKey, final Batch.Call<T, R> callable, final Batch.Callback<R> callback)
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(callable, cs.callable);
-        N.checkArgNotNull(callback, "callback");
+        N.checkArgNotNull(callback, cs.callback);
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.coprocessorService(tableName, service, startRowKey, endRowKey, callable, callback);
@@ -2308,7 +2308,7 @@ public final class AsyncHBaseExecutor {
     public <R extends Message> ContinuableFuture<Void> batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor,
             final Message request, final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
-        N.checkArgNotNull(callback, "callback");
+        N.checkArgNotNull(callback, cs.callback);
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.batchCoprocessorService(tableName, methodDescriptor, request, startRowKey, endRowKey, responsePrototype, callback);

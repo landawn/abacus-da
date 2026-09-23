@@ -16,10 +16,10 @@ package com.landawn.abacus.da.mongodb.reactivestreams;
 
 import org.bson.Document;
 
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.da.mongodb.MongoDBBase;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.mongodb.reactivestreams.client.MongoCollection;
 import com.mongodb.reactivestreams.client.MongoDatabase;
 
@@ -147,7 +147,7 @@ public final class MongoDB extends MongoDBBase {
      * @see com.mongodb.reactivestreams.client.MongoDatabase
      */
     public MongoDB(final MongoDatabase mongoDB) {
-        N.checkArgNotNull(mongoDB, "mongoDB");
+        N.checkArgNotNull(mongoDB, cs.mongoDB);
         mongoDatabase = mongoDB.withCodecRegistry(codecRegistry);
     }
 
@@ -211,7 +211,7 @@ public final class MongoDB extends MongoDBBase {
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     public MongoCollection<Document> collection(final String collectionName) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
 
         return mongoDatabase.getCollection(collectionName);
     }
@@ -252,7 +252,7 @@ public final class MongoDB extends MongoDBBase {
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return mongoDatabase.getCollection(collectionName, rowType);
@@ -294,7 +294,7 @@ public final class MongoDB extends MongoDBBase {
      * @see org.reactivestreams.Publisher
      */
     public MongoCollectionExecutor collectionExecutor(final String collectionName) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
 
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName));
     }
@@ -366,7 +366,8 @@ public final class MongoDB extends MongoDBBase {
      * @param <T> the entity type for reactive mapping
      * @param rowType the Class object representing the entity type
      * @return a reactive MongoCollectionMapper for the specified entity type
-     * @throws IllegalArgumentException if rowType is null
+     * @throws IllegalArgumentException if rowType is null, or if rowType has an empty simple name (for example, an anonymous
+     *         class), which the driver rejects as a collection name
      * @see MongoCollectionMapper
      * @see org.reactivestreams.Publisher
      */
@@ -416,7 +417,7 @@ public final class MongoDB extends MongoDBBase {
      */
     @SuppressWarnings("rawtypes")
     public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
@@ -481,7 +482,9 @@ public final class MongoDB extends MongoDBBase {
      *            {@code null} when {@code rowType} is {@code null})
      * @param rowType the target Java class to map the document to
      * @return an instance of {@code rowType} populated from {@code row}
-     * @throws IllegalArgumentException if the row cannot be projected onto {@code rowType}
+     * @throws IllegalArgumentException if a scalar {@code rowType} is requested for a row with multiple non-{@code _id} fields, or if a
+     *         field value cannot be converted to {@code rowType}
+     * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
      * @see MongoDBBase#readRow(Document, Class)
      */
     protected static <T> T readRow(final Document row, final Class<T> rowType) {

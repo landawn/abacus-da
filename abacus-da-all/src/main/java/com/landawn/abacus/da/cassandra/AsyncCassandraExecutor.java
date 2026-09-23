@@ -22,9 +22,9 @@ import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.Statement;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
@@ -162,7 +162,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters)
             throws IllegalArgumentException {
-        N.checkArgNotNull(query, "query");
+        N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
@@ -200,12 +200,13 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @return a future that completes with a Stream of mapped objects
      * @throws IllegalArgumentException if {@code statement} or {@code rowMapper} is {@code null}
-     * @throws RuntimeException if the session is closed or the driver rejects request submission;
-     *         failures after submission are reported by the returned future
+     * @throws RuntimeException if the driver rejects request submission (for example, the statement names an
+     *         unknown execution profile); failures after submission, including execution on a closed session, are
+     *         reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper)
             throws IllegalArgumentException {
-        N.checkArgNotNull(statement, "statement");
+        N.checkArgNotNull(statement, cs.statement);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
@@ -497,8 +498,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * @param statement the CQL statement to execute
      * @return a future that completes with a synchronous-style {@link ResultSet}
-     * @throws RuntimeException if the session is closed or the driver rejects request submission;
-     *         failures after submission are reported by the returned future
+     * @throws IllegalArgumentException if {@code statement} is {@code null} (no driver request processor accepts it)
+     * @throws RuntimeException if the driver rejects request submission (for example, the statement names an
+     *         unknown execution profile); failures after submission, including execution on a closed session, are
+     *         reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final Statement<?> statement) {

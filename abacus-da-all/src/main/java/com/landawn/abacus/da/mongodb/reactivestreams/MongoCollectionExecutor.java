@@ -25,13 +25,13 @@ import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.da.mongodb.MongoDBBase;
 import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.function.Function;
 import com.mongodb.BasicDBObject;
 import com.mongodb.MongoException;
@@ -282,6 +282,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId as a string to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ObjectId
      */
     public Mono<Boolean> exists(final String objectId) {
@@ -316,6 +317,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ObjectId
      */
     public Mono<Boolean> exists(final ObjectId objectId) {
@@ -347,6 +349,7 @@ public final class MongoCollectionExecutor {
      * @return a {@code Mono} that, on subscription, emits a single {@code Boolean} ({@code true} when
      *         at least one document matches the filter, {@code false} otherwise), then completes
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -383,6 +386,7 @@ public final class MongoCollectionExecutor {
      *
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Long} with the total
      *         count of documents in the collection, then completes
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see com.mongodb.reactivestreams.client.MongoCollection#countDocuments()
      * @see #estimatedDocumentCount()
      */
@@ -421,6 +425,7 @@ public final class MongoCollectionExecutor {
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
      *         matching the filter, then completes
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -462,6 +467,7 @@ public final class MongoCollectionExecutor {
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
      *         matching the filter with the applied options, then completes
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
@@ -503,6 +509,7 @@ public final class MongoCollectionExecutor {
      *
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} estimated count of
      *         documents in the collection, then completes
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see com.mongodb.reactivestreams.client.MongoCollection#estimatedDocumentCount()
      */
     public Mono<Long> estimatedDocumentCount() {
@@ -540,6 +547,7 @@ public final class MongoCollectionExecutor {
      * @param options the estimation options to apply; may be null (default options)
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} estimated count, then
      *         completes
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see EstimatedDocumentCountOptions
      */
     public Mono<Long> estimatedDocumentCount(final EstimatedDocumentCountOptions options) {
@@ -2336,7 +2344,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List)
      */
     public ChangeStreamPublisher<Document> watch(final List<? extends Bson> pipeline) {
-        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(pipeline, cs.pipeline);
 
         return coll.watch(pipeline);
     }
@@ -2367,7 +2375,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List, Class)
      */
     public <T> ChangeStreamPublisher<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
-        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return coll.watch(pipeline, rowType);
@@ -2412,6 +2420,7 @@ public final class MongoCollectionExecutor {
      *         describing the operation, then completes
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #insertOne(Object, InsertOneOptions)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#insertOne(Object)
      */
@@ -2441,9 +2450,10 @@ public final class MongoCollectionExecutor {
      *         completes
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<InsertOneResult> insertOne(final Object obj, final InsertOneOptions options) {
-        N.checkArgNotNull(obj, "obj");
+        N.checkArgNotNull(obj, cs.obj);
 
         if (options == null) {
             return Mono.from(coll.insertOne(toDocument(obj)));
@@ -2487,6 +2497,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #insertMany(Collection, InsertManyOptions)
      */
     public Mono<InsertManyResult> insertMany(final Collection<?> objList) {
@@ -2519,9 +2530,10 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<InsertManyResult> insertMany(final Collection<?> objList, final InsertManyOptions options) {
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         final List<Document> docs = toDocument(objList);
 
@@ -2603,6 +2615,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null,
      *         or if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
      *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final String objectId, final Object update) {
         return updateOne(createObjectId(objectId), update);
@@ -2631,6 +2644,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field
      *         name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot
      *         be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final ObjectId objectId, final Object update) {
         return updateOne(MongoDBBase.objectIdToFilter(objectId), update);
@@ -2669,6 +2683,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Object update) {
         return updateOne(filter, update, null);
@@ -2697,6 +2712,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Object update, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -2745,9 +2761,10 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to identify the document to update; must not be null
      * @param objList the pipeline of update stages to apply; must not be null or empty
      * @return a {@code Mono} that emits the {@link UpdateResult} containing operation details
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if
+     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
         return updateOne(filter, objList, null);
@@ -2778,9 +2795,10 @@ public final class MongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the update operation; may be null to use default options
      * @return a Mono that emits the UpdateResult containing operation details
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if
+     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -2795,13 +2813,13 @@ public final class MongoCollectionExecutor {
     }
 
     private static ObjectId createObjectId(final String objectId) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
 
         return new ObjectId(objectId);
     }
 
     private static Bson toBson(final Object update) {
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
 
         // Note: the second argument (isForUpdate) on MongoDBBase.toDocument is a dead flag, AND
         // MongoCollectionExecutor cannot see the protected (Object, boolean) overload from this
@@ -2877,7 +2895,7 @@ public final class MongoCollectionExecutor {
     }
 
     private List<Bson> toBson(final Collection<?> objList) {
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         // Document is itself a Bson, but a plain Document is not a complete update-pipeline stage.
         // Normalize every element so {field: value} becomes {$set: {field: value}}, while driver-built
@@ -2929,6 +2947,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #updateMany(Bson, Object, UpdateOptions)
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Object update) {
@@ -2966,6 +2985,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -3001,9 +3021,10 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to identify documents to update; must not be null
      * @param objList aggregation update pipeline stages to apply; must not be null or empty
      * @return a Mono that emits the UpdateResult containing operation details
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if
+     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #updateMany(Bson, Collection, UpdateOptions)
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<?> objList) {
@@ -3035,13 +3056,14 @@ public final class MongoCollectionExecutor {
      * @param objList aggregation update pipeline stages to apply; must not be null or empty
      * @param options the options to apply to the update operation; may be null for defaults
      * @return a Mono that emits the UpdateResult containing operation details
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if
+     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         final List<Bson> updateToUse = toBson(objList);
 
@@ -3087,6 +3109,7 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the UpdateResult containing operation details
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
      *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #replaceOne(ObjectId, Object)
      */
     public Mono<UpdateResult> replaceOne(final String objectId, final Object replacement) {
@@ -3115,6 +3138,7 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the UpdateResult containing operation details
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #replaceOne(Bson, Object)
      */
     public Mono<UpdateResult> replaceOne(final ObjectId objectId, final Object replacement) {
@@ -3145,6 +3169,7 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the UpdateResult containing operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #replaceOne(Bson, Object, ReplaceOptions)
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final Object replacement) {
@@ -3179,6 +3204,7 @@ public final class MongoCollectionExecutor {
      *         modified count, and upserted id if applicable
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -3209,6 +3235,7 @@ public final class MongoCollectionExecutor {
      * @param objectId string representation of the ObjectId; must be a valid 24-character hex string
      * @return a Mono that emits the DeleteResult containing the count of deleted documents
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #deleteOne(ObjectId)
      */
     public Mono<DeleteResult> deleteOne(final String objectId) {
@@ -3233,6 +3260,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId of the document to delete; must not be null
      * @return a Mono that emits the DeleteResult containing the count of deleted documents
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #deleteOne(Bson)
      */
     public Mono<DeleteResult> deleteOne(final ObjectId objectId) {
@@ -3272,6 +3300,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to identify the document to delete; must not be null
      * @return a Mono that emits the DeleteResult containing the count of deleted documents
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #deleteOne(Bson, DeleteOptions)
      */
     public Mono<DeleteResult> deleteOne(final Bson filter) {
@@ -3303,6 +3332,7 @@ public final class MongoCollectionExecutor {
      *                may be null to use default options
      * @return a Mono that emits the DeleteResult containing the count of deleted documents
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -3340,6 +3370,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to identify documents to delete; must not be null
      * @return a Mono that emits the DeleteResult containing the count of deleted documents
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #deleteMany(Bson, DeleteOptions)
      */
     public Mono<DeleteResult> deleteMany(final Bson filter) {
@@ -3374,6 +3405,7 @@ public final class MongoCollectionExecutor {
      *                may be null to use default options
      * @return a Mono that emits the DeleteResult containing the count of deleted documents
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -3420,6 +3452,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #bulkWrite(List)
      */
@@ -3455,9 +3488,10 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
-        N.checkArgNotEmpty(entities, "entities");
+        N.checkArgNotEmpty(entities, cs.entities);
 
         final List<InsertOneModel<Document>> list = new ArrayList<>(entities.size());
 
@@ -3509,7 +3543,8 @@ public final class MongoCollectionExecutor {
      * @param requests list of write models representing the operations to perform; must not be null or empty
      * @return a {@code Mono} that, on subscription, emits a single {@link BulkWriteResult} and then
      *         completes
-     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalArgumentException if {@code requests} is null or empty, or if it contains a null element
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #bulkWrite(List, BulkWriteOptions)
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
@@ -3538,10 +3573,11 @@ public final class MongoCollectionExecutor {
      *                may be null to use default options
      * @return a Mono that emits the BulkWriteResult containing detailed operation results including
      *         counts for inserted, updated, and deleted documents
-     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalArgumentException if {@code requests} is null or empty, or if it contains a null element
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
-        N.checkArgNotEmpty(requests, "requests");
+        N.checkArgNotEmpty(requests, cs.requests);
 
         if (options == null) {
             return Mono.from(coll.bulkWrite(requests));
@@ -3592,6 +3628,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#findOneAndUpdate(Bson, Object)
      */
@@ -3625,6 +3662,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null, or if an update
      *         document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or
      *         if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions, Class)
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
@@ -3660,6 +3698,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -3700,10 +3739,11 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null, or if an update
      *         document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or
      *         if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return findOneAndUpdate(filter, update, options).mapNotNull(toEntity(rowType));
@@ -3745,9 +3785,10 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to find the document; must not be null
      * @param objList aggregation update pipeline stages to apply; must not be null or empty
      * @return a Mono that emits the found document, or completes empty when no document matches the filter
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if
+     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList) {
@@ -3779,8 +3820,10 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null, or if
-     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         {@code objList} contains a null element, or if an update document has a null field name, mixes operator and ordinary field
+     *         names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions, Class)
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
@@ -3818,9 +3861,10 @@ public final class MongoCollectionExecutor {
      *                may be null to use default options
      * @return a Mono that emits the found document (before or after update based on options), or
      *         completes empty when no document matches the filter
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if
+     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -3864,12 +3908,14 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null, or if
-     *         an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         {@code objList} contains a null element, or if an update document has a null field name, mixes operator and ordinary field
+     *         names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return findOneAndUpdate(filter, objList, options).mapNotNull(toEntity(rowType));
@@ -3913,6 +3959,7 @@ public final class MongoCollectionExecutor {
      *         or completes empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#findOneAndReplace(Bson, Object)
      */
@@ -3944,6 +3991,7 @@ public final class MongoCollectionExecutor {
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
      *         document value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions, Class)
      */
     public <T> Mono<T> findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
@@ -3978,6 +4026,7 @@ public final class MongoCollectionExecutor {
      *         or completes empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<Document> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -4019,6 +4068,7 @@ public final class MongoCollectionExecutor {
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
      *         document value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public <T> Mono<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
@@ -4060,6 +4110,7 @@ public final class MongoCollectionExecutor {
      * @return a {@code Mono} that emits the deleted document on subscription, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#findOneAndDelete(Bson)
      */
@@ -4088,6 +4139,7 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the deleted document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions, Class)
      */
     public <T> Mono<T> findOneAndDelete(final Bson filter, final Class<T> rowType) {
@@ -4118,6 +4170,7 @@ public final class MongoCollectionExecutor {
      *                may be null to use default options
      * @return a Mono that emits the deleted document, or completes empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<Document> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -4155,6 +4208,7 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the deleted document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public <T> Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
@@ -4184,7 +4238,7 @@ public final class MongoCollectionExecutor {
      * Flux<String> notRunYet = executor.distinct("category", String.class); // nothing sent yet
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB distinct command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the distinct values
@@ -4214,7 +4268,7 @@ public final class MongoCollectionExecutor {
      * Flux<String> activeUsernames = executor.distinct("username", filter, String.class);
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB distinct command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the distinct values
@@ -4260,7 +4314,7 @@ public final class MongoCollectionExecutor {
      * // Edge: cold — no aggregation runs until subscription; re-subscribing re-runs the pipeline.
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param pipeline the aggregation pipeline stages; must not be null
@@ -4294,7 +4348,7 @@ public final class MongoCollectionExecutor {
      * Flux<UserStats> stats = executor.aggregate(pipeline, UserStats.class);
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the aggregation results
@@ -4306,7 +4360,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
      */
     public <T> Flux<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
-        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return Flux.from(coll.aggregate(pipeline, Document.class)).mapNotNull(toEntity(rowType));
@@ -4333,7 +4387,7 @@ public final class MongoCollectionExecutor {
      * Flux<Document> notRunYet = executor.groupBy("category"); // nothing sent yet
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldName the field name to group by; must not be null
@@ -4357,7 +4411,7 @@ public final class MongoCollectionExecutor {
      * Flux<CategoryGroup> groups = executor.groupBy("category", CategoryGroup.class);
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the grouped results
@@ -4386,7 +4440,7 @@ public final class MongoCollectionExecutor {
      * Flux<Document> grouped = executor.groupBy(Arrays.asList("category", "status"));
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldNames collection of field names to group by; must not be null or empty
@@ -4411,7 +4465,7 @@ public final class MongoCollectionExecutor {
      * Flux<EmployeeGroup> groups = executor.groupBy(fields, EmployeeGroup.class);
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the grouped results
@@ -4422,7 +4476,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Flux<T> groupBy(final Collection<String> fieldNames, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldNames, "fieldNames");
+        N.checkArgNotEmpty(fieldNames, cs.fieldNames);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
@@ -4449,7 +4503,7 @@ public final class MongoCollectionExecutor {
      * // Edge: cold — re-subscribing re-runs the aggregation.
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldName the field name to group by; must not be null
@@ -4473,7 +4527,7 @@ public final class MongoCollectionExecutor {
      * Flux<CategoryCount> counts = executor.groupByAndCount("category", CategoryCount.class);
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the grouped and counted results
@@ -4501,7 +4555,7 @@ public final class MongoCollectionExecutor {
      * Flux<Document> counts = executor.groupByAndCount(Arrays.asList("status", "priority"));
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldNames collection of field names to group by; must not be null or empty
@@ -4526,7 +4580,7 @@ public final class MongoCollectionExecutor {
      * Flux<SalesCount> counts = executor.groupByAndCount(dimensions, SalesCount.class);
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the grouped and counted results
@@ -4537,7 +4591,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldNames, "fieldNames");
+        N.checkArgNotEmpty(fieldNames, cs.fieldNames);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
@@ -4564,7 +4618,7 @@ public final class MongoCollectionExecutor {
     }
 
     private static List<Document> groupByPipeline(final Collection<String> fieldNames, final boolean count, final Class<?> rowType) {
-        N.checkArgNotEmpty(fieldNames, "fieldNames");
+        N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
         final Document groupFields = new Document();
 
@@ -4619,7 +4673,7 @@ public final class MongoCollectionExecutor {
      * // Note: prefer the aggregate pipeline — server-side map-reduce is deprecated in MongoDB 5.0+.
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB map-reduce command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param mapFunction the JavaScript map function; must not be null or empty
@@ -4648,7 +4702,7 @@ public final class MongoCollectionExecutor {
      * Flux<CategoryTotal> totals = executor.mapReduce(mapFunction, reduceFunction, CategoryTotal.class);
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB map-reduce command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the map-reduce results
@@ -4663,8 +4717,8 @@ public final class MongoCollectionExecutor {
      */
     @Deprecated
     public <T> Flux<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
-        N.checkArgNotEmpty(mapFunction, "mapFunction");
-        N.checkArgNotEmpty(reduceFunction, "reduceFunction");
+        N.checkArgNotEmpty(mapFunction, cs.mapFunction);
+        N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return Flux.from(coll.mapReduce(mapFunction, reduceFunction, Document.class)).mapNotNull(toEntity(rowType));

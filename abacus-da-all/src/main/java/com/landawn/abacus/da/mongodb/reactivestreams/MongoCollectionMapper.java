@@ -24,9 +24,9 @@ import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.mongodb.MongoException;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.model.Aggregates;
@@ -263,6 +263,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ObjectId
      */
     public Mono<Boolean> exists(final String objectId) {
@@ -299,6 +300,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ObjectId
      */
     public Mono<Boolean> exists(final ObjectId objectId) {
@@ -335,6 +337,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against; must not be null
      * @return a Mono that emits {@code true} if any documents match the filter, {@code false} otherwise
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -370,6 +373,7 @@ public final class MongoCollectionMapper<T> {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @return a Mono that emits the total count of documents in the collection
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<Long> count() {
         return collectionExecutor.count();
@@ -405,6 +409,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents; must not be null
      * @return a Mono that emits the count of documents matching the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -443,6 +448,7 @@ public final class MongoCollectionMapper<T> {
      * @param options the count options to apply (can be null)
      * @return a Mono that emits the count of documents matching the filter with applied options
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
@@ -2078,6 +2084,7 @@ public final class MongoCollectionMapper<T> {
      *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
@@ -2119,6 +2126,7 @@ public final class MongoCollectionMapper<T> {
      *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #insertOne(Object)
      * @see InsertOneOptions
      */
@@ -2163,6 +2171,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList) {
         return collectionExecutor.insertMany(objList);
@@ -2195,6 +2204,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code objList} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see InsertManyOptions
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList, final InsertManyOptions options) {
@@ -2236,6 +2246,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null,
      *         or if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
      *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final String objectId, final T update) {
         return collectionExecutor.updateOne(objectId, update);
@@ -2265,6 +2276,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field
      *         name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot
      *         be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final ObjectId objectId, final T update) {
         return collectionExecutor.updateOne(objectId, update);
@@ -2294,6 +2306,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final T update) {
         return collectionExecutor.updateOne(filter, update);
@@ -2324,6 +2337,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see UpdateOptions
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final T update, final UpdateOptions options) {
@@ -2355,9 +2369,10 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param objList the collection of entities containing update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList) {
         return collectionExecutor.updateOne(filter, objList);
@@ -2387,9 +2402,10 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities containing update values
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
         return collectionExecutor.updateOne(filter, objList, options);
@@ -2432,6 +2448,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final T update) {
         return collectionExecutor.updateMany(filter, update);
@@ -2462,6 +2479,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final T update, final UpdateOptions options) {
         return collectionExecutor.updateMany(filter, update, options);
@@ -2492,9 +2510,10 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param objList the collection of entities containing update values
      * @return a Mono that emits the update result with modified count
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList) {
         return collectionExecutor.updateMany(filter, objList);
@@ -2524,9 +2543,10 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities containing update values
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result with modified count
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
         return collectionExecutor.updateMany(filter, objList, options);
@@ -2564,6 +2584,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
      *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> replaceOne(final String objectId, final T replacement) {
         return collectionExecutor.replaceOne(objectId, replacement);
@@ -2590,6 +2611,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> replaceOne(final ObjectId objectId, final T replacement) {
         return collectionExecutor.replaceOne(objectId, replacement);
@@ -2616,6 +2638,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement) {
         return collectionExecutor.replaceOne(filter, replacement);
@@ -2644,6 +2667,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ReplaceOptions
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement, final ReplaceOptions options) {
@@ -2679,6 +2703,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the MongoDB ObjectId
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<DeleteResult> deleteOne(final String objectId) {
         return collectionExecutor.deleteOne(objectId);
@@ -2703,6 +2728,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the MongoDB ObjectId to match
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<DeleteResult> deleteOne(final ObjectId objectId) {
         return collectionExecutor.deleteOne(objectId);
@@ -2739,6 +2765,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<DeleteResult> deleteOne(final Bson filter) {
         return collectionExecutor.deleteOne(filter);
@@ -2766,6 +2793,7 @@ public final class MongoCollectionMapper<T> {
      * @param options the delete options to apply (can be null)
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see DeleteOptions
      */
     public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
@@ -2803,6 +2831,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @return a Mono that emits the delete result with deleted count
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<DeleteResult> deleteMany(final Bson filter) {
         return collectionExecutor.deleteMany(filter);
@@ -2830,6 +2859,7 @@ public final class MongoCollectionMapper<T> {
      * @return a cold {@code Mono} that, on subscription, emits exactly one {@link DeleteResult}
      *         with deletion statistics, then completes
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
         return collectionExecutor.deleteMany(filter, options);
@@ -2870,6 +2900,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#bulkInsert(Collection)
      */
     public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities) {
@@ -2900,6 +2931,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
      *         array of String name/value pairs
      * @throws NullPointerException if {@code entities} contains a null document
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
         return collectionExecutor.bulkInsert(entities, options);
@@ -2942,6 +2974,7 @@ public final class MongoCollectionMapper<T> {
      * @param requests list of write operations to execute (must not be null or empty)
      * @return a Mono emitting BulkWriteResult with detailed operation statistics
      * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
         return collectionExecutor.bulkWrite(requests);
@@ -2970,6 +3003,7 @@ public final class MongoCollectionMapper<T> {
      * @param options configuration for the bulk write behavior (may be null to use defaults)
      * @return a Mono emitting BulkWriteResult with operation statistics
      * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
         return collectionExecutor.bulkWrite(requests, options);
@@ -3017,6 +3051,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#findOneAndUpdate(Bson, Object, Class)
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final T update) {
@@ -3050,6 +3085,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
      *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final T update, final FindOneAndUpdateOptions options) {
         return collectionExecutor.findOneAndUpdate(filter, update, options, rowType);
@@ -3081,9 +3117,10 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to identify the document
      * @param objList collection of objects containing update values
      * @return a Mono emitting the found document
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList) {
         return collectionExecutor.findOneAndUpdate(filter, objList, rowType);
@@ -3114,9 +3151,10 @@ public final class MongoCollectionMapper<T> {
      * @param options configuration for the operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
-     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
-     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList, final FindOneAndUpdateOptions options) {
         return collectionExecutor.findOneAndUpdate(filter, objList, options, rowType);
@@ -3165,6 +3203,7 @@ public final class MongoCollectionMapper<T> {
      *         {@code T}, or completes empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#findOneAndReplace(Bson, Object, Class)
      */
     public Mono<T> findOneAndReplace(final Bson filter, final T replacement) {
@@ -3197,6 +3236,7 @@ public final class MongoCollectionMapper<T> {
      *         post-write version per {@code options} — or completes empty when no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<T> findOneAndReplace(final Bson filter, final T replacement, final FindOneAndReplaceOptions options) {
         return collectionExecutor.findOneAndReplace(filter, replacement, options, rowType);
@@ -3238,6 +3278,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the deleted document decoded as {@code T}, or completes
      *         empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#findOneAndDelete(Bson, Class)
      */
     public Mono<T> findOneAndDelete(final Bson filter) {
@@ -3266,6 +3307,7 @@ public final class MongoCollectionMapper<T> {
      * @param options configuration for the delete operation (can be null to use defaults)
      * @return a Mono emitting the deleted document
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
     public Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
         return collectionExecutor.findOneAndDelete(filter, options, rowType);
@@ -3305,7 +3347,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.distinct((String) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldName the name of the field to get distinct values for
@@ -3366,7 +3408,7 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(depts -> System.out.println("Active departments: " + depts));
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldName the name of the field to get distinct values for
@@ -3413,7 +3455,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.aggregate((List<Bson>) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param pipeline list of aggregation stages to execute in order; the pipeline itself may be
@@ -3453,7 +3495,7 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(g -> handleGroup(g));   // errors routed to onErrorResume
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldName the field name to group documents by
@@ -3491,7 +3533,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupBy(Collections.emptyList());   // throws IllegalArgumentException
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldNames collection of field names to compose the group key
@@ -3530,7 +3572,7 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(g -> handleCount(g));   // errors routed to onErrorResume
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldName the field name to group and count by
@@ -3568,7 +3610,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupByAndCount(Collections.emptyList());   // throws IllegalArgumentException
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param fieldNames collection of field names to compose the group key
@@ -3608,7 +3650,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.mapReduce((String) null, reduceFunction);   // throws IllegalArgumentException
      * }</pre>
      *
-     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB map-reduce command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param mapFunction the JavaScript map function; must not be null or empty

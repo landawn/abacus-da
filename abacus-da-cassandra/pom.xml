@@ -65,6 +65,7 @@
 				<configuration>
 					<includes>
 						<include>com/landawn/abacus/da/cassandra/**</include>
+						<include>com/landawn/abacus/da/cs.java</include>
 					</includes>
 				</configuration>
 			</plugin>
@@ -74,6 +75,7 @@
 				<configuration>
 					<includes>
 						<include>com/landawn/abacus/da/cassandra/**</include>
+						<include>com/landawn/abacus/da/cs.java</include>
 					</includes>
 				</configuration>
 			</plugin>

@@ -25,11 +25,11 @@ import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -41,6 +41,7 @@ import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
 import com.landawn.abacus.util.stream.Stream;
+import com.mongodb.MongoException;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.model.BulkWriteOptions;
@@ -215,7 +216,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #exists(ObjectId)
      */
     public ContinuableFuture<Boolean> exists(final String objectId) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.exists(objectId));
     }
@@ -246,7 +247,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see ContinuableFuture
      */
     public ContinuableFuture<Boolean> exists(final ObjectId objectId) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.exists(objectId));
     }
@@ -456,7 +457,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId)
      */
     public ContinuableFuture<Optional<Document>> get(final String objectId) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId));
     }
@@ -488,7 +489,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Document
      */
     public ContinuableFuture<Optional<Document>> get(final ObjectId objectId) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId));
     }
@@ -520,7 +521,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Class<T> rowType) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId, rowType));
@@ -554,7 +555,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(String, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Class<T> rowType) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId, rowType));
@@ -589,7 +590,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId, Collection, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId, selectPropNames, rowType));
@@ -626,7 +627,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId, selectPropNames, rowType));
@@ -663,7 +664,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(ObjectId)
      */
     public ContinuableFuture<Document> gett(final String objectId) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId));
     }
@@ -699,7 +700,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(String)
      */
     public ContinuableFuture<Document> gett(final ObjectId objectId) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId));
     }
@@ -736,7 +737,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(ObjectId, Class)
      */
     public <T> ContinuableFuture<T> gett(final String objectId, final Class<T> rowType) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, rowType));
@@ -775,7 +776,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(String, Class)
      */
     public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Class<T> rowType) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, rowType));
@@ -815,7 +816,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(ObjectId, Collection, Class)
      */
     public <T> ContinuableFuture<T> gett(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, selectPropNames, rowType));
@@ -857,7 +858,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, selectPropNames, rowType));
@@ -2309,7 +2310,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Stream of Document objects
@@ -2341,7 +2342,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param filter the query filter to match documents (must not be null)
@@ -2374,7 +2375,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
-     * consuming the returned stream or change cursor are raised during consumption.</p>
+     * consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param filter the query filter to match documents (must not be null)
@@ -2408,7 +2409,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
@@ -2443,7 +2444,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
-     * consuming the returned stream or change cursor are raised during consumption.</p>
+     * consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
@@ -2480,7 +2481,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
@@ -2517,7 +2518,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
-     * consuming the returned stream or change cursor are raised during consumption.</p>
+     * consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
@@ -2556,7 +2557,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification
@@ -2597,7 +2598,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
-     * consuming the returned stream or change cursor are raised during consumption.</p>
+     * consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification
@@ -2635,8 +2636,8 @@ public final class AsyncMongoCollectionExecutor {
      *          System.out.println("Change detected: " + change.getOperationType())));
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
+     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
      *
      * @return a ContinuableFuture that completes with a ChangeStreamIterable for Document changes
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
@@ -2662,8 +2663,8 @@ public final class AsyncMongoCollectionExecutor {
      *          updateInventoryCache(change.getFullDocument())));
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
+     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
      *
      * @param <T> the type to deserialize change events to
      * @param rowType the Class object representing the row type
@@ -2696,8 +2697,8 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(changeStream -> processFilteredChanges(changeStream));
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
+     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
      *
      * @param pipeline the aggregation pipeline to apply to change events
      * @return a ContinuableFuture that completes with a filtered ChangeStreamIterable for Document changes
@@ -2709,7 +2710,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Aggregates
      */
     public ContinuableFuture<ChangeStreamIterable<Document>> watch(final List<? extends Bson> pipeline) {
-        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(pipeline, cs.pipeline);
 
         return asyncExecutor.execute(() -> collectionExecutor.watch(pipeline));
     }
@@ -2729,8 +2730,8 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(changeStream -> notifyHighPriorityChanges(changeStream));
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
-     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
+     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
      *
      * @param <T> the type to deserialize change events to
      * @param pipeline the aggregation pipeline to apply to change events
@@ -2744,7 +2745,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Aggregates
      */
     public <T> ContinuableFuture<ChangeStreamIterable<T>> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
-        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.watch(pipeline, rowType));
@@ -2790,7 +2791,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #insertMany(Collection)
      */
     public ContinuableFuture<InsertOneResult> insertOne(final Object obj) {
-        N.checkArgNotNull(obj, "obj");
+        N.checkArgNotNull(obj, cs.obj);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertOne(obj));
     }
@@ -2825,7 +2826,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #insertOne(Object)
      */
     public ContinuableFuture<InsertOneResult> insertOne(final Object obj, final InsertOneOptions options) {
-        N.checkArgNotNull(obj, "obj");
+        N.checkArgNotNull(obj, cs.obj);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertOne(obj, options));
     }
@@ -2862,7 +2863,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #insertOne(Object)
      */
     public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList) {
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertMany(objList));
     }
@@ -2899,7 +2900,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #insertMany(Collection)
      */
     public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList, final InsertManyOptions options) {
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertMany(objList, options));
     }
@@ -2944,8 +2945,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Updates
      */
     public ContinuableFuture<UpdateResult> updateOne(final String objectId, final Object update) {
-        N.checkArgNotEmpty(objectId, "objectId");
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotEmpty(objectId, cs.objectId);
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateOne(objectId, update));
     }
@@ -2992,8 +2993,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see ObjectId
      */
     public ContinuableFuture<UpdateResult> updateOne(final ObjectId objectId, final Object update) {
-        N.checkArgNotNull(objectId, "objectId");
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(objectId, cs.objectId);
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateOne(objectId, update));
     }
@@ -3038,7 +3039,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, update));
     }
@@ -3072,7 +3073,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, update, options));
     }
@@ -3113,7 +3114,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, objList));
     }
@@ -3154,7 +3155,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, objList, options));
     }
@@ -3199,7 +3200,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, update));
     }
@@ -3235,7 +3236,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, update, options));
     }
@@ -3276,7 +3277,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, objList));
     }
@@ -3316,7 +3317,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, objList, options));
     }
@@ -3353,7 +3354,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #replaceOne(Bson, Object)
      */
     public ContinuableFuture<UpdateResult> replaceOne(final String objectId, final Object replacement) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(replacement, cs.replacement);
 
         return asyncExecutor.execute(() -> collectionExecutor.replaceOne(objectId, replacement));
@@ -3390,7 +3391,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #replaceOne(Bson, Object)
      */
     public ContinuableFuture<UpdateResult> replaceOne(final ObjectId objectId, final Object replacement) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(replacement, cs.replacement);
 
         return asyncExecutor.execute(() -> collectionExecutor.replaceOne(objectId, replacement));
@@ -3521,7 +3522,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteOne(final String objectId) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteOne(objectId));
     }
@@ -3554,7 +3555,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteOne(final ObjectId objectId) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteOne(objectId));
     }
@@ -3733,7 +3734,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkWrite(List)
      */
     public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities) {
-        N.checkArgNotEmpty(entities, "entities");
+        N.checkArgNotEmpty(entities, cs.entities);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities));
     }
@@ -3766,7 +3767,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkInsert(Collection)
      */
     public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
-        N.checkArgNotEmpty(entities, "entities");
+        N.checkArgNotEmpty(entities, cs.entities);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities, options));
     }
@@ -3803,7 +3804,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkWrite(List, BulkWriteOptions)
      */
     public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
-        N.checkArgNotEmpty(requests, "requests");
+        N.checkArgNotEmpty(requests, cs.requests);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkWrite(requests));
     }
@@ -3839,7 +3840,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkWrite(List)
      */
     public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
-        N.checkArgNotEmpty(requests, "requests");
+        N.checkArgNotEmpty(requests, cs.requests);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkWrite(requests, options));
     }
@@ -3873,7 +3874,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update));
     }
@@ -3908,7 +3909,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, rowType));
@@ -3946,7 +3947,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, options));
     }
@@ -3983,7 +3984,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(update, cs.update);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, options, rowType));
@@ -4024,7 +4025,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList));
     }
@@ -4061,7 +4062,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, rowType));
@@ -4100,7 +4101,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, options));
     }
@@ -4141,7 +4142,7 @@ public final class AsyncMongoCollectionExecutor {
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options,
             final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotEmpty(objList, cs.objList);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, options, rowType));
@@ -4437,7 +4438,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for
@@ -4470,7 +4471,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for
@@ -4509,7 +4510,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param pipeline the aggregation pipeline to execute
      * @return a ContinuableFuture that completes with a Stream of result Documents
@@ -4521,7 +4522,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Aggregates
      */
     public ContinuableFuture<Stream<Document>> aggregate(final List<? extends Bson> pipeline) {
-        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(pipeline, cs.pipeline);
 
         return asyncExecutor.execute(() -> collectionExecutor.aggregate(pipeline));
     }
@@ -4544,7 +4545,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param <T> the type of the result documents
      * @param pipeline the aggregation pipeline to execute
@@ -4558,7 +4559,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Aggregates
      */
     public <T> ContinuableFuture<Stream<T>> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
-        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.aggregate(pipeline, rowType));
@@ -4578,7 +4579,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param fieldName the field name to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
@@ -4610,7 +4611,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param fieldNames the collection of field names to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
@@ -4623,7 +4624,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Beta
     public ContinuableFuture<Stream<Document>> groupBy(final Collection<String> fieldNames) {
-        N.checkArgNotEmpty(fieldNames, "fieldNames");
+        N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
         return asyncExecutor.execute(() -> collectionExecutor.groupBy(fieldNames));
     }
@@ -4655,7 +4656,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
-     * executing the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * executing the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param fieldName the field name to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing group keys and counts
@@ -4704,7 +4705,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
-     * executing the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * executing the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
      * @param fieldNames the collection of field names to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing composite group keys and counts
@@ -4718,7 +4719,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Beta
     public ContinuableFuture<Stream<Document>> groupByAndCount(final Collection<String> fieldNames) {
-        N.checkArgNotEmpty(fieldNames, "fieldNames");
+        N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
         return asyncExecutor.execute(() -> collectionExecutor.groupByAndCount(fieldNames));
     }
@@ -4739,22 +4740,22 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code mapReduce} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * @param mapFunction the JavaScript map function
+     * @param reduceFunction the JavaScript reduce function
+     * @return a ContinuableFuture that completes with a Stream of result Documents
      * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
      *         shut down
      * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
-     * @param mapFunction the JavaScript map function
-     * @param reduceFunction the JavaScript reduce function
-     * @return a ContinuableFuture that completes with a Stream of result Documents
      * @see #aggregate(List)
      */
     @Deprecated
     public ContinuableFuture<Stream<Document>> mapReduce(final String mapFunction, final String reduceFunction) {
-        N.checkArgNotEmpty(mapFunction, "mapFunction");
-        N.checkArgNotEmpty(reduceFunction, "reduceFunction");
+        N.checkArgNotEmpty(mapFunction, cs.mapFunction);
+        N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
 
         return asyncExecutor.execute(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction));
     }
@@ -4773,25 +4774,25 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code mapReduce} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * @param <T> the type of the result documents
+     * @param mapFunction the JavaScript map function
+     * @param reduceFunction the JavaScript reduce function
+     * @param rowType the class to deserialize the result documents into
+     * @return a ContinuableFuture that completes with a Stream of result objects
      * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty, or if {@code
      *         rowType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
      *         shut down
      * @deprecated Use {@link #aggregate(List, Class)} with aggregation pipeline instead.
-     * @param <T> the type of the result documents
-     * @param mapFunction the JavaScript map function
-     * @param reduceFunction the JavaScript reduce function
-     * @param rowType the class to deserialize the result documents into
-     * @return a ContinuableFuture that completes with a Stream of result objects
      * @see #aggregate(List, Class)
      */
     @Deprecated
     public <T> ContinuableFuture<Stream<T>> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
-        N.checkArgNotEmpty(mapFunction, "mapFunction");
-        N.checkArgNotEmpty(reduceFunction, "reduceFunction");
+        N.checkArgNotEmpty(mapFunction, cs.mapFunction);
+        N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction, rowType));

@@ -269,7 +269,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * @param perms a map of username to {@link Permission}; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code perms} , a username key, or a permission value is {@code null}
+     * @throws NullPointerException if {@code perms}, a username key, or a permission value is {@code null}
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission

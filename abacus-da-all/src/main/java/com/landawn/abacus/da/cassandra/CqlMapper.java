@@ -33,6 +33,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Text;
 import org.xml.sax.SAXException;
 
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.logging.Logger;
@@ -42,7 +43,6 @@ import com.landawn.abacus.util.ImmutableSet;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.PropertiesUtil;
 import com.landawn.abacus.util.XmlUtil;
-import com.landawn.abacus.util.cs;
 
 /**
  * Registry of named CQL (Cassandra Query Language) statements, optionally loaded from XML files.
@@ -198,7 +198,8 @@ public final class CqlMapper {
      *         or if a CQL statement in a file cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws UncheckedIOException if a file cannot be read
      * @throws ParsingException if any XML file is malformed
-     * @throws RuntimeException if a file is not found, or the required {@code <cqlMapper>} root element is missing
+     * @throws RuntimeException if a file is not found, the XML parser cannot be created, or the required
+     *         {@code <cqlMapper>} root element is missing
      * @see #loadFrom(File...)
      */
     public static CqlMapper loadFrom(final String filePath) throws UncheckedIOException, ParsingException {
@@ -244,7 +245,8 @@ public final class CqlMapper {
      *         or if a CQL statement in a file cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws UncheckedIOException if a file cannot be read
      * @throws ParsingException if any XML file is malformed
-     * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
+     * @throws RuntimeException if the XML parser cannot be created, or the required {@code <cqlMapper>} root element
+     *         is missing
      */
     public static CqlMapper loadFrom(final File... files) throws UncheckedIOException, ParsingException {
         N.checkArgNotEmpty(files, cs.files);
@@ -282,7 +284,8 @@ public final class CqlMapper {
      *         statement cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws UncheckedIOException if an I/O error occurs reading the stream
      * @throws ParsingException if the XML content is malformed
-     * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
+     * @throws RuntimeException if the XML parser cannot be created, or the required {@code <cqlMapper>} root element
+     *         is missing
      */
     public static CqlMapper loadFrom(final InputStream is) throws UncheckedIOException, ParsingException {
         N.checkArgNotNull(is, cs.is);
@@ -320,7 +323,7 @@ public final class CqlMapper {
      * @param file the XML file to read
      * @throws UncheckedIOException if an I/O error occurs reading the file
      * @throws ParsingException if the XML content is malformed
-     * @throws RuntimeException if the XML root element is not {@code cqlMapper}
+     * @throws RuntimeException if the XML parser cannot be created, or the XML root element is not {@code cqlMapper}
      * @throws IllegalArgumentException if a CQL entry has a missing or duplicate id, or an invalid parameter marker
      */
     private void loadFile(final File file) throws UncheckedIOException, ParsingException {
@@ -343,9 +346,10 @@ public final class CqlMapper {
      * @param sourceLabel a human-readable label identifying the source, used in error messages
      * @throws UncheckedIOException if an I/O error occurs while reading the stream
      * @throws ParsingException if the XML content is malformed
-     * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
-     * @throws IllegalArgumentException if a {@code <cql>} element is missing its {@code id} attribute,
-     *         or if a duplicate id is encountered
+     * @throws RuntimeException if the XML parser cannot be created, or the required {@code <cqlMapper>} root element
+     *         is missing
+     * @throws IllegalArgumentException if a {@code <cql>} element is missing its {@code id} attribute, if a duplicate
+     *         id is encountered, or if a CQL statement cannot be parsed (see {@link ParsedCql#parse(String)})
      */
     private void loadStream(final InputStream is, final String sourceLabel) throws UncheckedIOException, ParsingException {
         try {
@@ -495,8 +499,8 @@ public final class CqlMapper {
      *
      * @param id the non-empty unique identifier for this CQL statement
      * @param parsedCql the pre-parsed CQL statement object (must not be null)
-     * @throws IllegalArgumentException if {@code id} is null or empty, the id already exists,
-     *         or if {@code parsedCql} is null
+     * @throws IllegalArgumentException if {@code id} is null or empty, {@code parsedCql} is null,
+     *         or the id already exists
      * @see ParsedCql
      * @see #add(String, ParsedCql, Map)
      */
@@ -529,13 +533,13 @@ public final class CqlMapper {
      * @param id the non-empty unique identifier for this CQL statement
      * @param parsedCql the pre-parsed CQL statement object (must not be null)
      * @param attrs optional attributes map for statement metadata (may be null or empty)
-     * @throws IllegalArgumentException if {@code id} is null or empty, the id already exists,
-     *         or {@code parsedCql} is null
+     * @throws IllegalArgumentException if {@code id} is null or empty, {@code parsedCql} is null,
+     *         or the id already exists
      * @see ParsedCql
      */
     public void add(final String id, final ParsedCql parsedCql, final Map<String, String> attrs) {
         N.checkArgNotEmpty(id, cs.id);
-        N.checkArgNotNull(parsedCql, "parsedCql");
+        N.checkArgNotNull(parsedCql, cs.parsedCql);
         checkDuplicateId(id);
 
         cqlMap.put(id, parsedCql);
@@ -556,8 +560,8 @@ public final class CqlMapper {
      *
      * @param id the non-empty unique identifier for this CQL statement
      * @param cql the CQL statement string to be parsed and stored
-     * @throws IllegalArgumentException if {@code id} is null or empty, the ID already exists, if {@code cql} is null,
-     *         or if the CQL is invalid
+     * @throws IllegalArgumentException if {@code id} is null or empty, {@code cql} is null, the ID already exists,
+     *         or the CQL is invalid (see {@link ParsedCql#parse(String)})
      */
     public void add(final String id, final String cql) {
         add(id, cql, null);
@@ -593,11 +597,12 @@ public final class CqlMapper {
      * @param id the non-empty unique identifier for this CQL statement
      * @param cql the CQL statement string to be parsed and stored
      * @param attrs optional attributes map for statement metadata (can be null)
-     * @throws IllegalArgumentException if {@code id} is null or empty, the ID already exists,
-     *         {@code cql} is null, or the CQL is invalid
+     * @throws IllegalArgumentException if {@code id} is null or empty, {@code cql} is null, the ID already exists,
+     *         or the CQL is invalid (see {@link ParsedCql#parse(String)})
      */
     public void add(final String id, final String cql, final Map<String, String> attrs) {
         N.checkArgNotEmpty(id, cs.id);
+        N.checkArgNotNull(cql, cs.cql);
         checkDuplicateId(id);
 
         cqlMap.put(id, ParsedCql.parse(cql));
@@ -751,10 +756,11 @@ public final class CqlMapper {
      *
      * @param file the target file where the XML will be written
      * @throws IllegalArgumentException if {@code file} is null
-     * @throws UncheckedIOException if the parent directory cannot be created, or if the file
-     *         cannot be written
+     * @throws UncheckedIOException if the parent directory cannot be created, the file cannot be opened for writing,
+     *         or flushing or closing the file fails
      * @throws DOMException if a stored attribute name is not a valid XML name
-     * @throws RuntimeException if the DOM document cannot be transformed into XML
+     * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
+     *         and written to the file
      * @see #saveTo(OutputStream)
      * @see #loadFrom(String)
      */
@@ -797,8 +803,9 @@ public final class CqlMapper {
      * @param os the output stream to write to (not closed by this method)
      * @throws IllegalArgumentException if {@code os} is null
      * @throws DOMException if a stored attribute name is not a valid XML name
-     * @throws RuntimeException if the DOM document cannot be transformed into XML
-     * @throws UncheckedIOException if an I/O error occurs while writing to the stream
+     * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
+     *         and written to the stream
+     * @throws UncheckedIOException if flushing the stream fails
      * @see #saveTo(File)
      * @see #loadFrom(String)
      */

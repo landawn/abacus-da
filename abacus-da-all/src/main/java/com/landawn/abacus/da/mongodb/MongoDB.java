@@ -16,10 +16,10 @@ package com.landawn.abacus.da.mongodb;
 
 import org.bson.Document;
 
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 
@@ -114,8 +114,8 @@ public final class MongoDB extends MongoDBBase {
      */
     public MongoDB(final MongoDatabase mongoDB, final AsyncExecutor asyncExecutor) {
         super();
-        N.checkArgNotNull(mongoDB, "mongoDB");
-        N.checkArgNotNull(asyncExecutor, "asyncExecutor");
+        N.checkArgNotNull(mongoDB, cs.mongoDB);
+        N.checkArgNotNull(asyncExecutor, cs.asyncExecutor);
         mongoDatabase = mongoDB.withCodecRegistry(codecRegistry);
         this.asyncExecutor = asyncExecutor;
     }
@@ -166,7 +166,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollection
      */
     public MongoCollection<Document> collection(final String collectionName) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
 
         return mongoDatabase.getCollection(collectionName);
     }
@@ -199,7 +199,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollection
      */
     public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return mongoDatabase.getCollection(collectionName, rowType);
@@ -227,7 +227,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollectionExecutor
      */
     public MongoCollectionExecutor collectionExecutor(final String collectionName) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
 
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
     }
@@ -321,7 +321,7 @@ public final class MongoDB extends MongoDBBase {
      */
     @SuppressWarnings("rawtypes")
     public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);

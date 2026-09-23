@@ -30,10 +30,10 @@ import org.neo4j.ogm.session.SessionFactory;
 import org.neo4j.ogm.transaction.Transaction;
 
 import com.landawn.abacus.annotation.Beta;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Optional;
 
@@ -97,6 +97,9 @@ import com.landawn.abacus.util.u.Optional;
  *       {@code object}, {@code ids} collection, single {@link Filter}, {@code filters} argument of
  *       {@link #count(Class, Iterable)}, or the {@code sortOrder} of an {@code ids}/{@code objects}
  *       overload;</li>
+ *   <li>for a {@code null} {@code id} of a {@code load} overload, a {@link NullPointerException} when the
+ *       entity class declares a primary index, otherwise an {@link IllegalArgumentException} (a native graph ID
+ *       must be a {@code Long});</li>
  *   <li>a plain {@link RuntimeException} &mdash; <i>not</i> an {@link IllegalArgumentException}
  *       &mdash; for a {@code null} {@code cypher}, {@code parameters} map, or query target
  *       class;</li>
@@ -2298,8 +2301,10 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return an {@link Optional} describing the single mapped result, or an empty {@code Optional} if
      *         the query returns no rows
-     * @throws RuntimeException if the query returns more than one row, or the underlying OGM session rejects the query &mdash; which is also how
-     *         it reports a {@code null} {@code targetClass} , {@code cypher} or {@code parameters}
+     * @throws RuntimeException if {@code cypher} is {@code null} or empty, {@code parameters} is {@code null}, or
+     *         {@code targetClass} is {@code null} or a void type (Neo4j-OGM rejects these with a plain
+     *         {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; if the query
+     *         returns more than one row; or if the result cannot be mapped to {@code targetClass}
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
@@ -2344,8 +2349,9 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return a {@link Stream} over the already-fetched result rows, each row a {@code Map} keyed by
      *         the {@code RETURN}-clause aliases; it does not retain the borrowed session
-     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also how it reports a {@code null}
-     *         {@code cypher} or {@code parameters}
+     * @throws RuntimeException if {@code cypher} is {@code null} or empty or {@code parameters} is {@code null}
+     *         (Neo4j-OGM rejects these with a plain {@code RuntimeException}); if the database cannot be reached or
+     *         Neo4j rejects the query; or if the result rows cannot be mapped
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map, boolean)
      * @see #findOnly(Class, String, Map)
@@ -2405,8 +2411,10 @@ public final class Neo4jExecutor {
      *                 routing); must be {@code false} for queries that write to the graph
      * @return a {@link Stream} over the already-fetched result rows; it does not retain the borrowed
      *         session
-     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also how it reports a {@code null}
-     *         {@code cypher} or {@code parameters}
+     * @throws RuntimeException if {@code cypher} is {@code null} or empty or {@code parameters} is {@code null}
+     *         (Neo4j-OGM rejects these with a plain {@code RuntimeException}); if the database cannot be reached or
+     *         Neo4j rejects the query (depending on the deployment, this includes a write query submitted with
+     *         {@code readOnly == true}); or if the result rows cannot be mapped
      * @see #stream(String, Map)
      * @see #stream(Class, String, Map)
      */
@@ -2454,8 +2462,10 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; it does
      *         not retain the borrowed session
-     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also how it reports a {@code null}
-     *         {@code cypher} or {@code parameters}
+     * @throws RuntimeException if {@code cypher} is {@code null} or empty, {@code parameters} is {@code null}, or
+     *         {@code targetClass} is {@code null} or a void type (Neo4j-OGM rejects these with a plain
+     *         {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; or if a result
+     *         row cannot be mapped to {@code targetClass} (for example, a scalar query returns more than one column)
      * @see #findOnly(Class, String, Map)
      * @see #stream(String, Map)
      */

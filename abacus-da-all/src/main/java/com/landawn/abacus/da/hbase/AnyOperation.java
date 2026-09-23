@@ -92,7 +92,8 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * is intended for debugging, logging, or serialization.
      *
      * @return a {@code Map} representation of this operation; never {@code null}
-     * @throws IllegalArgumentException if the wrapped mutation has a stored TTL attribute that is not exactly eight bytes
+     * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
+     *         than eight bytes
      * @see #toMap(int)
      * @see #getFingerprint()
      */
@@ -108,7 +109,8 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      *
      * @param maxCols HBase's total-column truncation budget for the map representation
      * @return a {@code Map} representation generated with the requested truncation budget; never {@code null}
-     * @throws IllegalArgumentException if the wrapped mutation has a stored TTL attribute that is not exactly eight bytes
+     * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
+     *         than eight bytes
      * @see #toMap()
      */
     public Map<String, Object> toMap(final int maxCols) {
@@ -123,7 +125,8 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * {@link IOException} thrown by HBase is wrapped as an {@link UncheckedIOException}.
      *
      * @return a JSON string representation of this operation; never {@code null}
-     * @throws IllegalArgumentException if the wrapped mutation has a stored TTL attribute that is not exactly eight bytes
+     * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
+     *         than eight bytes
      * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
      * @see #toJson(int)
      */
@@ -142,7 +145,8 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      *
      * @param maxCols HBase's total-column truncation budget for the JSON representation
      * @return a JSON string representation generated with the requested truncation budget; never {@code null}
-     * @throws IllegalArgumentException if the wrapped mutation has a stored TTL attribute that is not exactly eight bytes
+     * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
+     *         than eight bytes
      * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
      * @see #toJson()
      */
@@ -159,7 +163,8 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * delegated to the underlying HBase {@link Operation#toString()} implementation.
      *
      * @return a string representation of this operation; never {@code null}
-     * @throws IllegalArgumentException if the wrapped mutation has a stored TTL attribute that is not exactly eight bytes
+     * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
+     *         than eight bytes
      * @see #toString(int)
      */
     @Override
@@ -173,7 +178,8 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      *
      * @param maxCols HBase's total-column truncation budget for the string representation
      * @return a string representation generated with the requested truncation budget; never {@code null}
-     * @throws IllegalArgumentException if the wrapped mutation has a stored TTL attribute that is not exactly eight bytes
+     * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
+     *         than eight bytes
      * @see #toString()
      */
     public String toString(final int maxCols) {

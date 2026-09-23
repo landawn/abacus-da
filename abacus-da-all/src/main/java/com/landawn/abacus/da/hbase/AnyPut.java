@@ -30,6 +30,7 @@ import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.client.Put;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
@@ -40,7 +41,6 @@ import com.landawn.abacus.util.HBaseColumn;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.Tuple.Tuple3;
-import com.landawn.abacus.util.cs;
 
 /**
  * A fluent builder wrapper around HBase {@link Put} that simplifies data insertion and updates by
@@ -210,7 +210,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key whose byte representation is sliced
      * @param rowOffset the starting offset (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key starting at offset
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      */
@@ -226,7 +226,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowOffset the starting offset (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key starting at offset
      * @param timestamp the timestamp assigned to all cells added to this Put
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
@@ -241,7 +241,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key, converted to bytes
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyPut(final Object rowKey, final boolean rowIsImmutable) {
         super(new Put(toRowKeyBytes(rowKey), rowIsImmutable));
@@ -254,7 +254,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key, converted to bytes
      * @param timestamp the timestamp assigned to all cells added to this Put
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      */
     AnyPut(final Object rowKey, final long timestamp, final boolean rowIsImmutable) {
@@ -267,7 +267,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key as a ByteBuffer; remaining bytes are copied and its position is
      *               advanced to the limit
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyPut(final ByteBuffer rowKey) {
         super(new Put(rowKey));
@@ -280,7 +280,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key as a ByteBuffer; remaining bytes are copied and its position is
      *               advanced to the limit
      * @param timestamp the timestamp assigned to all cells added to this Put
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      */
     AnyPut(final ByteBuffer rowKey, final long timestamp) {
@@ -400,7 +400,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyPut instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @see #of(Object)
@@ -440,7 +440,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the partial row key and default timestamp
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
@@ -476,7 +476,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key for the put operation, automatically converted to bytes; must not be {@code null}
      * @param rowIsImmutable true if the row key byte array is guaranteed to be immutable
      * @return a new AnyPut instance with immutability control
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @see #of(Object, long, boolean)
      * @see #of(Object)
      */
@@ -509,7 +509,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowIsImmutable {@code true} if the row-key byte array is guaranteed not to be
      *                       modified after this Put is created
      * @return a new AnyPut with timestamp and immutability control
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @see #of(Object, boolean)
      * @see #of(Object, long)
@@ -542,7 +542,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at least
      *               one remaining byte; its position is advanced to its limit
      * @return a new AnyPut instance configured for the ByteBuffer row key
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      * @see #of(ByteBuffer, long)
      * @see #of(Object)
      */
@@ -579,7 +579,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *               one remaining byte; its position is advanced to its limit
      * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
      * @return a new AnyPut instance with ByteBuffer row key and timestamp control
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @see #of(ByteBuffer)
      * @see #of(Object, long)
@@ -666,7 +666,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entity the Java object to convert to a put operation; must not be null and must
      *               have a row-key property
      * @return a new AnyPut populated from the entity
-     * @throws IllegalArgumentException if {@code entity} is {@code null} , an entity to convert is not a bean or has missing, multiple or
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, an entity to convert is not a bean or has missing, multiple or
      *         unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is negative, or an encoded
      *         column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -705,7 +705,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entity the Java object to convert to a put operation; must not be null
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a new AnyPut instance with data from the entity
-     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null} , an entity to convert is not a bean or has
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
      *         negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -716,7 +716,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      */
     public static AnyPut create(final Object entity, final NamingPolicy namingPolicy) {
         N.checkArgNotNull(entity, cs.entity);
-        N.checkArgNotNull(namingPolicy, "namingPolicy");
+        N.checkArgNotNull(namingPolicy, cs.namingPolicy);
 
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(entity.getClass());
 
@@ -746,7 +746,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param entities the collection of Java objects to convert; must not be null
      * @return a list of AnyPut instances, one for each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null} , an entity to convert is not a bean or has
+     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
      *         negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -756,7 +756,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see #create(Object)
      */
     public static List<AnyPut> create(final Collection<?> entities) {
-        N.checkArgNotNull(entities, "entities");
+        N.checkArgNotNull(entities, cs.entities);
 
         for (final Object entity : entities) {
             N.checkArgNotNull(entity, cs.entity);
@@ -794,7 +794,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entities the collection of Java objects to convert; must not be null
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of AnyPut instances, one for each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null} , an entity to convert is
+     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
      *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
      *         column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -804,12 +804,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see NamingPolicy
      */
     public static List<AnyPut> create(final Collection<?> entities, final NamingPolicy namingPolicy) {
-        N.checkArgNotNull(entities, "entities");
+        N.checkArgNotNull(entities, cs.entities);
 
         for (final Object entity : entities) {
             N.checkArgNotNull(entity, cs.entity);
         }
-        N.checkArgNotNull(namingPolicy, "namingPolicy");
+        N.checkArgNotNull(namingPolicy, cs.namingPolicy);
 
         final List<AnyPut> anyPuts = new ArrayList<>(entities.size());
 
@@ -847,7 +847,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entity the Java object to convert; must not be null
      * @param selectPropNames the property names to include in the put; if null, all properties are included
      * @return a new AnyPut instance with only the selected properties
-     * @throws IllegalArgumentException if {@code entity} is {@code null} , an entity to convert is not a bean or has missing, multiple or
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, an entity to convert is not a bean or has missing, multiple or
      *         unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property does not exist, a
      *         column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -883,7 +883,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param selectPropNames the property names to include; if null, all properties are included
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a new AnyPut instance with only the selected properties
-     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null} , an entity to convert is not a bean or has
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property
      *         does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -894,7 +894,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      */
     public static AnyPut create(final Object entity, final Collection<String> selectPropNames, final NamingPolicy namingPolicy) {
         N.checkArgNotNull(entity, cs.entity);
-        N.checkArgNotNull(namingPolicy, "namingPolicy");
+        N.checkArgNotNull(namingPolicy, cs.namingPolicy);
 
         if (selectPropNames == null) {
             return create(entity, namingPolicy);
@@ -937,7 +937,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entities the collection of Java objects to convert; must not be null
      * @param selectPropNames the property names to include from each entity; if null, all properties are included
      * @return a list of AnyPut instances with only the selected properties from each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null} , an entity to convert is not a bean or has
+     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property
      *         does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -947,7 +947,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see #create(Object, Collection)
      */
     public static List<AnyPut> create(final Collection<?> entities, final Collection<String> selectPropNames) {
-        N.checkArgNotNull(entities, "entities");
+        N.checkArgNotNull(entities, cs.entities);
 
         for (final Object entity : entities) {
             N.checkArgNotNull(entity, cs.entity);
@@ -984,7 +984,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param selectPropNames the property names to include from each entity; if null, all properties included
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of AnyPut instances with selected properties from each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null} , an entity to convert is
+     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
      *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
      *         selected property does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -994,12 +994,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see NamingPolicy
      */
     public static List<AnyPut> create(final Collection<?> entities, final Collection<String> selectPropNames, final NamingPolicy namingPolicy) {
-        N.checkArgNotNull(entities, "entities");
+        N.checkArgNotNull(entities, cs.entities);
 
         for (final Object entity : entities) {
             N.checkArgNotNull(entity, cs.entity);
         }
-        N.checkArgNotNull(namingPolicy, "namingPolicy");
+        N.checkArgNotNull(namingPolicy, cs.namingPolicy);
 
         final List<AnyPut> anyPuts = new ArrayList<>(entities.size());
 
@@ -1518,7 +1518,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @return a string representation of the put operation
-     * @throws IllegalArgumentException if the stored TTL attribute is not exactly eight bytes
+     * @throws IllegalArgumentException if the stored TTL attribute is shorter than eight bytes
      */
     @Override
     public String toString() {
@@ -1556,7 +1556,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements
      * @return a list of native HBase Put objects, in iteration order of {@code entities}
-     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null} , an entity to convert is not a bean or has
+     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
      *         negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -1567,7 +1567,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see Put
      */
     public static List<Put> toPut(final Collection<?> entities) {
-        N.checkArgNotNull(entities, "entities");
+        N.checkArgNotNull(entities, cs.entities);
 
         for (final Object entity : entities) {
             N.checkArgNotNull(entity, cs.entity);
@@ -1608,7 +1608,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of native HBase Put objects, in iteration order of {@code entities}
-     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null} , an entity to convert is
+     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
      *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
      *         column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
@@ -1619,12 +1619,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see NamingPolicy
      */
     public static List<Put> toPut(final Collection<?> entities, final NamingPolicy namingPolicy) {
-        N.checkArgNotNull(entities, "entities");
+        N.checkArgNotNull(entities, cs.entities);
 
         for (final Object entity : entities) {
             N.checkArgNotNull(entity, cs.entity);
         }
-        N.checkArgNotNull(namingPolicy, "namingPolicy");
+        N.checkArgNotNull(namingPolicy, cs.namingPolicy);
 
         final List<Put> puts = new ArrayList<>(entities.size());
 

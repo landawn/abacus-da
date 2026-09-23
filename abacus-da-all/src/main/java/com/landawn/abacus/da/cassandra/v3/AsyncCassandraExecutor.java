@@ -24,9 +24,9 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Statement;
 import com.landawn.abacus.da.cassandra.AsyncCassandraExecutorBase;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
@@ -168,7 +168,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters)
             throws IllegalArgumentException {
-        N.checkArgNotNull(query, "query");
+        N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
@@ -207,8 +207,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @return a future that completes with a Stream of mapped objects
      * @throws NullPointerException if {@code statement} is {@code null}
      * @throws IllegalArgumentException if {@code rowMapper} is {@code null}
-     * @throws RuntimeException if the session is closed or the driver rejects request submission;
-     *         failures after submission are reported by the returned future
+     * @throws RuntimeException if the driver rejects the statement while building the request (for example, a
+     *         feature unsupported by the negotiated protocol version); failures after submission, including
+     *         execution on a closed session, are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper)
             throws IllegalArgumentException {
@@ -492,8 +493,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * @param statement the CQL statement to execute
      * @return a future that completes with the {@link ResultSet} produced by the driver
-     * @throws RuntimeException if the session is closed or the driver rejects request submission;
-     *         failures after submission are reported by the returned future
+     * @throws NullPointerException if {@code statement} is {@code null}
+     * @throws RuntimeException if the driver rejects the statement while building the request (for example, a
+     *         feature unsupported by the negotiated protocol version); failures after submission, including
+     *         execution on a closed session, are reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final Statement statement) {

@@ -30,6 +30,7 @@ import org.apache.hadoop.hbase.filter.IncompatibleFilterException;
 import org.apache.hadoop.hbase.io.TimeRange;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.N;
 
 /**
@@ -193,8 +194,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Package-private; callers should use {@link #of(Get)}.</p>
      *
      * @param get the {@link Get} operation to convert to a {@link Scan}; must not be {@code null}
-     * @throws NullPointerException if {@code get} is {@code null} (raised by the wrapped {@link Scan#Scan(Get)} constructor)
-     * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid isolation-level ordinal
+     * @throws NullPointerException if {@code get} is {@code null} (raised by the wrapped {@link Scan#Scan(Get)}
+     *         constructor)
+     * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid
+     *         isolation-level ordinal
      */
     AnyScan(final Get get) {
         this(new Scan(get));
@@ -269,7 +272,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param cursor the non-null server-progress cursor whose row becomes the inclusive start row
      * @return a new AnyScan configured only with the cursor row as its start row
-     * @throws NullPointerException if {@code cursor} is null (raised by the wrapped {@link Scan#createScanFromCursor(Cursor)} )
+     * @throws NullPointerException if {@code cursor} is {@code null} (raised by the wrapped
+     *         {@link Scan#createScanFromCursor(Cursor)})
      * @throws IllegalArgumentException if the cursor's row key exceeds 32,767 bytes
      * @see #setNeedCursorResult(boolean)
      */
@@ -404,8 +408,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param get the Get operation to convert to a Scan; must not be null
      * @return a new AnyScan instance created from the Get operation
-     * @throws NullPointerException if {@code get} is null (raised by the wrapped HBase {@link Scan} constructor)
-     * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid isolation-level ordinal
+     * @throws NullPointerException if {@code get} is {@code null} (raised by the wrapped {@link Scan#Scan(Get)}
+     *         constructor)
+     * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid
+     *         isolation-level ordinal
      */
     public static AnyScan of(final Get get) {
         return new AnyScan(get);
@@ -649,7 +655,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #getFamilyMap()
      */
     public AnyScan setFamilyMap(final Map<byte[], NavigableSet<byte[]>> familyMap) {
-        N.checkArgNotNull(familyMap, "familyMap");
+        N.checkArgNotNull(familyMap, cs.familyMap);
 
         scan.setFamilyMap(familyMap);
 
@@ -879,8 +885,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param timestamp the exact timestamp to filter cells by
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative or equals {@link Long#MAX_VALUE} , causing the exclusive upper bound to
-     *         overflow
+     * @throws IllegalArgumentException if {@code timestamp} is negative or equals {@link Long#MAX_VALUE}, causing the
+     *         exclusive upper bound to overflow
      * @see #setTimeRange(long, long)
      * @see #readVersions(int)
      */
@@ -1303,7 +1309,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param batch the maximum number of cells in each result; {@code -1} removes the explicit limit
      * @return this AnyScan instance for method chaining
-     * @throws IncompatibleFilterException if the current filter requires whole-row processing ({@link Filter#hasFilterRow()} returns {@code true} )
+     * @throws IncompatibleFilterException if a filter is set whose {@link Filter#hasFilterRow()} returns {@code true}
+     *         (it requires whole-row processing)
      * @see #getBatch()
      * @see #setCaching(int)
      */
@@ -2019,7 +2026,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see ReadType
      */
     public AnyScan setReadType(final ReadType readType) {
-        N.checkArgNotNull(readType, "readType");
+        N.checkArgNotNull(readType, cs.readType);
 
         scan.setReadType(readType);
 

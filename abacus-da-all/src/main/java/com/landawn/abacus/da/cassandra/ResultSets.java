@@ -24,6 +24,7 @@ import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
 import com.datastax.oss.driver.api.core.cql.ExecutionInfo;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.UncheckedInterruptedException;
 import com.landawn.abacus.util.ExceptionUtil;
 import com.landawn.abacus.util.ImmutableList;
@@ -102,7 +103,7 @@ final class ResultSets {
      * @see com.datastax.oss.driver.api.core.cql.ResultSet
      */
     public static ResultSet wrap(final AsyncResultSet asyncResultSet) {
-        N.checkArgNotNull(asyncResultSet, "asyncResultSet");
+        N.checkArgNotNull(asyncResultSet, cs.asyncResultSet);
 
         return new ResultSet() {
             private AsyncResultSet currentResultSet = asyncResultSet;

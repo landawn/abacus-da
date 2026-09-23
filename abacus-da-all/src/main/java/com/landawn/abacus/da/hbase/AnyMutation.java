@@ -31,6 +31,7 @@ import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.visibility.CellVisibility;
 
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.N;
 
 /**
@@ -182,7 +183,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see Durability
      */
     public AM setDurability(final Durability d) {
-        N.checkArgNotNull(d, "durability");
+        N.checkArgNotNull(d, cs.durability);
 
         mutation.setDurability(d);
 
@@ -368,7 +369,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param perms a map of username to {@link Permission}; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code perms} , a username key, or a permission value is {@code null}
+     * @throws NullPointerException if {@code perms}, a username key, or a permission value is {@code null}
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
@@ -385,7 +386,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * column-family-level TTL (or none) applies.
      *
      * @return the TTL in milliseconds, or {@link Long#MAX_VALUE} if not set
-     * @throws IllegalArgumentException if the stored TTL attribute is not exactly eight bytes
+     * @throws IllegalArgumentException if the stored TTL attribute is shorter than eight bytes
      * @see #setTTL(long)
      */
     public long getTTL() {
@@ -409,7 +410,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param ttl the TTL to apply, in milliseconds
      * @return this mutation instance, to allow fluent method chaining
-     * @throws UnsupportedOperationException if the wrapped mutation is an HBase {@link org.apache.hadoop.hbase.client.Delete} , which does not
+     * @throws UnsupportedOperationException if the wrapped mutation is an HBase {@link org.apache.hadoop.hbase.client.Delete}, which does not
      *         support per-mutation TTLs
      * @see #getTTL()
      */
@@ -543,6 +544,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param qualifier the column-qualifier name
      * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
+     * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values)
      * @see #has(String, String)
      * @see #has(String, String, long, Object)
      */
@@ -576,6 +579,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param ts the cell timestamp, in milliseconds since the epoch
      * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
+     * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values)
      * @see #has(String, String)
      * @see #has(String, String, long)
      * @see #has(String, String, Object)
@@ -620,6 +625,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param qualifier the column-qualifier name as a byte array
      * @param value the value to look for as a byte array
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
+     * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values)
      * @see #has(String, String, Object)
      * @see #has(byte[], byte[], long, byte[])
      */
@@ -635,6 +642,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param ts the cell timestamp, in milliseconds since the epoch
      * @param value the value to look for as a byte array
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
+     * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values)
      * @see #has(String, String, long, Object)
      * @see #has(byte[], byte[])
      */

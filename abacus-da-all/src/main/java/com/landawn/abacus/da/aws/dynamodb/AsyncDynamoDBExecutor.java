@@ -35,11 +35,11 @@ import com.amazonaws.services.dynamodbv2.model.ScanRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 import com.amazonaws.services.dynamodbv2.model.WriteRequest;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
@@ -675,7 +675,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #batchGetItem(BatchGetItemRequest, Class)
      */
     public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
-        N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
+        N.checkArgNotNull(batchGetItemRequest, cs.batchGetItemRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(batchGetItemRequest));
     }
@@ -847,7 +847,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
-        N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
+        N.checkArgNotNull(batchGetItemRequest, cs.batchGetItemRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(batchGetItemRequest, targetClass));
@@ -1620,7 +1620,7 @@ public final class AsyncDynamoDBExecutor {
      * has not set {@code exclusiveStartKey} on the request; if it was set, exactly one page is
      * returned. A {@code Limit} on the request acts as a page size only, not a total-result cap.</p>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the list request, DynamoDB rejects its table, key, conditions, or
+     * <p>The returned future completes exceptionally if the SDK cannot send the query request, DynamoDB rejects its table, key, conditions, or
      *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
      *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
@@ -1633,7 +1633,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #stream(QueryRequest)
      */
     public ContinuableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) {
-        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.list(queryRequest));
     }
@@ -1697,7 +1697,7 @@ public final class AsyncDynamoDBExecutor {
      * has not set {@code exclusiveStartKey} on the request; if it was set, exactly one page is
      * returned. A {@code Limit} on the request acts as a page size only, not a total-result cap.</p>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the list request, DynamoDB rejects its table, key, conditions, or
+     * <p>The returned future completes exceptionally if the SDK cannot send the query request, DynamoDB rejects its table, key, conditions, or
      *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
      *
      * @param <T> the type to convert each item to
@@ -1712,7 +1712,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #stream(QueryRequest, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) {
-        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.list(queryRequest, targetClass));
@@ -1769,7 +1769,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #list(QueryRequest)
      */
     public ContinuableFuture<Dataset> query(final QueryRequest queryRequest) {
-        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.query(queryRequest));
     }
@@ -1850,7 +1850,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #list(QueryRequest, Class)
      */
     public ContinuableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) {
-        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.query(queryRequest, targetClass));
     }
@@ -1903,7 +1903,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #list(QueryRequest)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
-        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.stream(queryRequest));
     }
@@ -1977,7 +1977,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #list(QueryRequest, Class)
      */
     public <T> ContinuableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
-        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.stream(queryRequest, targetClass));
@@ -2023,7 +2023,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #scan(String, Map)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet) {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, attributesToGet));
     }
@@ -2072,7 +2072,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #scan(String, List, Map)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter) {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, scanFilter));
     }
@@ -2145,7 +2145,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet,
             final Map<String, Condition> scanFilter) {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, attributesToGet, scanFilter));
     }
@@ -2221,7 +2221,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #scan(String, List, Map)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final ScanRequest scanRequest) {
-        N.checkArgNotNull(scanRequest, "scanRequest");
+        N.checkArgNotNull(scanRequest, cs.scanRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(scanRequest));
     }
@@ -2265,7 +2265,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, attributesToGet, targetClass));
@@ -2313,7 +2313,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, scanFilter, targetClass));
@@ -2363,7 +2363,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter,
             final Class<T> targetClass) {
-        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, attributesToGet, scanFilter, targetClass));
@@ -2406,7 +2406,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
-        N.checkArgNotNull(scanRequest, "scanRequest");
+        N.checkArgNotNull(scanRequest, cs.scanRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(scanRequest, targetClass));

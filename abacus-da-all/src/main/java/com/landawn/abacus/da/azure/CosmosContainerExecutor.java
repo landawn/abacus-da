@@ -38,12 +38,12 @@ import com.azure.cosmos.models.SqlParameter;
 import com.azure.cosmos.models.SqlQuerySpec;
 import com.azure.cosmos.util.CosmosPagedIterable;
 import com.landawn.abacus.annotation.Beta;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.SqlBuilder;
 import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
 
@@ -626,7 +626,7 @@ public class CosmosContainerExecutor {
      */
     public <T> CosmosItemResponse<T> replaceItem(final String oldItemId, final PartitionKey partitionKey, final T newItem,
             final CosmosItemRequestOptions options) {
-        N.checkArgNotNull(oldItemId, "oldItemId");
+        N.checkArgNotNull(oldItemId, cs.oldItemId);
 
         return cosmosContainer.replaceItem(newItem, oldItemId, partitionKey, options);
     }
@@ -678,7 +678,7 @@ public class CosmosContainerExecutor {
      * @param cosmosPatchOperations the patch operations to apply (must not be null)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
-     * @throws NullPointerException if {@code itemId} , {@code partitionKey} , or {@code cosmosPatchOperations} is null (rejected by the Azure
+     * @throws NullPointerException if {@code itemId}, {@code partitionKey}, or {@code cosmosPatchOperations} is null (rejected by the Azure
      *         Cosmos SDK)
      * @throws IllegalArgumentException if {@code targetClass} is null. The SDK stores the result type without checking it, so a null type would
      *         only fail later, when {@code getItem()} is called.
@@ -743,7 +743,7 @@ public class CosmosContainerExecutor {
      * @param options additional options for the patch operation (can be null for default behavior)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
-     * @throws NullPointerException if {@code itemId} , {@code partitionKey} , or {@code cosmosPatchOperations} is null (rejected by the Azure
+     * @throws NullPointerException if {@code itemId}, {@code partitionKey}, or {@code cosmosPatchOperations} is null (rejected by the Azure
      *         Cosmos SDK)
      * @throws IllegalArgumentException if {@code targetClass} is null. The SDK stores the result type without checking it, so a null type would
      *         only fail later, when {@code getItem()} is called.
@@ -801,7 +801,7 @@ public class CosmosContainerExecutor {
      * @throws CosmosException if the item is absent, an access condition fails, or Cosmos rejects the delete request
      */
     public CosmosItemResponse<Object> deleteItem(final Object item, final CosmosItemRequestOptions options) {
-        N.checkArgNotNull(item, "item");
+        N.checkArgNotNull(item, cs.item);
 
         return cosmosContainer.deleteItem(item, options);
     }
@@ -844,8 +844,8 @@ public class CosmosContainerExecutor {
      * @throws CosmosException if the item is absent, an access condition fails, or Cosmos rejects the delete request
      */
     public CosmosItemResponse<Object> deleteItem(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options) {
-        N.checkArgNotNull(itemId, "itemId");
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(itemId, cs.itemId);
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
 
         return cosmosContainer.deleteItem(itemId, partitionKey, options);
     }
@@ -892,7 +892,7 @@ public class CosmosContainerExecutor {
      * @throws CosmosException if Cosmos rejects the partition-delete request because of authorization, throttling, or an invalid partition key
      */
     public CosmosItemResponse<Object> deleteAllItemsByPartitionKey(final PartitionKey partitionKey, final CosmosItemRequestOptions options) {
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
 
         return cosmosContainer.deleteAllItemsByPartitionKey(partitionKey, options);
     }
@@ -920,10 +920,11 @@ public class CosmosContainerExecutor {
      * @param partitionKey the partition key of the item (must not be null)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return an {@code Optional} holding the item if it exists, or {@link Optional#empty()} if no item exists for the given id/partition key (404)
-     * @throws IllegalArgumentException if {@code itemId} , {@code partitionKey} , or {@code targetClass} is null (rejected by
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, or {@code targetClass} is null (rejected by
      *         {@link #readItem(String, PartitionKey, Class)} before the request is sent; without that check a null id would be swallowed by the
      *         404 handling and reported as an empty result)
      * @throws CosmosException if the read request fails with an HTTP status other than 404, such as an authorization or throttling failure
+     * @throws IllegalStateException if the default Cosmos item serializer cannot convert the returned document to {@code targetClass}
      * @see #readItem(String, PartitionKey, Class)
      * @see #get(String, PartitionKey, CosmosItemRequestOptions, Class)
      * @see #gett(String, PartitionKey, Class)
@@ -963,10 +964,11 @@ public class CosmosContainerExecutor {
      * @param options additional options for the read operation (can be null for default behavior)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return an {@code Optional} holding the item if it exists, or {@link Optional#empty()} if no item exists for the given id/partition key (404)
-     * @throws IllegalArgumentException if {@code itemId} , {@code partitionKey} , or {@code targetClass} is null (rejected by
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, or {@code targetClass} is null (rejected by
      *         {@link #readItem(String, PartitionKey, CosmosItemRequestOptions, Class)} before the request is sent; without that check a null id
      *         would be swallowed by the 404 handling and reported as an empty result)
      * @throws CosmosException if the read request fails with an HTTP status other than 404, such as an authorization or throttling failure
+     * @throws IllegalStateException if the default Cosmos item serializer cannot convert the returned document to {@code targetClass}
      * @see #readItem(String, PartitionKey, CosmosItemRequestOptions, Class)
      * @see #get(String, PartitionKey, Class)
      * @see #gett(String, PartitionKey, CosmosItemRequestOptions, Class)
@@ -1007,10 +1009,11 @@ public class CosmosContainerExecutor {
      * @param partitionKey the partition key of the item (must not be null)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return the item if it exists, or {@code null} if no item exists for the given id/partition key (404)
-     * @throws IllegalArgumentException if {@code itemId} , {@code partitionKey} , or {@code targetClass} is null (rejected by
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, or {@code targetClass} is null (rejected by
      *         {@link #readItem(String, PartitionKey, Class)} before the request is sent; without that check a null id would be swallowed by the
      *         404 handling and reported as a {@code null} item)
      * @throws CosmosException if the read request fails with an HTTP status other than 404, such as an authorization or throttling failure
+     * @throws IllegalStateException if the default Cosmos item serializer cannot convert the returned document to {@code targetClass}
      * @see #get(String, PartitionKey, Class)
      * @see #gett(String, PartitionKey, CosmosItemRequestOptions, Class)
      */
@@ -1050,10 +1053,11 @@ public class CosmosContainerExecutor {
      * @param options additional options for the read operation (can be null for default behavior)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return the item if it exists, or {@code null} if no item exists for the given id/partition key (404)
-     * @throws IllegalArgumentException if {@code itemId} , {@code partitionKey} , or {@code targetClass} is null (rejected by
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, or {@code targetClass} is null (rejected by
      *         {@link #readItem(String, PartitionKey, CosmosItemRequestOptions, Class)} before the request is sent; without that check a null id
      *         would be swallowed by the 404 handling and reported as a {@code null} item)
      * @throws CosmosException if the read request fails with an HTTP status other than 404, such as an authorization or throttling failure
+     * @throws IllegalStateException if the default Cosmos item serializer cannot convert the returned document to {@code targetClass}
      * @see #get(String, PartitionKey, CosmosItemRequestOptions, Class)
      * @see #gett(String, PartitionKey, Class)
      */
@@ -1104,15 +1108,15 @@ public class CosmosContainerExecutor {
      * @param partitionKey the partition key of the item (must not be null)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the item and metadata
-     * @throws IllegalArgumentException if {@code itemId} , {@code partitionKey} , or {@code targetClass} is null. None of the three is checked
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, or {@code targetClass} is null. None of the three is checked
      *         by the SDK: a null id is reported as a 404 CosmosException, a null partition key as an UnsupportedOperationException, and a null
      *         target class only fails later, when {@code getItem()} is called.
      * @throws CosmosException if the item is absent or Cosmos rejects the read request because of authorization, throttling, or an invalid
      *         partition key
      */
     public <T> CosmosItemResponse<T> readItem(final String itemId, final PartitionKey partitionKey, final Class<T> targetClass) {
-        N.checkArgNotNull(itemId, "itemId");
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(itemId, cs.itemId);
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.readItem(itemId, partitionKey, targetClass);
@@ -1155,7 +1159,7 @@ public class CosmosContainerExecutor {
      * @param options additional options for the read operation (can be null for default behavior)
      * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the item and metadata
-     * @throws IllegalArgumentException if {@code itemId} , {@code partitionKey} , or {@code targetClass} is null. None of the three is checked
+     * @throws IllegalArgumentException if {@code itemId}, {@code partitionKey}, or {@code targetClass} is null. None of the three is checked
      *         by the SDK: a null id is reported as a 404 CosmosException, a null partition key as an UnsupportedOperationException, and a null
      *         target class only fails later, when {@code getItem()} is called.
      * @throws CosmosException if the item is absent or Cosmos rejects the read request because of authorization, throttling, or an invalid
@@ -1163,8 +1167,8 @@ public class CosmosContainerExecutor {
      */
     public <T> CosmosItemResponse<T> readItem(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options,
             final Class<T> targetClass) {
-        N.checkArgNotNull(itemId, "itemId");
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(itemId, cs.itemId);
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.readItem(itemId, partitionKey, options, targetClass);
@@ -1219,7 +1223,7 @@ public class CosmosContainerExecutor {
      * @see CosmosItemIdentity for item identity specification
      */
     public <T> FeedResponse<T> readMany(final List<CosmosItemIdentity> itemIdentityList, final Class<T> targetClass) {
-        N.checkArgNotNull(itemIdentityList, "itemIdentityList");
+        N.checkArgNotNull(itemIdentityList, cs.itemIdentityList);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.readMany(itemIdentityList, targetClass);
@@ -1269,7 +1273,7 @@ public class CosmosContainerExecutor {
      * @throws CosmosException if Cosmos rejects the batch-read request because of invalid item identities, authorization, or throttling
      */
     public <T> FeedResponse<T> readMany(final List<CosmosItemIdentity> itemIdentityList, final String sessionToken, final Class<T> targetClass) {
-        N.checkArgNotNull(itemIdentityList, "itemIdentityList");
+        N.checkArgNotNull(itemIdentityList, cs.itemIdentityList);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.readMany(itemIdentityList, sessionToken, targetClass);
@@ -1317,7 +1321,7 @@ public class CosmosContainerExecutor {
      * @see #streamAllItems(PartitionKey, Class) for stream-based processing
      */
     public <T> CosmosPagedIterable<T> readAllItems(final PartitionKey partitionKey, final Class<T> targetClass) {
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.readAllItems(partitionKey, targetClass);
@@ -1365,7 +1369,7 @@ public class CosmosContainerExecutor {
      *         unchecked null would only fail once the result is consumed.
      */
     public <T> CosmosPagedIterable<T> readAllItems(final PartitionKey partitionKey, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.readAllItems(partitionKey, options, targetClass);
@@ -1420,7 +1424,7 @@ public class CosmosContainerExecutor {
      */
     @Beta
     public <T> Stream<T> streamAllItems(final PartitionKey partitionKey, final Class<T> targetClass) {
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return Stream.from(cosmosContainer.readAllItems(partitionKey, targetClass).stream());
@@ -1463,7 +1467,7 @@ public class CosmosContainerExecutor {
      */
     @Beta
     public <T> Stream<T> streamAllItems(final PartitionKey partitionKey, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
-        N.checkArgNotNull(partitionKey, "partitionKey");
+        N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return Stream.from(cosmosContainer.readAllItems(partitionKey, options, targetClass).stream());
@@ -1563,7 +1567,7 @@ public class CosmosContainerExecutor {
      *         null would only fail once the result is consumed.
      */
     public <T> CosmosPagedIterable<T> queryItems(final String query, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
-        N.checkArgNotNull(query, "query");
+        N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.queryItems(query, options, targetClass);
@@ -1655,7 +1659,7 @@ public class CosmosContainerExecutor {
      * @see CosmosQueryRequestOptions
      */
     public <T> CosmosPagedIterable<T> queryItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
-        N.checkArgNotNull(querySpec, "querySpec");
+        N.checkArgNotNull(querySpec, cs.querySpec);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return cosmosContainer.queryItems(querySpec, options, targetClass);
@@ -1747,7 +1751,7 @@ public class CosmosContainerExecutor {
      *         null would only fail once the result is consumed.
      */
     public final <T> Stream<T> streamItems(final String query, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
-        N.checkArgNotNull(query, "query");
+        N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return Stream.from(cosmosContainer.queryItems(query, options, targetClass).stream());
@@ -1840,7 +1844,7 @@ public class CosmosContainerExecutor {
      *         unchecked null would only fail once the result is consumed.
      */
     public final <T> Stream<T> streamItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
-        N.checkArgNotNull(querySpec, "querySpec");
+        N.checkArgNotNull(querySpec, cs.querySpec);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return Stream.from(cosmosContainer.queryItems(querySpec, options, targetClass).stream());
@@ -1890,8 +1894,11 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if targetClass is null (rejected by the query builder before any request is sent)
-     *, or the generated query has a different number of positional placeholders and parameter values
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
+     *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank {@code SqlExpression} (rejected by
+     *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
+     *         parameter values
      * @see Condition for condition construction
      * @see com.landawn.abacus.query.Filters for available filter operations
      */
@@ -1935,8 +1942,11 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if targetClass is null (rejected by the query builder before any request is sent), or the generated query
-     *         has a different number of positional placeholders and parameter values
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
+     *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank {@code SqlExpression} (rejected by
+     *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
+     *         parameter values
      */
     @Beta
     public final <T> Stream<T> streamItems(final Condition whereClause, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
@@ -1984,8 +1994,11 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null} , or the generated query has a different number of positional
-     *         placeholders and parameter values
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
+     *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
+     *         or blank {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a different
+     *         number of positional placeholders and parameter values
      * @throws IllegalStateException if the generated selected-property expressions cannot be converted to a Cosmos projection
      */
     @Beta
@@ -2047,8 +2060,11 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
-     *, or the generated query has a different number of positional placeholders and parameter values
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
+     *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
+     *         or blank {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a different
+     *         number of positional placeholders and parameter values
      * @throws IllegalStateException if the generated selected-property expressions cannot be converted to a Cosmos projection
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations

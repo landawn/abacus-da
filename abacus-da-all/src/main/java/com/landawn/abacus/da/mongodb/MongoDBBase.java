@@ -41,6 +41,7 @@ import org.bson.codecs.configuration.CodecRegistry;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.parser.JsonParser;
@@ -55,7 +56,6 @@ import com.landawn.abacus.util.Fn;
 import com.landawn.abacus.util.IOUtil;
 import com.landawn.abacus.util.IntFunctions;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.BasicDBObject;
@@ -211,7 +211,7 @@ public abstract class MongoDBBase {
      */
     @Deprecated
     public static void registerIdProperty(final Class<?> documentClass, final String idPropertyName) {
-        N.checkArgNotNull(documentClass, "documentClass");
+        N.checkArgNotNull(documentClass, cs.documentClass);
 
         if (Beans.getPropGetter(documentClass, idPropertyName) == null || Beans.getPropSetter(documentClass, idPropertyName) == null) {
             throw new IllegalArgumentException("The specified class: " + ClassUtil.getCanonicalClassName(documentClass)
@@ -256,7 +256,7 @@ public abstract class MongoDBBase {
      * @see #objectIdToFilter(ObjectId)
      */
     public static Bson objectIdToFilter(final String objectId) {
-        N.checkArgNotEmpty(objectId, "objectId");
+        N.checkArgNotEmpty(objectId, cs.objectId);
 
         return objectIdToFilter(new ObjectId(objectId));
     }
@@ -286,7 +286,7 @@ public abstract class MongoDBBase {
      * @see #objectIdToFilter(String)
      */
     public static Bson objectIdToFilter(final ObjectId objectId) {
-        N.checkArgNotNull(objectId, "objectId");
+        N.checkArgNotNull(objectId, cs.objectId);
 
         return new Document(_ID, objectId);
     }
@@ -1074,6 +1074,7 @@ public abstract class MongoDBBase {
      * @throws IllegalArgumentException if {@code rowType} is null, or a result document has multiple non-{@code _id} fields for a scalar target,
      *         inconsistent scalar projection fields, or cannot be converted to {@code rowType}
      * @throws NullPointerException if {@code findIterable} is null
+     * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @throws ClassCastException if a result list beginning with a Document contains a later non-Document row in the document conversion branch
      * @see com.mongodb.client.MongoIterable
@@ -1194,8 +1195,9 @@ public abstract class MongoDBBase {
      *            (or {@code null} when {@code rowType} is {@code null})
      * @param rowType the target type, or {@code null} to produce an {@code Object[]}
      * @return the converted value
-     * @throws IllegalArgumentException if a scalar target is requested for a row with multiple non-{@code _id} fields, or a field value cannot
-     *         be converted to {@code rowType}
+     * @throws IllegalArgumentException if {@code rowType} is a {@link Collection} or {@link Map} type that cannot be instantiated, if a bean
+     *         {@code rowType} cannot be populated from the row, if a scalar target is requested for a row with multiple non-{@code _id}
+     *         fields, or if a field value cannot be converted to {@code rowType}
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
      */
     @SuppressWarnings("rawtypes")
@@ -1277,6 +1279,7 @@ public abstract class MongoDBBase {
      * @param findIterable the MongoDB query result to extract data from; must not be {@code null}
      * @return a Dataset containing the query results with Map-based rows
      * @throws NullPointerException if findIterable is null
+     * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @see Dataset
      * @see #extractData(MongoIterable, Class)
@@ -1310,6 +1313,7 @@ public abstract class MongoDBBase {
      * @return a Dataset containing the query results with typed rows
      * @throws IllegalArgumentException if rowType is null or unsupported (not a bean class and not assignable to Map)
      * @throws NullPointerException if findIterable is null
+     * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @see Dataset
      * @see #extractData(MongoIterable)
@@ -1346,6 +1350,7 @@ public abstract class MongoDBBase {
      * @return a Dataset containing the selected properties with typed rows
      * @throws IllegalArgumentException if rowType is null or unsupported (not a bean class and not assignable to Map)
      * @throws NullPointerException if findIterable is null
+     * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @see Dataset
      * @see #extractData(MongoIterable, Class)
@@ -1430,6 +1435,8 @@ public abstract class MongoDBBase {
      *         Dataset
      * @throws NullPointerException if the list contains both a non-null Map and a null row while column names are inferred
      * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ArrayStoreException if {@code rowType} is a reference-array type and a Document row value is incompatible with its component
+     *         type
      * @see Dataset
      * @see #extractData(List)
      * @see #extractData(Collection, List, Class)
@@ -1482,6 +1489,8 @@ public abstract class MongoDBBase {
      *         Dataset
      * @throws NullPointerException if the list contains both a non-null Map and a null row while column names are inferred
      * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ArrayStoreException if {@code rowType} is a reference-array type and a Document row value is incompatible with its component
+     *         type
      * @see Dataset
      * @see #extractData(List, Class)
      * @see #extractData(Collection, MongoIterable, Class)
@@ -1560,6 +1569,7 @@ public abstract class MongoDBBase {
      * @param iter the MongoIterable to convert to a Stream; must not be {@code null}
      * @return a Stream of Document objects
      * @throws NullPointerException if iter is null
+     * @throws IllegalStateException if the {@code MongoClient} that created {@code iter} has been closed
      * @throws MongoException if opening the iterator fails because the MongoDB command or connection fails
      * @see Stream
      * @see #stream(MongoIterable, Class)
@@ -1602,6 +1612,7 @@ public abstract class MongoDBBase {
      * @param rowType the Class representing the target type for each stream element
      * @return a Stream of objects of the specified type
      * @throws NullPointerException if iter is null
+     * @throws IllegalStateException if the {@code MongoClient} that created {@code iter} has been closed
      * @throws MongoException if opening the iterator fails because the MongoDB command or connection fails
      * @see Stream
      * @see #stream(MongoIterable)
@@ -1873,7 +1884,7 @@ public abstract class MongoDBBase {
          * @param value the value to encode
          * @param encoderContext encoder context forwarded to the underlying document codec for bean values
          * @throws NullPointerException if {@code writer} is null, or if a bean value is null
-         * @throws IllegalArgumentException if a bean value cannot be converted to a BSON document
+         * @throws IllegalArgumentException if a bean value cannot be converted to a BSON document, or if a non-bean value is null
          * @throws BsonInvalidOperationException if the writer is not positioned to accept the encoded value
          * @throws CodecConfigurationException if a bean property value has no usable BSON codec
          */

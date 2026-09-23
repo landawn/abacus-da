@@ -31,6 +31,7 @@ import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.io.TimeRange;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.N;
 
 /**
@@ -120,7 +121,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * column in every family of the row.</p>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
+     *         exceeds 32,767 bytes
      */
     AnyGet(final Object rowKey) {
         super(new Get(toRowKeyBytes(rowKey)));
@@ -134,9 +136,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or
+     *         exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
-     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the
+     *         converted row bytes
      */
     AnyGet(final Object rowKey, final int rowOffset, final int rowLength) {
         super(new Get(toRowKeyBytes(rowKey), rowOffset, rowLength));
@@ -149,7 +153,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at
      *               least one remaining byte
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
+     *         exceeds 32,767 bytes
      */
     AnyGet(final ByteBuffer rowKey) {
         super(new Get(rowKey));
@@ -193,7 +198,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      * @return a new AnyGet instance configured with the specified row key
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
+     *         exceeds 32,767 bytes
      * @see #of(Object, int, int)
      * @see #of(ByteBuffer)
      * @see #of(Get)
@@ -229,9 +235,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowOffset the starting offset within the row key byte array
      * @param rowLength the number of bytes to use from the row key
      * @return a new AnyGet instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or
+     *         exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
-     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the
+     *         converted row bytes
      * @see #of(Object)
      * @see #of(ByteBuffer)
      */
@@ -264,7 +272,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at least
      *               one remaining byte
      * @return a new AnyGet instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
+     *         exceeds 32,767 bytes
      * @see #of(Object)
      * @see java.nio.ByteBuffer
      */
@@ -620,8 +629,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param timestamp the exact timestamp for which to retrieve cell versions
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative or equals {@link Long#MAX_VALUE} , causing the exclusive upper bound to
-     *         overflow
+     * @throws IllegalArgumentException if {@code timestamp} is negative or equals {@link Long#MAX_VALUE}, causing the
+     *         exclusive upper bound to overflow
      * @see #setTimeRange(long, long)
      * @see #getTimeRange()
      */
@@ -1131,10 +1140,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see HBaseExecutor#get(String, Collection)
      */
     public static List<Get> toGet(final Collection<AnyGet> anyGets) {
-        N.checkArgNotNull(anyGets, "anyGets");
+        N.checkArgNotNull(anyGets, cs.anyGets);
 
         for (final AnyGet anyGet : anyGets) {
-            N.checkArgNotNull(anyGet, "anyGet");
+            N.checkArgNotNull(anyGet, cs.anyGet);
         }
 
         if (N.isEmpty(anyGets)) {

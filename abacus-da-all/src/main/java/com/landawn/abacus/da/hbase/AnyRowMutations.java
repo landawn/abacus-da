@@ -85,7 +85,7 @@ public final class AnyRowMutations implements Row {
      * {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key shared by all mutations in this batch
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyRowMutations(final Object rowKey) {
         rowMutations = new RowMutations(toRowKeyBytes(rowKey));
@@ -97,7 +97,7 @@ public final class AnyRowMutations implements Row {
      *
      * @param rowKey the row key shared by all mutations in this batch
      * @param initialCapacity the initial capacity for the internal mutation list
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyRowMutations(final Object rowKey, final int initialCapacity) {
         rowMutations = new RowMutations(toRowKeyBytes(rowKey), initialCapacity);
@@ -108,7 +108,7 @@ public final class AnyRowMutations implements Row {
      * {@link RowMutations} for the given byte-array row key.
      *
      * @param rowKey the row key shared by all mutations in this batch, as a byte array
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyRowMutations(final byte[] rowKey) {
         rowMutations = new RowMutations(rowKey);
@@ -120,7 +120,7 @@ public final class AnyRowMutations implements Row {
      *
      * @param rowKey the row key shared by all mutations in this batch, as a byte array
      * @param initialCapacity the initial capacity for the internal mutation list
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyRowMutations(final byte[] rowKey, final int initialCapacity) {
         rowMutations = new RowMutations(rowKey, initialCapacity);
@@ -146,7 +146,7 @@ public final class AnyRowMutations implements Row {
      *
      * @param rowKey the row key shared by all mutations in this batch; must not be {@code null}
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     public static AnyRowMutations of(final Object rowKey) {
         return new AnyRowMutations(rowKey);
@@ -174,7 +174,7 @@ public final class AnyRowMutations implements Row {
      * @param rowKey the row key shared by all mutations in this batch; must not be {@code null}
      * @param initialCapacity the initial capacity for the internal mutation list
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     public static AnyRowMutations of(final Object rowKey, final int initialCapacity) {
         return new AnyRowMutations(rowKey, initialCapacity);
@@ -198,7 +198,7 @@ public final class AnyRowMutations implements Row {
      * @param rowKey the row key shared by all mutations in this batch, as a byte array; must not be
      *               {@code null} or empty
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     public static AnyRowMutations of(final byte[] rowKey) {
         return new AnyRowMutations(rowKey);
@@ -227,7 +227,7 @@ public final class AnyRowMutations implements Row {
      *               {@code null} or empty
      * @param initialCapacity the initial capacity for the internal mutation list
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
     public static AnyRowMutations of(final byte[] rowKey, final int initialCapacity) {
         return new AnyRowMutations(rowKey, initialCapacity);
@@ -289,7 +289,7 @@ public final class AnyRowMutations implements Row {
      *        and {@link org.apache.hadoop.hbase.client.Append} are all accepted by {@link RowMutations}
      * @return this AnyRowMutations instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code mutation} is null
-     * @throws IOException if {@code mutation} 's row key does not match this batch's row key
+     * @throws IOException if {@code mutation}'s row key does not match this batch's row key
      * @see Put
      * @see Delete
      * @see #add(List)

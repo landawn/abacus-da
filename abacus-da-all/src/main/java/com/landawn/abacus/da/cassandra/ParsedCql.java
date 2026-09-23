@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.pool.KeyedObjectPool;
 import com.landawn.abacus.pool.PoolFactory;
 import com.landawn.abacus.pool.Poolable;
@@ -401,7 +402,7 @@ public final class ParsedCql {
      * <p>The brace depth is tracked <i>within</i> the token, starting from {@code startDepth} (the depth
      * before this token). Testing the depth at the marker itself — rather than the depth before or after
      * the whole token — is what lets a self-contained literal such as {@code "{street::street}"}, whose
-     * braces balance inside one token, be recognized just like the multi-token {@code "{street::street"}
+     * braces balance inside one token, be recognized just like the multi-token <code>"&#123;street::street"</code>
      * form. Braces inside quoted literals are not counted, so a string such as {@code "'a{b'"} cannot
      * raise the depth.</p>
      *
@@ -634,7 +635,7 @@ public final class ParsedCql {
      *         iBatis/MyBatis parameter that is missing its closing brace
      */
     public static ParsedCql parse(final String cql) {
-        N.checkArgNotNull(cql, "cql");
+        N.checkArgNotNull(cql, cs.cql);
 
         ParsedCql result = null;
         PoolableAdapter<ParsedCql> w = pool.get(cql);

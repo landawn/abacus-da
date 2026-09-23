@@ -27,6 +27,7 @@ import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.client.Delete;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.N;
 
 /**
@@ -189,7 +190,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      */
@@ -206,7 +207,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
@@ -223,7 +224,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowKey the row key object for the delete operation
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
-     * @throws NullPointerException if {@code rowKey} converts to {@code null} , or {@code familyMap} is {@code null}
+     * @throws NullPointerException if {@code rowKey} converts to {@code null}, or {@code familyMap} is {@code null}
      * @throws IllegalArgumentException if {@code rowKey} converts to an empty byte array
      */
     AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
@@ -347,7 +348,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyDelete instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @see #of(Object)
@@ -387,7 +388,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
      * @return a new AnyDelete instance configured with partial row key and timestamp control
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
@@ -425,7 +426,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @return a new AnyDelete instance with the specified configuration
-     * @throws NullPointerException if {@code rowKey} converts to {@code null} , or {@code familyMap} is {@code null}
+     * @throws NullPointerException if {@code rowKey} converts to {@code null}, or {@code familyMap} is {@code null}
      * @throws IllegalArgumentException if {@code rowKey} converts to an empty byte array
      * @see #of(Object)
      * @see #of(Delete)
@@ -1102,7 +1103,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @return a string representation of the delete operation
-     * @throws IllegalArgumentException if the stored TTL attribute is not exactly eight bytes
+     * @throws IllegalArgumentException if the stored TTL attribute is shorter than eight bytes
      */
     @Override
     public String toString() {
@@ -1144,10 +1145,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see HBaseExecutor#delete(String, Collection)
      */
     public static List<Delete> toDelete(final Collection<AnyDelete> anyDeletes) {
-        N.checkArgNotNull(anyDeletes, "anyDeletes");
+        N.checkArgNotNull(anyDeletes, cs.anyDeletes);
 
         for (final AnyDelete anyDelete : anyDeletes) {
-            N.checkArgNotNull(anyDelete, "anyDelete");
+            N.checkArgNotNull(anyDelete, cs.anyDelete);
         }
 
         final List<Delete> deletes = new ArrayList<>(anyDeletes.size());
