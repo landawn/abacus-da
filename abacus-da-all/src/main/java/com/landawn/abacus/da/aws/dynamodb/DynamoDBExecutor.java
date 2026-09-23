@@ -149,7 +149,11 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <p><b>Validation:</b> Constructors and methods throw {@link IllegalArgumentException} (not {@code NullPointerException})
  * when a required argument, including a request object such as {@code GetItemRequest} or {@code PutItemRequest}, is
- * {@code null}. Parameters documented as nullable (for example a {@code null} result object, item, or projection list)
+ * {@code null}. Exception: the table-name/key/item/request-items arguments of the thin pass-through overloads (for
+ * example {@code getItem(String, Map)}, {@code putItem(String, Map)}, {@code batchWriteItem(Map)}) are not checked
+ * locally; they are sent to the SDK as-is and a {@code null} or invalid value surfaces as an
+ * {@link AmazonClientException} (typically a service {@code ValidationException}), as documented on each method.
+ * Parameters documented as nullable (for example a {@code null} result object, item, or projection list)
  * are accepted as described on each method. The {@link NullPointerException} thrown when a {@link ConditionBuilder}
  * is reused after {@link ConditionBuilder#build()} signals builder state, not a {@code null} argument.</p>
  *
@@ -1186,7 +1190,7 @@ public final class DynamoDBExecutor {
             return toItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
-                    + ". Only Entity or Map<String, Object> classes with getter/setter methods are supported");
+                    + ". Only entity classes with getter/setter methods, Map<String, Object>, or Object[] name-value pairs are supported");
         }
 
         return attrs;
@@ -1281,7 +1285,7 @@ public final class DynamoDBExecutor {
             return toUpdateItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
-                    + ". Only Entity or Map<String, Object> classes with getter/setter methods are supported");
+                    + ". Only entity classes with getter/setter methods, Map<String, Object>, or Object[] name-value pairs are supported");
         }
 
         return attrs;
@@ -1474,7 +1478,7 @@ public final class DynamoDBExecutor {
      * scalars ({@code S}, {@code N}, {@code BOOL}, {@code B}, {@code NULL}), the typed sets
      * ({@code SS}, {@code NS}, {@code BS}), and nested {@code L}/{@code M} structures. Note that
      * DynamoDB {@code N} values arrive as Strings and are coerced to the property's declared type via
-     * {@link N#convert(Object, Class)}.</p>
+     * {@link N#convert(Object, Class)}; a {@code B} (binary) value is copied into a {@code byte[]} property.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1541,11 +1545,25 @@ public final class DynamoDBExecutor {
             } else if (rawValue == null || propInfo.clazz.isAssignableFrom(rawValue.getClass())) {
                 propInfo.setPropValue(entity, rawValue);
             } else {
-                propInfo.setPropValue(entity, N.convert(rawValue, propInfo.clazz));
+                propInfo.setPropValue(entity, convertValue(rawValue, propInfo.clazz));
             }
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    // N.convert(ByteBuffer, byte[].class) returns null (abacus-common has no ByteBuffer -> byte[] conversion),
+    // which would silently drop a native B attribute read into a byte[] property or byte[] target. Copy the
+    // remaining bytes from a duplicate so the attribute's buffer position is left untouched.
+    private static Object convertValue(final Object value, final Class<?> targetClass) {
+        if (value instanceof ByteBuffer && targetClass == byte[].class) {
+            final ByteBuffer buf = ((ByteBuffer) value).duplicate();
+            final byte[] bytes = new byte[buf.remaining()];
+            buf.get(bytes);
+            return bytes;
+        }
+
+        return N.convert(value, targetClass);
     }
 
     // A container value only needs the parameterized-Type rebuild when a declared element/value type
@@ -1745,7 +1763,7 @@ public final class DynamoDBExecutor {
             return (T) ret;
         }
 
-        return N.convert(ret, targetClass);
+        return (T) convertValue(ret, targetClass);
     }
 
     /**
@@ -2488,12 +2506,13 @@ public final class DynamoDBExecutor {
      * );
      *
      * PutItemResult result = executor.putItem("Users", item);
-     * System.out.println("Consumed capacity: " + result.getConsumedCapacity());
+     * // result.getConsumedCapacity() is null: this overload does not request consumed capacity
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
      * @param item the item to put, as a map of attribute names to AttributeValues. Must not be {@code null}.
-     * @return a {@link PutItemResult} containing operation metadata and consumed capacity
+     * @return a {@link PutItemResult} containing operation metadata (consumed capacity is not requested by this overload;
+     *         use {@link #putItem(PutItemRequest)} with {@code ReturnConsumedCapacity} to obtain it)
      * @throws AmazonClientException if the request is rejected by the underlying DynamoDB client (for example, when tableName or item is null or
      *         invalid)
      * @see #putItem(String, Map, String)
@@ -2668,7 +2687,7 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param requestItems map of table names to lists of write requests (puts/deletes). Must not be {@code null}.
-     * @return a {@link BatchWriteItemResult} containing unprocessed items and consumed capacity
+     * @return a {@link BatchWriteItemResult} containing any unprocessed items (consumed capacity is not requested by this overload)
      * @throws AmazonClientException if the request is rejected by the underlying DynamoDB client (for example, when requestItems is null, or
      *         when DynamoDB's batch limits are exceeded, which fails with a service {@code ValidationException})
      * @see #batchWriteItem(BatchWriteItemRequest)
@@ -2856,8 +2875,7 @@ public final class DynamoDBExecutor {
      * Map<String, AttributeValue> key = asKey("userId", "user123");
      *
      * DeleteItemResult result = executor.deleteItem("Users", key);
-     * System.out.println("Item deleted. Consumed capacity: " +
-     *                    result.getConsumedCapacity());
+     * // result.getConsumedCapacity() is null: this overload does not request consumed capacity
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
@@ -3581,7 +3599,7 @@ public final class DynamoDBExecutor {
      *         ":low", toAttributeValue(100),
      *         ":high", toAttributeValue(500)
      *     ))
-     *     .withProjectionExpression("productId, #name, price")
+     *     .withProjectionExpression("productId, #name, category, price")   // category is needed by groupingBy below
      *     .withExpressionAttributeNames(Map.of("#name", "name"))
      *     .withLimit(50);   // Page size
      *

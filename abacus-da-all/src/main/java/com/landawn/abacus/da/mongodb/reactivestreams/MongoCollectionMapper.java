@@ -1531,8 +1531,8 @@ public final class MongoCollectionMapper<T> {
      * document matches the filter, or when a matching document's named field is absent or BSON null.
      * Otherwise it emits the converted {@code String} value and then completes. Subscribers cannot
      * distinguish "no document matched" from "document matched but value is null" purely from the
-     * reactive signal — use {@code defaultIfEmpty(...)} or the blocking sync API when that
-     * distinction is required.</p>
+     * reactive signal — use the blocking sync API when that distinction is required, or supply a
+     * fallback for both cases via {@code defaultIfEmpty(...)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1682,7 +1682,11 @@ public final class MongoCollectionMapper<T> {
      * document matches the filter, or when a matching document's named field is absent or BSON null.
      * Otherwise it emits the converted value and then completes. Subscribers cannot distinguish "no
      * document matched" from "document matched but value is null" purely from the reactive signal —
-     * use the blocking sync API when that distinction is required.</p>
+     * use the blocking sync API when that distinction is required. Exception: for a <i>primitive</i>
+     * {@code valueType} (for example {@code int.class}), a matched document whose field is absent or
+     * BSON null is converted to the primitive default (for example {@code 0}), which is emitted instead
+     * of completing empty; use the wrapper type (for example {@code Integer.class}) to get the
+     * empty-{@code Mono} behavior.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1695,6 +1699,10 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForSingleValue("amount", MongoDB.objectIdToFilter("507f1f77bcf86cd799439099"), BigDecimal.class)
      *     .defaultIfEmpty(BigDecimal.ZERO)
      *     .subscribe(a -> System.out.println("amount: " + a));   // emits 0 when absent
+     *
+     * // Edge: a primitive valueType emits the primitive default for a matched document whose field is missing/null.
+     * userMapper.queryForSingleValue("age", Filters.eq("name", "noAgeUser"), int.class)
+     *     .subscribe(v -> System.out.println("age: " + v));   // emits 0 (a wrapper Integer.class would complete EMPTY)
      *
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<BigDecimal> notRunYet = userMapper.queryForSingleValue("amount", Filters.empty(), BigDecimal.class);
@@ -1712,7 +1720,8 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the value type to convert to
      * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
-     *         when no document matches or the field is missing/null
+     *         when no document matches or the field is missing/null (for a primitive {@code valueType}, a
+     *         missing/null field on a matched document emits the primitive default instead)
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
@@ -2138,8 +2147,8 @@ public final class MongoCollectionMapper<T> {
      * Inserts multiple entities into the collection reactively.
      *
      * <p>This method provides a reactive way to insert a collection of entities of the mapped type.
-     * All entities are automatically converted to MongoDB documents using the configured codec
-     * registry.</p>
+     * Each entity is converted via {@link com.landawn.abacus.da.mongodb.MongoDBBase#toDocument(Object)}
+     * (or passed through when already a {@link Document}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3112,7 +3121,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to identify the document
      * @param objList collection of objects containing update values
-     * @return a Mono emitting the found document
+     * @return a {@code Mono} that emits the matched document (before update) decoded as {@code T},
+     *         or completes empty when no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
      *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
      *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
@@ -3301,7 +3311,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to identify the document
      * @param options configuration for the delete operation (can be null to use defaults)
-     * @return a Mono emitting the deleted document
+     * @return a {@code Mono} that emits the deleted document decoded as {@code T}, or completes
+     *         empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
@@ -3337,7 +3348,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.distinct("country").count().subscribe(n -> System.out.println("distinct: " + n));   // emits 0 if empty
      *
      * // Edge: cold publisher — building it issues no query until subscribed.
-     * Flux<T> notRunYet = userMapper.distinct("country");   // nothing executed yet
+     * Flux<User> notRunYet = userMapper.distinct("country");   // nothing executed yet
      *
      * // Negative: a null fieldName is rejected with IllegalArgumentException.
      * userMapper.distinct((String) null);   // throws IllegalArgumentException
@@ -3440,7 +3451,7 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(result -> System.out.println("Aggregation result: " + result));   // one emission per group
      *
      * // Edge: an empty pipeline returns every document (no transformation).
-     * Flux<T> all = userMapper.aggregate(Collections.emptyList());   // emits each document as T
+     * Flux<User> all = userMapper.aggregate(Collections.emptyList());   // emits each document as a User
      *
      * // Edge: a pipeline that matches nothing -> Flux completes with ZERO emissions.
      * userMapper.aggregate(Arrays.asList(Aggregates.match(Filters.gte("age", 1000))))
@@ -3468,9 +3479,10 @@ public final class MongoCollectionMapper<T> {
     /**
      * Groups documents by a single field (Beta feature).
      *
-     * <p>Issues an aggregation pipeline with a single {@code $group} stage keyed on
-     * {@code fieldName} and decodes each resulting group document to the mapper's row type
-     * {@code T}.</p>
+     * <p>Issues an aggregation pipeline with a {@code $group} stage keyed on {@code fieldName} and
+     * decodes each resulting group document to the mapper's row type {@code T}. Unless {@code T} is
+     * {@link Document}, a {@code $project} stage follows that drops {@code _id} and surfaces the group
+     * key under {@code fieldName}, so it is readable through the entity's matching property.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3483,7 +3495,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupBy("department").count().subscribe(n -> System.out.println("groups: " + n));   // emits 0 if empty
      *
      * // Edge: cold publisher — building it issues no aggregation until subscribed.
-     * Flux<T> notRunYet = userMapper.groupBy("department");   // nothing executed yet
+     * Flux<User> notRunYet = userMapper.groupBy("department");   // nothing executed yet
      *
      * // Negative: a database/pipeline failure is delivered through onError, never thrown to the subscriber.
      * userMapper.groupBy("department")
@@ -3509,7 +3521,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Issues an aggregation pipeline whose {@code $group} key is the composition of the supplied
      * field names; each unique combination forms a distinct output document, decoded to the
-     * mapper's row type {@code T}.</p>
+     * mapper's row type {@code T}. Unless {@code T} is {@link Document}, a {@code $project} stage
+     * follows that drops {@code _id} and surfaces each key component under its own field name.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3523,7 +3536,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupBy(fields).count().subscribe(n -> System.out.println("groups: " + n));   // emits 0 if empty
      *
      * // Edge: cold publisher — building it issues no aggregation until subscribed.
-     * Flux<T> notRunYet = userMapper.groupBy(fields);   // nothing executed yet
+     * Flux<User> notRunYet = userMapper.groupBy(fields);   // nothing executed yet
      *
      * // Negative: a null or empty fieldNames collection -> IllegalArgumentException.
      * userMapper.groupBy(Collections.emptyList());   // throws IllegalArgumentException
@@ -3546,8 +3559,9 @@ public final class MongoCollectionMapper<T> {
      * Groups documents by a field and counts frequency (Beta feature).
      *
      * <p>Equivalent to {@link #groupBy(String)} with a {@code $sum: 1} accumulator: each emitted
-     * document represents one group and carries the count of documents that fell into it. Useful
-     * for frequency distributions and summary statistics.</p>
+     * document represents one group and carries the count of documents that fell into it under a
+     * {@code count} field (readable only if {@code T} declares a matching property). Useful for
+     * frequency distributions and summary statistics.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3560,7 +3574,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupByAndCount("status").count().subscribe(n -> System.out.println("groups: " + n));   // emits 0
      *
      * // Edge: cold publisher — building it issues no aggregation until subscribed.
-     * Flux<T> notRunYet = userMapper.groupByAndCount("status");   // nothing executed yet
+     * Flux<User> notRunYet = userMapper.groupByAndCount("status");   // nothing executed yet
      *
      * // Edge: a database/pipeline failure is delivered through onError, never thrown synchronously.
      * userMapper.groupByAndCount("status")
@@ -3600,7 +3614,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupByAndCount(fields).count().subscribe(n -> System.out.println("groups: " + n));   // emits 0
      *
      * // Edge: cold publisher — building it issues no aggregation until subscribed.
-     * Flux<T> notRunYet = userMapper.groupByAndCount(fields);   // nothing executed yet
+     * Flux<User> notRunYet = userMapper.groupByAndCount(fields);   // nothing executed yet
      *
      * // Negative: a null or empty fieldNames collection -> IllegalArgumentException.
      * userMapper.groupByAndCount(Collections.emptyList());   // throws IllegalArgumentException
@@ -3640,7 +3654,7 @@ public final class MongoCollectionMapper<T> {
      *     .count().subscribe(n -> System.out.println("keys: " + n));   // emits 0 if empty
      *
      * // Edge: cold publisher — building it issues no map-reduce until subscribed.
-     * Flux<T> notRunYet = userMapper.mapReduce(mapFunction, reduceFunction);   // nothing executed yet
+     * Flux<User> notRunYet = userMapper.mapReduce(mapFunction, reduceFunction);   // nothing executed yet
      *
      * // Negative: a null map function is rejected with IllegalArgumentException.
      * userMapper.mapReduce((String) null, reduceFunction);   // throws IllegalArgumentException

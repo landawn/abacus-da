@@ -931,6 +931,65 @@ public class CosmosContainerExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.streamItems(spec, (Class<TestItem>) null));
     }
 
+    private List<String> captureConditionQueries(final CosmosContainerExecutor cosmosExecutor, final com.landawn.abacus.query.condition.Condition... conditions) {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        for (final com.landawn.abacus.query.condition.Condition condition : conditions) {
+            cosmosExecutor.streamItems(condition, TestItem.class).toList();
+        }
+
+        return specCaptor.getAllValues().stream().map(SqlQuerySpec::getQueryText).toList();
+    }
+
+    /**
+     * Regression: abacus-query 4.9.x renders Boolean IS/IS NOT conditions as inline truth-value keywords
+     * ({@code x IS TRUE}) instead of binding a parameter ({@code x IS ?}). Cosmos DB has no IS TRUE/IS FALSE
+     * syntax (400 Bad Request when the stream is consumed), so they must be rewritten to comparisons.
+     */
+    @Test
+    public void testBooleanIsPredicatesUseCosmosComparisonSyntax() {
+        final List<String> queries = captureConditionQueries(executor, Filters.isTrue("active"), Filters.isFalse("active"), Filters.is("active", true),
+                Filters.isNot("active", true), Filters.isNot("active", false), Filters.and(Filters.isTrue("active"), Filters.eq("id", "1")));
+
+        assertEquals("SELECT * FROM test_item c WHERE c.active = true", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.active = false", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE c.active = true", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.active != true", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE c.active != false", queries.get(4));
+        assertEquals("SELECT * FROM test_item c WHERE (c.active = true) AND (c.id = @p0)", queries.get(5));
+    }
+
+    /**
+     * Regression: Cosmos DB literals ({@code true}, {@code false}, {@code null}, {@code undefined}) are case-sensitive
+     * and must be lower case, but SCREAMING_SNAKE_CASE upper-cases every token of a raw expression. A keyword-named
+     * property is still alias-qualified and keeps its spelling.
+     */
+    @Test
+    public void testLiteralKeywordsAreLowerCasedForCosmos() {
+        final CosmosContainerExecutor screamingExecutor = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE);
+
+        final List<String> queries = captureConditionQueries(screamingExecutor, Filters.expr("active = true AND deleted = false"),
+                Filters.expr("score = null OR score = undefined"), Filters.isTrue("active"), Filters.isNull("score"), Filters.eq("null", 1));
+
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.ACTIVE = true AND c.DELETED = false", queries.get(0));
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.SCORE = null OR c.SCORE = undefined", queries.get(1));
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.ACTIVE = true", queries.get(2));
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE IS_NULL(c.SCORE)", queries.get(3));
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.NULL = @p0", queries.get(4));
+    }
+
+    /** Regression: a Cosmos user-defined-function call ({@code udf.name(...)}) must not be alias-qualified as a property path. */
+    @Test
+    public void testUdfCallsAreNotAliasQualified() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("udf.tax(price) > 1"), Filters.expr("udf.x IS NULL"));
+
+        assertEquals("SELECT * FROM test_item c WHERE udf.tax(c.price) > 1", queries.get(0));
+        // Without a call, "udf" is an ordinary property path.
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.udf.x)", queries.get(1));
+    }
+
     // Test data class
     public static class TestItem {
         public String id;

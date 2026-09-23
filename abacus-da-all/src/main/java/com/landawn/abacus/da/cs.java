@@ -41,7 +41,7 @@ import com.landawn.abacus.annotation.Internal;
  * <p><b>Usage Example (framework-internal):</b></p>
  * <pre>{@code
  * public boolean exists(final String tableName, final AnyGet anyGet) {
- *     N.checkArgNotEmpty(tableName, cs.tableName);
+ *     N.checkArgNotNull(tableName, cs.tableName);
  *     N.checkArgNotNull(anyGet, cs.anyGet);
  *     // ...
  * }

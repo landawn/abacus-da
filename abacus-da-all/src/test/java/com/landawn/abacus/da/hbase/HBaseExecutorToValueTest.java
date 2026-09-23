@@ -428,4 +428,114 @@ public class HBaseExecutorToValueTest {
         assertNotNull(ex.getMessage());
         assertTrue(ex.getMessage().contains("cf:q2"), "Message must name the unexpected extra column cf:q2, but was: " + ex.getMessage());
     }
+
+    // ---------------------------------------------------------------------
+    // Regression (2026-09-22 deep review): a property's own name must not be dropped from the
+    // read-side family/column map just because an EARLIER property already claimed that name
+    // (explicit @ColumnFamily / @Column in another family). Before the fix the mapping depended on
+    // field declaration order and the later property's cells were silently ignored on read.
+    // ---------------------------------------------------------------------
+
+    @Data
+    @NoArgsConstructor
+    public static class ZipDeclaredBeforeAddress {
+        @Id
+        private String id;
+        @ColumnFamily("addr")
+        private String zip;
+        private PostalAddress addr; // default family "addr" == zip's explicit family
+    }
+
+    @Data
+    @NoArgsConstructor
+    @ColumnFamily("cf")
+    public static class ColumnNameClaimedInOtherFamily {
+        @Id
+        private String id;
+        @ColumnFamily("f1")
+        @Column("email")
+        private String backup;
+        private String email; // stored as "cf:email"
+    }
+
+    @Data
+    @NoArgsConstructor
+    public static class NestedBeanAndScalarSharingFamily {
+        @Id
+        private String id;
+        @ColumnFamily("name")
+        private FullName primary; // nested cells "name:firstName"
+        private String name; // scalar cell "name:"
+    }
+
+    @Test
+    public void test_toEntity_beanPropertyDefaultFamilyAlreadyClaimedByEarlierExplicitFamily_populated() {
+        final byte[] row = Bytes.toBytes("row-zip");
+        final Cell street = new KeyValue(row, Bytes.toBytes("addr"), Bytes.toBytes("street"), Bytes.toBytes("Main St"));
+        final Cell zip = new KeyValue(row, Bytes.toBytes("addr"), Bytes.toBytes("zip"), Bytes.toBytes("12345"));
+
+        final ZipDeclaredBeforeAddress entity = HBaseExecutor.toEntity(Result.create(N.asList(street, zip)), ZipDeclaredBeforeAddress.class);
+
+        assertNotNull(entity);
+        assertEquals("12345", entity.getZip());
+        assertNotNull(entity.getAddr(), "Nested bean cells must not be dropped when an earlier property declared the same family explicitly");
+        assertEquals("Main St", entity.getAddr().getStreet());
+    }
+
+    @Test
+    public void test_toEntity_ownColumnNameClaimedByColumnAnnotationInOtherFamily_populated() {
+        final byte[] row = Bytes.toBytes("row-email");
+        final Cell cfEmail = new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("email"), Bytes.toBytes("e@x"));
+        final Cell f1Email = new KeyValue(row, Bytes.toBytes("f1"), Bytes.toBytes("email"), Bytes.toBytes("b@x"));
+
+        final ColumnNameClaimedInOtherFamily entity = HBaseExecutor.toEntity(Result.create(N.asList(cfEmail, f1Email)),
+                ColumnNameClaimedInOtherFamily.class);
+
+        assertNotNull(entity);
+        assertEquals("b@x", entity.getBackup());
+        assertEquals("e@x", entity.getEmail(), "cf:email must map to 'email' even though f1 declares @Column(\"email\")");
+    }
+
+    @Test
+    public void test_toEntity_scalarAndNestedBeanSharingFamily_bothPopulated() {
+        final byte[] row = Bytes.toBytes("row-shared");
+        final Cell scalar = new KeyValue(row, Bytes.toBytes("name"), Bytes.toBytes(HBaseExecutor.EMPTY_QUALIFIER), Bytes.toBytes("nick"));
+        final Cell nested = new KeyValue(row, Bytes.toBytes("name"), Bytes.toBytes("firstName"), Bytes.toBytes("John"));
+
+        final NestedBeanAndScalarSharingFamily entity = HBaseExecutor.toEntity(Result.create(N.asList(scalar, nested)),
+                NestedBeanAndScalarSharingFamily.class);
+
+        assertNotNull(entity);
+        assertEquals("nick", entity.getName());
+        assertNotNull(entity.getPrimary());
+        assertEquals("John", entity.getPrimary().getFirstName());
+    }
+
+    @Test
+    public void test_toEntity_sharedFamilyLayouts_roundTripThroughAnyPut() throws Exception {
+        final ZipDeclaredBeforeAddress zip = new ZipDeclaredBeforeAddress();
+        zip.setId("r1");
+        zip.setZip("12345");
+        zip.setAddr(new PostalAddress("Main St"));
+        assertEquals(zip, HBaseExecutor.toEntity(toResult(AnyPut.create(zip).val()), ZipDeclaredBeforeAddress.class));
+
+        final ColumnNameClaimedInOtherFamily email = new ColumnNameClaimedInOtherFamily();
+        email.setId("r2");
+        email.setBackup("b@x");
+        email.setEmail("e@x");
+        assertEquals(email, HBaseExecutor.toEntity(toResult(AnyPut.create(email).val()), ColumnNameClaimedInOtherFamily.class));
+
+        final NestedBeanAndScalarSharingFamily shared = new NestedBeanAndScalarSharingFamily();
+        shared.setId("r3");
+        shared.setPrimary(new FullName("John"));
+        shared.setName("nick");
+        assertEquals(shared, HBaseExecutor.toEntity(toResult(AnyPut.create(shared).val()), NestedBeanAndScalarSharingFamily.class));
+    }
+
+    private static Result toResult(final org.apache.hadoop.hbase.client.Put put) {
+        final List<Cell> cells = new java.util.ArrayList<>();
+        put.getFamilyCellMap().values().forEach(cells::addAll);
+        cells.sort(org.apache.hadoop.hbase.CellComparator.getInstance());
+        return Result.create(cells);
+    }
 }

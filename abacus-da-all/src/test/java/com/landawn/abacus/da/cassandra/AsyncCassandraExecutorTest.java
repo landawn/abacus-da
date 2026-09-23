@@ -519,4 +519,120 @@ public class AsyncCassandraExecutorTest extends TestBase {
         // The guard fires before the query is even prepared.
         org.mockito.Mockito.verify(mockExecutor, org.mockito.Mockito.never()).prepareQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
     }
+
+    // ---------------------------------------------------------------------------------------------
+    //  Repeated get() on a returned future must yield the same result (review 2026-09-22, slice O).
+    //  ContinuableFuture.map(...) re-applies its function on EVERY get(); the driver's
+    //  AsyncResultSet.currentPage() hands out one shared, one-shot iterator, so an un-memoized
+    //  mapping re-read an already drained page on the second get().
+    // ---------------------------------------------------------------------------------------------
+
+    /** Mirrors DefaultAsyncResultSet: every currentPage() call returns the SAME one-shot iterator. */
+    private static AsyncResultSet oneShotPage(final Row... rows) {
+        final AsyncResultSet rs = mock(AsyncResultSet.class);
+        final Iterator<Row> iter = Arrays.asList(rows).iterator();
+        when(rs.currentPage()).thenReturn(() -> iter);
+        when(rs.hasMorePages()).thenReturn(false);
+        return rs;
+    }
+
+    private void stubOneRowPerExecution() {
+        final Row row = mock(Row.class);
+        when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
+        when(mockSession.executeAsync(any(Statement.class))).thenAnswer(inv -> completed(oneShotPage(row)));
+    }
+
+    @Test
+    public void testRepeatedGet_queryForSingleValueAndFindFirst_returnSameResult() throws Exception {
+        stubOneRowPerExecution();
+        when(mockExecutor.readFirstColumn(any(Row.class), eq(String.class))).thenReturn("v");
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        final Function<Row, String> mapper = (Function) (Function<Row, String>) r -> "v";
+        when(mockExecutor.createRowMapper(eq(String.class))).thenReturn(mapper);
+
+        final ContinuableFuture<Nullable<String>> value = async.queryForSingleValue(String.class, "SELECT v FROM t WHERE id = ?", 1);
+        assertEquals("v", value.get().orElseNull());
+        assertEquals("v", value.get().orElseNull()); // was Nullable.empty(): the second get() re-read the drained page
+
+        final ContinuableFuture<Optional<String>> first = async.findFirst(String.class, "SELECT v FROM t WHERE id = ?", 1);
+        assertEquals("v", first.get().orElseNull());
+        assertEquals("v", first.get().orElseNull()); // was Optional.empty()
+
+        final ContinuableFuture<Boolean> exists = async.exists("SELECT v FROM t WHERE id = ?", 1);
+        exists.get().booleanValue();
+        assertTrue(exists.get());
+    }
+
+    @Test
+    public void testRepeatedGet_execute_returnsSameResultSet() throws Exception {
+        stubOneRowPerExecution();
+
+        final ContinuableFuture<ResultSet> future = async.execute("SELECT id FROM t WHERE id = ?", 1);
+        final ResultSet first = future.get();
+
+        assertSame(first, future.get()); // was a fresh wrapper over the shared, drained driver iterator
+        assertTrue(first.iterator().hasNext());
+    }
+
+    @Test
+    public void testRepeatedGet_getAndList_returnSameResult() throws Exception {
+        stubOneRowPerExecution();
+        when(mockExecutor.prepareQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(new com.landawn.abacus.query.AbstractQueryBuilder.SP("SELECT id FROM t WHERE id = ?", com.landawn.abacus.util.ImmutableList.of(1)));
+        // Behave like the real fetchOnlyOne/toList: consume the result-set cursor.
+        when(mockExecutor.fetchOnlyOne(eq(String.class), any(ResultSet.class)))
+                .thenAnswer(inv -> {
+                    final Iterator<Row> it = ((ResultSet) inv.getArgument(1)).iterator();
+
+                    if (!it.hasNext()) {
+                        return null;
+                    }
+
+                    it.next();
+
+                    return "row";
+                });
+        when(mockExecutor.toList(eq(String.class), any(ResultSet.class))).thenAnswer(inv -> ((ResultSet) inv.getArgument(1)).all());
+
+        final ContinuableFuture<Optional<String>> get = async.get(String.class, com.landawn.abacus.query.Filters.eq("id", 1));
+        assertEquals("row", get.get().orElseNull());
+        assertEquals("row", get.get().orElseNull()); // was Optional.empty()
+
+        final ContinuableFuture<java.util.List<String>> list = async.list(String.class, "SELECT id FROM t WHERE id = ?", 1);
+        assertEquals(1, list.get().size());
+        assertSame(list.get(), list.get()); // was a second, empty list
+    }
+
+    @Test
+    public void testRepeatedGet_gett_duplicateResultFailureIsReplayed() throws Exception {
+        final Row row1 = mock(Row.class);
+        final Row row2 = mock(Row.class);
+        when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
+        when(mockSession.executeAsync(any(Statement.class))).thenAnswer(inv -> completed(oneShotPage(row1, row2)));
+        when(mockExecutor.prepareQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(new com.landawn.abacus.query.AbstractQueryBuilder.SP("SELECT id FROM t", com.landawn.abacus.util.ImmutableList.empty()));
+        // Behave like the real fetchOnlyOne: read one row, then fail if another one follows.
+        when(mockExecutor.fetchOnlyOne(eq(String.class), any(ResultSet.class))).thenAnswer(inv -> {
+            final Iterator<Row> it = ((ResultSet) inv.getArgument(1)).iterator();
+
+            if (!it.hasNext()) {
+                return null;
+            }
+
+            it.next();
+
+            if (it.hasNext()) {
+                throw new com.landawn.abacus.exception.DuplicateResultException();
+            }
+
+            return "row";
+        });
+
+        final ContinuableFuture<String> future = async.gett(String.class, com.landawn.abacus.query.Filters.eq("status", "x"));
+
+        for (int i = 0; i < 2; i++) { // the second get() previously returned the drained-cursor answer (null)
+            final java.util.concurrent.ExecutionException ex = assertThrows(java.util.concurrent.ExecutionException.class, future::get);
+            assertTrue(ex.getCause() instanceof com.landawn.abacus.exception.DuplicateResultException);
+        }
+    }
 }

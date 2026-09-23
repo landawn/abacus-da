@@ -2753,6 +2753,61 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> Filters.builder().beginsWith(null, "v"));
     }
 
+    // ---- sliceC 2026-09-22: B attribute -> ByteBuffer target must be a READ-mode buffer ----
+    // abacus-common's N.convert(byte[], ByteBuffer.class) returns a buffer positioned at its end
+    // (remaining() == 0), so a get -> put round trip used to write an EMPTY binary attribute.
+
+    @Test
+    public void testToEntity_BinaryAttributeToByteBufferProperty_IsReadable() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", AttributeValue.fromS("1"));
+        item.put("buf", AttributeValue.fromB(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[] { 1, 2, 3 })));
+
+        final ByteBufferEntity entity = DynamoDBExecutor.toEntity(item, ByteBufferEntity.class);
+
+        assertEquals(0, entity.getBuf().position());
+        assertEquals(3, entity.getBuf().remaining());
+
+        // read-modify-write must not lose the binary content
+        final AttributeValue written = DynamoDBExecutor.toItem(entity).get("buf");
+        assertTrue(java.util.Arrays.equals(new byte[] { 1, 2, 3 }, written.b().asByteArray()));
+    }
+
+    @Test
+    public void testGetItem_ByteBufferTargetClass_IsReadable() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("buf", AttributeValue.fromB(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[] { 4, 5 })));
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+
+        final ByteBuffer buf = executor.getItem(GetItemRequest.builder().tableName("t").key(DynamoDBExecutor.asKey("id", "1")).build(), ByteBuffer.class);
+
+        assertEquals(0, buf.position());
+        assertEquals(2, buf.remaining());
+        assertEquals(4, buf.get(0));
+        assertEquals(5, buf.get(1));
+    }
+
+    private static class ByteBufferEntity {
+        private String id;
+        private ByteBuffer buf;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public ByteBuffer getBuf() {
+            return buf;
+        }
+
+        public void setBuf(final ByteBuffer buf) {
+            this.buf = buf;
+        }
+    }
+
     // Entity with no @Table to test mapper failure path
     public static class V2NoTableEntity {
         @com.landawn.abacus.annotation.Id

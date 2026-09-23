@@ -64,9 +64,10 @@ import com.landawn.abacus.util.stream.Stream;
  *       {@link DynamoDBExecutor}; the calling thread is never blocked.</li>
  *   <li>Continuations attached via {@link ContinuableFuture#thenRunAsync} and related methods
  *       run on the same {@link AsyncExecutor} unless an explicit executor is supplied.</li>
- *   <li>For methods that return a {@link Stream} (queries/scans), the stream itself is created
- *       asynchronously but is consumed lazily on whichever thread iterates it; the underlying
- *       SDK calls used to fetch additional pages happen synchronously during iteration.</li>
+ *   <li>For methods that return a {@link Stream} ({@code stream}/{@code scan}), only the lazy stream
+ *       is built asynchronously; no request is sent before iteration. Every underlying SDK call,
+ *       including the one for the first page, happens synchronously on whichever thread iterates
+ *       the stream, and request/service failures surface there rather than through the future.</li>
  * </ul>
  *
  * <p><strong>Key Features:</strong></p>
@@ -878,8 +879,8 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> old = result.getAttributes(); // returns null (use the returnValues overload for ALL_OLD)
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request, DynamoDB rejects its table, key, conditions, or
-     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request or DynamoDB rejects it (for example an invalid
+     *         table or item, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion.</p>
      *
      * @param tableName the name of the DynamoDB table to put the item into, must not be {@code null}
      * @param item the item to put, represented as a map of attribute names to {@link AttributeValue} objects,
@@ -940,8 +941,8 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> old = asyncExecutor.putItem("Users", newItem, "NONE").get().getAttributes(); // returns null
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request, DynamoDB rejects its table, key, conditions, or
-     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request or DynamoDB rejects it (for example an invalid
+     *         table or item, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion.</p>
      *
      * @param tableName the name of the DynamoDB table to put the item into, must not be {@code null}
      * @param item the item to put, represented as a map of attribute names to {@link AttributeValue} objects,
@@ -1008,8 +1009,8 @@ public final class AsyncDynamoDBExecutor {
      * PutItemResult result = future.get(); // returns a non-null PutItemResult (the request used ReturnValue.ALL_OLD)
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request, DynamoDB rejects its table, key, conditions, or
-     *         service limits, or a returned item cannot be converted to the requested Java representation. A null {@code putItemRequest} is also
+     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request or DynamoDB rejects it (for example an invalid
+     *         table or item, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion. A null {@code putItemRequest} is also
      *         rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param putItemRequest the complete PutItemRequest with all parameters configured, must not be {@code null}
@@ -1128,13 +1129,14 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, List<WriteRequest>> unprocessed = result.getUnprocessedItems(); // returns an empty map (or null) on full success
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the batchWriteItem request, DynamoDB rejects its table, key,
-     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchWriteItem request or DynamoDB rejects it (for example an
+     *         invalid table or item, or an exceeded batch/service limit); the result is returned as-is, without item conversion.</p>
      *
      * @param requestItems a map where keys are table names and values are lists of {@link WriteRequest} objects
      *                     (containing either PutRequest or DeleteRequest), must not be {@code null}
-     * @return a {@link ContinuableFuture} containing the {@link BatchWriteItemResult} with information about
-     *         consumed capacity and any unprocessed items that need to be retried
+     * @return a {@link ContinuableFuture} containing the {@link BatchWriteItemResult} with any unprocessed items
+     *         that need to be retried (consumed capacity is not requested by this overload; use
+     *         {@link #batchWriteItem(BatchWriteItemRequest)} with {@code ReturnConsumedCapacity} to obtain it)
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #batchWriteItem(BatchWriteItemRequest)
@@ -1199,7 +1201,7 @@ public final class AsyncDynamoDBExecutor {
      *         // Handle unprocessed items with exponential backoff
      *         Map<String, List<WriteRequest>> unprocessed = result.getUnprocessedItems();
      *         if (unprocessed != null && !unprocessed.isEmpty()) {
-     *             System.out.println("Retrying " + unprocessed.size() + " unprocessed items");
+     *             System.out.println("Retrying unprocessed items for " + unprocessed.size() + " table(s)");
      *             retryWithBackoff(unprocessed);
      *         }
      *     }); // returns ContinuableFuture<Void>; runs after the batch write completes
@@ -1208,8 +1210,8 @@ public final class AsyncDynamoDBExecutor {
      * BatchWriteItemResult result = future.get(); // returns a non-null BatchWriteItemResult
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the batchWriteItem request, DynamoDB rejects its table, key,
-     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchWriteItem request or DynamoDB rejects it (for example an
+     *         invalid table or item, or an exceeded batch/service limit); the result is returned as-is, without item conversion. A null {@code
      *         batchWriteItemRequest} is also rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported
      *         through the future.</p>
      *
@@ -1256,8 +1258,8 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> changed = result.getAttributes(); // returns null (use the returnValues overload to fetch them)
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request, DynamoDB rejects its table, key, conditions,
-     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request or DynamoDB rejects it (for example an invalid
+     *         table or key, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion.</p>
      *
      * @param tableName the name of the DynamoDB table containing the item to update, must not be {@code null}
      * @param key the primary key identifying the item to update, must include all key attributes,
@@ -1321,8 +1323,8 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> attrs = asyncExecutor.updateItem("Products", key, updates, "NONE").get().getAttributes(); // returns null
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request, DynamoDB rejects its table, key, conditions,
-     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request or DynamoDB rejects it (for example an invalid
+     *         table or key, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion.</p>
      *
      * @param tableName the name of the DynamoDB table containing the item to update, must not be {@code null}
      * @param key the primary key identifying the item to update, must include all key attributes, must not be {@code null}
@@ -1396,8 +1398,8 @@ public final class AsyncDynamoDBExecutor {
      * UpdateItemResult result = future.get(); // returns a non-null UpdateItemResult
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request, DynamoDB rejects its table, key, conditions,
-     *         or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code updateItemRequest}
+     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request or DynamoDB rejects it (for example an invalid
+     *         table or key, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion. A null {@code updateItemRequest}
      *         is also rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param updateItemRequest the complete UpdateItemRequest with all parameters configured, must not be {@code null}
@@ -1442,8 +1444,8 @@ public final class AsyncDynamoDBExecutor {
      * DeleteItemResult none = asyncExecutor.deleteItem("Users", absent).get(); // returns a non-null DeleteItemResult; getAttributes() is null
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request, DynamoDB rejects its table, key, conditions,
-     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request or DynamoDB rejects it (for example an invalid
+     *         table or key, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion.</p>
      *
      * @param tableName the name of the DynamoDB table to delete the item from, must not be {@code null}
      * @param key the primary key identifying the item to delete, must include all key attributes,
@@ -1502,8 +1504,8 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> old = asyncExecutor.deleteItem("Orders", miss, "ALL_OLD").get().getAttributes(); // returns null
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request, DynamoDB rejects its table, key, conditions,
-     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request or DynamoDB rejects it (for example an invalid
+     *         table or key, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion.</p>
      *
      * @param tableName the name of the DynamoDB table to delete the item from, must not be {@code null}
      * @param key the primary key identifying the item to delete, must include all key attributes, must not be {@code null}
@@ -1569,8 +1571,8 @@ public final class AsyncDynamoDBExecutor {
      * DeleteItemResult result = future.get(); // returns a non-null DeleteItemResult
      * }</pre>
      *
-     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request, DynamoDB rejects its table, key, conditions,
-     *         or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code deleteItemRequest}
+     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request or DynamoDB rejects it (for example an invalid
+     *         table or key, a failed condition, or an exceeded service limit); the result is returned as-is, without item conversion. A null {@code deleteItemRequest}
      *         is also rejected, with an {@code IllegalArgumentException}, inside the submitted task and reported through the future.</p>
      *
      * @param deleteItemRequest the complete DeleteItemRequest with all parameters configured, must not be {@code null}

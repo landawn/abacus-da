@@ -2639,6 +2639,21 @@ public class MongoCollectionExecutorTest extends TestBase {
         verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
     }
 
+    // sliceF 2026-09-22: pins the documented queryForSingleValue contract for a matched document whose
+    // field is missing — a wrapper valueType completes empty, a primitive valueType emits its default.
+    @Test
+    public void testQueryForSingleValueMissingFieldWrapperVsPrimitive_sliceF() {
+        Bson filter = new Document("id", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()));
+
+        StepVerifier.create(executor.queryForSingleValue("age", filter, Integer.class)).verifyComplete();
+        StepVerifier.create(executor.queryForSingleValue("age", filter, int.class)).expectNext(0).verifyComplete();
+    }
+
     public static class GroupRow {
         private String department;
         private int count;

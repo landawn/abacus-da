@@ -1442,6 +1442,46 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> mapper.getItem(request));
     }
 
+    // --- sliceD 2026-09-22: pins for documented behavior ---
+
+    /**
+     * A class with no {@code @Id} field falls back to its {@code id} property as the partition key
+     * (documented on mapper(..)/Mapper since the "zero @Id fields -> IAE" wording was corrected).
+     */
+    @Test
+    public void testMapperFallsBackToIdPropertyWithoutIdAnnotation() throws Exception {
+        final AsyncDynamoDBExecutor.Mapper<NoTableEntity> mapper = asyncExecutor.mapper(NoTableEntity.class, "FallbackTable", null);
+
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
+
+        final NoTableEntity key = new NoTableEntity();
+        key.setId("k1");
+        mapper.getItem(key).get();
+
+        final ArgumentCaptor<GetItemRequest> captor = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(mockDynamoDbAsyncClient).getItem(captor.capture());
+        assertEquals("FallbackTable", captor.getValue().tableName());
+        assertEquals(Map.of("id", AttributeValue.fromS("k1")), captor.getValue().key());
+    }
+
+    /**
+     * The async executor converts rows through the sync v2 helpers, so a B attribute read into a
+     * ByteBuffer must be readable (position 0, remaining == byte count), not an exhausted buffer.
+     */
+    @Test
+    public void testGetItemBinaryAttributeIntoByteBufferIsReadable() throws Exception {
+        final byte[] bytes = { 1, 2, 3 };
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(
+                GetItemResponse.builder().item(Map.of("data", AttributeValue.fromB(software.amazon.awssdk.core.SdkBytes.fromByteArray(bytes)))).build()));
+
+        final java.nio.ByteBuffer buf = asyncExecutor.getItem("T", Map.of("id", AttributeValue.fromS("1")), java.nio.ByteBuffer.class).get();
+
+        assertEquals(bytes.length, buf.remaining());
+        final byte[] read = new byte[buf.remaining()];
+        buf.get(read);
+        assertTrue(java.util.Arrays.equals(bytes, read));
+    }
+
     @com.landawn.abacus.annotation.Table(name = "TestTable")
     private static class TestEntity {
         @com.landawn.abacus.annotation.Id

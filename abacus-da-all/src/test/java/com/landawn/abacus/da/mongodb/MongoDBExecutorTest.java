@@ -595,7 +595,8 @@ public class MongoDBExecutorTest extends TestBase {
      */
     @Test
     public void test_query_async_2() throws InterruptedException, ExecutionException {
-        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        // Await the cleanup: an un-awaited deleteMany can run after the insert below and delete the test document.
+        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid())).get();
 
         Account account = createAccount();
         asyncCollExecutor.insertOne(account).get();
@@ -994,7 +995,9 @@ public class MongoDBExecutorTest extends TestBase {
      */
     @Test
     public void test_update_async() throws InterruptedException, ExecutionException {
-        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        // Await the cleanup: an un-awaited deleteMany can run after the insert below and delete the test document
+        // (the source of this test's historical flakiness).
+        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid())).get();
 
         Account account = createAccount();
         asyncCollExecutor.insertOne(account).get();

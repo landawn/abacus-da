@@ -57,8 +57,11 @@ import com.landawn.abacus.util.stream.Stream;
  * operation takes; concurrent submissions are not serialised. Each returned {@code ContinuableFuture}
  * completes when its single underlying synchronous call returns. A synchronous transform created via
  * {@link ContinuableFuture#map(com.landawn.abacus.util.Throwables.Function)} runs lazily on the thread
- * that calls {@code get()}, whereas the {@code Async} continuations ({@link ContinuableFuture#thenRunAsync},
- * {@link ContinuableFuture#thenCallAsync}, etc.) are dispatched back to the same {@code AsyncExecutor}.</p>
+ * that calls {@code get()}, and runs again on every {@code get()} call (its result is not cached), whereas
+ * the {@code Async} continuations ({@link ContinuableFuture#thenRunAsync},
+ * {@link ContinuableFuture#thenCallAsync}, etc.) are dispatched back to the same {@code AsyncExecutor}.
+ * Do not {@code map} a scan future through a function that consumes the stream: a second {@code get()}
+ * would re-apply it to the already-consumed stream.</p>
  *
  * <h2>Key Features</h2>
  * <ul>
@@ -1504,16 +1507,23 @@ public final class AsyncHBaseExecutor {
      * returned {@link ContinuableFuture} completes with {@code null} when all delete operations
      * finish successfully.</p>
      *
+     * <p>{@code deletes} is handed to {@link HBaseExecutor#delete(String, List)} as-is, and the HBase
+     * client <em>modifies</em> it on the worker thread: every successfully applied delete is removed,
+     * so once the future completes (also when it fails) the list holds only the deletes that were not
+     * applied. Pass a modifiable list such as an {@link java.util.ArrayList}, and do not read or modify
+     * it until the future completes; with an unmodifiable list ({@code Arrays.asList(...)},
+     * {@code List.of(...)}, {@code N.asList(...)}) the deletes are applied and the future then fails
+     * with an {@link UnsupportedOperationException} wrapped in an {@code ExecutionException}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncHBaseExecutor async = hbaseExecutor.async();
-     * List<Delete> deletes = Arrays.asList(
-     *     new Delete(Bytes.toBytes("user1")),
-     *     new Delete(Bytes.toBytes("user2"))
-     * );
+     * List<Delete> deletes = new ArrayList<>(); // must be modifiable: applied deletes are removed from it
+     * deletes.add(new Delete(Bytes.toBytes("user1")));
+     * deletes.add(new Delete(Bytes.toBytes("user2")));
      *
      * // Typical: block until all deletes complete
-     * Object done = async.delete("users", deletes).get(); // returns null on success
+     * Object done = async.delete("users", deletes).get(); // returns null on success; deletes is then empty
      *
      * // Edge: an empty list is a no-op that still completes successfully
      * Object none = async.delete("users", Collections.<Delete>emptyList()).get(); // returns null
@@ -1523,7 +1533,8 @@ public final class AsyncHBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table to delete from
-     * @param deletes the list of Delete operations to execute
+     * @param deletes the modifiable list of Delete operations to execute; successfully applied deletes
+     *        are removed from it by the HBase client
      * @return a {@link ContinuableFuture} that completes with {@code null} when all delete
      *         operations finish. Wraps {@link HBaseExecutor#delete(String, List)}.
      * @throws IllegalStateException if the configured asynchronous executor has already been shut down
@@ -1827,9 +1838,9 @@ public final class AsyncHBaseExecutor {
      * async.increment("users", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1))
      *      .thenRunAsync(result -> System.out.println("New value: " + result)); // returns ContinuableFuture<Void>
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.increment("badTable", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1)).get(); //
-            throws InterruptedException, ExecutionException
+     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException;
+     * // the get() below throws InterruptedException, ExecutionException
+     * async.increment("badTable", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1)).get();
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1950,9 +1961,9 @@ public final class AsyncHBaseExecutor {
      * // Typical: trade durability for throughput (skip the WAL)
      * Long fast = async.incrementColumnValue("users", "user123", "stats", "loginCount", 1, Durability.SKIP_WAL).get(); // returns the post-increment value
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1, Durability.SYNC_WAL).get(); //
-            throws InterruptedException, ExecutionException
+     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException;
+     * // the get() below throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1, Durability.SYNC_WAL).get();
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -2033,9 +2044,9 @@ public final class AsyncHBaseExecutor {
      * // Typical: skip the WAL for higher throughput
      * Long fast = async.incrementColumnValue("users", "user123", family, qualifier, 1, Durability.SKIP_WAL).get(); // returns the post-increment value
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1, Durability.SYNC_WAL).get(); //
-            throws InterruptedException, ExecutionException
+     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException;
+     * // the get() below throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1, Durability.SYNC_WAL).get();
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -2172,9 +2183,9 @@ public final class AsyncHBaseExecutor {
      * async.coprocessorService("users", MyService.class, "user1", "user9", call, callback)
      *      .thenRunAsync(() -> System.out.println("Total = " + total.get())); // returns ContinuableFuture<Void>
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call, callback).get(); //
-            throws InterruptedException, ExecutionException
+     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException;
+     * // the get() below throws InterruptedException, ExecutionException
+     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call, callback).get();
      * }</pre>
      *
      * @param <T> the coprocessor service type
@@ -2230,9 +2241,9 @@ public final class AsyncHBaseExecutor {
      * ContinuableFuture<Map<byte[], CountResponse>> future = async.batchCoprocessorService("users", methodDescriptor, request, "user1", "user9", responsePrototype); // returns a ContinuableFuture of the per-region response map
      * Map<byte[], CountResponse> perRegion = future.get();                                                                                                           // returns one response message per region in the range
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype).get(); //
-            throws InterruptedException, ExecutionException
+     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException;
+     * // the get() below throws InterruptedException, ExecutionException
+     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype).get();
      * }</pre>
      *
      * @param <R> the response message type
@@ -2283,9 +2294,9 @@ public final class AsyncHBaseExecutor {
      * async.batchCoprocessorService("users", methodDescriptor, request, "user1", "user9", responsePrototype, callback)
      *      .thenRunAsync(() -> System.out.println("done")); // returns ContinuableFuture<Void>
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get(); //
-            throws InterruptedException, ExecutionException
+     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException;
+     * // the get() below throws InterruptedException, ExecutionException
+     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get();
      * }</pre>
      *
      * @param <R> the response message type

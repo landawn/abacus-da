@@ -438,8 +438,9 @@ public final class DynamoDBExecutor {
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
      * @param namingPolicy the naming policy for converting property names to attribute names. If {@code null}, defaults to {@link NamingPolicy#CAMEL_CASE}.
      * @return a new Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is null, not a bean class, has zero or more than two {@code @Id} fields, two
-     *         IDs map to the same attribute name, or {@code tableName} is null/empty
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, not a bean class, has no ID property (no {@code @Id} field and
+     *         no fallback property named {@code id}) or more than two {@code @Id} fields, two IDs map to the same attribute name, or
+     *         {@code tableName} is null/empty
      * @see NamingPolicy
      * @see #mapper(Class)
      */
@@ -870,7 +871,8 @@ public final class DynamoDBExecutor {
      * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) → N (Number) using fromN()</li>
      * <li><b>Boolean</b> → BOOL using fromBool()</li>
      * <li><b>byte[]</b> → B (Binary) using fromB() with SdkBytes</li>
-     * <li><b>ByteBuffer</b> → B (Binary) using fromB() with SdkBytes</li>
+     * <li><b>ByteBuffer</b> → B (Binary) using fromB() with SdkBytes, copying the buffer's remaining bytes
+     *     (position to limit)</li>
      * <li><b>All other types</b> → S (String) using fromS() with string conversion</li>
      * </ul>
      *
@@ -1558,7 +1560,7 @@ public final class DynamoDBExecutor {
             } else if (rawValue == null || propInfo.clazz.isAssignableFrom(rawValue.getClass())) {
                 propInfo.setPropValue(entity, rawValue);
             } else {
-                propInfo.setPropValue(entity, N.convert(rawValue, propInfo.clazz));
+                propInfo.setPropValue(entity, convertValue(rawValue, propInfo.clazz));
             }
         }
 
@@ -1809,7 +1811,21 @@ public final class DynamoDBExecutor {
             return (T) ret;
         }
 
-        return N.convert(ret, targetClass);
+        return convertValue(ret, targetClass);
+    }
+
+    // abacus-common's ByteBufferType uses a write-mode convention (content in [0, position)), so
+    // N.convert(byte[], ByteBuffer.class) returns a buffer whose position == limit: it reads as EMPTY under
+    // the NIO read convention used by the AWS SDK (SdkBytes.fromByteBuffer) and by toAttributeValue, and a
+    // get -> put round trip would store an empty B attribute. Wrap the bytes instead, yielding a read-mode
+    // buffer (position 0) like the v1 executor, which hands out getB() as-is.
+    @SuppressWarnings("unchecked")
+    private static <T> T convertValue(final Object rawValue, final Class<T> targetClass) {
+        if (rawValue instanceof byte[] && targetClass.isAssignableFrom(ByteBuffer.class)) {
+            return (T) ByteBuffer.wrap((byte[]) rawValue);
+        }
+
+        return N.convert(rawValue, targetClass);
     }
 
     /**
@@ -2578,7 +2594,9 @@ public final class DynamoDBExecutor {
      * Performs a batch get operation to retrieve multiple items from multiple tables using AWS SDK v2.
      *
      * <p>This method can retrieve up to 100 items in a single call with a maximum total size of 16 MB.
-     * It allows specifying the return consumed capacity for monitoring purposes.</p>
+     * {@code returnConsumedCapacity} is forwarded to the service, but this overload still returns only
+     * the per-table item lists; the consumed-capacity details of the response are not exposed. To
+     * inspect capacity, call {@code dynamoDBClient().batchGetItem(...)} directly.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2589,11 +2607,12 @@ public final class DynamoDBExecutor {
      * );
      * Map<String, List<Map<String, Object>>> results =
      *     executor.batchGetItem(requestItems, "TOTAL");
+     * // results contains only retrieved items; capacity is not available on this return value
      * }</pre>
      *
      * @param requestItems a map where keys are table names and values are KeysAndAttributes
      *                    objects specifying the items to retrieve from each table. Must not be null.
-     * @param returnConsumedCapacity the level of consumed capacity to return. Can be "INDEXES", "TOTAL", or "NONE".
+     * @param returnConsumedCapacity "INDEXES", "TOTAL", or "NONE", forwarded to the service (not returned here)
      * @return a map of table names to lists of retrieved items, where each item is represented
      *         as a Map of attribute names to values
      * @throws DynamoDbException if DynamoDB rejects the request (a null {@code requestItems} or a batch exceeding DynamoDB's limits fails with a
@@ -2609,7 +2628,9 @@ public final class DynamoDBExecutor {
      * Performs a batch get operation to retrieve multiple items from multiple tables using AWS SDK v2.
      *
      * <p>This method can retrieve up to 100 items in a single call with a maximum total size of 16 MB.
-     * It allows specifying the return consumed capacity for monitoring purposes.</p>
+     * All request options (including {@code returnConsumedCapacity}) are forwarded to the service, but
+     * only the per-table item lists are returned; response metadata such as consumed capacity and
+     * unprocessed keys is not exposed.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2673,9 +2694,10 @@ public final class DynamoDBExecutor {
     /**
      * Performs a batch get operation to retrieve multiple items from multiple tables using AWS SDK v2.
      *
-     * <p>This method retrieves items from multiple tables in a single batch request. It allows specifying
-     * the return consumed capacity for monitoring purposes and converts the retrieved items into a map
-     * where the keys are table names and the values are lists of entities of the specified target class.</p>
+     * <p>This method retrieves items from multiple tables in a single batch request, forwarding
+     * {@code returnConsumedCapacity} to the service, and converts the retrieved items into a map where
+     * the keys are table names and the values are lists of entities of the specified target class. The
+     * return value is only the converted per-table item lists; consumed-capacity details are not exposed.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2691,7 +2713,7 @@ public final class DynamoDBExecutor {
      * @param <T> the type of the entities to convert to
      * @param requestItems a map where keys are table names and values are KeysAndAttributes objects
      *                     specifying the items to retrieve from each table. Must not be null.
-     * @param returnConsumedCapacity the level of consumed capacity to return. Can be "INDEXES", "TOTAL", or "NONE".
+     * @param returnConsumedCapacity "INDEXES", "TOTAL", or "NONE", forwarded to the service (not returned here)
      * @param targetClass the class of the entities to convert to. Must not be null.
      * @return a map where each key is a table name and the value is a list of entities of the specified
      *         target class. Never null.
@@ -3937,8 +3959,9 @@ public final class DynamoDBExecutor {
          * @param tableName the name of the DynamoDB table; must not be null or empty
          * @param namingPolicy the naming policy for attribute name conversion; uses CAMEL_CASE if null
          * @throws IllegalArgumentException if {@code targetEntityClass} is null or not a bean class, {@code dynamoDBExecutor} is null,
-         *         {@code tableName} is null/empty, {@code targetEntityClass} has zero or more than two ID-annotated fields, or two ID
-         *         properties map to the same DynamoDB attribute name
+         *         {@code tableName} is null/empty, {@code targetEntityClass} has no ID property (no {@code @Id} field and no fallback
+         *         property named {@code id}) or more than two {@code @Id} fields, or two ID properties map to the same DynamoDB
+         *         attribute name
          */
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
@@ -4105,19 +4128,21 @@ public final class DynamoDBExecutor {
         }
 
         /**
-         * Retrieves multiple items with optional consumed capacity information.
+         * Retrieves multiple items in a single batch operation, forwarding {@code returnConsumedCapacity}
+         * to the service.
          *
-         * <p>This method performs a batch get operation and can return information about the
-         * consumed read capacity units, useful for monitoring and optimization.</p>
+         * <p>Only the list of entities is returned; the consumed-capacity details of the response are
+         * not available on this result (call {@code dynamoDBClient().batchGetItem(...)} on the executor
+         * directly if you need them).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> users = userMapper.batchGetItem(keyEntities, "TOTAL");
-         * // Check logs or response for consumed capacity information
+         * // users is the entity list only; capacity is not exposed on this return value
          * }</pre>
          *
          * @param entities collection of entities with populated key fields
-         * @param returnConsumedCapacity specify "INDEXES", "TOTAL", or "NONE" for capacity details
+         * @param returnConsumedCapacity "INDEXES", "TOTAL", or "NONE", forwarded to the service (not returned here)
          * @return list of retrieved entities; may be smaller than input if some items don't exist
          * @throws IllegalArgumentException if {@code entities} or an element is null, or an entity ID is null, empty, non-scalar, or a
          *         non-finite number

@@ -549,9 +549,12 @@ public final class HBaseExecutor {
                 } else if (Strings.isNotEmpty(defaultColumnFamilyName)) {
                     columnFamilyNames = N.asList(defaultColumnFamilyName);
                 } else {
+                    // A naming-policy variant must not hijack a name an earlier property already registered, but the
+                    // property's own (CAMEL_CASE) name is always kept: dropping it would silently lose this property's
+                    // cells whenever an earlier property claimed the same name (e.g. an explicit @ColumnFamily/@Column).
                     columnFamilyNames = Stream.of(NamingPolicy.values())
                             .map(it -> formatName(propInfo.name, it))
-                            .filter(it -> !finalFamilyColumnFieldNameMapTP._1.containsKey(it))
+                            .filter(it -> it.equals(propInfo.name) || !finalFamilyColumnFieldNameMapTP._1.containsKey(it))
                             .toList();
                 }
 
@@ -561,7 +564,7 @@ public final class HBaseExecutor {
                 } else {
                     columnNames = Stream.of(NamingPolicy.values())
                             .map(it -> formatName(propInfo.name, it))
-                            .filter(it -> !finalFamilyColumnFieldNameMapTP._2.containsKey(it))
+                            .filter(it -> it.equals(propInfo.name) || !finalFamilyColumnFieldNameMapTP._2.containsKey(it))
                             .transform(s -> propInfo.type.isBean() || (Strings.isEmpty(defaultColumnFamilyName) && !hasColumnFamilyValue(propColumnFamilyAnno))
                                     ? s.append(EMPTY_QUALIFIER)
                                     : s)
@@ -1033,16 +1036,23 @@ public final class HBaseExecutor {
                     // of the other nested beans are not dropped or misrouted.
                     if (familyTP != null) {
                         final PropInfo fallbackPropInfo = entityInfo.getPropInfo(familyTP._1);
+                        final boolean isBeanFallback = fallbackPropInfo != null && fallbackPropInfo.jsonXmlType.isBean();
 
                         // This branch is only reached with a non-empty, unknown qualifier (the empty qualifier
                         // resolves directly above). The fallback entry exists for bean-typed properties, whose
                         // nested field names are the qualifiers; routing a foreign qualifier into a scalar or
-                        // versioned property would overwrite its real (empty-qualifier) cell value, so ignore it.
-                        if (fallbackPropInfo == null || !fallbackPropInfo.jsonXmlType.isBean()) {
-                            familyTP = null;
-                        } else if (!getFamilyColumnFieldNameMap(fallbackPropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                        // versioned property would overwrite its real (empty-qualifier) cell value, so never use a
+                        // non-bean fallback. The fallback may also be held by a scalar property sharing this family,
+                        // so search the family's other nested-bean properties for the owner of the qualifier.
+                        if (!isBeanFallback || !getFamilyColumnFieldNameMap(fallbackPropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                            final Tuple2<String, Boolean> fallbackTP = familyTP;
+
+                            if (!isBeanFallback) {
+                                familyTP = null;
+                            }
+
                             for (final Tuple2<String, Boolean> candidateTP : familyTPMap.values()) {
-                                final PropInfo candidatePropInfo = candidateTP == familyTP ? null : entityInfo.getPropInfo(candidateTP._1);
+                                final PropInfo candidatePropInfo = candidateTP == fallbackTP || candidateTP._2 ? null : entityInfo.getPropInfo(candidateTP._1);
 
                                 if (candidatePropInfo != null && candidatePropInfo.jsonXmlType.isBean()
                                         && getFamilyColumnFieldNameMap(candidatePropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
@@ -1475,7 +1485,7 @@ public final class HBaseExecutor {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetEntityClass);
 
             if (entityInfo.tableName.isEmpty()) {
-                throw new IllegalArgumentException("Entity class " + targetEntityClass
+                throw new IllegalArgumentException("Entity class " + ClassUtil.getCanonicalClassName(targetEntityClass)
                         + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use HBaseExecutor.mapper(Class<T> targetEntityClass, String tableName, NamingPolicy namingPolicy)");
             }
 
@@ -2237,7 +2247,9 @@ public final class HBaseExecutor {
      * }
      * }</pre>
      *
-     * <p>Table and scanner acquisition is deferred until the stream is consumed. Failures opening
+     * <p>Table and scanner acquisition is deferred until the stream is consumed, so {@code tableName}
+     * is not validated eagerly: an empty or malformed table name surfaces as
+     * {@link IllegalArgumentException} from the first terminal operation. Failures opening
      * either resource then propagate as {@link UncheckedIOException}; scanner iteration may
      * propagate HBase's runtime wrappers for read failures.</p>
      *
@@ -2722,17 +2734,24 @@ public final class HBaseExecutor {
      * batch into multiple server requests based on region placement. An empty list is a no-op and
      * does not acquire a table handle.</p>
      *
+     * <p>{@code deletes} is passed to {@link Table#delete(List)} as-is, and the HBase client
+     * <em>modifies</em> it: every successfully applied delete is removed, so afterwards (also when
+     * this method fails) the list holds only the deletes that were not applied. Pass a modifiable
+     * list such as an {@link ArrayList}; with an unmodifiable list ({@code Arrays.asList(...)},
+     * {@code List.of(...)}, {@code N.asList(...)}) the deletes are applied and then
+     * {@link UnsupportedOperationException} is thrown.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<Delete> deletes = Arrays.asList(
-     *     new Delete(Bytes.toBytes("user123")),
-     *     new Delete(Bytes.toBytes("user456"))
-     * );
-     * executor.delete("users", deletes);
+     * List<Delete> deletes = new ArrayList<>();
+     * deletes.add(new Delete(Bytes.toBytes("user123")));
+     * deletes.add(new Delete(Bytes.toBytes("user456")));
+     * executor.delete("users", deletes);   // void; on return, deletes is empty (every delete was applied)
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param deletes the list of Delete operations to execute; must not be {@code null}
+     * @param deletes the modifiable list of Delete operations to execute; must not be {@code null}. Successfully
+     *        applied deletes are removed from it by the HBase client
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
      *         also if {@code deletes} is {@code null}
      * @throws NullPointerException if the HBase client dereferences a null operation in {@code deletes}

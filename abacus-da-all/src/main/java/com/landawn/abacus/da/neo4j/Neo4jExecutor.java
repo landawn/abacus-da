@@ -380,7 +380,9 @@ public final class Neo4jExecutor {
      * @param id the configured primary-index value, or a native graph ID for an entity class
      *           without a primary index
      * @return the loaded entity, or {@code null} if no node with that ID exists
-     * @throws IllegalArgumentException if {@code targetClass} or {@code id} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} or {@code id} is {@code null}; also thrown by Neo4j-OGM if
+     *         {@code targetClass} is not a managed entity class, or if the type of {@code id} does not match the class's
+     *         primary index (or is not a {@code Long} native graph ID for a class without a primary index)
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #load(Class, Serializable, int)
@@ -422,7 +424,9 @@ public final class Neo4jExecutor {
      * @param depth the depth of relationships to traverse: {@code 0} for the node only, a positive
      *              integer for that many hops, or {@code -1} for unlimited
      * @return the loaded entity, or {@code null} if no node with that ID exists
-     * @throws IllegalArgumentException if {@code targetClass} or {@code id} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} or {@code id} is {@code null}; also thrown by Neo4j-OGM if
+     *         {@code targetClass} is not a managed entity class, or if the type of {@code id} does not match the class's
+     *         primary index (or is not a {@code Long} native graph ID for a class without a primary index)
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #load(Class, Serializable)
@@ -2327,8 +2331,10 @@ public final class Neo4jExecutor {
      * relationships.
      * <p>
      * Delegates to {@link Session#delete(Object)}. The entity must carry a populated graph ID
-     * (i.e. it has previously been loaded or saved); otherwise OGM has nothing to delete. The
-     * delete is irreversible.
+     * (i.e. it has previously been loaded or saved); otherwise OGM has nothing to delete. For an
+     * entity class without a native graph-ID field (primary index only), the cleared pooled session
+     * cannot resolve the graph ID, so OGM first reloads each entity by its primary-index value (and logs
+     * a warning) before deleting it. The delete is irreversible.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2339,7 +2345,7 @@ public final class Neo4jExecutor {
      *
      * Collection<Person> inactive = executor.loadAll(Person.class,
      *     new Filter("status", ComparisonOperator.EQUALS, "inactive"));
-     * executor.delete(inactive);   // one round-trip: every inactive Person node is removed
+     * executor.delete(inactive);   // every inactive Person node is removed (OGM sends one DELETE statement per entity)
      * }</pre>
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
@@ -2436,7 +2442,7 @@ public final class Neo4jExecutor {
      * @param parameters named parameters bound by the OGM session; may be empty but must not be
      *                   {@code null}
      * @return an {@link Optional} describing the single mapped result, or an empty {@code Optional} if
-     *         the query returns no rows
+     *         the query returns no rows or its single row's value is {@code null} (for example {@code RETURN null})
      * @throws IllegalArgumentException if {@code targetClass}, {@code cypher}, or {@code parameters} is {@code null}
      * @throws RuntimeException if {@code cypher} is empty or {@code targetClass} is a void type (Neo4j-OGM rejects these
      *         with a plain {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; if the

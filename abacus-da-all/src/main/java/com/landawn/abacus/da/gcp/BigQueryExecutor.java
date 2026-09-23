@@ -15,6 +15,7 @@
 package com.landawn.abacus.da.gcp;
 
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ import com.google.cloud.bigquery.FieldList;
 import com.google.cloud.bigquery.FieldValue;
 import com.google.cloud.bigquery.FieldValueList;
 import com.google.cloud.bigquery.JobException;
+import com.google.cloud.bigquery.LegacySQLTypeName;
 import com.google.cloud.bigquery.QueryJobConfiguration;
 import com.google.cloud.bigquery.QueryParameterValue;
 import com.google.cloud.bigquery.Schema;
@@ -125,13 +127,21 @@ import com.landawn.abacus.util.stream.Stream;
  * {@link QueryParameterValue} by {@link #buildQueryParameterValue(Object...)} (e.g. {@code String},
  * {@code Boolean}, integer/floating-point primitives and their boxed equivalents,
  * {@link BigDecimal}, {@code java.util.Date}/{@code java.sql.*}, {@code com.google.cloud.Date},
- * {@code com.google.cloud.Timestamp}, and {@code byte[]} are mapped to their native BigQuery
- * types; arrays, collections, maps, and beans are serialised to JSON; any other scalar &mdash;
+ * {@code com.google.cloud.Timestamp}, {@code byte[]}, and {@link java.nio.ByteBuffer} (its remaining bytes)
+ * are mapped to their native BigQuery types; arrays, collections, maps, and beans are serialised to JSON; any other scalar &mdash;
  * including {@code java.time} types such as {@code LocalDate}/{@code LocalDateTime}/{@code Instant},
  * enums, and {@code UUID} &mdash; is bound as a {@code STRING} parameter, so use
  * {@code java.sql.Date}/{@code java.sql.Timestamp} to bind native DATE/TIMESTAMP values).
  * {@code null} parameters must be wrapped in a {@link QueryParameterValue} so the SQL type is
  * known.</p>
+ *
+ * <h2>Result Value Conversion</h2>
+ * <p>BigQuery returns every scalar cell as text. When a row is mapped to a bean property or a single-value
+ * type, {@code BYTES} cells (base64 text) are decoded for {@code byte[]}/{@link java.nio.ByteBuffer} targets and
+ * {@code TIMESTAMP} cells (epoch seconds or microseconds) are decoded with microsecond precision for
+ * {@code java.util.Date}/{@code Calendar}/{@code java.time} and {@code com.google.cloud.Timestamp} targets; other
+ * cells go through the standard abacus type conversion. {@code Map} and {@code Object[]} rows keep the raw cell
+ * values.</p>
  *
  * <h2>Result Set Pagination</h2>
  * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
@@ -370,7 +380,8 @@ public class BigQueryExecutor {
      * ({@code @Column}, etc.). Columns whose names contain a period are written via
      * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
      * no top-level property matches. Nested {@link FieldValueList} values are converted recursively
-     * into the property's declared type.
+     * into the property's declared type. {@code BYTES} and {@code TIMESTAMP} cells are decoded for binary
+     * and date/time properties as described under <i>Result Value Conversion</i> in the class documentation.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -457,7 +468,7 @@ public class BigQueryExecutor {
                 final Object unwrapped = unwrapRepeatedValue(fields.get(i), (List<?>) propValue);
                 propInfo.setPropValue(entity, propInfo.jsonXmlType.isParameterizedType() ? propInfo.jsonXmlType.valueOf(N.toJson(unwrapped)) : unwrapped);
             } else {
-                propInfo.setPropValue(entity, propValue);
+                propInfo.setPropValue(entity, decodeTypedValue(fields.get(i), fieldValueList.get(i), parameterType));
             }
         }
 
@@ -487,6 +498,53 @@ public class BigQueryExecutor {
         }
 
         return list;
+    }
+
+    // BigQuery returns a BYTES cell as base64 text and a TIMESTAMP cell as epoch seconds ("1.7189E9") or
+    // epoch microseconds, none of which N.convert/setPropValue can decode (base64 -> NumberFormatException,
+    // epoch seconds -> parse failure, epoch micros -> misread as millis). Decode those through FieldValue's
+    // typed accessors when the target is a binary or date/time type; every other value (including the raw
+    // String for String/Object targets) is returned unchanged for the caller's normal conversion path.
+    private static Object decodeTypedValue(final Field field, final FieldValue fieldValue, final Class<?> targetClass) {
+        final Object value = fieldValue.getValue();
+
+        if (field == null || targetClass == null || !(value instanceof String)) {
+            return value;
+        }
+
+        final LegacySQLTypeName fieldType = field.getType();
+
+        if (LegacySQLTypeName.BYTES.equals(fieldType)) {
+            if (targetClass == byte[].class) {
+                return fieldValue.getBytesValue();
+            } else if (targetClass == ByteBuffer.class) {
+                return ByteBuffer.wrap(fieldValue.getBytesValue());
+            }
+        } else if (LegacySQLTypeName.TIMESTAMP.equals(fieldType) && isDateTimeClass(targetClass)) {
+            final long micros = fieldValue.getTimestampValue();
+
+            if (targetClass == com.google.cloud.Timestamp.class) {
+                return com.google.cloud.Timestamp.ofTimeMicroseconds(micros);
+            }
+
+            final java.sql.Timestamp timestamp = new java.sql.Timestamp(Math.floorDiv(micros, 1000L));
+            timestamp.setNanos((int) (Math.floorMod(micros, 1_000_000L) * 1000L));
+
+            if (targetClass == java.sql.Timestamp.class) {
+                return timestamp;
+            } else if (targetClass == java.util.Date.class) {
+                return new java.util.Date(timestamp.getTime());
+            } else {
+                return N.convert(timestamp, targetClass);
+            }
+        }
+
+        return value;
+    }
+
+    private static boolean isDateTimeClass(final Class<?> cls) {
+        return java.util.Date.class.isAssignableFrom(cls) || java.util.Calendar.class.isAssignableFrom(cls)
+                || java.time.temporal.Temporal.class.isAssignableFrom(cls) || cls == com.google.cloud.Timestamp.class;
     }
 
     /**
@@ -814,7 +872,7 @@ public class BigQueryExecutor {
         } else if (rowType.isBean()) {
             res = toEntity(row, rowClass);
         } else if (fieldCount == 1) {
-            value = row.get(0).getValue();
+            value = decodeTypedValue(fields.get(0), row.get(0), rowClass);
 
             if (value == null || rowClass.isAssignableFrom(value.getClass())) {
                 res = value;
@@ -980,11 +1038,13 @@ public class BigQueryExecutor {
                         }
                     }
 
-                    if (isAssignable) {
-                        return (T) row.get(0).getValue();
-                    }
+                    // Decode before the cached-assignability fast path: a decoded BYTES/TIMESTAMP value's class
+                    // (not the raw cell String's) is what isAssignable was computed from.
+                    final Object value = decodeTypedValue(fields == null ? null : fields.get(0), row.get(0), rowClass);
 
-                    final Object value = row.get(0).getValue();
+                    if (isAssignable) {
+                        return (T) value;
+                    }
 
                     if (valueClass == null && value != null) {
                         valueClass = value.getClass();
@@ -1182,7 +1242,8 @@ public class BigQueryExecutor {
 
         for (final FieldValueList row : rows) {
             for (int i = 0; i < fieldCount; i++) {
-                value = row.get(i).getValue();
+                // Bean-property columns decode BYTES/TIMESTAMP cells to the property type; other columns stay raw.
+                value = columnPropInfos[i] == null ? row.get(i).getValue() : decodeTypedValue(fields.get(i), row.get(i), columnClasses[i]);
 
                 // RECORD value. Note a FieldValueList IS a List, so a plain assignability check against a
                 // List-typed property would store the raw FieldValue wrappers; convert through readRow
@@ -1497,15 +1558,14 @@ public class BigQueryExecutor {
      * // Edge: empty (or null) props are rejected
      * executor.update(Customer.class, new HashMap<>(), condition);                // throws IllegalArgumentException
      *
-     * // Edge: a null whereClause is rejected by the SQL builder (it does NOT update all rows)
+     * // Edge: a null whereClause is rejected before any SQL is built (it does NOT update all rows)
      * executor.update(Customer.class, updates, (Condition) null);                 // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and new values to set
      * @param whereClause the condition specifying which records to update; must not be {@code null}
-     *                    (a {@code null} condition is rejected by the SQL builder with
-     *                    {@link IllegalArgumentException})
+     *                    (a {@code null} condition is rejected with {@link IllegalArgumentException})
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if {@code targetClass} is null, {@code props} is null or empty, or {@code whereClause} is null; if the
      *         SQL builder rejects the statement because {@code targetClass} declares no updatable property, {@code props} contains a null,
@@ -1641,14 +1701,13 @@ public class BigQueryExecutor {
      * );
      * TableResult result2 = executor.delete(Order.class, complexCondition);   // returns a TableResult
      *
-     * // Edge: a null whereClause is rejected by the SQL builder (it does NOT delete all rows)
+     * // Edge: a null whereClause is rejected before any SQL is built (it does NOT delete all rows)
      * executor.delete(Customer.class, (Condition) null);                 // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the target class representing the table (used for table name resolution)
      * @param whereClause the condition specifying which records to delete; must not be {@code null}
-     *                    (a {@code null} condition is rejected by the SQL builder with
-     *                    {@link IllegalArgumentException})
+     *                    (a {@code null} condition is rejected with {@link IllegalArgumentException})
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if {@code targetClass} is null, if {@code whereClause} is {@code null}, or if {@code whereClause} has a
      *         null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL builder
@@ -2011,7 +2070,7 @@ public class BigQueryExecutor {
         }
 
         final FieldValueList row = iter.next();
-        return Nullable.of(N.convert(row.get(0).getValue(), valueClass));
+        return Nullable.of(N.convert(decodeTypedValue(firstField(tableResult), row.get(0), valueClass), valueClass));
     }
 
     /**
@@ -2136,7 +2195,15 @@ public class BigQueryExecutor {
         }
 
         final FieldValueList row = iter.next();
-        return Optional.of(N.convert(row.get(0).getValue(), valueClass));
+        return Optional.of(N.convert(decodeTypedValue(firstField(tableResult), row.get(0), valueClass), valueClass));
+    }
+
+    // The result's first column definition (drives BYTES/TIMESTAMP decoding), or null when no schema is available.
+    private static Field firstField(final TableResult tableResult) {
+        final Schema schema = tableResult.getSchema();
+        final FieldList fields = schema == null ? null : schema.getFields();
+
+        return N.isEmpty(fields) ? null : fields.get(0);
     }
 
     /**
@@ -2833,7 +2900,8 @@ public class BigQueryExecutor {
      *   <li>Strings, primitives and their boxed counterparts, {@link BigDecimal},
      *       {@code java.util.Date}, {@code java.sql.Date}/{@code Time}/{@code Timestamp},
      *       {@code com.google.cloud.Date}, {@code com.google.cloud.Timestamp}, and {@code byte[]}
-     *       are mapped to their canonical BigQuery types.</li>
+     *       are mapped to their canonical BigQuery types; a {@link ByteBuffer} binds its remaining bytes as
+     *       {@code BYTES} without changing its position.</li>
      *   <li>Arrays, collections, maps, and beans are serialised to JSON via
      *       {@link QueryParameterValue#json(String)}.</li>
      *   <li>Any other scalar (e.g. {@code java.time} types such as {@code LocalDate}, enums,
@@ -2867,6 +2935,13 @@ public class BigQueryExecutor {
         for (final Object param : parameters) {
             if (param instanceof final QueryParameterValue qpv) {
                 queryParameterValues.add(qpv);
+            } else if (param instanceof final ByteBuffer buffer) {
+                // Bind the remaining bytes without moving the caller's position. (A ByteBuffer is not a
+                // byte[] key in queryParameterMap - its runtime class is HeapByteBuffer etc. - and its
+                // abacus string form is empty, so the STRING fallback would silently bind "".)
+                final byte[] bytes = new byte[buffer.remaining()];
+                buffer.duplicate().get(bytes);
+                queryParameterValues.add(QueryParameterValue.bytes(bytes));
             } else {
                 queryParameterValues.add(queryParameterMap.getOrDefault(param.getClass(), defaultQueryParameterCreator).apply(param));
             }

@@ -4296,4 +4296,88 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalStateException.class, () -> updateBuilder.appendOperationBeforeFrom(null));
         updateBuilder.build();
     }
+
+    // ---- 2026-09-22 review (slice Q): regressions from the abacus-query 4.9.3 parent builder ----
+
+    /**
+     * abacus-query 4.9.3 renders {@code into(Class)} / {@code into(String, Class)} directly instead of delegating
+     * to {@code into(String)}, which bypassed the CQL batch rendering and emitted SQL's multi-row
+     * {@code VALUES (?, ?), (?, ?)} form that Cassandra rejects.
+     */
+    @Test
+    public void test_intoEntityClass_batchInsert_rendersCqlBatch() {
+        final String expected = "BEGIN BATCH INSERT INTO account (first_name, last_name) VALUES (?, ?); "
+                + "INSERT INTO account (first_name, last_name) VALUES (?, ?); APPLY BATCH";
+
+        final SP byClass = PSC.batchInsert(N.asList(N.asMap("firstName", "a", "lastName", "b"), N.asMap("firstName", "c", "lastName", "d")))
+                .into(Account.class)
+                .build();
+        assertEquals(expected, byClass.query());
+        assertEquals(N.asList("a", "b", "c", "d"), byClass.parameters());
+
+        final SP byNameAndClass = PSC.batchInsert(N.asList(N.asMap("firstName", "a", "lastName", "b"), N.asMap("firstName", "c", "lastName", "d")))
+                .into("account", Account.class)
+                .build();
+        assertEquals(expected, byNameAndClass.query());
+        assertEquals(N.asList("a", "b", "c", "d"), byNameAndClass.parameters());
+
+        // Single-row forms are unchanged.
+        assertEquals("INSERT INTO account (first_name) VALUES (?)", PSC.insert("firstName").into(Account.class).build().query());
+        assertEquals("INSERT INTO account_archive (first_name) VALUES (?)", PSC.insert("firstName").into("account_archive", Account.class).build().query());
+    }
+
+    /**
+     * {@code into(String, Class)} applies the same single-table check as {@code into(String)}; with abacus-query
+     * 4.9.3 it rendered {@code INSERT INTO account a (...)}. A rejected call leaves the builder usable.
+     */
+    @Test
+    public void test_intoTableNameAndEntityClass_rejectsAlias() {
+        final CqlBuilder builder = PSC.insert("firstName");
+        assertThrows(IllegalArgumentException.class, () -> builder.into("account a", Account.class));
+        assertEquals("INSERT INTO account (first_name) VALUES (?)", builder.into("account", Account.class).build().query());
+
+        assertThrows(IllegalArgumentException.class, () -> PSC.insert("firstName").into((Class<?>) null));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").into(Account.class));
+    }
+
+    /**
+     * A batch INSERT whose rendering fails after {@code BEGIN BATCH} was emitted (an unsafe column name, or a NaN
+     * inlined by a raw-CQL builder) must not leave the truncated batch behind: previously the second
+     * {@code into(...)} failed with "can only be called once" and {@code build()} returned the partial text.
+     */
+    @Test
+    public void test_batchInto_renderFailure_leavesBuilderUnchanged() {
+        final CqlBuilder unsafeColumn = PSC.batchInsert(N.asList(N.asMap("a", 1, "b--c", 2)));
+        assertThrows(IllegalArgumentException.class, () -> unsafeColumn.into("t"));
+        assertThrows(IllegalArgumentException.class, () -> unsafeColumn.into("t"));
+        assertThrows(IllegalStateException.class, unsafeColumn::build);
+
+        @SuppressWarnings("deprecation")
+        final CqlBuilder nanLiteral = SCCB.batchInsert(N.asList(N.asMap("a", 1, "b", Double.NaN)));
+        assertThrows(IllegalArgumentException.class, () -> nanLiteral.into("t"));
+        assertThrows(IllegalArgumentException.class, () -> nanLiteral.into("t"));
+        assertThrows(IllegalStateException.class, nanLiteral::build);
+    }
+
+    /**
+     * abacus-query 4.9.3 added {@code from(builder, alias)} (derived table), which rendered
+     * {@code SELECT * FROM (SELECT ...) u} — CQL has neither sub-queries in FROM nor table aliases. It is rejected
+     * without consuming the child builder, and the rejected call leaves the outer builder usable.
+     */
+    @Test
+    public void test_fromDerivedTable_isRejected() {
+        final CqlBuilder child = PSC.select("id").from("users").where(Filters.eq("id", 1));
+        final CqlBuilder outer = PSC.select("*");
+
+        assertThrows(IllegalArgumentException.class, () -> outer.from(child, "u"));
+
+        assertEquals("SELECT id FROM users WHERE id = ?", child.build().query());
+        assertEquals("SELECT * FROM users", outer.from("users").build().query());
+
+        // Builder state is still checked first.
+        final CqlBuilder closed = PSC.select("id").from("users");
+        closed.build();
+        assertThrows(IllegalStateException.class, () -> closed.from(PSC.select("id"), "u"));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").from(PSC.select("id"), "u"));
+    }
 }

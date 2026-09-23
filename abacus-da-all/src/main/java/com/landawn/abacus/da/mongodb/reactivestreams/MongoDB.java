@@ -482,8 +482,9 @@ public final class MongoDB extends MongoDBBase {
      *            {@code null} when {@code rowType} is {@code null})
      * @param rowType the target Java class to map the document to
      * @return an instance of {@code rowType} populated from {@code row}
-     * @throws IllegalArgumentException if a scalar {@code rowType} is requested for a row with multiple non-{@code _id} fields, or if a
-     *         field value cannot be converted to {@code rowType}
+     * @throws IllegalArgumentException if {@code rowType} is a {@link java.util.Collection} or {@link java.util.Map} type that cannot be
+     *         instantiated, if a bean {@code rowType} cannot be populated from the row, if a scalar {@code rowType} is requested for a row
+     *         with multiple non-{@code _id} fields, or if a field value cannot be converted to {@code rowType}
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
      * @see MongoDBBase#readRow(Document, Class)
      */

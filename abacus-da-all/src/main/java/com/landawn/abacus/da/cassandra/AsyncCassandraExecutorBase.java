@@ -30,6 +30,7 @@ import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.Throwables;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -50,6 +51,13 @@ import com.landawn.abacus.util.stream.Stream;
  * delegates to the wrapped synchronous {@link CassandraExecutorBase} for CQL building and
  * result mapping, while the actual statement execution is performed asynchronously through
  * the abstract {@code execute(...)} methods implemented by concrete subclasses.</p>
+ *
+ * <p>CQL building, statement preparation, and parameter binding run synchronously on the calling
+ * thread, so their failures are thrown directly from the method call. Result mapping (row to entity,
+ * first-row reads, duplicate-row detection) is deferred until the returned future's result is first
+ * retrieved and runs on the thread calling {@code get()}; a mapping failure is reported by {@code get()}
+ * as an {@code ExecutionException} whose cause is the original exception. Repeated {@code get()} calls
+ * on the same future return the outcome of that first retrieval.</p>
  *
  * <p>An instance of this class is obtained from the synchronous executor (for example via
  * {@code CassandraExecutor.async()}) and can be converted back to its synchronous counterpart
@@ -283,7 +291,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 2);
 
-        return execute(cp).map(resultSet -> Optional.ofNullable(cassandraExecutor.fetchOnlyOne(targetClass, resultSet)));
+        return execute(cp).map(memoize(resultSet -> Optional.ofNullable(cassandraExecutor.fetchOnlyOne(targetClass, resultSet))));
     }
 
     /**
@@ -448,7 +456,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 2);
 
-        return execute(cp).map(resultSet -> cassandraExecutor.fetchOnlyOne(targetClass, resultSet));
+        return execute(cp).map(memoize(resultSet -> cassandraExecutor.fetchOnlyOne(targetClass, resultSet)));
     }
 
     /**
@@ -1353,7 +1361,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<Boolean> exists(final String query, final Object... parameters) {
-        return execute(query, parameters).map(CassandraExecutorBase.exists_mapper);
+        return execute(query, parameters).map(memoize(CassandraExecutorBase.exists_mapper));
     }
 
     /**
@@ -1576,7 +1584,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     public final <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final String query, final Object... parameters) {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return execute(query, parameters).map(resultSet -> cassandraExecutor.toList(targetClass, resultSet));
+        return execute(query, parameters).map(memoize(resultSet -> cassandraExecutor.toList(targetClass, resultSet)));
     }
 
     /**
@@ -1720,7 +1728,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<Dataset> query(final Class<?> targetClass, final String query, final Object... parameters) {
-        return execute(query, parameters).map(resultSet -> cassandraExecutor.extractData(targetClass, resultSet));
+        return execute(query, parameters).map(memoize(resultSet -> cassandraExecutor.extractData(targetClass, resultSet)));
     }
 
     /**
@@ -1859,7 +1867,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the type each row should be mapped to (must not be {@code null})
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is a {@link Stream} of mapped rows
+     * @return a future whose payload is a {@link Stream} of mapped rows; further result pages are fetched (blocking)
+     *         while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal operation
+     *         rather than reported by the future
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -1868,7 +1878,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     public final <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final String query, final Object... parameters) {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(targetClass)));
+        return execute(query, parameters).map(memoize(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(targetClass))));
     }
 
     /**
@@ -1898,9 +1908,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param <T> the row type
      * @param targetClass the type each row should be mapped to (must not be {@code null})
      * @param statement the driver statement to execute (must not be {@code null})
-     * @return a future whose payload is a {@link Stream} of mapped rows
+     * @return a future whose payload is a {@link Stream} of mapped rows; further result pages are fetched (blocking)
+     *         while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal operation
+     *         rather than reported by the future
      * @throws IllegalArgumentException if {@code targetClass} or {@code statement} is {@code null}; rejected eagerly
-     *         on the calling thread, because the row mapping runs on the future's completion thread
+     *         on the calling thread, because the row mapping itself is deferred until the future's result is retrieved
      * @throws RuntimeException if the driver rejects request submission; failures after submission, including
      *         execution on a closed session, are reported by the returned future
      */
@@ -1908,7 +1920,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(statement, cs.statement);
 
-        return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(targetClass)));
+        return execute(statement).map(memoize(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(targetClass))));
     }
 
     /**
@@ -2063,11 +2075,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return execute(query, parameters).map(resultSet -> {
+        return execute(query, parameters).map(memoize(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
             return iter.hasNext() ? Optional.of(cassandraExecutor.createRowMapper(targetClass).apply(iter.next())) : Optional.empty();
-        });
+        }));
     }
 
     /**
@@ -3048,11 +3060,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
         N.checkArgNotNull(valueClass, cs.valueClass);
 
-        return execute(query, parameters).map(resultSet -> {
+        return execute(query, parameters).map(memoize(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
             return iter.hasNext() ? Nullable.of(cassandraExecutor.readFirstColumn(iter.next(), valueClass)) : Nullable.empty();
-        });
+        }));
     }
 
     /**
@@ -3098,11 +3110,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
         N.checkArgNotNull(valueClass, cs.valueClass);
 
-        return execute(query, parameters).map(resultSet -> {
+        return execute(query, parameters).map(memoize(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
             return iter.hasNext() ? Optional.of(cassandraExecutor.readFirstColumn(iter.next(), valueClass)) : Optional.empty();
-        });
+        }));
     }
 
     /**
@@ -3248,5 +3260,47 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
         N.checkArgNotNull(cp, cs.cp);
 
         return execute(cp.query(), cp.parameters().toArray());
+    }
+
+    /**
+     * Wraps {@code func} so that it is applied at most once: every later call returns the outcome of
+     * the first call (the same result, or the same exception rethrown).
+     *
+     * <p>{@link ContinuableFuture#map} re-applies its function inside <i>every</i> {@code get()} call on the
+     * returned future. The functions passed to it by this class and {@link AsyncCassandraExecutor} consume a one-shot driver
+     * result-set cursor, so without this memoization a second {@code get()} on the same future would re-read an
+     * already drained cursor and report a different result (for example an empty {@code Optional} instead of the
+     * row that the first {@code get()} returned).</p>
+     *
+     * @param <T> the input type
+     * @param <R> the result type
+     * @param func the function to apply at most once
+     * @return a thread-safe function that applies {@code func} on its first call and replays that outcome
+     */
+    static <T, R> Throwables.Function<T, R, Exception> memoize(final Throwables.Function<? super T, ? extends R, ? extends Exception> func) {
+        return new Throwables.Function<>() {
+            private boolean applied = false;
+            private R result = null;
+            private Exception failure = null;
+
+            @Override
+            public synchronized R apply(final T t) throws Exception {
+                if (!applied) {
+                    try {
+                        result = func.apply(t);
+                    } catch (final Exception e) {
+                        failure = e;
+                    }
+
+                    applied = true;
+                }
+
+                if (failure != null) {
+                    throw failure;
+                }
+
+                return result;
+            }
+        };
     }
 }

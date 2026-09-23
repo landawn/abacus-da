@@ -1669,6 +1669,41 @@ public class CassandraExecutorBaseTest extends TestBase {
         }
     }
 
+    // ---- slice N (2026-09-22 review) regression tests: begin ----
+
+    // insert(entity)/prepareInsert(entity) document IllegalArgumentException for an entity that exposes no
+    // insertable properties; the CqlBuilder used to leak an IllegalStateException ("Column names must be set
+    // by insert() before calling into()") for an all-null bean instead.
+    @Test
+    public void testSliceN_insert_entityWithNoInsertableProperties_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.insert(new TestEntity()));
+        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareInsert(new TestEntity()));
+    }
+
+    // A keyless class must not be reported as having the key "[id]".
+    @Test
+    public void testSliceN_idsToCondition_keylessClass_messageDoesNotInventIdKey() {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedIdsToCondition(SliceNKeylessEntity.class, "x"));
+
+        assertTrue(!e.getMessage().contains("[id]"), e.getMessage());
+        assertTrue(e.getMessage().contains("No key names defined"), e.getMessage());
+    }
+
+    public static class SliceNKeylessEntity {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+    // ---- slice N regression tests: end ----
+
     // Test classes
     public static class TestEntity {
         private Long id;

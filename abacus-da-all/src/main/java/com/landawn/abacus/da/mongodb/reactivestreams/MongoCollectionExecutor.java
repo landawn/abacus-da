@@ -1823,7 +1823,10 @@ public final class MongoCollectionExecutor {
      * Otherwise it emits the converted value and then completes. Subscribers cannot distinguish "no
      * document matched" from "document matched but value is null" purely from the reactive signal —
      * use the blocking sync API ({@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor}) when
-     * that distinction is required.</p>
+     * that distinction is required. Exception: for a <i>primitive</i> {@code valueType} (for example
+     * {@code int.class}), a matched document whose field is absent or BSON null is converted to the
+     * primitive default (for example {@code 0}), which is emitted instead of completing empty; use the
+     * wrapper type (for example {@code Integer.class}) to get the empty-{@code Mono} behavior.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1854,7 +1857,8 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
-     *         when no document matches or the field is missing/null
+     *         when no document matches or the field is missing/null (for a primitive {@code valueType}, a
+     *         missing/null field on a matched document emits the primitive default instead)
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */

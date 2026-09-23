@@ -165,7 +165,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
         N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
-        return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
+        return execute(query, parameters).map(memoize(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper))));
     }
 
     /**
@@ -209,7 +209,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
         N.checkArgNotNull(statement, cs.statement);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
-        return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
+        return execute(statement).map(memoize(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper))));
     }
 
     /**
@@ -305,8 +305,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Asynchronously executes the given CQL query and returns a future that completes with a
      * non-{@code null} value from the first column of the first row converted to
      * {@code valueClass}, or an empty {@link Optional} if no row is returned. If a row is returned
-     * but the value is {@code null}, {@code get()} throws a {@link NullPointerException} (an
-     * {@link Optional} cannot hold {@code null}).
+     * but the value is {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a
+     * {@link NullPointerException} (an {@link Optional} cannot hold {@code null}).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -386,7 +386,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     @Override
     public ContinuableFuture<ResultSet> execute(final String query) {
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(cassandraExecutor.prepareStatement(query)).toCompletableFuture())
-                .map(ResultSets::wrap);
+                .map(memoize(ResultSets::wrap));
     }
 
     /**
@@ -427,7 +427,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     @Override
     public ContinuableFuture<ResultSet> execute(final String query, final Object... parameters) {
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(cassandraExecutor.prepareStatement(query, parameters)).toCompletableFuture())
-                .map(ResultSets::wrap);
+                .map(memoize(ResultSets::wrap));
     }
 
     /**
@@ -466,7 +466,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     @Override
     public ContinuableFuture<ResultSet> execute(final String query, final Map<String, Object> parameters) {
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(cassandraExecutor.prepareStatement(query, parameters)).toCompletableFuture())
-                .map(ResultSets::wrap);
+                .map(memoize(ResultSets::wrap));
     }
 
     /**
@@ -506,6 +506,6 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     public ContinuableFuture<ResultSet> execute(final Statement<?> statement) {
         N.checkArgNotNull(statement, cs.statement);
 
-        return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(statement).toCompletableFuture()).map(ResultSets::wrap);
+        return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(statement).toCompletableFuture()).map(memoize(ResultSets::wrap));
     }
 }

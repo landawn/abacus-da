@@ -464,9 +464,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
             }
 
             return Filters.and(conds);
+        } else if (keyNames.isEmpty()) {
+            throw new IllegalArgumentException("No key names defined for entity class: " + ClassUtil.getCanonicalClassName(targetClass)
+                    + " (annotate the key properties with @Id or register them via registerKeys)");
         } else {
-            throw new IllegalArgumentException("The number: " + ids.length + " of input ids doesn't match the (registered) key names: "
-                    + (N.isEmpty(keyNames) ? "[id]" : N.toString(keyNames)) + " in class: " + ClassUtil.getCanonicalClassName(targetClass));
+            throw new IllegalArgumentException("The number: " + ids.length + " of input ids doesn't match the (registered) key names: " + N.toString(keyNames)
+                    + " in class: " + ClassUtil.getCanonicalClassName(targetClass));
         }
     }
 
@@ -1337,7 +1340,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>In Cassandra, this method can be used to delete specific column values
      * (setting them to null) rather than deleting the entire row. If propNamesToDelete
-     * is null or empty, the entire row is deleted.</p>
+     * is null, the entire row is deleted; an empty (non-null) collection is rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1401,7 +1404,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Deletes specific properties or entire record by primary key values.
      *
      * <p>If propNamesToDelete is specified, only those column values are deleted (set to null).
-     * If propNamesToDelete is null or empty, the entire row is deleted.</p>
+     * If propNamesToDelete is null, the entire row is deleted; an empty (non-null) collection is rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1464,7 +1467,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Deletes specific properties or entire records based on a WHERE condition.
      *
      * <p>If propNamesToDelete is specified, only those column values are deleted (set to null)
-     * in the matching rows. If propNamesToDelete is null or empty, the entire matching rows are deleted.</p>
+     * in the matching rows. If propNamesToDelete is null, the entire matching rows are deleted; an empty
+     * (non-null) collection is rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3370,7 +3374,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * // Execute a simple statement with custom settings
      * SimpleStatement simpleStatement = SimpleStatement.builder(
-     *         "SELECT * FROM users WHERE token(id) > token(?)", lastId)
+     *         "SELECT * FROM users WHERE token(id) > token(?)")
+     *     .addPositionalValue(lastId)
      *     .setPageSize(1000)
      *     .build();
      *
@@ -3415,19 +3420,32 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
+        final CqlBuilder cqlBuilder;
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.insert(entity).into(targetClass).build();
+                cqlBuilder = NSC.insert(entity);
+                break;
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.insert(entity).into(targetClass).build();
+                cqlBuilder = NAC.insert(entity);
+                break;
 
             case CAMEL_CASE:
-                return NLC.insert(entity).into(targetClass).build();
+                cqlBuilder = NLC.insert(entity);
+                break;
 
             default:
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
+        }
+
+        try {
+            return cqlBuilder.into(targetClass).build();
+        } catch (final IllegalStateException e) {
+            // A freshly created INSERT builder only fails into() with IllegalStateException when no column was
+            // staged, i.e. the entity has no non-null insertable property: report the documented argument error.
+            throw new IllegalArgumentException("No insertable property value specified in entity of class: " + ClassUtil.getCanonicalClassName(targetClass),
+                    e);
         }
     }
 

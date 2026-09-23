@@ -344,7 +344,8 @@ public final class AsyncDynamoDBExecutor {
      *                          the supported {@code @Table} annotations. Must not be null.
      * @return a cached async {@link Mapper} instance for the specified entity class, never null
      * @throws IllegalArgumentException if {@code targetEntityClass} is null, is not a bean class, is missing the {@code @Table} annotation,
-     *         does not have one or two {@code @Id} fields, or has two IDs that map to the same attribute name
+     *         has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id} fields, or
+     *         has two IDs that map to the same attribute name
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
         N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
@@ -412,7 +413,8 @@ public final class AsyncDynamoDBExecutor {
      * @param namingPolicy the naming policy for converting property names to attribute names. If null, defaults to CAMEL_CASE.
      * @return a new async Mapper instance configured with the specified parameters, never null
      * @throws IllegalArgumentException if targetEntityClass is null, tableName is null or empty, targetEntityClass is not a bean class, the
-     *         entity does not have one or two {@code @Id} fields, or two IDs map to the same attribute name
+     *         entity has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id}
+     *         fields, or two IDs map to the same attribute name
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -522,13 +524,15 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>This method provides complete control over the get operation, allowing you to specify
      * all parameters including projection expressions, return consumed capacity, and more.
-     * This is the most flexible way to retrieve items from DynamoDB asynchronously.</p>
+     * This is the most flexible way to retrieve items from DynamoDB asynchronously. Only the
+     * converted item is returned; response metadata such as consumed capacity is not exposed
+     * (call {@link #dynamoDBAsyncClient()} directly when you need it).</p>
      *
      * <p><b>Advanced Features Available:</b></p>
      * <ul>
      * <li>Projection expressions for retrieving specific attributes</li>
      * <li>Expression attribute names for reserved words</li>
-     * <li>Return consumed capacity for monitoring</li>
+     * <li>Return consumed capacity (forwarded to the service; not returned here)</li>
      * <li>Consistent read configuration</li>
      * </ul>
      *
@@ -799,19 +803,12 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously performs a batch get operation with consumed capacity reporting.
+     * Asynchronously performs a batch get operation, forwarding {@code returnConsumedCapacity} to the service.
      *
-     * <p>This method extends the basic batch get by allowing you to track the read capacity
-     * consumed by the operation asynchronously. This is useful for monitoring and optimizing
-     * your DynamoDB usage and costs in high-throughput async applications.</p>
-     *
-     * <p><b>Capacity Monitoring Benefits:</b></p>
-     * <ul>
-     * <li>Real-time capacity consumption tracking for cost optimization</li>
-     * <li>Performance monitoring for auto-scaling decisions</li>
-     * <li>Debugging high-consumption operations</li>
-     * <li>Compliance with capacity budget constraints</li>
-     * </ul>
+     * <p>{@code returnConsumedCapacity} is set on the request sent to DynamoDB, but this overload
+     * still completes with only the per-table item lists; the consumed-capacity details of the
+     * response are not exposed. To inspect capacity, call
+     * {@code dynamoDBAsyncClient().batchGetItem(...)} directly.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -837,10 +834,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param requestItems a map of table names to KeysAndAttributes specifying the items to retrieve.
      *                    Must not be null.
-     * @param returnConsumedCapacity determines the level of detail about consumed capacity returned:
-     *                              "INDEXES" - returns capacity for table and indexes,
-     *                              "TOTAL" - returns only total consumed capacity,
-     *                              "NONE" - no capacity details returned
+     * @param returnConsumedCapacity "INDEXES", "TOTAL", or "NONE", forwarded to the service (the capacity
+     *                              details are not returned here)
      * @return a CompletableFuture containing a map of table names to lists of retrieved items;
      *         completes exceptionally (wrapped in {@link java.util.concurrent.CompletionException})
      *         with a {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException} if
@@ -857,13 +852,15 @@ public final class AsyncDynamoDBExecutor {
      * <p>This method provides complete control over the batch get operation, allowing you
      * to specify all parameters including projection expressions, consistent reads per table,
      * and return consumed capacity settings. All operations execute asynchronously with
-     * CompletableFuture support.</p>
+     * CompletableFuture support. All request options are forwarded to the service, but only the
+     * per-table item lists are returned; response metadata such as consumed capacity and
+     * unprocessed keys is not exposed.</p>
      *
      * <p><b>Advanced Configuration Options:</b></p>
      * <ul>
      * <li>Per-table projection expressions and attribute filtering</li>
      * <li>Mixed consistency requirements across different tables</li>
-     * <li>Detailed capacity consumption reporting</li>
+     * <li>Consumed-capacity requests (forwarded to the service; not returned here)</li>
      * <li>Custom retry and timeout configurations</li>
      * </ul>
      *
@@ -955,17 +952,19 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously retrieves multiple items with consumed capacity reporting.
+     * Asynchronously retrieves multiple items, forwarding {@code returnConsumedCapacity} to the service.
      *
      * <p>This method is similar to {@link #batchGetItem(Map, Class)} but additionally asks
-     * DynamoDB to report the read capacity consumed by the operation. This is useful
-     * for monitoring and optimizing DynamoDB costs and performance.</p>
+     * DynamoDB to report the read capacity consumed by the operation. The returned future still
+     * completes with only the converted per-table item lists; the consumed-capacity details of the
+     * response are not exposed (call {@code dynamoDBAsyncClient().batchGetItem(...)} directly if you
+     * need them).</p>
      *
-     * <p><b>Consumed Capacity Options:</b></p>
+     * <p><b>Consumed Capacity Options (as sent to the service):</b></p>
      * <ul>
-     * <li><b>NONE</b> - No consumed capacity info returned (default)</li>
-     * <li><b>TOTAL</b> - Returns total consumed capacity</li>
-     * <li><b>INDEXES</b> - Returns consumed capacity for each table and index</li>
+     * <li><b>NONE</b> - No consumed capacity info requested (default)</li>
+     * <li><b>TOTAL</b> - Requests total consumed capacity</li>
+     * <li><b>INDEXES</b> - Requests consumed capacity for each table and index</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -982,7 +981,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type of objects to return
      * @param requestItems map of table names to keys and attributes to retrieve. Must not be null.
-     * @param returnConsumedCapacity specifies consumed capacity detail level: "NONE", "TOTAL", or "INDEXES"
+     * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES", forwarded to the service (not returned here)
      * @param targetClass the class to convert results to. Must not be null.
      * @return a CompletableFuture containing a map of table names to lists of retrieved items
      * @throws IllegalArgumentException if {@code targetClass} is null
@@ -1004,14 +1003,16 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>This method provides full control over the batch get operation, allowing
      * specification of all DynamoDB batch get parameters including projection expressions,
-     * consistency settings, and consumed capacity reporting across multiple tables.</p>
+     * consistency settings, and consumed-capacity requests across multiple tables. Only the
+     * converted per-table item lists are returned; response metadata such as consumed capacity
+     * and unprocessed keys is not exposed.</p>
      *
      * <p><b>Advanced Features:</b></p>
      * <ul>
      * <li>Projection expressions to retrieve specific attributes</li>
      * <li>Consistent read options per table</li>
      * <li>Expression attribute names for reserved words</li>
-     * <li>Consumed capacity and metrics reporting</li>
+     * <li>Consumed-capacity requests (forwarded to the service; not returned here)</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2601,8 +2602,8 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
-     *            and one field annotated with {@code @Id} for a simple key, or two for a composite
-     *            partition-and-sort key.
+     *            and one field annotated with {@code @Id} for a simple key (or, with no {@code @Id} field, a
+     *            property named {@code id}), or two {@code @Id} fields for a composite partition-and-sort key.
      * @author haiyangli
      * @since 1.0
      */
@@ -2619,7 +2620,8 @@ public final class AsyncDynamoDBExecutor {
          * Constructs a new Mapper instance for the specified entity class and DynamoDB table.
          *
          * <p>This constructor validates that the entity class is a proper bean class with
-         * getter/setter methods and one or two fields annotated with {@code @Id} for the primary key.
+         * getter/setter methods and one or two fields annotated with {@code @Id} for the primary key
+         * (a class with no {@code @Id} field falls back to a property named {@code id}).
          * The naming policy determines how Java property names are converted to DynamoDB attribute names.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2629,13 +2631,15 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param targetEntityClass the class of entities this mapper will handle. Must not be null
-         *                         and must be a valid bean class with one or two {@code @Id} fields.
+         *                         and must be a valid bean class with one or two {@code @Id} fields
+         *                         (or a fallback property named {@code id}).
          * @param dynamoDBExecutor the async executor for DynamoDB operations. Must not be null.
          * @param tableName the name of the DynamoDB table. Must not be null or empty.
          * @param namingPolicy the policy for converting property names to attribute names.
          *                    If null, defaults to CAMEL_CASE.
          * @throws IllegalArgumentException if targetEntityClass or dynamoDBExecutor is null, tableName is null or empty, targetEntityClass
-         *         is not a bean class or doesn't have one or two {@code @Id} fields, or two IDs map to the same attribute name
+         *         is not a bean class or has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than
+         *         two {@code @Id} fields, or two IDs map to the same attribute name
          */
         Mapper(final Class<T> targetEntityClass, final AsyncDynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
@@ -2833,11 +2837,12 @@ public final class AsyncDynamoDBExecutor {
         }
 
         /**
-         * Asynchronously retrieves multiple items with consumed capacity reporting.
+         * Asynchronously retrieves multiple items, forwarding {@code returnConsumedCapacity} to the service.
          *
-         * <p>This method is similar to {@link #batchGetItem(Collection)} but allows requesting
-         * information about the read capacity units consumed by the operation. This is useful
-         * for monitoring and optimizing DynamoDB usage costs.</p>
+         * <p>This method is similar to {@link #batchGetItem(Collection)} but sets
+         * {@code returnConsumedCapacity} on the request. Only the list of entities is returned; the
+         * consumed-capacity details of the response are not available on this result (call
+         * {@code dynamoDBAsyncClient().batchGetItem(...)} on the executor directly if you need them).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2851,8 +2856,7 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param entities collection of entity instances with key attributes set. Must not be null.
-         * @param returnConsumedCapacity specifies the level of detail for consumed capacity.
-         *                              Valid values: "INDEXES", "TOTAL", "NONE"
+         * @param returnConsumedCapacity "INDEXES", "TOTAL", or "NONE", forwarded to the service (not returned here)
          * @return a CompletableFuture containing a list of retrieved entities
          * @throws IllegalArgumentException if {@code entities} (or any element in it) is null, or an ID is null, empty, or not a supported
          *         scalar key value
@@ -3043,8 +3047,8 @@ public final class AsyncDynamoDBExecutor {
          * Asynchronously updates an item using an entity instance.
          *
          * <p>This method extracts the primary key from the entity and creates update operations
-         * for all non-null properties. Only changed attributes are included in the update operation,
-         * making it efficient for partial updates. The key attributes are used to identify the item.</p>
+         * for all non-null, non-key properties (no change tracking is performed — every non-null
+         * property is written), making it suitable for partial updates. The key attributes are used to identify the item.</p>
          *
          * <p><b>Update Behavior:</b></p>
          * <ul>

@@ -26,6 +26,7 @@ import com.landawn.abacus.da.cassandra.AsyncCassandraExecutorBase;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.Throwables;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
@@ -170,7 +171,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
         N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
-        return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
+        return execute(query, parameters).map(memoize(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper))));
     }
 
     /**
@@ -214,7 +215,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
         N.checkArgNotNull(statement, cs.statement);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
-        return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
+        return execute(statement).map(memoize(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper))));
     }
 
     /**
@@ -501,5 +502,47 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
         N.checkArgNotNull(statement, cs.statement);
 
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(statement));
+    }
+
+    /**
+     * Wraps {@code func} so that it is applied at most once: every later call returns the outcome of
+     * the first call (the same result, or the same exception rethrown).
+     *
+     * <p>{@link ContinuableFuture#map} re-applies its function inside <i>every</i> {@code get()} call on the
+     * returned future. The row-mapper {@code stream(...)} functions of this class consume the one-shot driver
+     * {@link ResultSet} cursor, so without this memoization a second {@code get()} on the same future would
+     * build a new {@code Stream} over the already (partially) drained cursor. This mirrors the package-private
+     * helper in {@link AsyncCassandraExecutorBase}, which is not accessible from this package.</p>
+     *
+     * @param <T> the input type
+     * @param <R> the result type
+     * @param func the function to apply at most once
+     * @return a thread-safe function that applies {@code func} on its first call and replays that outcome
+     */
+    private static <T, R> Throwables.Function<T, R, Exception> memoize(final Throwables.Function<? super T, ? extends R, ? extends Exception> func) {
+        return new Throwables.Function<>() {
+            private boolean applied = false;
+            private R result = null;
+            private Exception failure = null;
+
+            @Override
+            public synchronized R apply(final T t) throws Exception {
+                if (!applied) {
+                    try {
+                        result = func.apply(t);
+                    } catch (final Exception e) {
+                        failure = e;
+                    }
+
+                    applied = true;
+                }
+
+                if (failure != null) {
+                    throw failure;
+                }
+
+                return result;
+            }
+        };
     }
 }

@@ -1867,6 +1867,13 @@ public class CosmosContainerExecutor {
      * with automatic field name mapping according to the configured naming policy.
      * Use only condition operators supported by the Cosmos DB for NoSQL query language.</p>
      *
+     * <p>Property references are qualified with the {@code c} alias, and SQL forms that Cosmos DB lacks are rewritten:
+     * {@code x IS NULL} becomes {@code IS_NULL(c.x)}, {@code x IS NOT NULL} becomes {@code NOT IS_NULL(c.x)}, and
+     * {@code x IS TRUE}/{@code IS FALSE} (for example from {@code Filters.isTrue}) become {@code c.x = true}/{@code c.x = false}.
+     * Cosmos DB distinguishes an explicit JSON {@code null} from an absent property, and {@code IS_NULL} is false for an
+     * absent property: {@code Filters.isNull("x")} does not match items that lack {@code x}, while
+     * {@code Filters.isNotNull("x")} does.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * import static com.landawn.abacus.query.Filters.*;
@@ -1903,7 +1910,9 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
+     *         names from it), if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
      *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank {@code SqlExpression} (rejected by
      *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
@@ -1951,7 +1960,9 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
+     *         names from it), if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
      *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank {@code SqlExpression} (rejected by
      *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
@@ -2003,7 +2014,9 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
+     *         names from it), if
      *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
      *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
      *         or blank {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a different
@@ -2069,7 +2082,9 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent), if
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
+     *         names from it), if
      *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
      *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
      *         or blank {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a different
@@ -2248,6 +2263,20 @@ public class CosmosContainerExecutor {
                 } else {
                     sb.append(ch);
                 }
+            } else if (startsWithCosmosKeyword(query, i, " IS NOT TRUE")) {
+                // Boolean IS/IS NOT conditions are rendered with inline SQL truth-value keywords
+                // (x IS TRUE), which Cosmos DB does not support; rewrite them to comparisons.
+                sb.append(" != true");
+                i += " IS NOT TRUE".length() - 1;
+            } else if (startsWithCosmosKeyword(query, i, " IS NOT FALSE")) {
+                sb.append(" != false");
+                i += " IS NOT FALSE".length() - 1;
+            } else if (startsWithCosmosKeyword(query, i, " IS TRUE")) {
+                sb.append(" = true");
+                i += " IS TRUE".length() - 1;
+            } else if (startsWithCosmosKeyword(query, i, " IS FALSE")) {
+                sb.append(" = false");
+                i += " IS FALSE".length() - 1;
             } else if (query.regionMatches(true, i, " IS NOT ?", 0, " IS NOT ?".length())) {
                 sb.append(" != ?");
                 i += " IS NOT ?".length() - 1;
@@ -2314,19 +2343,27 @@ public class CosmosContainerExecutor {
                 final char previousChar = previous < conditionStart ? 0 : query.charAt(previous);
                 final char nextChar = next >= len ? 0 : query.charAt(next);
                 final boolean alreadyQualified = previousChar == '.' || previousChar == '@' || previousChar == '$';
-                final boolean functionOrObjectKey = nextChar == '(' || nextChar == ':';
+                // A user-defined-function call (udf.name(...)) is not a property path.
+                final boolean functionOrObjectKey = nextChar == '(' || nextChar == ':'
+                        || nextChar == '.' && "udf".equalsIgnoreCase(identifier) && isFollowedByCosmosFunctionName(query, next + 1);
                 final String normalizedIdentifier = identifier.toUpperCase(Locale.ROOT);
-                final boolean keyword = COSMOS_CONDITION_KEYWORDS.contains(normalizedIdentifier);
-                final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[')
-                        || keyword && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previousChar, next);
+                final boolean keywordToken = COSMOS_CONDITION_KEYWORDS.contains(normalizedIdentifier)
+                        && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previousChar, next);
+                final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[') || keywordToken;
                 final boolean attachedToPreviousIdentifier = identifierStart > conditionStart
                         && Character.isJavaIdentifierPart(query.charAt(identifierStart - 1));
+                final boolean standalone = !alreadyQualified && !functionOrObjectKey && !attachedToPreviousIdentifier;
 
-                if (!alreadyQualified && !functionOrObjectKey && !keywordOrAlias && !attachedToPreviousIdentifier) {
-                    sb.append(COSMOS_ALIAS).append('.');
+                if (standalone && !keywordOrAlias) {
+                    sb.append(COSMOS_ALIAS).append('.').append(identifier);
+                } else if (standalone && keywordToken && isCosmosLiteralKeyword(normalizedIdentifier)) {
+                    // Cosmos DB literals (true, false, null, undefined) are case-sensitive and must be lower case,
+                    // but a naming policy such as SCREAMING_SNAKE_CASE upper-cases every token of a raw expression.
+                    sb.append(identifier.toLowerCase(Locale.ROOT));
+                } else {
+                    sb.append(identifier);
                 }
 
-                sb.append(identifier);
                 i--;
             } else {
                 sb.append(ch);
@@ -2367,6 +2404,29 @@ public class CosmosContainerExecutor {
         // On the right-hand side of an operator, clause keywords such as ORDER can also be
         // legitimate property names. Preserve actual literals and predicate operators.
         return "=<>!+-*/%".indexOf(previousChar) >= 0 && !isCosmosLiteralKeyword(identifier);
+    }
+
+    private static boolean isFollowedByCosmosFunctionName(final String query, final int start) {
+        final int len = query.length();
+        int i = start;
+
+        while (i < len && Character.isWhitespace(query.charAt(i))) {
+            i++;
+        }
+
+        if (i >= len || !Character.isJavaIdentifierStart(query.charAt(i))) {
+            return false;
+        }
+
+        while (++i < len && Character.isJavaIdentifierPart(query.charAt(i))) {
+            // scan the function name
+        }
+
+        while (i < len && Character.isWhitespace(query.charAt(i))) {
+            i++;
+        }
+
+        return i < len && query.charAt(i) == '(';
     }
 
     private static boolean startsWithCosmosKeyword(final String query, final int start, final String keyword) {

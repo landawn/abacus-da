@@ -106,7 +106,7 @@ import com.mongodb.client.result.UpdateResult;
  *       (see {@code com.mongodb.client.model.Sorts}). When {@code null}, the driver returns documents
  *       in the natural order, which is not stable across queries.</li>
  *   <li>{@code offset}/{@code count} are forwarded as the driver's {@code skip} and {@code limit}
- *       hints. {@code offset == 0} disables skip; a negative {@code count} throws
+ *       hints. {@code offset == 0} disables skip; a negative {@code offset} or {@code count} throws
  *       {@link IllegalArgumentException}, {@code count == 0} yields an empty result, and
  *       {@code Integer.MAX_VALUE} is effectively "no limit".</li>
  * </ul>
@@ -1763,10 +1763,12 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * Bson projection = Projections.fields(
      *     Projections.include("name", "address"),
-     *     Projections.excludeId()   // drop the _id column entirely
+     *     Projections.excludeId()   // _id is not fetched from the server
      * );
-     * // Name + address columns, _id excluded, sorted by name:
+     * // Sorted by name; only name/address (no id) are populated on each row:
      * Dataset results = mapper.query(projection, Filters.eq("city", "NYC"), Sorts.ascending("name")); // returns Dataset
+     * // With a bean row type the columns are still ALL of the entity's properties (unfetched ones are null);
+     * // use query(Collection, Bson, Bson) to restrict the Dataset columns to the selected fields.
      * }</pre>
      *
      * @param projection the BSON projection specification for field selection and transformation (null for all fields)
@@ -1796,7 +1798,7 @@ public final class MongoCollectionMapper<T> {
      *     Projections.include("customer", "items"),
      *     Projections.computed("itemCount", new Document("$size", "$items"))
      * );
-     * // Computed itemCount column, newest first, first page of 50:
+     * // Newest first, first page of 50; the computed itemCount is kept only if the entity has an itemCount property:
      * Dataset orders = mapper.query(projection, Filters.gte("date", startDate),
      *                               Sorts.descending("date"), 0, 50); // returns up to 50 rows
      * Dataset nextPage = mapper.query(projection, Filters.gte("date", startDate),
@@ -3387,6 +3389,11 @@ public final class MongoCollectionMapper<T> {
      * type, and is only readable if the entity declares a matching property. This is useful for getting
      * distinct field values for analysis or dropdown populations.</p>
      *
+     * <p>The values are computed with a {@code $group} aggregation rather than the driver's native
+     * {@code distinct} command, so an array-valued field is <i>not</i> unwound: each distinct whole array
+     * is one result (the native command, used by {@link MongoCollectionExecutor#distinct(String, Class)},
+     * returns each array element separately).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Stream the unique "category" values across the whole collection:
@@ -3437,7 +3444,8 @@ public final class MongoCollectionMapper<T> {
      * <p>This method streams unique values for the specified field from entities that match
      * the filter criteria. Each distinct value is surfaced under {@code fieldName} on an entity of the
      * mapped type, and is only readable if the entity declares a matching property. This is useful for
-     * getting distinct values from a subset of the collection based on specific conditions.</p>
+     * getting distinct values from a subset of the collection based on specific conditions. As with
+     * {@link #distinct(String)}, an array-valued field is not unwound: each distinct whole array is one result.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3480,6 +3488,9 @@ public final class MongoCollectionMapper<T> {
      * List<Bson> pipeline = Arrays.asList(
      *     Aggregates.match(Filters.gte("price", 100.0)),
      *     Aggregates.group("$category", Accumulators.avg("avgPrice", "$price")),
+     *     // $group puts the group key in _id; expose it as "category" so it maps onto the entity property:
+     *     Aggregates.project(Projections.fields(Projections.excludeId(),
+     *         Projections.computed("category", "$_id"), Projections.include("avgPrice"))),
      *     Aggregates.sort(Sorts.descending("avgPrice"))
      * );
      * try (Stream<Product> results = mapper.aggregate(pipeline)) { // returns a lazy Stream of pipeline output docs

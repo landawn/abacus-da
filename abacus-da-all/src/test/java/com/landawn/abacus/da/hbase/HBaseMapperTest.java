@@ -439,4 +439,23 @@ public class HBaseMapperTest extends TestBase {
         m.mapper.deleteByRowKey((List<String>) null);
         m.mapper.delete((List<User>) null);
     }
+
+    // Regression (2026-09-22 deep review): the missing-@Table message printed Class.toString(),
+    // i.e. "Entity class class com.x.Foo must be annotated ...".
+    @Data
+    @NoArgsConstructor
+    public static class UserWithoutTable {
+        @Id
+        private String userId;
+    }
+
+    @Test
+    public void testMapper_missingTableAnnotation_messageNamesClassOnce() throws Exception {
+        Mocks m = new Mocks();
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> m.executor.mapper(UserWithoutTable.class));
+
+        assertTrue(ex.getMessage().startsWith("Entity class com.landawn.abacus.da.hbase.HBaseMapperTest.UserWithoutTable must be annotated with @Table"),
+                ex.getMessage());
+    }
 }

@@ -26,6 +26,8 @@ import java.util.function.IntFunction;
 
 import org.bson.BSONObject;
 import org.bson.BasicBSONObject;
+import org.bson.BsonDocument;
+import org.bson.BsonDocumentReader;
 import org.bson.BsonInvalidOperationException;
 import org.bson.BsonReader;
 import org.bson.BsonWriter;
@@ -165,6 +167,8 @@ public abstract class MongoDBBase {
      */
     protected static final CodecRegistry codecRegistry = CodecRegistries.fromRegistries(MongoClientSettings.getDefaultCodecRegistry(),
             new GeneralCodecRegistry());
+    /** Decodes a {@link BsonDocument} into a plain {@link Document} for {@link #toJson(Bson)}. */
+    private static final DocumentCodec jsonDocumentCodec = new DocumentCodec(codecRegistry);
     private static final Map<Class<?>, Method> classIdSetMethodPool = new ConcurrentHashMap<>();
 
     /**
@@ -359,9 +363,10 @@ public abstract class MongoDBBase {
      * Converts a BSON object to its JSON string representation.
      *
      * <p>This method converts a BSON object to a JSON string using MongoDB's codec registry.
-     * If the BSON object is already a Map, it's converted directly. Otherwise, it's first
-     * converted to a BsonDocument and then to JSON format. The output follows standard
-     * JSON format.</p>
+     * If the BSON object is a plain Map (such as a {@link Document}), it's converted directly. Otherwise
+     * (a driver-built filter/update/sort/projection, or a {@link BsonDocument}), it's first rendered to a
+     * BsonDocument, decoded to a {@link Document} of plain Java values, and then converted. The output
+     * follows standard JSON format (not MongoDB Extended JSON).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -375,6 +380,9 @@ public abstract class MongoDBBase {
      *
      * // An empty document:
      * MongoDB.toJson(new Document());                     // returns {}
+     *
+     * // A driver-built filter is rendered by value:
+     * MongoDB.toJson(Filters.eq("age", 30));              // returns {"age": 30}
      *
      * // A null argument is rejected:
      * MongoDB.toJson((Bson) null);                        // throws IllegalArgumentException
@@ -392,7 +400,15 @@ public abstract class MongoDBBase {
     public static String toJson(final Bson bson) {
         N.checkArgNotNull(bson, cs.bson);
 
-        return bson instanceof Map ? N.toJson(bson) : N.toJson(bson.toBsonDocument(Document.class, codecRegistry));
+        if (bson instanceof Map && !(bson instanceof BsonDocument)) {
+            return N.toJson(bson);
+        }
+
+        // A BsonDocument (also what driver builders such as Filters/Updates render to) holds BsonValue wrappers,
+        // which N.toJson would serialize as beans ({"a": {"value": 1}}). Decode it to a plain Document first.
+        final BsonDocument bsonDocument = bson instanceof final BsonDocument bd ? bd : bson.toBsonDocument(Document.class, codecRegistry);
+
+        return N.toJson(jsonDocumentCodec.decode(new BsonDocumentReader(bsonDocument), DecoderContext.builder().build()));
     }
 
     /**
@@ -1159,21 +1175,15 @@ public abstract class MongoDBBase {
                         propName = _ID;
                     }
 
-                    Object sampleValue = null;
-
+                    // Decide per row, not from one sample value: MongoDB freely mixes BSON types for the same field
+                    // (e.g. int32 and int64), so a later Integer must still be converted for a Long target.
                     for (final Object row : rowList) {
-                        if (row instanceof Map && (sampleValue = ((Map<String, Object>) row).get(propName)) != null) {
-                            break;
-                        }
-                    }
+                        if (row == null) {
+                            resultList.add(null);
+                        } else {
+                            final Object value = ((Map<String, Object>) row).get(propName);
 
-                    if (sampleValue != null && rowType.isAssignableFrom(sampleValue.getClass())) {
-                        for (final Object row : rowList) {
-                            resultList.add(row == null ? null : ((Map<String, Object>) row).get(propName));
-                        }
-                    } else {
-                        for (final Object row : rowList) {
-                            resultList.add(row == null ? null : N.convert(((Map<String, Object>) row).get(propName), rowType));
+                            resultList.add(value != null && rowType.isInstance(value) ? value : N.convert(value, rowType));
                         }
                     }
                 } else {
@@ -1574,8 +1584,7 @@ public abstract class MongoDBBase {
      * //     MongoDB.stream(emptyIterable).count()  ->  0
      * }</pre>
      *
-     * <p>Cursor read failures are raised while consuming the returned stream. When a target type is supplied, an incompatible row or scalar
-     *         projection also fails during consumption.</p>
+     * <p>Cursor read failures are raised while consuming the returned stream.</p>
      *
      * @param iter the MongoIterable to convert to a Stream; must not be {@code null}
      * @return a Stream of Document objects
@@ -1664,8 +1673,7 @@ public abstract class MongoDBBase {
      * //     MongoDB.stream(emptyCursor).count()  ->  0
      * }</pre>
      *
-     * <p>Cursor read failures are raised while consuming the returned stream. When a target type is supplied, an incompatible row or scalar
-     *         projection also fails during consumption.</p>
+     * <p>Cursor read failures are raised while consuming the returned stream.</p>
      *
      * @param cursor the MongoCursor to convert to a Stream; a {@code null} cursor yields an empty stream
      * @return a Stream of Document objects with automatic cursor management

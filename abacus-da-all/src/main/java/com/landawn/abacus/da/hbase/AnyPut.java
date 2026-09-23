@@ -144,12 +144,14 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *
  * <h3>Entity Mapping Rules:</h3>
  * <ul>
- * <li><strong>Row Key</strong>: The single property registered via {@link HBaseExecutor#registerRowKeyProperty(Class, String)}
- *     (or whose setter is otherwise discovered as the row-key setter) becomes the row key.</li>
- * <li><strong>Column Families</strong>: Resolved from {@link ColumnFamily} annotations on the class
- *     or individual properties; otherwise the property name is used.</li>
- * <li><strong>Column Qualifiers</strong>: For nested bean properties, the bean's own property
- *     names become qualifiers under the enclosing property's family.</li>
+ * <li><strong>Row Key</strong>: The single {@code @Id}-annotated property (or the property registered via the deprecated
+ *     {@link HBaseExecutor#registerRowKeyProperty(Class, String)}) becomes the row key; it is not written as a column.</li>
+ * <li><strong>Column Families</strong>: Resolved from {@link ColumnFamily} annotations on the
+ *     individual property or the class; otherwise the property name, converted by the naming policy, is used.</li>
+ * <li><strong>Column Qualifiers</strong>: A {@code @Column} name, or the naming-policy-converted property
+ *     name when a {@link ColumnFamily} applies; a property that maps to its own family (no
+ *     {@code @ColumnFamily} and no {@code @Column}) is stored under the empty qualifier. For nested bean
+ *     properties, the bean's own property names become qualifiers under the enclosing property's family.</li>
  * <li><strong>Versioning</strong>: {@link HBaseColumn} property values are stored at their
  *     embedded {@code version()} timestamp.</li>
  * <li><strong>Collections / Maps</strong>: {@code Collection<HBaseColumn>} and
@@ -667,8 +669,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entity} is {@code null}, an entity to convert is not a bean or has missing, multiple or
      *         unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is negative, or an encoded
      *         column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Object, NamingPolicy)
      * @see #create(Object, Collection)
@@ -683,7 +684,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>This factory method performs automatic object-to-HBase mapping with custom property name
      * conversion. The naming policy controls how Java property names are converted to HBase column
-     * qualifiers (e.g., SNAKE_CASE converts "userName" to "user_name"). This enables flexible
+     * qualifiers — and to column family names where no {@link ColumnFamily} applies — (e.g., SNAKE_CASE
+     * converts "userName" to "user_name"); explicit {@code @Column} names are used as-is. This enables flexible
      * integration with different naming conventions.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -706,8 +708,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
      *         negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Object)
      * @see NamingPolicy
@@ -747,8 +748,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
      *         negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Collection, NamingPolicy)
      * @see #create(Object)
@@ -795,8 +795,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
      *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
      *         column version is negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Collection)
      * @see NamingPolicy
@@ -848,8 +847,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entity} is {@code null}, an entity to convert is not a bean or has missing, multiple or
      *         unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property does not exist, a
      *         column version is negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Object, Collection, NamingPolicy)
      * @see #create(Object)
@@ -884,8 +882,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property
      *         does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Object, Collection)
      * @see NamingPolicy
@@ -938,8 +935,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property
      *         does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Collection, Collection, NamingPolicy)
      * @see #create(Object, Collection)
@@ -985,8 +981,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
      *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
      *         selected property does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #create(Collection, Collection)
      * @see NamingPolicy
@@ -1042,7 +1037,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         String columnName = null;
 
         for (final PropInfo propInfo : selectPropInfos) {
-            if (propInfo.getMethod.equals(rowKeyGetMethod)) {
+            // getMethod is null for a public-field property; such a property is never the row key (which requires a getter).
+            if (propInfo.getMethod != null && propInfo.getMethod.equals(rowKeyGetMethod)) {
                 continue;
             }
 
@@ -1064,10 +1060,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
                 final Object propEntity = propValue;
                 Tuple3<String, String, Boolean> propEntityTP = null;
 
-                final Map<String, Method> columnGetMethodMap = Beans.getPropGetters(propEntityClass);
-
-                for (final Map.Entry<String, Method> columnGetMethodEntry : columnGetMethodMap.entrySet()) {
-                    columnPropInfo = propBeanInfo.getPropInfo(columnGetMethodEntry.getKey());
+                // Walk the bean's readable properties (getter or public field), matching the read side in
+                // HBaseExecutor.toEntity; iterating getter methods only would silently drop public-field properties.
+                for (final PropInfo nestedPropInfo : propBeanInfo.propInfoList) {
+                    columnPropInfo = nestedPropInfo;
 
                     propValue = columnPropInfo.getPropValue(propEntity);
 
@@ -1558,8 +1554,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
      *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
      *         negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #toPut(Collection, NamingPolicy)
      * @see #create(Collection)
@@ -1610,8 +1605,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
      *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
      *         column version is negative, or an encoded column family exceeds 127 bytes
-     * @throws NullPointerException if a selected property has no getter, or a versioned column collection or map contains a null
-     *         {@code HBaseColumn}
+     * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property fails through reflection or its getter throws an exception
      * @see #toPut(Collection)
      * @see #create(Collection, NamingPolicy)

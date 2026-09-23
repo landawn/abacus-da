@@ -413,4 +413,51 @@ public class ParsedCqlTest extends TestBase {
         assertEquals(1, parsed.parameterCount());
         assertEquals("id", parsed.namedParameters().get(0));
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Dollar-quoted string constants ($$...$$) are opaque: SqlParser knows nothing about dollar quoting.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testParse_DollarQuotedString_WhitespaceIsPreserved() {
+        // Regression: the tokenizer collapsed the whitespace run inside the constant, silently changing the value
+        // written to Cassandra ("a    b" became "a b", a tab became a space).
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET note = $$a    b\tc$$ WHERE id = :id");
+
+        assertEquals("UPDATE t SET note = $$a    b\tc$$ WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+    }
+
+    @Test
+    public void testParse_DollarQuotedString_CommentMarkersAreLiteralText() {
+        // Regression: '#', '--' and '/*' inside the constant were taken for comment starts, truncating the statement
+        // to "UPDATE t SET note = $$Issue" (count 0).
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET note = $$Issue #5 -- see /* x$$ WHERE id = ?");
+
+        assertEquals("UPDATE t SET note = $$Issue #5 -- see /* x$$ WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(1, parsed.parameterCount());
+    }
+
+    @Test
+    public void testParse_DollarQuotedString_QuoteCharactersAreLiteralText() {
+        // Regression: a quote inside the constant (the very reason to use $$ quoting) opened a quoted literal that
+        // swallowed the rest of the statement, so the trailing #{id} marker was never converted or counted.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET note = $$it's \"x\" [y$$ WHERE id = #{id}");
+
+        assertEquals("UPDATE t SET note = $$it's \"x\" [y$$ WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+    }
+
+    @Test
+    public void testParse_DollarSignsInsideQuotedLiteral_AreNotTreatedAsDollarQuotedString() {
+        // '$$' inside a single-quoted literal is ordinary text (including text that looks like an internal
+        // placeholder); a real $$ constant later in the statement is still kept verbatim.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET a = 'x$$0$$y', b = $$z  z$$ WHERE id = :id");
+
+        assertEquals("UPDATE t SET a = 'x$$0$$y', b = $$z  z$$ WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+    }
 }

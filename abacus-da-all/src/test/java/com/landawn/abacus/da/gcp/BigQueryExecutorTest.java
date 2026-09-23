@@ -2293,6 +2293,209 @@ public class BigQueryExecutorTest extends TestBase {
         assertDoesNotThrowExt(() -> executor.update(e));
     }
 
+    // ===== 2026-09-22 deep review (slice S): BYTES / TIMESTAMP cell decoding + ByteBuffer binding =====
+    // BigQuery returns BYTES cells as base64 text and TIMESTAMP cells as epoch seconds (or epoch micros);
+    // N.convert can't decode either (base64 -> NumberFormatException, epoch seconds -> parse failure).
+
+    private static final byte[] BINARY_PAYLOAD = { 1, 2, 3, (byte) 200 };
+    // 2024-06-20T16:13:20.123456Z
+    private static final long TS_MICROS = 1_718_900_000_123_456L;
+
+    private static FieldList binaryTimestampFields() {
+        return FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("data", StandardSQLTypeName.BYTES),
+                Field.of("buffer", StandardSQLTypeName.BYTES), Field.of("created_time", StandardSQLTypeName.TIMESTAMP),
+                Field.of("upd_time", StandardSQLTypeName.TIMESTAMP), Field.of("seen_at", StandardSQLTypeName.TIMESTAMP),
+                Field.of("label", StandardSQLTypeName.BYTES));
+    }
+
+    private static FieldValueList binaryTimestampRow(final FieldList fields) {
+        final String b64 = java.util.Base64.getEncoder().encodeToString(BINARY_PAYLOAD);
+        return FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "7"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, b64),
+                FieldValue.of(FieldValue.Attribute.PRIMITIVE, b64), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1.718900000123456E9"),
+                FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1718900000.123456"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1.718900000123456E9"),
+                FieldValue.of(FieldValue.Attribute.PRIMITIVE, b64)), fields);
+    }
+
+    private static void assertBinaryTimestampEntity(final BinaryTimestampEntity e) {
+        assertEquals(7L, e.getId());
+        assertTrue(Arrays.equals(BINARY_PAYLOAD, e.getData()));
+        final byte[] fromBuffer = new byte[e.getBuffer().remaining()];
+        e.getBuffer().duplicate().get(fromBuffer);
+        assertTrue(Arrays.equals(BINARY_PAYLOAD, fromBuffer));
+        assertEquals(TS_MICROS / 1000, e.getCreatedTime().getTime());
+        assertEquals(123_456_000, e.getCreatedTime().getNanos());
+        assertEquals(java.util.Date.class, e.getUpdTime().getClass());
+        assertEquals(TS_MICROS / 1000, e.getUpdTime().getTime());
+        assertEquals(java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L), e.getSeenAt());
+        // String targets keep the raw cell text
+        assertEquals(java.util.Base64.getEncoder().encodeToString(BINARY_PAYLOAD), e.getLabel());
+    }
+
+    @Test
+    public void testToEntity_DecodesBytesAndTimestampCells() {
+        final FieldList fields = binaryTimestampFields();
+
+        assertBinaryTimestampEntity(BigQueryExecutor.toEntity(fields, binaryTimestampRow(fields), BinaryTimestampEntity.class));
+    }
+
+    @Test
+    public void testToList_DecodesBytesAndTimestampCells() {
+        final FieldList fields = binaryTimestampFields();
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(2L);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(binaryTimestampRow(fields), binaryTimestampRow(fields)));
+
+        final List<BinaryTimestampEntity> list = BigQueryExecutor.toList(mockTableResult, BinaryTimestampEntity.class);
+
+        assertEquals(2, list.size());
+        list.forEach(BigQueryExecutorTest::assertBinaryTimestampEntity);
+    }
+
+    @Test
+    public void testExtractData_DecodesBytesAndTimestampCellsForEntityColumns() {
+        final FieldList fields = binaryTimestampFields();
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(binaryTimestampRow(fields)));
+
+        final Dataset ds = BigQueryExecutor.extractData(mockTableResult, BinaryTimestampEntity.class);
+
+        assertTrue(Arrays.equals(BINARY_PAYLOAD, (byte[]) ds.getColumn("data").get(0)));
+        final java.sql.Timestamp ts = (java.sql.Timestamp) ds.getColumn("created_time").get(0);
+        assertEquals(123_456_000, ts.getNanos());
+        assertEquals(TS_MICROS / 1000, ts.getTime());
+        assertEquals(java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L), ds.getColumn("seen_at").get(0));
+    }
+
+    @Test
+    public void testSingleColumnRows_DecodeBytesAndTimestampCells() throws Exception {
+        final FieldList bytesFields = FieldList.of(Field.of("data", StandardSQLTypeName.BYTES));
+        final FieldValueList bytesRow = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, java.util.Base64.getEncoder().encodeToString(BINARY_PAYLOAD))), bytesFields);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(bytesFields));
+        when(mockTableResult.getTotalRows()).thenReturn(2L);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(bytesRow, bytesRow));
+
+        // scalar row mapper: every row (not just the first) must be decoded
+        final List<byte[]> blobs = BigQueryExecutor.toList(mockTableResult, byte[].class);
+        assertEquals(2, blobs.size());
+        assertTrue(Arrays.equals(BINARY_PAYLOAD, blobs.get(0)));
+        assertTrue(Arrays.equals(BINARY_PAYLOAD, blobs.get(1)));
+
+        // queryForSingleValue / queryForSingleNonNull
+        final FieldList tsFields = FieldList.of(Field.of("max_ts", StandardSQLTypeName.TIMESTAMP));
+        final FieldValueList tsRow = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1.718900000123456E9")), tsFields);
+        final TableResult tsResult = mock(TableResult.class);
+        when(tsResult.getSchema()).thenReturn(Schema.of(tsFields));
+        when(tsResult.getTotalRows()).thenReturn(1L);
+        when(tsResult.getValues()).thenReturn(Arrays.asList(tsRow));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(tsResult);
+
+        final Nullable<java.sql.Timestamp> max = executor.queryForSingleValue(java.sql.Timestamp.class, "SELECT MAX(ts) FROM t");
+        assertEquals(123_456_000, max.get().getNanos());
+        assertEquals(TS_MICROS / 1000, max.get().getTime());
+        assertEquals(com.google.cloud.Timestamp.ofTimeMicroseconds(TS_MICROS),
+                executor.queryForSingleNonNull(com.google.cloud.Timestamp.class, "SELECT MAX(ts) FROM t").get());
+        // numeric / String targets are not reinterpreted
+        assertEquals("1.718900000123456E9", executor.queryForSingleValue(String.class, "SELECT MAX(ts) FROM t").get());
+    }
+
+    @Test
+    public void testSingleValueRow_DecodesTimestampViaReadRowConverter() {
+        final FieldList tsFields = FieldList.of(Field.of("ts", StandardSQLTypeName.TIMESTAMP));
+        final FieldValueList tsRow = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1.718900000123456E9")), tsFields);
+
+        // N.convert(FieldValueList, X) is routed through the registered readRow converter
+        final java.sql.Timestamp ts = N.convert(tsRow, java.sql.Timestamp.class);
+
+        assertEquals(TS_MICROS / 1000, ts.getTime());
+        assertEquals(123_456_000, ts.getNanos());
+
+        // int64-timestamp result format (DataFormatOptions.useInt64Timestamp): the cell holds epoch micros,
+        // which a plain N.convert would misread as epoch millis (year 56439)
+        final FieldValueList microsRow = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(TS_MICROS), true)),
+                tsFields);
+        assertEquals(java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L), N.convert(microsRow, java.time.Instant.class));
+    }
+
+    @Test
+    public void testBuildQueryParameterValue_ByteBufferBindsRemainingBytes() {
+        final java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(new byte[] { 9, 1, 2, 3 });
+        buffer.get(); // position 1: the remaining bytes are {1, 2, 3}
+
+        final List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(buffer);
+
+        assertEquals(StandardSQLTypeName.BYTES, values.get(0).getType());
+        assertEquals(QueryParameterValue.bytes(new byte[] { 1, 2, 3 }).getValue(), values.get(0).getValue());
+        assertEquals(1, buffer.position()); // not consumed
+    }
+
+    public static class BinaryTimestampEntity {
+        private long id;
+        private byte[] data;
+        private java.nio.ByteBuffer buffer;
+        private java.sql.Timestamp createdTime;
+        private java.util.Date updTime;
+        private java.time.Instant seenAt;
+        private String label;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(long id) {
+            this.id = id;
+        }
+
+        public byte[] getData() {
+            return data;
+        }
+
+        public void setData(byte[] data) {
+            this.data = data;
+        }
+
+        public java.nio.ByteBuffer getBuffer() {
+            return buffer;
+        }
+
+        public void setBuffer(java.nio.ByteBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        public java.sql.Timestamp getCreatedTime() {
+            return createdTime;
+        }
+
+        public void setCreatedTime(java.sql.Timestamp createdTime) {
+            this.createdTime = createdTime;
+        }
+
+        public java.util.Date getUpdTime() {
+            return updTime;
+        }
+
+        public void setUpdTime(java.util.Date updTime) {
+            this.updTime = updTime;
+        }
+
+        public java.time.Instant getSeenAt() {
+            return seenAt;
+        }
+
+        public void setSeenAt(java.time.Instant seenAt) {
+            this.seenAt = seenAt;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label;
+        }
+    }
+
     // Helper: assertDoesNotThrow returns Object; here we wrap to handle checked exceptions cleanly
     private static void assertDoesNotThrowExt(Runnable r) {
         try {

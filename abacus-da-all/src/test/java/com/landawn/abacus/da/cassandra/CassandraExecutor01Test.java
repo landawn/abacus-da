@@ -738,6 +738,73 @@ public class CassandraExecutor01Test extends TestBase {
         assertTrue(settings.traceQuery());
     }
 
+    // ---- slice N (2026-09-22 review) regression tests: BLOB <-> byte[] ----
+    // abacus-common 8.x N.convert maps ByteBuffer -> byte[] to null and byte[] -> ByteBuffer to a buffer whose
+    // position == limit, and PropInfo.setPropValue(ByteBuffer into a byte[] property) stores null. Every BLOB
+    // read into a byte[] target therefore came back null, and a byte[] bound to a BLOB marker was sent as an
+    // empty blob.
+
+    @Test
+    public void testSliceN_bindByteArrayToBlobMarkerKeepsAllBytes() {
+        final String query = "SELECT * FROM slice_n_blobs WHERE data = ?";
+        final Object[][] bound = new Object[1][];
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(mockDataType);
+        when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BLOB);
+        when(mockCodecRegistry.codecFor(mockDataType)).thenReturn(mockTypeCodec);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+
+        executor.prepareStatement(query, new byte[] { 1, 2, 3 });
+
+        assertEquals(1, bound[0].length);
+        assertEquals(ByteBuffer.wrap(new byte[] { 1, 2, 3 }), bound[0][0]);
+        assertEquals(3, ((ByteBuffer) bound[0][0]).remaining());
+    }
+
+    @Test
+    public void testSliceN_blobColumnReadIntoByteArrayTargetsKeepsBytes() {
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition dataCol = mock(ColumnDefinition.class);
+        when(cols.size()).thenReturn(1);
+        when(cols.get(0)).thenReturn(dataCol);
+        when(dataCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("data"));
+        when(mockRow.getColumnDefinitions()).thenReturn(cols);
+        when(mockRow.getObject(0)).thenAnswer(invocation -> ByteBuffer.wrap(new byte[] { 4, 5 }));
+        when(mockResultSet.getColumnDefinitions()).thenReturn(cols);
+        when(mockResultSet.all()).thenReturn(Arrays.asList(mockRow));
+
+        // toEntity: byte[] bean property
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, CassandraExecutor.toEntity(mockRow, SliceNBlobEntity.class).getData());
+
+        // readFirstColumn (queryForSingleValue family) and single-value row mapping (list/findFirst/stream)
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, executor.readFirstColumn(mockRow, byte[].class));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, CassandraExecutor.toList(mockResultSet, byte[].class).get(0));
+
+        // extractData with an entity whose matching property is byte[]
+        final Dataset ds = CassandraExecutor.extractData(mockResultSet, SliceNBlobEntity.class);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, (byte[]) ds.getColumn("data").get(0));
+    }
+
+    public static class SliceNBlobEntity {
+        private byte[] data;
+
+        public byte[] getData() {
+            return data;
+        }
+
+        public void setData(byte[] data) {
+            this.data = data;
+        }
+    }
+
+    // ---- slice N regression tests: end ----
+
     // Test entity class
     public static class TestEntity {
         private Long id;

@@ -836,9 +836,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     /**
      * Returns a string representation of this AnyIncrement instance.
      *
-     * <p>The string representation is delegated to the underlying HBase Increment object
-     * and includes information about the row key, column families, qualifiers,
-     * and other configuration settings.</p>
+     * <p>The string representation is delegated to the underlying HBase Increment object,
+     * whose {@code toString()} lists the row key and, per column family, each queued column with
+     * its increment amount. Attributes, the TTL, and the time range are not included.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

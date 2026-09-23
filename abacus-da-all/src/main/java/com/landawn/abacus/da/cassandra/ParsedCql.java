@@ -14,6 +14,7 @@
 
 package com.landawn.abacus.da.cassandra;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -207,7 +208,11 @@ public final class ParsedCql {
         Map<Integer, String> localNamedParameters = new HashMap<>();
         hashCode = Objects.hash(this.cql);
 
-        final List<String> words = SqlParser.tokenize(removeDoubleSlashComments(this.cql));
+        // SqlParser does not know CQL dollar-quoted string constants ($$...$$): it would collapse whitespace inside
+        // them and treat quote characters, "--", "#" or "/*" inside them as literal/comment starts. Each complete
+        // constant is therefore replaced by an opaque placeholder before tokenization and restored when appended.
+        final List<String> dollarQuotedStrings = new ArrayList<>(0);
+        final List<String> words = SqlParser.tokenize(maskDollarQuotedStrings(removeDoubleSlashComments(this.cql), dollarQuotedStrings));
         final boolean isOpSqlPrefix = isOpSqlPrefix(words);
 
         int type = 0; // bit mask: 1 - '?', 2 - ':propName', 4 - '#{propName}'
@@ -323,7 +328,7 @@ public final class ParsedCql {
                         throw new IllegalArgumentException("Cannot mix parameter styles ('?', ':propName', '#{propName}') in the same CQL statement: " + cql);
                     }
 
-                    sb.append(word);
+                    sb.append(dollarQuotedStrings.isEmpty() ? word : restoreDollarQuotedStrings(word, dollarQuotedStrings));
                 }
 
                 parameterizedCql = stripTrailingSemicolons(Strings.stripToEmpty(sb.toString()));
@@ -530,6 +535,136 @@ public final class ParsedCql {
     }
 
     /**
+     * Replaces every complete dollar-quoted string constant ({@code $$...$$}) with a numeric placeholder
+     * ({@code $$0$$}, {@code $$1$$}, ...) and appends the original constants, in order, to
+     * {@code dollarQuotedStrings}. The placeholders contain no separator, quote or comment characters, so
+     * SqlParser keeps each one as a single token that {@link #updateLiteralState(int[], String)} still recognizes
+     * as dollar quoted. Quoted literals, {@code --} comments and block comments are copied verbatim so a
+     * {@code $$} inside them is not mistaken for a constant, and an unterminated {@code $$} is left as-is.
+     * {@code //} comments must already have been removed (see {@link #removeDoubleSlashComments(String)}).
+     */
+    private static String maskDollarQuotedStrings(final String cql, final List<String> dollarQuotedStrings) {
+        if (!cql.contains("$$")) {
+            return cql;
+        }
+
+        final StringBuilder result = new StringBuilder(cql.length());
+
+        for (int i = 0, len = cql.length(); i < len; i++) {
+            final char ch = cql.charAt(i);
+
+            if (ch == '\'' || ch == '"') {
+                final char quoteChar = ch;
+                result.append(ch);
+
+                for (i++; i < len; i++) {
+                    final char quotedChar = cql.charAt(i);
+                    result.append(quotedChar);
+
+                    if (quotedChar == '\\' && i + 1 < len) {
+                        result.append(cql.charAt(++i));
+                    } else if (quotedChar == quoteChar) {
+                        if (i + 1 < len && cql.charAt(i + 1) == quoteChar) {
+                            result.append(cql.charAt(++i));
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            } else if (ch == '$' && i + 1 < len && cql.charAt(i + 1) == '$') {
+                final int closingIndex = cql.indexOf("$$", i + 2);
+
+                if (closingIndex < 0) {
+                    result.append(cql, i, len);
+                    break;
+                }
+
+                result.append("$$").append(dollarQuotedStrings.size()).append("$$");
+                dollarQuotedStrings.add(cql.substring(i, closingIndex + 2));
+                i = closingIndex + 1;
+            } else if (ch == '-' && i + 1 < len && cql.charAt(i + 1) == '-') {
+                final int start = i;
+
+                while (i < len && cql.charAt(i) != '\r' && cql.charAt(i) != '\n') {
+                    i++;
+                }
+
+                result.append(cql, start, i);
+
+                if (i < len) {
+                    result.append(cql.charAt(i));
+                }
+            } else if (ch == '/' && i + 1 < len && cql.charAt(i + 1) == '*') {
+                final int closingIndex = cql.indexOf("*/", i + 2);
+                final int end = closingIndex < 0 ? len : closingIndex + 2;
+                result.append(cql, i, end);
+                i = end - 1;
+            } else {
+                result.append(ch);
+            }
+        }
+
+        return result.toString();
+    }
+
+    /**
+     * Replaces the placeholders produced by {@link #maskDollarQuotedStrings(String, List)} in one token with the
+     * original dollar-quoted constants. Placeholder-like text inside a quoted literal of the token, and comment
+     * tokens (retained only in "-- Keep comments" mode), are left untouched.
+     */
+    private static String restoreDollarQuotedStrings(final String word, final List<String> dollarQuotedStrings) {
+        if (word.indexOf("$$") < 0 || isCommentOrSpaceToken(word)) {
+            return word;
+        }
+
+        final StringBuilder result = new StringBuilder(word.length() + 16);
+        char quoteChar = 0;
+
+        for (int i = 0, len = word.length(); i < len; i++) {
+            final char ch = word.charAt(i);
+
+            if (quoteChar != 0) {
+                result.append(ch);
+
+                if (ch == '\\' && i + 1 < len) {
+                    result.append(word.charAt(++i));
+                } else if (ch == quoteChar) {
+                    if (i + 1 < len && word.charAt(i + 1) == quoteChar) {
+                        result.append(word.charAt(++i));
+                    } else {
+                        quoteChar = 0;
+                    }
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quoteChar = ch;
+                result.append(ch);
+            } else if (ch == '$' && i + 1 < len && word.charAt(i + 1) == '$') {
+                int digitEnd = i + 2;
+
+                // At most 9 digits, so Integer.parseInt cannot overflow.
+                while (digitEnd < len && digitEnd - i < 11 && word.charAt(digitEnd) >= '0' && word.charAt(digitEnd) <= '9') {
+                    digitEnd++;
+                }
+
+                final int index = digitEnd > i + 2 && digitEnd + 1 < len && word.charAt(digitEnd) == '$' && word.charAt(digitEnd + 1) == '$'
+                        ? Integer.parseInt(word.substring(i + 2, digitEnd))
+                        : -1;
+
+                if (index >= 0 && index < dollarQuotedStrings.size()) {
+                    result.append(dollarQuotedStrings.get(index));
+                    i = digitEnd + 1;
+                } else {
+                    result.append(ch);
+                }
+            } else {
+                result.append(ch);
+            }
+        }
+
+        return result.toString();
+    }
+
+    /**
      * Returns {@code true} if the first non-comment, non-whitespace token of the parsed statement is one of the
      * recognized data-operation keywords ({@code SELECT}, {@code INSERT}, {@code UPDATE}, {@code DELETE},
      * {@code MERGE}, or {@code BEGIN} for a Cassandra batch). Only such statements have their parameter
@@ -689,6 +824,9 @@ public final class ParsedCql {
      * <ul>
      * <li>For recognized data operations, named parameters ({@code :name}) are converted to {@code ?}</li>
      * <li>For recognized data operations, MyBatis-style parameters ({@code #{name}}) are converted to {@code ?}</li>
+     * <li>For recognized data operations, comments are removed and each run of whitespace outside quoted
+     *     literals and dollar-quoted ({@code $$...$$}) string constants is collapsed to a single space; the
+     *     contents of quoted literals and dollar-quoted constants are kept verbatim</li>
      * <li>Leading and trailing whitespace is stripped</li>
      * <li>All trailing semicolons (and any whitespace between or around them) are removed</li>
      * </ul>
@@ -697,11 +835,15 @@ public final class ParsedCql {
      *
      * <p><b>Known limitation.</b> A named or MyBatis marker is recognized only when it starts a token, or
      * when it follows a map/UDT field separator within one ({@code {street::street}}). A marker written
-     * directly after {@code &#123;}, {@code [} or {@code ,} inside a collection literal or a subscript — for
-     * example {@code tags + &#123;:tag&#125;}, {@code l + [:v]} or {@code m[:k]} — is <i>not</i> rewritten and is
-     * <i>not</i> counted, because those characters do not separate tokens. Such a statement reaches the
-     * driver with a native {@code :name} marker still in it and will not bind correctly. Use a positional
-     * {@code ?} inside collection literals and subscripts instead ({@code tags + &#123;?&#125;} works).</p>
+     * directly after <code>&#123;</code> or {@code [}, or after {@code ,} inside braces — for example
+     * <code>tags + &#123;:tag&#125;</code>, <code>&#123;:a, :b&#125;</code>, {@code l + [:v]} or {@code m[:k]} —
+     * is <i>not</i> rewritten and is <i>not</i> counted: <code>&#123;</code> does not start a new token, the
+     * tokenizer keeps a whole {@code [...]} list literal or subscript as one opaque token, and a marker after
+     * {@code ,} inside braces is taken for a map key. Such a statement reaches the driver with a native
+     * {@code :name} marker still in it and will not bind correctly. Use a positional {@code ?} inside
+     * collection literals and subscripts instead (<code>tags + &#123;?&#125;</code> works); note that a
+     * {@code ?} inside {@code [...]} is sent to the driver unchanged but is not included in
+     * {@link #parameterCount()}.</p>
      *
      * <p>This parameterized version is what gets sent to Cassandra for prepared statement creation.</p>
      *
@@ -722,6 +864,10 @@ public final class ParsedCql {
      * // No parameters: returned as-is (after strip/semicolon handling)
      * ParsedCql.parse("SELECT * FROM u").parameterizedCql();
      * // returns "SELECT * FROM u"
+     *
+     * // Comments removed and whitespace runs collapsed, except inside string constants
+     * ParsedCql.parse("SELECT *\n  FROM u -- note\n WHERE a = 'x   y' AND b = $$p   q$$").parameterizedCql();
+     * // returns "SELECT * FROM u WHERE a = 'x   y' AND b = $$p   q$$"
      * }</pre>
      *
      * @return the normalized CQL statement ready for prepared statement creation

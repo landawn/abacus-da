@@ -507,4 +507,157 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> realExecutor.prepareStatement(query, 1L));
         assertTrue(ex.getMessage().contains("expected 0 but got 1"), ex.getMessage());
     }
+
+    // ---- sliceP 2026-09-22: ContinuableFuture.map re-applies its function on every get() ----
+
+    @Test
+    public void testStream_QueryRowMapper_RepeatedGetDoesNotReReadResultSet() throws Exception {
+        final Row row = mock(Row.class);
+        final ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.iterator()).thenReturn(Arrays.asList(row).iterator()); // one-shot cursor, like the driver's
+        when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
+        final ResultSetFuture f = immediateFuture(resultSet);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(f);
+
+        final BiFunction<ColumnDefinitions, Row, String> rowMapper = (cd, r) -> "X";
+        when(mockExecutor.createRowMapper(eq(rowMapper))).thenReturn(r -> "X");
+
+        final ContinuableFuture<Stream<String>> future = async.stream("SELECT * FROM t WHERE id = ?", rowMapper, 1);
+        final Stream<String> first = future.get();
+        final Stream<String> second = future.get();
+
+        assertSame(first, second);
+        assertEquals(Arrays.asList("X"), first.toList());
+        verify(resultSet, org.mockito.Mockito.times(1)).iterator();
+    }
+
+    @Test
+    public void testStream_StatementRowMapper_RepeatedGetDoesNotReReadResultSet() throws Exception {
+        final Row row = mock(Row.class);
+        final ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.iterator()).thenReturn(Arrays.asList(row).iterator());
+        final ResultSetFuture f = immediateFuture(resultSet);
+        when(mockSession.executeAsync(mockStatement)).thenReturn(f);
+
+        final BiFunction<ColumnDefinitions, Row, String> rowMapper = (cd, r) -> "Y";
+        when(mockExecutor.createRowMapper(eq(rowMapper))).thenReturn(r -> "Y");
+
+        final ContinuableFuture<Stream<String>> future = async.stream(mockStatement, rowMapper);
+        final Stream<String> first = future.get();
+        final Stream<String> second = future.get();
+
+        assertSame(first, second);
+        assertEquals(Arrays.asList("Y"), first.toList());
+        verify(resultSet, org.mockito.Mockito.times(1)).iterator();
+    }
+
+    // ---- sliceP 2026-09-22: BLOB <-> byte[] conversions (N.convert/PropInfo.setPropValue lose the bytes) ----
+
+    private static CassandraExecutor newSlicePExecutor(final Session session) {
+        final Cluster cluster = mock(Cluster.class);
+        final Configuration configuration = mock(Configuration.class);
+        final ProtocolOptions protocolOptions = mock(ProtocolOptions.class);
+        when(session.init()).thenReturn(session);
+        when(session.getCluster()).thenReturn(cluster);
+        when(cluster.getConfiguration()).thenReturn(configuration);
+        when(configuration.getCodecRegistry()).thenReturn(new CodecRegistry());
+        when(configuration.getProtocolOptions()).thenReturn(protocolOptions);
+        when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
+
+        return new CassandraExecutor(session);
+    }
+
+    @Test
+    public void testSliceP_bindByteArrayToBlobMarkerKeepsAllBytes() {
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        final String query = "SELECT * FROM slice_p_blobs WHERE data = ?";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final Object[][] bound = new Object[1][];
+        when(session.prepare(query)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(1);
+        when(variables.getType(0)).thenReturn(com.datastax.driver.core.DataType.blob());
+        when(variables.getName(0)).thenReturn("data");
+        when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mock(BoundStatement.class);
+        });
+
+        executor.prepareStatement(query, new byte[] { 1, 2, 3 });
+
+        assertEquals(1, bound[0].length);
+        assertEquals(java.nio.ByteBuffer.wrap(new byte[] { 1, 2, 3 }), bound[0][0]);
+        assertEquals(3, ((java.nio.ByteBuffer) bound[0][0]).remaining());
+    }
+
+    @Test
+    public void testSliceP_blobColumnReadIntoByteArrayTargetsKeepsBytes() {
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        when(cols.size()).thenReturn(1);
+        when(cols.getName(0)).thenReturn("data");
+        final Row row = mock(Row.class);
+        when(row.getColumnDefinitions()).thenReturn(cols);
+        when(row.getObject(0)).thenAnswer(invocation -> java.nio.ByteBuffer.wrap(new byte[] { 4, 5 }));
+        final ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.getColumnDefinitions()).thenReturn(cols);
+        when(resultSet.all()).thenReturn(Arrays.asList(row));
+
+        // toEntity: byte[] bean property
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, CassandraExecutor.toEntity(row, SlicePBlobEntity.class).getData());
+
+        // single-value row mapping (list/stream path)
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, CassandraExecutor.toList(resultSet, byte[].class).get(0));
+
+        // extractData with an entity whose matching property is byte[]
+        final com.landawn.abacus.util.Dataset ds = CassandraExecutor.extractData(resultSet, SlicePBlobEntity.class);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, (byte[]) ds.getColumn("data").get(0));
+
+        // readFirstColumn (async queryForSingleValue family), then the sync queryForSingleValue/NonNull and findFirst
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, executor.readFirstColumn(row, byte[].class));
+
+        final String query = "SELECT data FROM slice_p_blobs";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final BoundStatement boundStatement = mock(BoundStatement.class);
+        when(session.prepare(query)).thenReturn(preparedStatement);
+        when(preparedStatement.bind(any(Object[].class))).thenReturn(boundStatement);
+        when(session.execute(boundStatement)).thenAnswer(invocation -> {
+            final ResultSet rs = mock(ResultSet.class);
+            when(rs.one()).thenReturn(row);
+            return rs;
+        });
+
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, executor.queryForSingleValue(byte[].class, query).get());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, executor.queryForSingleNonNull(byte[].class, query).get());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, executor.findFirst(byte[].class, query).get());
+    }
+
+    @Test
+    public void testSliceP_udtCodecBeanDeserializeKeepsBlobBytes() {
+        final com.datastax.driver.core.UserType userType = mock(com.datastax.driver.core.UserType.class);
+        when(userType.getName()).thenReturn(com.datastax.driver.core.DataType.Name.UDT);
+        when(userType.getFieldNames()).thenReturn(Arrays.asList("data"));
+        when(userType.size()).thenReturn(1);
+        final com.datastax.driver.core.UDTValue udtValue = mock(com.datastax.driver.core.UDTValue.class);
+        when(udtValue.getObject("data")).thenAnswer(invocation -> java.nio.ByteBuffer.wrap(new byte[] { 6, 7 }));
+
+        final CassandraExecutor.UDTCodec<SlicePBlobEntity> codec = CassandraExecutor.UDTCodec.create(userType, SlicePBlobEntity.class);
+
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 6, 7 }, codec.deserialize(udtValue).getData());
+    }
+
+    public static class SlicePBlobEntity {
+        private byte[] data;
+
+        public byte[] getData() {
+            return data;
+        }
+
+        public void setData(final byte[] data) {
+            this.data = data;
+        }
+    }
 }

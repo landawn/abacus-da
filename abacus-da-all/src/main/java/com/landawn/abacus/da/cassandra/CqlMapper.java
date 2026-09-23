@@ -104,6 +104,12 @@ import com.landawn.abacus.util.XmlUtil;
  * <p>Mixing different parameter styles ({@code ?}, {@code :name}, {@code #{name}}) within a single
  * statement is not supported and is rejected at parse time.</p>
  *
+ * <p><b>Runtime requirement:</b> the {@code loadFrom} and {@code saveTo} methods use abacus-common's
+ * {@code XmlUtil}, which links against the Jakarta XML Binding API. abacus-common declares
+ * {@code jakarta.xml.bind:jakarta.xml.bind-api} with {@code provided} scope, so it must be added to the
+ * application's runtime classpath; otherwise those methods fail with {@link NoClassDefFoundError}. The
+ * in-memory API ({@code add}, {@code get}, {@code remove}, ...) has no such requirement.</p>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize mapper with XML file
@@ -590,7 +596,7 @@ public final class CqlMapper {
      * // re-using an existing id is rejected
      * mapper.add("insertUser", "INSERT INTO users (id) VALUES (?)", null); // throws IllegalArgumentException
      *
-     * // null cql is rejected by ParsedCql.parse
+     * // a null cql is rejected
      * mapper.add("bad", (String) null, null);          // throws IllegalArgumentException
      * }</pre>
      *

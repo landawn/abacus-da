@@ -2752,6 +2752,55 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertTrue(builder.build().isEmpty());
     }
 
+    // ===== 2026-09-22 review (slice A): native B attribute -> byte[] target =====
+    // N.convert(ByteBuffer, byte[].class) returns null in abacus-common, so a binary attribute read into a
+    // byte[] property / byte[] target used to be silently dropped.
+    @Test
+    public void testToEntity_BinaryAttributeToByteArrayProperty() {
+        final ByteBuffer buf = ByteBuffer.wrap(new byte[] { 1, 2, -3 });
+        final Map<String, AttributeValue> item = new HashMap<>();
+        item.put("id", new AttributeValue().withS("1"));
+        item.put("data", new AttributeValue().withB(buf));
+
+        final BinaryEntity entity = DynamoDBExecutor.toEntity(item, BinaryEntity.class);
+
+        assertEquals("1", entity.getId());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2, -3 }, entity.getData());
+        assertEquals(0, buf.position()); // the attribute's buffer is not consumed
+    }
+
+    @Test
+    public void testGetItem_SingleBinaryAttributeToByteArray() {
+        final Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("1"));
+        final Map<String, AttributeValue> item = Map.of("data", new AttributeValue().withB(ByteBuffer.wrap(new byte[] { 7, 8 })));
+        when(mockDynamoDBClient.getItem("T", key)).thenReturn(new GetItemResult().withItem(item));
+
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 7, 8 }, executor.getItem("T", key, byte[].class));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 7, 8 }, DynamoDBExecutor.toValue(item.get("data"), byte[].class));
+    }
+
+    public static class BinaryEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private byte[] data;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public byte[] getData() {
+            return data;
+        }
+
+        public void setData(final byte[] data) {
+            this.data = data;
+        }
+    }
+
     // Entity used to exercise mapper() failure when @Table is missing
     public static class NoTableEntity {
         @com.landawn.abacus.annotation.Id

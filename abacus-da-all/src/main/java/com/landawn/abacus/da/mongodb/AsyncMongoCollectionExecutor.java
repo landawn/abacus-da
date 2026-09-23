@@ -75,7 +75,8 @@ import com.mongodb.client.result.UpdateResult;
  * <i>eagerly</i>, on the calling thread, before the task is submitted, so an
  * {@link IllegalArgumentException} for a missing argument is thrown from the call site rather than
  * delivered through the future; only failures that depend on the actual database call (or on
- * payload/format checks the sync executor performs later) surface as the future's completion
+ * payload/format/range checks the sync executor performs later, such as a malformed ObjectId string
+ * or a negative {@code offset}/{@code count}) surface as the future's completion
  * exception. It is the sync-driver flavour of the async API and
  * should not be confused with the {@code com.landawn.abacus.da.mongodb.reactivestreams} subpackage,
  * whose methods return {@code org.reactivestreams.Publisher} on top of the MongoDB reactive driver.</p>
@@ -91,8 +92,9 @@ import com.mongodb.client.result.UpdateResult;
  *       (Runnable/Consumer/BiConsumer), {@code thenCallAsync}, and {@code map} style chaining, plus
  *       conversion to {@link java.util.concurrent.CompletableFuture} via {@code toCompletableFuture()}.</li>
  *   <li><strong>Exception propagation:</strong> Exceptions thrown by the underlying sync call
- *       surface as the future's completion exception; eager null/empty argument checks are thrown
- *       directly from the call site.</li>
+ *       surface as the future's completion exception ({@code get()} throws an
+ *       {@link java.util.concurrent.ExecutionException} whose cause is the original exception);
+ *       eager null/empty argument checks are thrown directly from the call site.</li>
  * </ul>
  *
  * <h3>Thread Safety:</h3>
@@ -2018,7 +2020,8 @@ public final class AsyncMongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.query(Filters.eq("category", "electronics"), Product.class)
-     *      .thenRunAsync(dataset -> dataset.forEach(product -> processProduct(product)));
+     *      .thenRunAsync(dataset -> dataset.toList(Product.class).forEach(product -> processProduct(product)));
+     * // Dataset.forEach(...) would hand each row to the consumer as a DisposableObjArray, not a Product
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
@@ -3602,7 +3605,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * DeleteOptions options = new DeleteOptions().collation(Collation.builder().locale("en").build());
+     * // Strength SECONDARY ignores case; the default (TERTIARY) strength would still compare case.
+     * DeleteOptions options = new DeleteOptions()
+     *     .collation(Collation.builder().locale("en").collationStrength(CollationStrength.SECONDARY).build());
      * async.deleteOne(Filters.eq("username", "JohnDoe"), options)
      *      .thenRunAsync(result -> System.out.println("Case-insensitive delete: " + result.getDeletedCount()));
      * }</pre>

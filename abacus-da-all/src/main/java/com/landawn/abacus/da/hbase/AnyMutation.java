@@ -176,16 +176,16 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * inside HBase's request encoder — when the mutation is finally executed. Pass
      * {@link Durability#USE_DEFAULT} to fall back to the table-level setting.</p>
      *
-     * @param d the durability level to apply; must not be {@code null}
+     * @param durability the durability level to apply; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code d} is {@code null}
+     * @throws IllegalArgumentException if {@code durability} is {@code null}
      * @see #getDurability()
      * @see Durability
      */
-    public AM setDurability(final Durability d) {
-        N.checkArgNotNull(d, cs.durability);
+    public AM setDurability(final Durability durability) {
+        N.checkArgNotNull(durability, cs.durability);
 
-        mutation.setDurability(d);
+        mutation.setDurability(durability);
 
         return (AM) this;
     }

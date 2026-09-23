@@ -748,4 +748,98 @@ public class AnyPutTest extends TestBase {
         AnyPut put = AnyPut.of("row");
         assertNull(put.getACL());
     }
+
+    // ---------------------------------------------------------------------
+    // Review 2026-09-22 (slice L): public-field bean properties
+    // ---------------------------------------------------------------------
+
+    /** Bean whose properties are public fields without getters/setters. */
+    public static class PublicFieldAddress {
+        public String street;
+        public String city;
+    }
+
+    /** Top-level public-field property next to regular getter/setter properties. */
+    public static class EntityWithPublicFieldProperty {
+        @Id
+        private String id;
+        public String nickname;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
+
+    /** Nested bean property whose own properties are public fields. */
+    public static class EntityWithPublicFieldNestedBean {
+        @Id
+        private String id;
+        private PublicFieldAddress address;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public PublicFieldAddress getAddress() {
+            return address;
+        }
+
+        public void setAddress(final PublicFieldAddress address) {
+            this.address = address;
+        }
+    }
+
+    private static org.apache.hadoop.hbase.client.Result toResult(final Put put) {
+        final List<Cell> cells = new java.util.ArrayList<>();
+        put.getFamilyCellMap().values().forEach(cells::addAll);
+        cells.sort(org.apache.hadoop.hbase.CellComparator.getInstance());
+        return org.apache.hadoop.hbase.client.Result.create(cells);
+    }
+
+    @Test
+    public void testCreate_topLevelPublicFieldProperty_writtenAndReadBack() {
+        final EntityWithPublicFieldProperty entity = new EntityWithPublicFieldProperty();
+        entity.setId("r1");
+        entity.nickname = "nick";
+
+        // Used to throw NullPointerException (propInfo.getMethod is null for a public-field property).
+        final AnyPut put = AnyPut.create(entity);
+
+        assertTrue(put.has("nickname", HBaseExecutor.EMPTY_QUALIFIER, "nick"));
+
+        final EntityWithPublicFieldProperty back = HBaseExecutor.toEntity(toResult(put.val()), EntityWithPublicFieldProperty.class);
+        assertEquals("r1", back.getId());
+        assertEquals("nick", back.nickname);
+    }
+
+    @Test
+    public void testCreate_nestedBeanWithPublicFields_writesNestedCells() {
+        final PublicFieldAddress address = new PublicFieldAddress();
+        address.street = "Main St";
+        address.city = "Springfield";
+
+        final EntityWithPublicFieldNestedBean entity = new EntityWithPublicFieldNestedBean();
+        entity.setId("r2");
+        entity.setAddress(address);
+
+        // Used to write no cells at all: the nested loop only walked getter methods, silently dropping public-field properties.
+        final AnyPut put = AnyPut.create(entity);
+
+        assertEquals(2, put.size());
+        assertTrue(put.has("address", "street", "Main St"));
+        assertTrue(put.has("address", "city", "Springfield"));
+
+        final EntityWithPublicFieldNestedBean back = HBaseExecutor.toEntity(toResult(put.val()), EntityWithPublicFieldNestedBean.class);
+        assertNotNull(back.getAddress());
+        assertEquals("Main St", back.getAddress().street);
+        assertEquals("Springfield", back.getAddress().city);
+    }
 }

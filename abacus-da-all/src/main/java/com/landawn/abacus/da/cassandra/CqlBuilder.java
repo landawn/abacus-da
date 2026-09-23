@@ -220,21 +220,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Override
     public CqlBuilder into(final String tableName) {
-        assertNotClosed();
-
-        final boolean isBatchInsert = N.notEmpty(_propsList);
-
-        if (isBatchInsert) {
-            if (_op != OperationType.ADD) {
-                throw new IllegalStateException("Invalid operation for batch insert: " + _op);
-            }
-
-            if (!_sb.isEmpty()) {
-                throw new IllegalStateException("into() can only be called once and before any other CQL-emitting method");
-            }
-        } else {
-            checkCanAppendCqlInto();
-        }
+        final boolean isBatchInsert = checkCanAppendCqlInto();
 
         checkCqlTableReference(tableName, cs.tableName);
 
@@ -262,60 +248,140 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             validationRowIndex++;
         }
 
-        _tableName = normalizedTableName;
-        _sb.append("BEGIN BATCH");
+        // Rendered atomically, like the parent builder's single-row INSERT: a column name or an inlined literal
+        // can still be rejected after "BEGIN BATCH ..." has been emitted, and without the checkpoint the
+        // truncated batch would stay in the buffer and be returned by a later build().
+        return mutateAtomically(() -> {
+            _tableName = normalizedTableName;
+            _sb.append("BEGIN BATCH");
 
-        int rowIndex = 0;
+            int rowIndex = 0;
 
-        for (final Map<String, Object> props : _propsList) {
-            _sb.append(" INSERT INTO ").append(normalizedTableName).append(" (");
+            for (final Map<String, Object> props : _propsList) {
+                _sb.append(" INSERT INTO ").append(normalizedTableName).append(" (");
 
-            int columnIndex = 0;
+                int columnIndex = 0;
 
-            for (final String columnName : insertColumnNames) {
-                if (columnIndex++ > 0) {
-                    _sb.append(", ");
+                for (final String columnName : insertColumnNames) {
+                    if (columnIndex++ > 0) {
+                        _sb.append(", ");
+                    }
+
+                    appendColumnName(columnName);
                 }
 
-                appendColumnName(columnName);
+                _sb.append(") VALUES (");
+                appendInsertProps(props, insertColumnNames, rowIndex++);
+                _sb.append(");");
             }
 
-            _sb.append(") VALUES (");
-            appendInsertProps(props, insertColumnNames, rowIndex++);
-            _sb.append(");");
-        }
-
-        _sb.append(" APPLY BATCH");
-
-        return this;
+            _sb.append(" APPLY BATCH");
+        });
     }
 
     /**
-     * Validates the structural preconditions of a non-batch {@code into(...)} call before its table argument is
-     * checked. Mirrors the parent builder's own (private) {@code into(...)} state checks, which the parent performs
-     * only after validating the table name; the parent repeats them harmlessly when {@link #into(String)} delegates.
+     * Sets the target table for an INSERT or batch INSERT statement using an entity class; the table name is
+     * derived from the entity class per the builder's naming policy (or its {@code @Table} annotation).
      *
-     * @throws IllegalStateException if this builder is closed, the operation is neither INSERT nor SELECT, no columns
-     *         or values have been staged, or CQL was already emitted
+     * <p>Overridden so that the call is routed through {@link #into(String)}: the parent SQL builder renders this
+     * overload directly, which would bypass the single-table check and render a batch INSERT as SQL's multi-row
+     * {@code VALUES (...), (...)} form that Cassandra CQL does not support.</p>
+     *
+     * @param entityClass the entity class representing the target table
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalStateException if the builder is closed, the operation is neither INSERT nor SELECT (a batch
+     *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted (for example
+     *         by a previous {@code into(...)} call)
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null}, the derived table name is not exactly
+     *         one CQL table reference, a staged column name is blank or contains a CQL comment token, or a batch
+     *         INSERT row is empty or does not expose the same property names as its first row
+     * @see #into(String)
      */
-    private void checkCanAppendCqlInto() {
+    @Override
+    public CqlBuilder into(final Class<?> entityClass) {
+        checkCanAppendCqlInto();
+        N.checkArgNotNull(entityClass, cs.entityClass);
+
+        return into(getTableName(entityClass, _namingPolicy), entityClass);
+    }
+
+    /**
+     * Sets the target table for an INSERT or batch INSERT statement and associates it with an entity class for
+     * property mapping. Installing the entity mapping and rendering the statement are atomic; if rendering fails,
+     * neither the mapping nor a partial statement is retained.
+     *
+     * <p>Overridden so that the call is routed through {@link #into(String)}: the parent SQL builder renders this
+     * overload directly, which would bypass the single-table check and render a batch INSERT as SQL's multi-row
+     * {@code VALUES (...), (...)} form that Cassandra CQL does not support.</p>
+     *
+     * @param tableName one table name, optionally keyspace-qualified
+     * @param entityClass the entity class for property mapping (may be {@code null}, in which case no entity-class
+     *        association is performed)
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalStateException if the builder is closed, the operation is neither INSERT nor SELECT (a batch
+     *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted (for example
+     *         by a previous {@code into(...)} call)
+     * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference, a staged column
+     *         name is blank or contains a CQL comment token, or a batch INSERT row is empty or does not expose the
+     *         same property names as its first row
+     * @see #into(String)
+     */
+    @Override
+    public CqlBuilder into(final String tableName, final Class<?> entityClass) {
+        checkCanAppendCqlInto();
+        checkCqlTableReference(tableName, cs.tableName);
+
+        return mutateAtomically(() -> {
+            if (entityClass != null) {
+                setEntityClass(entityClass);
+            }
+
+            into(tableName);
+        });
+    }
+
+    /**
+     * Validates the structural preconditions of an {@code into(...)} call before its table argument is checked.
+     * For a non-batch INSERT this mirrors the parent builder's own (private) {@code into(...)} state checks, which
+     * the parent performs only after validating the table name; the parent repeats them harmlessly when
+     * {@link #into(String)} delegates.
+     *
+     * @return {@code true} if this builder holds batch-INSERT rows (staged by {@code batchInsert(...)})
+     * @throws IllegalStateException if this builder is closed, the operation is neither INSERT nor SELECT (a batch
+     *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted
+     */
+    private boolean checkCanAppendCqlInto() {
         assertNotClosed();
 
+        if (N.notEmpty(_propsList)) {
+            if (_op != OperationType.ADD) {
+                throw new IllegalStateException("Invalid operation for batch insert: " + opCqlKeyword());
+            }
+
+            if (!_sb.isEmpty()) {
+                throw new IllegalStateException("into() can only be called once and before any other CQL-emitting method");
+            }
+
+            return true;
+        }
+
         if (_op != OperationType.ADD && _op != OperationType.QUERY) {
-            throw new IllegalStateException("Invalid operation for into(): " + _op + ". Expected ADD or QUERY");
+            throw new IllegalStateException("Invalid operation for into(): " + opCqlKeyword() + ". Expected INSERT or SELECT");
         }
 
         if (_op == OperationType.QUERY) {
             if (N.isEmpty(_propOrColumnNames) && N.isEmpty(_propOrColumnNameAliases) && N.isEmpty(_multiSelects)) {
                 throw new IllegalStateException("Column names must be set by select() before calling into()");
             }
-        } else if (N.isEmpty(_propOrColumnNames) && N.isEmpty(_props) && N.isEmpty(_propsList)) {
+        } else if (N.isEmpty(_propOrColumnNames) && N.isEmpty(_props)) {
             throw new IllegalStateException("Column names must be set by insert() before calling into()");
         }
 
         if (!_sb.isEmpty()) {
-            throw new IllegalStateException("into() must be called before from() and any other SQL-emitting method, and can only be called once");
+            throw new IllegalStateException("into() must be called before from() and any other CQL-emitting method, and can only be called once");
         }
+
+        return false;
     }
 
     /**
@@ -745,6 +811,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
+    @Override
     protected void assertNotClosed() {
         if (_sb == null) {
             throw new IllegalStateException("This CqlBuilder has been closed after build() was called. No further operation is supported");
@@ -761,8 +828,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Override
     protected void setParameterForRawSql(final Object propValue) {
-        // CQL escapes a single quote inside a string literal by doubling it ('O''Brien'); the SQL-style
-        // backslash escaping produced by the parent implementation is a CQL syntax error.
+        // CQL escapes a single quote inside a string literal by doubling it ('O''Brien'); a backslash is not an
+        // escape character in CQL. Kept explicit so the CQL rendering does not depend on the parent's
+        // (dialect-oriented) string-literal escaping.
         if (propValue instanceof final String str) {
             _sb.append('\'').append(Strings.replaceAll(str, "'", "''")).append('\'');
         } else {
@@ -1346,8 +1414,28 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
-     * Validates the separate primary-table and complete-FROM arguments used by the parent SQL
-     * builder. Keeping this check at the protected hook also covers calls made by subclasses.
+     * Unsupported: Cassandra CQL has no derived tables (sub-queries in {@code FROM}) and no table aliases, so this
+     * inherited overload always fails instead of rendering {@code FROM (SELECT ...) alias}, which Cassandra rejects.
+     * {@code sqlBuilder} is left untouched (it is neither built nor closed).
+     *
+     * @param sqlBuilder the builder that would supply the derived table
+     * @param alias the derived-table alias
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no
+     *         columns have been set for a SELECT, or if {@code from(...)} was already called
+     * @throws IllegalArgumentException otherwise, because CQL does not support a sub-query in the FROM clause
+     */
+    @Override
+    public CqlBuilder from(final CqlBuilder sqlBuilder, final String alias) {
+        checkCanAppendCqlFrom();
+
+        throw new IllegalArgumentException("Cassandra CQL does not support sub-queries (derived tables) in the FROM clause");
+    }
+
+    /**
+     * Validates the separate primary-table and complete-FROM arguments of the parent SQL builder's
+     * deprecated two-string compatibility hook. The parent's public {@code from(...)} overloads no longer
+     * route through this hook; the check covers direct calls made by subclasses.
      *
      * @param tableName the primary table used for column resolution
      * @param fromClause the complete text to emit after FROM

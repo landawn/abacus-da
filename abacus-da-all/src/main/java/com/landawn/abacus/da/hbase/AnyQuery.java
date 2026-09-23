@@ -451,7 +451,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * // Enable on-demand loading for performance
      * query.setLoadColumnFamiliesOnDemand(true)
      *      .setFilter(new SingleColumnValueFilter(
-     *          family, "status",
+     *          family, Bytes.toBytes("status"),
      *          CompareOperator.EQUAL,
      *          Bytes.toBytes("active")
      *      ));

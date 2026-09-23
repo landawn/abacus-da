@@ -1639,6 +1639,25 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
+    // ---- sliceP 2026-09-22: byte[] <-> BLOB round trip (N.convert used to bind an empty blob / read null) ----
+
+    @Test
+    public void test_sliceP_blobByteArrayRoundTrip() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, data) VALUES (?, ?, ?)", id, "blobRoundTrip", new byte[] { 1, 2, 3 });
+        try {
+            final ByteBuffer raw = cassandraExecutor.queryForSingleValue(ByteBuffer.class, "SELECT data FROM simplex.songs WHERE id = ?", id).get();
+            assertEquals(3, raw.remaining());
+
+            org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2, 3 },
+                    cassandraExecutor.queryForSingleValue(byte[].class, "SELECT data FROM simplex.songs WHERE id = ?", id).get());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2, 3 },
+                    cassandraExecutor.list(byte[].class, "SELECT data FROM simplex.songs WHERE id = ?", id).get(0));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
     private Users createUser() {
         Users user = new Users();
         user.setId(UUID.randomUUID());

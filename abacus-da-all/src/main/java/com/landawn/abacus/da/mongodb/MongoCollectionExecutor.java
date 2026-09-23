@@ -2211,7 +2211,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Process all documents in the collection:
-     * executor.stream() // returns a lazy Stream over every document; close it (or a terminal op) releases the cursor
+     * executor.stream() // returns a lazy Stream over every document; closing it (or completing a terminal op) releases the cursor
      *         .filter(doc -> doc.getInteger("age", 0) > 18)
      *         .limit(100)
      *         .forEach(doc -> processAdultDocument(doc));
@@ -2841,8 +2841,9 @@ public final class MongoCollectionExecutor {
     /**
      * Creates a typed change stream to monitor collection changes.
      *
-     * <p>Similar to watch() but returns change documents converted to the
-     * specified type for type-safe change processing.</p>
+     * <p>Similar to watch(), but each change event's {@code ChangeStreamDocument.fullDocument} is
+     * decoded as the specified type for type-safe change processing. The iterated elements are still
+     * {@code ChangeStreamDocument<T>} change events, not {@code T} instances.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2853,8 +2854,8 @@ public final class MongoCollectionExecutor {
      * <p>The returned change-stream iterable executes when its cursor is opened or consumed. A {@link MongoException} from that operation is
      * raised by cursor creation or iteration.</p>
      *
-     * @param <T> the target type for change documents
-     * @param rowType the class to convert change documents to (must not be null)
+     * @param <T> the type to decode each change event's full document into
+     * @param rowType the class to decode each change event's full document into (must not be null)
      * @return a typed ChangeStreamIterable
      * @throws IllegalArgumentException if {@code rowType} is null
      */
@@ -2895,24 +2896,25 @@ public final class MongoCollectionExecutor {
     /**
      * Creates a typed change stream with an aggregation pipeline.
      *
-     * <p>Combines pipeline filtering with type conversion for maximum
-     * flexibility in change stream processing.</p>
+     * <p>Combines pipeline filtering with typed decoding of each change event's
+     * {@code ChangeStreamDocument.fullDocument}. The iterated elements are still
+     * {@code ChangeStreamDocument<T>} change events, not {@code T} instances.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> pipeline = Arrays.asList(
      *     Aggregates.match(Filters.eq("fullDocument.status", "critical"))
      * );
-     * executor.watch(pipeline, Alert.class) // returns a ChangeStreamIterable of critical-status changes decoded as Alert
-     *     .forEach(alert -> sendNotification(alert));
+     * executor.watch(pipeline, Alert.class) // returns a ChangeStreamIterable of critical-status change events whose fullDocument is decoded as Alert
+     *     .forEach(change -> sendNotification(change.getFullDocument()));
      * }</pre>
      *
      * <p>The returned change-stream iterable executes when its cursor is opened or consumed. A {@link MongoException} from that operation is
      * raised by cursor creation or iteration.</p>
      *
-     * @param <T> the target type for change documents
+     * @param <T> the type to decode each change event's full document into
      * @param pipeline aggregation pipeline to apply (must not be null)
-     * @param rowType the class to convert change documents to (must not be null)
+     * @param rowType the class to decode each change event's full document into (must not be null)
      * @return a filtered and typed ChangeStreamIterable
      * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
      */

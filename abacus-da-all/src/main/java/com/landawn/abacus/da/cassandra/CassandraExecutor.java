@@ -665,7 +665,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         || columnClasses[i].isAssignableFrom(propValue.getClass())) {
                     columnList.get(i).add(propValue);
                 } else {
-                    columnList.get(i).add(N.convert(propValue, columnClasses[i]));
+                    columnList.get(i).add(convertValue(propValue, columnClasses[i]));
                 }
             }
         }
@@ -697,8 +697,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * // Convert to entity list
      * List<User> users = CassandraExecutor.toList(resultSet, User.class); // one User per row
      *
-     * // Convert to map list
-     * List<Map> userMaps = CassandraExecutor.toList(resultSet, Map.class); // one Map<String,Object> per row
+     * // Convert to map list (a ResultSet is single-pass, so re-execute rather than reuse 'resultSet')
+     * ResultSet resultSet2 = session.execute("SELECT id, name, email FROM users");
+     * List<Map> userMaps = CassandraExecutor.toList(resultSet2, Map.class); // one Map<String,Object> per row
      *
      * // Convert single column to value list
      * ResultSet names = session.execute("SELECT name FROM users");
@@ -825,7 +826,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             parameterType = propInfo.clazz;
 
             if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof Row)) {
-                propInfo.setPropValue(entity, propValue);
+                // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
+                propInfo.setPropValue(entity, parameterType == byte[].class && propValue instanceof ByteBuffer ? convertValue(propValue, byte[].class) : propValue);
             } else {
                 propInfo.setPropValue(entity, readRow(parameterType, (Row) propValue));
             }
@@ -924,6 +926,28 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         return map;
     }
 
+    /**
+     * Converts a driver-decoded (or caller-supplied bind) value to {@code targetClass}. The BLOB mapping between
+     * {@link ByteBuffer} and {@code byte[]} is handled here because {@code N.convert} does not support it: it
+     * converts a {@code ByteBuffer} to {@code null} for {@code byte[]}, and a {@code byte[]} to a
+     * {@code ByteBuffer} whose position already equals its limit (so the driver would encode an empty blob).
+     * Every other conversion is delegated to {@code N.convert}.
+     */
+    @SuppressWarnings("unchecked")
+    static <T> T convertValue(final Object value, final Class<T> targetClass) {
+        if (targetClass == byte[].class && value instanceof final ByteBuffer byteBuffer) {
+            final ByteBuffer duplicate = byteBuffer.duplicate();
+            final byte[] bytes = new byte[duplicate.remaining()];
+            duplicate.get(bytes);
+
+            return (T) bytes;
+        } else if (targetClass == ByteBuffer.class && value instanceof final byte[] bytes) {
+            return (T) ByteBuffer.wrap(bytes);
+        }
+
+        return N.convert(value, targetClass);
+    }
+
     @SuppressWarnings({ "rawtypes", "null" })
     private static <T> T readRow(final Class<T> rowClass, final Row row) {
         if (row == null) {
@@ -974,7 +998,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             if (value == null || rowClass.isAssignableFrom(value.getClass())) {
                 res = value;
             } else {
-                res = N.convert(value, rowClass);
+                res = convertValue(value, rowClass);
             }
 
         } else {
@@ -1053,10 +1077,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         if (isAssignable) {
                             return (T) value;
                         } else {
-                            return N.convert(value, rowClass);
+                            return convertValue(value, rowClass);
                         }
                     } else {
-                        return N.convert(value, rowClass);
+                        return convertValue(value, rowClass);
                     }
                 }
             };
@@ -1154,7 +1178,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(N.convert(row.getObject(0), valueClass));
+        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(convertValue(row.getObject(0), valueClass));
     }
 
     /**
@@ -1211,7 +1235,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Optional<V>) Optional.empty() : Optional.of(N.convert(row.getObject(0), valueClass));
+        return row == null ? (Optional<V>) Optional.empty() : Optional.of(convertValue(row.getObject(0), valueClass));
     }
 
     /**
@@ -1554,7 +1578,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * // Execute a simple statement with custom settings
      * SimpleStatement simpleStatement = SimpleStatement.builder(
-     *         "SELECT * FROM users WHERE token(id) > token(?)", lastId)
+     *         "SELECT * FROM users WHERE token(id) > token(?)")
+     *     .addPositionalValue(lastId)
      *     .setPageSize(1000)
      *     .build();
      *
@@ -1950,7 +1975,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 // continue;
             } else {
                 try {
-                    values[i] = N.convert(values[i], javaClass);
+                    values[i] = convertValue(values[i], javaClass);
                 } catch (final ClassCastException | IllegalArgumentException e) {
                     // Type conversion failed, keep original value
                     if (logger.isDebugEnabled()) {
@@ -2097,7 +2122,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     @Override
     protected <T> T readFirstColumn(final Row row, final Class<T> targetClass) {
-        return N.convert(row.getObject(0), targetClass);
+        return convertValue(row.getObject(0), targetClass);
     }
 
     /**
@@ -2245,7 +2270,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             }
 
                             if (propInfo != null) {
-                                propInfo.setPropValue(targetBean, udtValue.getObject(fieldName));
+                                final Object fieldValue = udtValue.getObject(fieldName);
+
+                                // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
+                                propInfo.setPropValue(targetBean,
+                                        byte[].class.equals(propInfo.clazz) && fieldValue instanceof ByteBuffer ? convertValue(fieldValue, byte[].class) : fieldValue);
                             }
                         }
 

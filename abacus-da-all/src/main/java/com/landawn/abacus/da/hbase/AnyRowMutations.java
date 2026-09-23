@@ -49,20 +49,23 @@ import com.landawn.abacus.util.N;
  * obtained from {@link #val()}.</p>
  *
  * <p>Any {@link Mutation} subtype accepted by {@link RowMutations} may be added here, but which
- * subtypes the server accepts depends on how the batch is submitted:</p>
+ * subtypes the client can encode depends on how the batch is submitted:</p>
  * <ul>
- *   <li>{@code Table.mutateRow(RowMutations)} supports {@link Put}, {@link Delete},
- *       {@code Increment} and {@code Append} ({@code RequestConverter.buildMultiRequest} converts
- *       each of them, attaching a nonce for {@code Increment}/{@code Append}).</li>
- *   <li>{@code checkAndMutate(...).thenMutate(RowMutations)} and submitting a {@code RowMutations}
- *       as one element of {@code Table.batch(List<Row>)} support only {@link Put} and
- *       {@link Delete}; {@code RequestConverter.buildRegionAction} raises
+ *   <li>{@code Table.mutateRow(RowMutations)} and {@code checkAndMutate(...).thenMutate(RowMutations)}
+ *       support {@link Put}, {@link Delete}, {@code Increment} and {@code Append}
+ *       ({@code RequestConverter.buildMultiRequest} converts each of them, attaching a nonce for
+ *       {@code Increment}/{@code Append}).</li>
+ *   <li>Submitting a {@code RowMutations} as one element of {@code Table.batch(List<Row>)} also
+ *       supports all four when RPC cell blocks are enabled (the default;
+ *       {@code RequestConverter.buildNoDataRegionActions}). When cell blocks are disabled (no RPC
+ *       codec configured), the batch is encoded by {@code RequestConverter.buildRegionAction}, which
+ *       supports only {@link Put} and {@link Delete} and raises
  *       {@code DoNotRetryIOException("RowMutations supports only put and delete, ...")} for any other
  *       subtype while the request is built client-side.</li>
  * </ul>
  * <p>This wrapper therefore does not restrict the mutation type at {@code add(...)} time; use only
- * {@link Put} and {@link Delete} when the batch is destined for {@code Table.batch(...)} or
- * {@code checkAndMutate(...).thenMutate(RowMutations)}.</p>
+ * {@link Put} and {@link Delete} when the batch may be submitted through {@code Table.batch(...)}
+ * on a connection with RPC cell blocks disabled.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code

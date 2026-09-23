@@ -779,6 +779,37 @@ public class MongoDBBaseTest extends TestBase {
         assertEquals(Long.class, codec.getEncoderClass());
     }
 
+    // -- 2026-09-22 review (slice H) regressions --
+
+    @Test
+    public void testToJsonDriverBuiltBsonRendersPlainValues() {
+        // Regression: a non-Map Bson (Filters/Updates/Sorts/Projections) was converted to a BsonDocument and handed to
+        // N.toJson as-is, which serialized every BsonValue as a bean: Filters.eq("a", 1) -> {"a": {"value": 1}}.
+        assertEquals(MongoDBBase.toJson(new Document("a", 1)), MongoDBBase.toJson(com.mongodb.client.model.Filters.eq("a", 1)));
+        assertEquals(MongoDBBase.toJson(new Document("name", "John")), MongoDBBase.toJson(com.mongodb.client.model.Filters.eq("name", "John")));
+        assertEquals(MongoDBBase.toJson(new Document("age", new Document("$gt", 5L))), MongoDBBase.toJson(com.mongodb.client.model.Filters.gt("age", 5L)));
+
+        // A BsonDocument is itself a Map (of BsonValues) and must be rendered by value too.
+        final org.bson.BsonDocument bsonDoc = new org.bson.BsonDocument("a", new org.bson.BsonInt32(1)).append("s", new org.bson.BsonString("x"));
+        assertEquals(MongoDBBase.toJson(new Document("a", 1).append("s", "x")), MongoDBBase.toJson(bsonDoc));
+    }
+
+    @Test
+    public void testToListScalarConvertsEveryRowNotOnlyWhenSampleNeedsIt() {
+        // Regression: when the first non-null sample was already an instance of rowType, every row was returned raw.
+        // MongoDB freely mixes int32/int64 for the same field, so a later Integer leaked into a List<Long>.
+        final List<Document> docs = Arrays.asList(new Document("v", 1L), new Document("v", 2), new Document("v", null));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        final List<Long> result = MongoDBBase.toList(mockFindIterable, Long.class);
+
+        assertEquals(3, result.size());
+        assertEquals(Long.valueOf(1L), result.get(0));
+        assertEquals(Long.class, ((Object) result.get(1)).getClass());
+        assertEquals(Long.valueOf(2L), result.get(1));
+        assertNull(result.get(2));
+    }
+
     // -- Entities used by tests --
 
     public static class TestEntity {
