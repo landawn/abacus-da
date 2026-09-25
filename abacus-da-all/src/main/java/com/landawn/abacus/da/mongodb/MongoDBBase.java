@@ -1151,7 +1151,15 @@ public abstract class MongoDBBase {
                         && (byte[][].class.equals(propInfo.clazz) || ByteBuffer[].class.equals(propInfo.clazz))) {
                     final Collection<?> values = value instanceof Collection ? (Collection<?>) value : Arrays.asList((Object[]) value);
                     final Class<?> elementType = propInfo.clazz.getComponentType();
-                    final Object[] elements = elementType == byte[].class ? new byte[values.size()][] : new ByteBuffer[values.size()];
+                    // Assign in separate branches: a conditional over byte[][] / ByteBuffer[] has an intersection type
+                    // (Object[] & Serializable & Cloneable) that some compilers (e.g. ECJ) emit invalid stack-map frames for.
+                    final Object[] elements;
+
+                    if (elementType == byte[].class) {
+                        elements = new byte[values.size()][];
+                    } else {
+                        elements = new ByteBuffer[values.size()];
+                    }
                     int index = 0;
 
                     for (final Object element : values) {
