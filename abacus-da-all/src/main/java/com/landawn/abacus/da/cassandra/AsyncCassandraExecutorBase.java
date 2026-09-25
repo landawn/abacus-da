@@ -87,7 +87,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                          mapping to; must not be {@code null}
      * @throws IllegalArgumentException if {@code cassandraExecutor} is {@code null}
      */
-    protected AsyncCassandraExecutorBase(final CassandraExecutorBase<RW, RS, ST, PS, BT> cassandraExecutor) {
+    protected AsyncCassandraExecutorBase(final CassandraExecutorBase<RW, RS, ST, PS, BT> cassandraExecutor) throws IllegalArgumentException {
         N.checkArgNotNull(cassandraExecutor, cs.cassandraExecutor);
 
         this.cassandraExecutor = cassandraExecutor;
@@ -160,7 +160,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Object... ids) {
+    public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         return get(targetClass, null, ids);
     }
 
@@ -203,7 +203,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) {
+    public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return get(targetClass, selectPropNames, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -244,7 +245,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Condition whereClause) {
+    public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return get(targetClass, null, whereClause);
     }
 
@@ -288,7 +289,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 2);
 
         return execute(cp).map(memoize(resultSet -> Optional.ofNullable(cassandraExecutor.fetchOnlyOne(targetClass, resultSet))));
@@ -331,7 +333,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Object... ids) {
+    public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         return gett(targetClass, null, ids);
     }
 
@@ -373,7 +375,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) {
+    public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return gett(targetClass, selectPropNames, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -413,7 +416,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Condition whereClause) {
+    public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return gett(targetClass, null, whereClause);
     }
 
@@ -453,7 +456,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 2);
 
         return execute(cp).map(memoize(resultSet -> cassandraExecutor.fetchOnlyOne(targetClass, resultSet)));
@@ -489,7 +493,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> insert(final Object entity) {
+    public ContinuableFuture<RS> insert(final Object entity) throws IllegalArgumentException, RuntimeException {
         return execute(cassandraExecutor.prepareInsert(entity));
     }
 
@@ -525,7 +529,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> insert(final Class<?> targetClass, final Map<String, Object> props) {
+    public ContinuableFuture<RS> insert(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException, RuntimeException {
         return execute(cassandraExecutor.prepareInsert(targetClass, props));
     }
 
@@ -555,13 +559,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty or contains a {@code null}
      *         element, or if an entity is not a supported bean or exposes no insertable properties (enforced by
      *         the shipped executors' batch-statement builders)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
      *         limit (thrown synchronously by the shipped executors' batch-statement builders, before any future is
      *         created)
-     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
-     *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchInsert(final Collection<?> entities, final BT type) {
+    public ContinuableFuture<RS> batchInsert(final Collection<?> entities, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         return execute(cassandraExecutor.prepareBatchInsertStatement(entities, type));
     }
 
@@ -595,13 +600,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or if {@code propsList} is
      *         {@code null} or empty or contains a {@code null} or empty map (enforced by the shipped executors'
      *         batch-statement builders)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
      *         statement limit (thrown synchronously by the shipped executors' batch-statement builders, before any
      *         future is created)
-     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
-     *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
+    public ContinuableFuture<RS> batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         return execute(cassandraExecutor.prepareBatchInsertStatement(targetClass, propsList, type));
     }
 
@@ -638,7 +644,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> update(final Object entity) {
+    public ContinuableFuture<RS> update(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> entityClass = entity.getClass();
@@ -684,7 +690,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> update(final Object entity, final Collection<String> propNamesToUpdate) {
+    public ContinuableFuture<RS> update(final Object entity, final Collection<String> propNamesToUpdate) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
 
@@ -724,7 +730,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+    public ContinuableFuture<RS> update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
 
@@ -760,7 +767,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> update(final String query, final Object... parameters) {
+    public ContinuableFuture<RS> update(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return execute(query, parameters);
     }
 
@@ -793,13 +800,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty or contains a {@code null}
      *         element, if the first entity's class is not a bean class or has no updatable non-key property, if an
      *         entity's class declares no key, or if a key value is missing (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
      *         limit (thrown synchronously by the shipped executors' batch-statement builders, before any future is
      *         created)
-     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
-     *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final BT type) {
+    public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
@@ -844,13 +852,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         not a bean class, {@code propNamesToUpdate} contains a primary-key property, an entity's class
      *         declares no key, a key value is missing, or a name in {@code propNamesToUpdate} is not a property of
      *         an entity's class
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
      *         limit (thrown synchronously by the shipped executors' batch-statement builders, before any future is
      *         created)
-     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
-     *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type) {
+    public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
 
@@ -888,13 +897,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         {@code null} or empty or contains a {@code null} map, if {@code targetClass} declares no key, or if
      *         a map lacks a non-{@code null}, non-empty value for a key property or has no non-key property
      *         (enforced by the shipped executors' batch-statement builders)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
      *         statement limit (thrown synchronously by the shipped executors' batch-statement builders, before any
      *         future is created)
-     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
-     *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
+    public ContinuableFuture<RS> batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         return execute(cassandraExecutor.prepareBatchUpdateStatement(targetClass, propsList, type));
     }
 
@@ -932,13 +942,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         empty, or contains a {@code null} element (enforced by the shipped executors' batch-statement
      *         builders), if the CQL contains malformed or mixed parameter markers, or an element's parameter count
      *         or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @throws IllegalStateException if {@code parametersList} has more than 65,535 elements, the driver's per-batch
      *         statement limit (thrown synchronously by the shipped executors' batch-statement builders, before any
      *         future is created)
-     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
-     *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchUpdate(final String query, final Collection<?> parametersList, final BT type) {
+    public ContinuableFuture<RS> batchUpdate(final String query, final Collection<?> parametersList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         return execute(cassandraExecutor.prepareBatchUpdateStatement(query, parametersList, type));
     }
 
@@ -971,7 +982,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> delete(final Object entity) {
+    public ContinuableFuture<RS> delete(final Object entity) throws IllegalArgumentException, RuntimeException {
         return delete(entity, null);
     }
 
@@ -1008,7 +1019,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> delete(final Object entity, final Collection<String> propNamesToDelete) {
+    public ContinuableFuture<RS> delete(final Object entity, final Collection<String> propNamesToDelete) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
@@ -1046,7 +1057,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Object... ids) {
+    public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         return delete(targetClass, null, ids);
     }
 
@@ -1084,7 +1095,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
+    public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
@@ -1121,7 +1133,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> delete(final Class<?> targetClass, final Condition whereClause) {
+    public ContinuableFuture<RS> delete(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return delete(targetClass, null, whereClause);
     }
 
@@ -1159,7 +1171,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
+    public ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
@@ -1197,7 +1210,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchDelete(final Collection<?> entities) {
+    public ContinuableFuture<RS> batchDelete(final Collection<?> entities) throws IllegalArgumentException, RuntimeException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
@@ -1242,7 +1255,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<RS> batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
+    public ContinuableFuture<RS> batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
         N.checkArgNotNull(firstEntity, "The first entity in the collection can't be null.");
@@ -1285,7 +1299,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Object... ids) {
+    public final ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return exists(targetClass, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -1322,7 +1336,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Condition whereClause) {
+    public ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final SP cp = cassandraExecutor.prepareQuery(targetClass, getKeyNames(targetClass), whereClause, 1);
@@ -1360,7 +1374,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<Boolean> exists(final String query, final Object... parameters) {
+    public final ContinuableFuture<Boolean> exists(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return execute(query, parameters).map(memoize(CassandraExecutorBase.exists_mapper));
     }
 
@@ -1394,7 +1408,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<Long> count(final Class<?> targetClass, final Condition whereClause) {
+    public ContinuableFuture<Long> count(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, CassandraExecutorBase.COUNT_SELECT_PROP_NAMES, whereClause, 0);
 
         return queryForSingleValue(Long.class, cp.query(), cp.parameters().toArray()).map(CassandraExecutorBase.long_secondMapper);
@@ -1435,7 +1449,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Deprecated
-    public final ContinuableFuture<Long> count(final String query, final Object... parameters) {
+    public final ContinuableFuture<Long> count(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Long.class, query, parameters).map(CassandraExecutorBase.long_secondMapper);
     }
 
@@ -1470,7 +1484,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final Condition whereClause) {
+    public <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return list(targetClass, null, whereClause);
     }
 
@@ -1507,7 +1521,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause);
 
         return list(targetClass, cp.query(), cp.parameters().toArray());
@@ -1545,7 +1560,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<List<Map<String, Object>>> list(final String query, final Object... parameters) {
+    public final ContinuableFuture<List<Map<String, Object>>> list(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return list(CassandraExecutorBase.PROP_MAP_TYPE, query, parameters);
     }
 
@@ -1581,7 +1597,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final String query, final Object... parameters) {
+    public final <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return execute(query, parameters).map(memoize(resultSet -> cassandraExecutor.toList(targetClass, resultSet)));
@@ -1618,7 +1635,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Condition whereClause) {
+    public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return query(targetClass, null, whereClause);
     }
 
@@ -1654,7 +1671,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause);
 
         return query(targetClass, cp.query(), cp.parameters().toArray());
@@ -1691,7 +1709,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<Dataset> query(final String query, final Object... parameters) {
+    public final ContinuableFuture<Dataset> query(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return query(Map.class, query, parameters);
     }
 
@@ -1727,7 +1745,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<Dataset> query(final Class<?> targetClass, final String query, final Object... parameters) {
+    public final ContinuableFuture<Dataset> query(final Class<?> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return execute(query, parameters).map(memoize(resultSet -> cassandraExecutor.extractData(targetClass, resultSet)));
     }
 
@@ -1763,7 +1782,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final Condition whereClause) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return stream(targetClass, null, whereClause);
     }
 
@@ -1800,7 +1819,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause);
 
         return stream(targetClass, cp.query(), cp.parameters().toArray());
@@ -1837,7 +1857,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public ContinuableFuture<Stream<Object[]>> stream(final String query, final Object... parameters) {
+    public ContinuableFuture<Stream<Object[]>> stream(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return stream(Object[].class, query, parameters);
     }
 
@@ -1875,7 +1895,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final String query, final Object... parameters) {
+    public final <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return execute(query, parameters).map(memoize(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(targetClass))));
@@ -1916,7 +1937,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if the driver rejects request submission; failures after submission, including
      *         execution on a closed session, are reported by the returned future
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final ST statement) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final ST statement) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(statement, cs.statement);
 
@@ -1955,7 +1976,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Condition whereClause) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return findFirst(targetClass, null, whereClause);
     }
 
@@ -1993,7 +2015,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 1);
 
         return findFirst(targetClass, cp.query(), cp.parameters().toArray());
@@ -2031,7 +2054,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public final ContinuableFuture<Optional<Map<String, Object>>> findFirst(final String query, final Object... parameters) {
+    public final ContinuableFuture<Optional<Map<String, Object>>> findFirst(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return findFirst(CassandraExecutorBase.PROP_MAP_TYPE, query, parameters);
     }
 
@@ -2072,7 +2096,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return execute(query, parameters).map(memoize(resultSet -> {
@@ -2117,7 +2142,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Boolean.class, propName, whereClause).map(CassandraExecutorBase.boolean_mapper);
     }
 
@@ -2156,7 +2182,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalChar> queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalChar> queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Character.class, propName, whereClause).map(CassandraExecutorBase.char_mapper);
     }
 
@@ -2195,7 +2222,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalByte> queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalByte> queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Byte.class, propName, whereClause).map(CassandraExecutorBase.byte_mapper);
     }
 
@@ -2234,7 +2262,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalShort> queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalShort> queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Short.class, propName, whereClause).map(CassandraExecutorBase.short_mapper);
     }
 
@@ -2273,7 +2302,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalInt> queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalInt> queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Integer.class, propName, whereClause).map(CassandraExecutorBase.int_mapper);
     }
 
@@ -2312,7 +2342,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalLong> queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalLong> queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Long.class, propName, whereClause).map(CassandraExecutorBase.long_mapper);
     }
 
@@ -2351,7 +2382,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalFloat> queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalFloat> queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Float.class, propName, whereClause).map(CassandraExecutorBase.float_mapper);
     }
 
@@ -2390,7 +2422,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<OptionalDouble> queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalDouble> queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Double.class, propName, whereClause).map(CassandraExecutorBase.double_mapper);
     }
 
@@ -2429,7 +2462,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<Nullable<String>> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<Nullable<String>> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, String.class, propName, whereClause);
     }
 
@@ -2467,7 +2501,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public ContinuableFuture<Nullable<Date>> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<Nullable<Date>> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Date.class, propName, whereClause);
     }
 
@@ -2508,7 +2543,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      */
     @Beta
     public <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName,
-            final Condition whereClause) {
+            final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, valueClass, propName, whereClause);
     }
 
@@ -2550,7 +2585,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName,
-            final Condition whereClause) {
+            final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(valueClass, cs.valueClass);
         N.checkArgNotEmpty(propName, cs.propName);
@@ -2603,7 +2638,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
-            final Condition whereClause) {
+            final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(valueClass, cs.valueClass);
         N.checkArgNotEmpty(propName, cs.propName);
@@ -2647,7 +2682,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalBoolean> queryForBoolean(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalBoolean> queryForBoolean(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Boolean.class, query, parameters).map(CassandraExecutorBase.boolean_mapper);
     }
 
@@ -2685,7 +2721,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalChar> queryForChar(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalChar> queryForChar(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Character.class, query, parameters).map(CassandraExecutorBase.char_mapper);
     }
 
@@ -2723,7 +2760,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalByte> queryForByte(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalByte> queryForByte(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Byte.class, query, parameters).map(CassandraExecutorBase.byte_mapper);
     }
 
@@ -2761,7 +2799,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalShort> queryForShort(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalShort> queryForShort(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Short.class, query, parameters).map(CassandraExecutorBase.short_mapper);
     }
 
@@ -2798,7 +2837,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalInt> queryForInt(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalInt> queryForInt(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Integer.class, query, parameters).map(CassandraExecutorBase.int_mapper);
     }
 
@@ -2835,7 +2874,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalLong> queryForLong(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalLong> queryForLong(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Long.class, query, parameters).map(CassandraExecutorBase.long_mapper);
     }
 
@@ -2873,7 +2913,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalFloat> queryForFloat(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalFloat> queryForFloat(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Float.class, query, parameters).map(CassandraExecutorBase.float_mapper);
     }
 
@@ -2911,7 +2952,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<OptionalDouble> queryForDouble(final String query, final Object... parameters) {
+    public final ContinuableFuture<OptionalDouble> queryForDouble(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Double.class, query, parameters).map(CassandraExecutorBase.double_mapper);
     }
 
@@ -2950,7 +2992,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         submission; failures after submission are reported by the returned future
      */
     @Beta
-    public final ContinuableFuture<Nullable<String>> queryForString(final String query, final Object... parameters) {
+    public final ContinuableFuture<Nullable<String>> queryForString(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(String.class, query, parameters);
     }
 
@@ -2986,7 +3029,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @see #queryForDate(Class, String, Condition)
      */
     @Beta
-    public final ContinuableFuture<Nullable<Date>> queryForDate(final String query, final Object... parameters) {
+    public final ContinuableFuture<Nullable<Date>> queryForDate(final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(Date.class, query, parameters);
     }
 
@@ -3019,7 +3063,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @see #queryForDate(Class, Class, String, Condition)
      */
     @Beta
-    public final <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<E> valueClass, final String query, final Object... parameters) {
+    public final <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<E> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(valueClass, query, parameters);
     }
 
@@ -3057,7 +3102,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(valueClass, cs.valueClass);
 
         return execute(query, parameters).map(memoize(resultSet -> {
@@ -3107,7 +3153,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(valueClass, cs.valueClass);
 
         return execute(query, parameters).map(memoize(resultSet -> {
@@ -3145,7 +3192,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public abstract ContinuableFuture<RS> execute(final String query);
+    public abstract ContinuableFuture<RS> execute(final String query) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Asynchronously executes a parameterized CQL statement.
@@ -3176,7 +3223,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public abstract ContinuableFuture<RS> execute(final String query, final Object... parameters);
+    public abstract ContinuableFuture<RS> execute(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Asynchronously executes a CQL statement with named parameters provided as a Map.
@@ -3210,7 +3257,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    public abstract ContinuableFuture<RS> execute(String query, Map<String, Object> parameters);
+    public abstract ContinuableFuture<RS> execute(String query, Map<String, Object> parameters) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Asynchronously executes a pre-configured CQL statement.
@@ -3244,7 +3291,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if the driver rejects request submission; failures after submission, including
      *         execution on a closed session, are reported by the returned future
      */
-    public abstract ContinuableFuture<RS> execute(final ST statement);
+    public abstract ContinuableFuture<RS> execute(final ST statement) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Asynchronously executes a prepared query with its parameters.
@@ -3256,7 +3303,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
-    protected ContinuableFuture<RS> execute(final SP cp) {
+    protected ContinuableFuture<RS> execute(final SP cp) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(cp, cs.cp);
 
         return execute(cp.query(), cp.parameters().toArray());
@@ -3283,6 +3330,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
             private R result = null;
             private Exception failure = null;
 
+            /**
+             * @throws Exception if the wrapped function throws on its first invocation; later invocations rethrow the same cached exception
+             */
             @Override
             public synchronized R apply(final T t) throws Exception {
                 if (!applied) {

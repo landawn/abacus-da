@@ -2430,6 +2430,189 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals(1, buffer.position()); // not consumed
     }
 
+    @Test
+    public void testRepeatedBinaryAndTimestampValuesMapToTypedBeanProperties() {
+        final FieldList fields = repeatedBinaryTimestampFields();
+        final FieldValueList row = repeatedBinaryTimestampRow(fields);
+
+        assertRepeatedBinaryTimestampEntity(BigQueryExecutor.toEntity(fields, row, RepeatedBinaryTimestampEntity.class));
+        // Raw mappings keep the wire values rather than applying bean-specific element conversion.
+        assertEquals(List.of("AQID", "BAU="), BigQueryExecutor.toMap(fields, row).get("data"));
+    }
+
+    @Test
+    public void testRepeatedBinaryAndTimestampValuesMapAcrossEveryResultRow() {
+        final FieldList fields = repeatedBinaryTimestampFields();
+        final FieldValueList row = repeatedBinaryTimestampRow(fields);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(2L);
+        when(mockTableResult.iterateAll()).thenReturn(List.of(row, row));
+
+        final List<RepeatedBinaryTimestampEntity> result = BigQueryExecutor.toList(mockTableResult, RepeatedBinaryTimestampEntity.class);
+
+        assertEquals(2, result.size());
+        result.forEach(BigQueryExecutorTest::assertRepeatedBinaryTimestampEntity);
+    }
+
+    @Test
+    public void testRepeatedBinaryAndTimestampDatasetColumnsKeepTypedElements() {
+        final FieldList fields = repeatedBinaryTimestampFields();
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.iterateAll()).thenReturn(List.of(repeatedBinaryTimestampRow(fields)));
+
+        final Dataset result = BigQueryExecutor.extractData(mockTableResult, RepeatedBinaryTimestampEntity.class);
+
+        final List<?> bytes = (List<?>) result.getColumn("data").get(0);
+        assertTrue(Arrays.equals(new byte[] { 1, 2, 3 }, (byte[]) bytes.get(0)));
+        final List<?> times = (List<?>) result.getColumn("timestamps").get(0);
+        assertEquals(java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L), ((java.sql.Timestamp) times.get(0)).toInstant());
+        assertEquals(java.time.Instant.ofEpochSecond(-1, 999_999_000), ((java.time.Instant[]) result.getColumn("instants").get(0))[1]);
+    }
+
+    @Test
+    public void testRepeatedBinaryAndTimestampSequentialValuesUseLinearTraversal() {
+        // Count linked-list traversal work instead of using a timing-sensitive performance assertion.
+        final long[] traversedNodes = { 0 };
+        final List<FieldValue> values = new java.util.LinkedList<>() {
+            @Override
+            public FieldValue get(final int index) {
+                traversedNodes[0] += Math.min(index, size() - index - 1) + 1L;
+                return super.get(index);
+            }
+
+            @Override
+            public java.util.ListIterator<FieldValue> listIterator(final int index) {
+                final java.util.ListIterator<FieldValue> iterator = super.listIterator(index);
+                return new java.util.ListIterator<>() {
+                    @Override public boolean hasNext() { return iterator.hasNext(); }
+                    @Override public FieldValue next() { traversedNodes[0]++; return iterator.next(); }
+                    @Override public boolean hasPrevious() { return iterator.hasPrevious(); }
+                    @Override public FieldValue previous() { traversedNodes[0]++; return iterator.previous(); }
+                    @Override public int nextIndex() { return iterator.nextIndex(); }
+                    @Override public int previousIndex() { return iterator.previousIndex(); }
+                    @Override public void remove() { iterator.remove(); }
+                    @Override public void set(final FieldValue value) { iterator.set(value); }
+                    @Override public void add(final FieldValue value) { iterator.add(value); }
+                };
+            }
+        };
+        for (int i = 0; i < 128; i++) {
+            values.add(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "AQID"));
+        }
+        final FieldList fields = FieldList.of(Field.newBuilder("data", StandardSQLTypeName.BYTES).setMode(Field.Mode.REPEATED).build());
+        final FieldValueList row = FieldValueList.of(List.of(FieldValue.of(FieldValue.Attribute.REPEATED, values)), fields);
+
+        final RepeatedBinaryTimestampEntity result = BigQueryExecutor.toEntity(fields, row, RepeatedBinaryTimestampEntity.class);
+
+        assertEquals(values.size(), result.getData().size());
+        result.getData().forEach(bytes -> assertTrue(Arrays.equals(new byte[] { 1, 2, 3 }, bytes)));
+        assertTrue(traversedNodes[0] <= values.size() * 2L, "Repeated values must be traversed in linear work");
+    }
+
+    @Test
+    public void testRepeatedBinaryAndTimestampEmptyAndNullValuesRemainDistinct() {
+        final FieldList fields = repeatedBinaryTimestampFields();
+        final FieldValue empty = FieldValue.of(FieldValue.Attribute.REPEATED, List.of());
+        final FieldValue nil = FieldValue.of(FieldValue.Attribute.PRIMITIVE, null);
+        final FieldValue binary = FieldValue.of(FieldValue.Attribute.REPEATED, List.of(nil, FieldValue.of(FieldValue.Attribute.PRIMITIVE, "")));
+        final FieldValue times = FieldValue.of(FieldValue.Attribute.REPEATED, List.of(nil, FieldValue.of(FieldValue.Attribute.PRIMITIVE, "0")));
+        final FieldValueList row = FieldValueList.of(List.of(binary, binary, times, times, empty), fields);
+        final RepeatedBinaryTimestampEntity result = BigQueryExecutor.toEntity(fields, row, RepeatedBinaryTimestampEntity.class);
+
+        assertNull(result.getData().get(0));
+        assertEquals(0, result.getData().get(1).length);
+        assertNull(result.getBuffers().get(0));
+        assertEquals(0, result.getBuffers().get(1).remaining());
+        assertNull(result.getTimestamps().get(0));
+        assertEquals(java.time.Instant.EPOCH, result.getTimestamps().get(1).toInstant());
+        assertNull(result.getInstants()[0]);
+        assertEquals(java.time.Instant.EPOCH, result.getInstants()[1]);
+        assertTrue(result.getLabels().isEmpty());
+
+        final RepeatedBinaryTimestampEntity emptyResult = BigQueryExecutor.toEntity(fields,
+                FieldValueList.of(List.of(empty, empty, empty, empty, empty), fields), RepeatedBinaryTimestampEntity.class);
+        assertTrue(emptyResult.getData().isEmpty());
+        assertTrue(emptyResult.getBuffers().isEmpty());
+        assertTrue(emptyResult.getTimestamps().isEmpty());
+        assertEquals(0, emptyResult.getInstants().length);
+    }
+
+    private static FieldList repeatedBinaryTimestampFields() {
+        return FieldList.of(Field.newBuilder("data", StandardSQLTypeName.BYTES).setMode(Field.Mode.REPEATED).build(),
+                Field.newBuilder("buffers", StandardSQLTypeName.BYTES).setMode(Field.Mode.REPEATED).build(),
+                Field.newBuilder("timestamps", StandardSQLTypeName.TIMESTAMP).setMode(Field.Mode.REPEATED).build(),
+                Field.newBuilder("instants", StandardSQLTypeName.TIMESTAMP).setMode(Field.Mode.REPEATED).build(),
+                Field.newBuilder("labels", StandardSQLTypeName.BYTES).setMode(Field.Mode.REPEATED).build());
+    }
+
+    private static FieldValueList repeatedBinaryTimestampRow(final FieldList fields) {
+        final FieldValue bytes = FieldValue.of(FieldValue.Attribute.REPEATED,
+                List.of(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "AQID"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "BAU=")));
+        final FieldValue times = FieldValue.of(FieldValue.Attribute.REPEATED,
+                List.of(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1718900000.123456"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "-0.000001")));
+        return FieldValueList.of(List.of(bytes, bytes, times, times, bytes), fields);
+    }
+
+    private static void assertRepeatedBinaryTimestampEntity(final RepeatedBinaryTimestampEntity entity) {
+        assertTrue(Arrays.equals(new byte[] { 1, 2, 3 }, entity.getData().get(0)));
+        assertTrue(Arrays.equals(new byte[] { 4, 5 }, entity.getData().get(1)));
+        assertEquals(java.nio.ByteBuffer.wrap(new byte[] { 1, 2, 3 }), entity.getBuffers().get(0));
+        final java.time.Instant expected = java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L);
+        assertEquals(expected, entity.getTimestamps().get(0).toInstant());
+        assertEquals(expected, entity.getInstants()[0]);
+        assertEquals(java.time.Instant.ofEpochSecond(-1, 999_999_000), entity.getTimestamps().get(1).toInstant());
+        assertEquals(List.of("AQID", "BAU="), entity.getLabels());
+    }
+
+    public static class RepeatedBinaryTimestampEntity {
+        private List<byte[]> data;
+        private List<java.nio.ByteBuffer> buffers;
+        private List<java.sql.Timestamp> timestamps;
+        private java.time.Instant[] instants;
+        private List<String> labels;
+
+        public List<byte[]> getData() {
+            return data;
+        }
+
+        public void setData(final List<byte[]> data) {
+            this.data = data;
+        }
+
+        public List<java.nio.ByteBuffer> getBuffers() {
+            return buffers;
+        }
+
+        public void setBuffers(final List<java.nio.ByteBuffer> buffers) {
+            this.buffers = buffers;
+        }
+
+        public List<java.sql.Timestamp> getTimestamps() {
+            return timestamps;
+        }
+
+        public void setTimestamps(final List<java.sql.Timestamp> timestamps) {
+            this.timestamps = timestamps;
+        }
+
+        public java.time.Instant[] getInstants() {
+            return instants;
+        }
+
+        public void setInstants(final java.time.Instant[] instants) {
+            this.instants = instants;
+        }
+
+        public List<String> getLabels() {
+            return labels;
+        }
+
+        public void setLabels(final List<String> labels) {
+            this.labels = labels;
+        }
+    }
+
     public static class BinaryTimestampEntity {
         private long id;
         private byte[] data;

@@ -194,7 +194,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #getItem(String, Map, Boolean)
      */
-    public ContinuableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key) {
+    public ContinuableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.getItem(tableName, key));
     }
 
@@ -244,7 +245,8 @@ public final class AsyncDynamoDBExecutor {
      * @see #getItem(String, Map)
      * @see #getItem(String, Map, Boolean, Class)
      */
-    public ContinuableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead) {
+    public ContinuableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.getItem(tableName, key, consistentRead));
     }
 
@@ -306,7 +308,7 @@ public final class AsyncDynamoDBExecutor {
      * @see GetItemRequest
      * @see #getItem(GetItemRequest, Class)
      */
-    public ContinuableFuture<Map<String, Object>> getItem(final GetItemRequest getItemRequest) {
+    public ContinuableFuture<Map<String, Object>> getItem(final GetItemRequest getItemRequest) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.getItem(getItemRequest));
     }
 
@@ -364,7 +366,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #getItem(String, Map, Boolean, Class)
      */
-    public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass) {
+    public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.getItem(tableName, key, targetClass));
@@ -421,7 +424,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead,
-            final Class<T> targetClass) {
+            final Class<T> targetClass) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.getItem(tableName, key, consistentRead, targetClass));
@@ -482,7 +485,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
-    public <T> ContinuableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
+    public <T> ContinuableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.getItem(getItemRequest, targetClass));
@@ -540,7 +544,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #batchGetItem(Map, String)
      */
-    public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
+    public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(requestItems));
     }
 
@@ -599,7 +604,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems,
-            final String returnConsumedCapacity) {
+            final String returnConsumedCapacity) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(requestItems, returnConsumedCapacity));
     }
 
@@ -675,7 +680,8 @@ public final class AsyncDynamoDBExecutor {
      * @see BatchGetItemRequest
      * @see #batchGetItem(BatchGetItemRequest, Class)
      */
-    public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
+    public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(batchGetItemRequest, cs.batchGetItemRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(batchGetItemRequest));
@@ -740,7 +746,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
-    public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final Class<T> targetClass) {
+    public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(requestItems, targetClass));
@@ -799,7 +806,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity,
-            final Class<T> targetClass) {
+            final Class<T> targetClass) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(requestItems, returnConsumedCapacity, targetClass));
@@ -847,7 +854,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
-    public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
+    public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(batchGetItemRequest, cs.batchGetItemRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -890,7 +898,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #putItem(String, Map, String)
      */
-    public ContinuableFuture<PutItemResult> putItem(final String tableName, final Map<String, AttributeValue> item) {
+    public ContinuableFuture<PutItemResult> putItem(final String tableName, final Map<String, AttributeValue> item)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, item));
     }
 
@@ -955,7 +964,8 @@ public final class AsyncDynamoDBExecutor {
      * @see #putItem(String, Map)
      * @see #putItem(PutItemRequest)
      */
-    public ContinuableFuture<PutItemResult> putItem(final String tableName, final Map<String, AttributeValue> item, final String returnValues) {
+    public ContinuableFuture<PutItemResult> putItem(final String tableName, final Map<String, AttributeValue> item, final String returnValues)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, item, returnValues));
     }
 
@@ -1020,7 +1030,7 @@ public final class AsyncDynamoDBExecutor {
      * @see PutItemRequest
      * @see PutItemResult
      */
-    public ContinuableFuture<PutItemResult> putItem(final PutItemRequest putItemRequest) {
+    public ContinuableFuture<PutItemResult> putItem(final PutItemRequest putItemRequest) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.putItem(putItemRequest));
     }
 
@@ -1044,7 +1054,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task
      */
-    ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity) {
+    ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, entity));
     }
 
@@ -1067,7 +1077,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task
      */
-    ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity, final String returnValues) {
+    ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity, final String returnValues)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, entity, returnValues));
     }
 
@@ -1141,7 +1152,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #batchWriteItem(BatchWriteItemRequest)
      */
-    public ContinuableFuture<BatchWriteItemResult> batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
+    public ContinuableFuture<BatchWriteItemResult> batchWriteItem(final Map<String, List<WriteRequest>> requestItems)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.batchWriteItem(requestItems));
     }
 
@@ -1224,7 +1236,8 @@ public final class AsyncDynamoDBExecutor {
      * @see BatchWriteItemResult
      * @see #batchWriteItem(Map)
      */
-    public ContinuableFuture<BatchWriteItemResult> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
+    public ContinuableFuture<BatchWriteItemResult> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.batchWriteItem(batchWriteItemRequest));
     }
 
@@ -1272,7 +1285,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #updateItem(String, Map, Map, String)
      */
     public ContinuableFuture<UpdateItemResult> updateItem(final String tableName, final Map<String, AttributeValue> key,
-            final Map<String, AttributeValueUpdate> attributeUpdates) {
+            final Map<String, AttributeValueUpdate> attributeUpdates) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.updateItem(tableName, key, attributeUpdates));
     }
 
@@ -1340,7 +1353,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #updateItem(UpdateItemRequest)
      */
     public ContinuableFuture<UpdateItemResult> updateItem(final String tableName, final Map<String, AttributeValue> key,
-            final Map<String, AttributeValueUpdate> attributeUpdates, final String returnValues) {
+            final Map<String, AttributeValueUpdate> attributeUpdates, final String returnValues) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.updateItem(tableName, key, attributeUpdates, returnValues));
     }
 
@@ -1409,7 +1422,7 @@ public final class AsyncDynamoDBExecutor {
      * @see UpdateItemRequest
      * @see UpdateItemResult
      */
-    public ContinuableFuture<UpdateItemResult> updateItem(final UpdateItemRequest updateItemRequest) {
+    public ContinuableFuture<UpdateItemResult> updateItem(final UpdateItemRequest updateItemRequest) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.updateItem(updateItemRequest));
     }
 
@@ -1455,7 +1468,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #deleteItem(String, Map, String)
      */
-    public ContinuableFuture<DeleteItemResult> deleteItem(final String tableName, final Map<String, AttributeValue> key) {
+    public ContinuableFuture<DeleteItemResult> deleteItem(final String tableName, final Map<String, AttributeValue> key)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.deleteItem(tableName, key));
     }
 
@@ -1517,7 +1531,8 @@ public final class AsyncDynamoDBExecutor {
      * @see #deleteItem(String, Map)
      * @see #deleteItem(DeleteItemRequest)
      */
-    public ContinuableFuture<DeleteItemResult> deleteItem(final String tableName, final Map<String, AttributeValue> key, final String returnValues) {
+    public ContinuableFuture<DeleteItemResult> deleteItem(final String tableName, final Map<String, AttributeValue> key, final String returnValues)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.deleteItem(tableName, key, returnValues));
     }
 
@@ -1582,7 +1597,7 @@ public final class AsyncDynamoDBExecutor {
      * @see DeleteItemRequest
      * @see DeleteItemResult
      */
-    public ContinuableFuture<DeleteItemResult> deleteItem(final DeleteItemRequest deleteItemRequest) {
+    public ContinuableFuture<DeleteItemResult> deleteItem(final DeleteItemRequest deleteItemRequest) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> dbExecutor.deleteItem(deleteItemRequest));
     }
 
@@ -1635,7 +1650,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #stream(QueryRequest)
      */
-    public ContinuableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) {
+    public ContinuableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.list(queryRequest));
@@ -1714,7 +1730,8 @@ public final class AsyncDynamoDBExecutor {
      * @see #list(QueryRequest)
      * @see #stream(QueryRequest, Class)
      */
-    public <T> ContinuableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) {
+    public <T> ContinuableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -1771,7 +1788,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #list(QueryRequest)
      */
-    public ContinuableFuture<Dataset> query(final QueryRequest queryRequest) {
+    public ContinuableFuture<Dataset> query(final QueryRequest queryRequest)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.query(queryRequest));
@@ -1852,7 +1870,8 @@ public final class AsyncDynamoDBExecutor {
      * @see #query(QueryRequest)
      * @see #list(QueryRequest, Class)
      */
-    public ContinuableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) {
+    public ContinuableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.query(queryRequest, targetClass));
@@ -1905,7 +1924,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #list(QueryRequest)
      */
-    public ContinuableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
+    public ContinuableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.stream(queryRequest));
@@ -1979,7 +1999,8 @@ public final class AsyncDynamoDBExecutor {
      * @see #stream(QueryRequest)
      * @see #list(QueryRequest, Class)
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
+    public <T> ContinuableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2025,7 +2046,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #scan(String, Map)
      */
-    public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet) {
+    public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, attributesToGet));
@@ -2074,7 +2096,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #scan(String, List, Map)
      */
-    public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter) {
+    public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, scanFilter));
@@ -2147,7 +2170,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #scan(ScanRequest)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet,
-            final Map<String, Condition> scanFilter) {
+            final Map<String, Condition> scanFilter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, cs.tableName);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, attributesToGet, scanFilter));
@@ -2223,7 +2246,8 @@ public final class AsyncDynamoDBExecutor {
      * @see #scan(ScanRequest, Class)
      * @see #scan(String, List, Map)
      */
-    public ContinuableFuture<Stream<Map<String, Object>>> scan(final ScanRequest scanRequest) {
+    public ContinuableFuture<Stream<Map<String, Object>>> scan(final ScanRequest scanRequest)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(scanRequest, cs.scanRequest);
 
         return asyncExecutor.execute(() -> dbExecutor.scan(scanRequest));
@@ -2267,7 +2291,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2315,7 +2340,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2365,7 +2391,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter,
-            final Class<T> targetClass) {
+            final Class<T> targetClass) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2408,7 +2434,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
+    public <T> ContinuableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(scanRequest, cs.scanRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 

@@ -284,7 +284,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code namingPolicy} is non-null but not one of the three
      *         supported policies
      */
-    protected CassandraExecutorBase(final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
+    protected CassandraExecutorBase(final CqlMapper cqlMapper, final NamingPolicy namingPolicy) throws IllegalArgumentException {
         // Fail fast: the prepare* methods support only these three policies; without this check an
         // unsupported policy would surface as a RuntimeException on the first Condition-based operation.
         if (namingPolicy != null && namingPolicy != NamingPolicy.SNAKE_CASE && namingPolicy != NamingPolicy.SCREAMING_SNAKE_CASE
@@ -341,7 +341,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @deprecated Define or annotate the key/id field with {@code @Id} instead.
      */
     @Deprecated
-    public static void registerKeys(final Class<?> entityClass, final Collection<String> keyNames) {
+    public static void registerKeys(final Class<?> entityClass, final Collection<String> keyNames) throws IllegalArgumentException {
         N.checkArgNotNull(entityClass, cs.entityClass);
         N.checkArgument(N.notEmpty(keyNames), "'keyNames' can't be null or empty");
 
@@ -369,7 +369,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         registration nor {@code @Id} annotations are present)
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not a bean class
      */
-    protected static ImmutableList<String> getKeyNames(final Class<?> entityClass) {
+    protected static ImmutableList<String> getKeyNames(final Class<?> entityClass) throws IllegalArgumentException {
         N.checkArgNotNull(entityClass, cs.entityClass);
 
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
@@ -399,7 +399,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not a bean class
      * @see #getKeyNames(Class)
      */
-    protected static Set<String> getKeyNameSet(final Class<?> entityClass) {
+    protected static Set<String> getKeyNameSet(final Class<?> entityClass) throws IllegalArgumentException {
         N.checkArgNotNull(entityClass, cs.entityClass);
 
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
@@ -443,7 +443,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         key value, or its length does not match the number of registered/annotated key columns on
      *         {@code targetClass}
      */
-    protected static Condition idsToCondition(final Class<?> targetClass, final Object... ids) {
+    protected static Condition idsToCondition(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotEmpty(ids, cs.ids);
 
@@ -473,7 +473,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         }
     }
 
-    private static void checkIdValue(final String keyName, final Object id) {
+    /**
+     * @throws IllegalArgumentException if {@code id} is null or an empty character sequence
+     */
+    private static void checkIdValue(final String keyName, final Object id) throws IllegalArgumentException {
         if (id == null || id instanceof CharSequence && Strings.isEmpty((CharSequence) id)) {
             throw new IllegalArgumentException("No id value specified for key name: " + keyName);
         }
@@ -502,8 +505,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a Condition representing the primary key equality check based on entity values
      * @throws IllegalArgumentException if {@code entity} is {@code null}, the entity's class is not a bean class or
      *         defines no key names, or a key property value is null or empty
+     * @throws RuntimeException if reading an entity key property invokes a failing getter or cannot access the property
      */
-    protected static Condition entityToCondition(final Object entity) {
+    protected static Condition entityToCondition(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
@@ -574,8 +578,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         if {@code entityClass} is not a bean class or declares no key names, if it has a composite
      *         (multi-column) primary key, if any entity in the collection is null or not an instance of
      *         {@code entityClass}, or if any entity has no value for the key property
+     * @throws RuntimeException if reading an entity key property invokes a failing getter or cannot access the property
      */
-    protected static Condition entityToCondition(final Class<?> entityClass, final Collection<?> entities) {
+    protected static Condition entityToCondition(final Class<?> entityClass, final Collection<?> entities) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entityClass, cs.entityClass);
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 
@@ -589,11 +594,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
         if (keyNameSet.size() == 1) {
             final String keyName = keyNameSet.iterator().next();
-            final List<Object> keys = Stream.of(entities).peek(it -> {
+            for (final Object it : entities) {
                 N.checkArgNotNull(it, "Entity in collection can't be null.");
                 N.checkArgument(entityClass.isInstance(it), "Entity in collection must be an instance of {}: {}", entityClass.getName(),
                         it.getClass().getName());
-            }).map(it -> Beans.getPropValue(it, keyName)).toList();
+            }
+
+            final List<Object> keys = Stream.of(entities).map(it -> Beans.getPropValue(it, keyName)).toList();
 
             for (final Object key : keys) {
                 if (key == null || (key instanceof CharSequence && Strings.isEmpty((CharSequence) key))) {
@@ -644,7 +651,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws DuplicateResultException if more than one entity is found
      * @see #gett(Class, Object...)
      */
-    public final <T> Optional<T> get(final Class<T> targetClass, final Object... ids) throws DuplicateResultException {
+    public final <T> Optional<T> get(final Class<T> targetClass, final Object... ids)
+            throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return get(targetClass, null, ids);
     }
 
@@ -682,7 +690,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #gett(Class, Collection, Object...)
      */
     public final <T> Optional<T> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids)
-            throws DuplicateResultException {
+            throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return get(targetClass, selectPropNames, idsToCondition(targetClass, ids));
     }
 
@@ -712,7 +720,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws DuplicateResultException if more than one entity is found
      * @see #gett(Class, Condition)
      */
-    public <T> Optional<T> get(final Class<T> targetClass, final Condition whereClause) throws DuplicateResultException {
+    public <T> Optional<T> get(final Class<T> targetClass, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return get(targetClass, null, whereClause);
     }
 
@@ -746,7 +755,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #gett(Class, Collection, Condition)
      */
     public <T> Optional<T> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
-            throws DuplicateResultException {
+            throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return Optional.ofNullable(gett(targetClass, selectPropNames, whereClause));
     }
 
@@ -780,7 +789,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
      */
-    public final <T> T gett(final Class<T> targetClass, final Object... ids) throws DuplicateResultException {
+    public final <T> T gett(final Class<T> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return gett(targetClass, null, ids);
     }
 
@@ -816,7 +825,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
      */
-    public final <T> T gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) throws DuplicateResultException {
+    public final <T> T gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids)
+            throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return gett(targetClass, selectPropNames, idsToCondition(targetClass, ids));
     }
 
@@ -845,7 +855,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
      */
-    public <T> T gett(final Class<T> targetClass, final Condition whereClause) throws DuplicateResultException {
+    public <T> T gett(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return gett(targetClass, null, whereClause);
     }
 
@@ -878,7 +888,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws DuplicateResultException if more than one entity is found
      */
     public abstract <T> T gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
-            throws DuplicateResultException;
+            throws IllegalArgumentException, RuntimeException, DuplicateResultException;
 
     /**
      * Inserts an entity into the database.
@@ -906,7 +916,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS insert(final Object entity) {
+    public RS insert(final Object entity) throws IllegalArgumentException, RuntimeException {
         final SP cp = prepareInsert(entity);
 
         return execute(cp);
@@ -938,7 +948,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS insert(final Class<?> targetClass, final Map<String, Object> props) {
+    public RS insert(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException, RuntimeException {
         final SP cp = prepareInsert(targetClass, props);
 
         return execute(cp);
@@ -967,12 +977,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, contains a {@code null} element,
      *         or contains an entity that is not a supported bean or exposes no insertable properties (enforced by the
      *         shipped executors' batch-statement builders)
-     * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
-     *         limit (thrown by the shipped executors' batch-statement builders)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
+     * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
+     *         limit (thrown by the shipped executors' batch-statement builders)
      */
-    public RS batchInsert(final Collection<?> entities, final BT type) {
+    public RS batchInsert(final Collection<?> entities, final BT type) throws IllegalArgumentException, RuntimeException, IllegalStateException {
         final ST stmt = prepareBatchInsertStatement(entities, type);
 
         return execute(stmt);
@@ -1004,12 +1014,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or {@code propsList} is {@code null} or
      *         empty or contains a {@code null} or empty map (enforced by the shipped executors' batch-statement
      *         builders)
-     * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
-     *         statement limit (thrown by the shipped executors' batch-statement builders)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
+     * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
+     *         statement limit (thrown by the shipped executors' batch-statement builders)
      */
-    public RS batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
+    public RS batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         final ST stmt = prepareBatchInsertStatement(targetClass, propsList, type);
 
         return execute(stmt);
@@ -1040,7 +1051,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS update(final Object entity) {
+    public RS update(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> entityClass = entity.getClass();
@@ -1080,7 +1091,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS update(final Object entity, final Collection<String> propNamesToUpdate) {
+    public RS update(final Object entity, final Collection<String> propNamesToUpdate) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
 
@@ -1118,7 +1129,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+    public RS update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
 
@@ -1147,7 +1159,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS update(final String query, final Object... parameters) {
+    public RS update(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return execute(query, parameters);
     }
 
@@ -1172,12 +1184,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if entities is null or empty, if any element is null, if the first entity's
      *         class is not a bean class or has no updatable non-key property, if an entity's class declares no key,
      *         or if a key value is missing
-     * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
-     *         limit (thrown by the shipped executors' batch-statement builders)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
+     * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
+     *         limit (thrown by the shipped executors' batch-statement builders)
      */
-    public RS batchUpdate(final Collection<?> entities, final BT type) {
+    public RS batchUpdate(final Collection<?> entities, final BT type) throws IllegalArgumentException, RuntimeException, IllegalStateException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
@@ -1214,12 +1226,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         null, if an entity's class is not a bean class, if propNamesToUpdate contains a primary-key property,
      *         if an entity's class declares no key, if a key value is missing, or if a name in propNamesToUpdate is
      *         not a property of an entity's class
-     * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
-     *         limit (thrown by the shipped executors' batch-statement builders)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
+     * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
+     *         limit (thrown by the shipped executors' batch-statement builders)
      */
-    public RS batchUpdate(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type) {
+    public RS batchUpdate(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
 
@@ -1257,12 +1270,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         empty or contains a {@code null} map, {@code targetClass} declares no key, or a map lacks a non-null,
      *         non-empty value for a key property or has no non-key property (enforced by the shipped executors'
      *         batch-statement builders)
-     * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
-     *         statement limit (thrown by the shipped executors' batch-statement builders)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
+     * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
+     *         statement limit (thrown by the shipped executors' batch-statement builders)
      */
-    public RS batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
+    public RS batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         final ST stmt = prepareBatchUpdateStatement(targetClass, propsList, type);
 
         return execute(stmt);
@@ -1297,12 +1311,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         empty, or contains a {@code null} element (enforced by the shipped executors' batch-statement
      *         builders), if the CQL contains malformed or mixed parameter markers, or an element's parameter count
      *         or names do not match the prepared statement
-     * @throws IllegalStateException if {@code parametersList} has more than 65,535 elements, the driver's per-batch
-     *         statement limit (thrown by the shipped executors' batch-statement builders)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
+     * @throws IllegalStateException if {@code parametersList} has more than 65,535 elements, the driver's per-batch
+     *         statement limit (thrown by the shipped executors' batch-statement builders)
      */
-    public RS batchUpdate(final String query, final Collection<?> parametersList, final BT type) {
+    public RS batchUpdate(final String query, final Collection<?> parametersList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException {
         final ST stmt = prepareBatchUpdateStatement(query, parametersList, type);
 
         return execute(stmt);
@@ -1331,7 +1346,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS delete(final Object entity) {
+    public RS delete(final Object entity) throws IllegalArgumentException, RuntimeException {
         return delete(entity, null);
     }
 
@@ -1365,7 +1380,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS delete(final Object entity, final Collection<String> propNamesToDelete) {
+    public RS delete(final Object entity, final Collection<String> propNamesToDelete) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
@@ -1396,7 +1411,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public final RS delete(final Class<?> targetClass, final Object... ids) {
+    public final RS delete(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         return delete(targetClass, null, ids);
     }
 
@@ -1432,7 +1447,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public final RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
+    public final RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
@@ -1459,7 +1475,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS delete(final Class<?> targetClass, final Condition whereClause) {
+    public RS delete(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return delete(targetClass, null, whereClause);
     }
 
@@ -1494,7 +1510,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
+    public RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
@@ -1526,7 +1543,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS batchDelete(final Collection<?> entities) {
+    public RS batchDelete(final Collection<?> entities) throws IllegalArgumentException, RuntimeException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
@@ -1565,7 +1582,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public RS batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
+    public RS batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) throws IllegalArgumentException, RuntimeException {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
         N.checkArgNotNull(firstEntity, "The first entity in the collection can't be null.");
@@ -1604,7 +1621,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public final boolean exists(final Class<?> targetClass, final Object... ids) {
+    public final boolean exists(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         return exists(targetClass, idsToCondition(targetClass, ids));
     }
 
@@ -1631,7 +1648,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public boolean exists(final Class<?> targetClass, final Condition whereClause) {
+    public boolean exists(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ImmutableList<String> keyNames = getKeyNames(targetClass);
@@ -1664,7 +1681,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public long count(final Class<?> targetClass, final Condition whereClause) {
+    public long count(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         // Note: LIMIT must NOT be applied to a COUNT(*) query. In Cassandra, "SELECT count(*) ... LIMIT 1"
         // caps the aggregated count itself (a table with 10 matching rows would return count = 1).
         final SP cp = prepareQuery(targetClass, COUNT_SELECT_PROP_NAMES, whereClause, 0);
@@ -1705,7 +1722,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #findFirst(Class, Collection, Condition)
      * @see #findFirst(Class, String, Object...)
      */
-    public <T> Optional<T> findFirst(final Class<T> targetClass, final Condition whereClause) {
+    public <T> Optional<T> findFirst(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return findFirst(targetClass, null, whereClause);
     }
 
@@ -1744,7 +1761,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #findFirst(Class, Condition)
      * @see #findFirst(Class, String, Object...)
      */
-    public <T> Optional<T> findFirst(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> Optional<T> findFirst(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause, 1);
 
         return findFirst(targetClass, cp.query(), cp.parameters().toArray());
@@ -1773,7 +1791,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
-    public <T> List<T> list(final Class<T> targetClass, final Condition whereClause) {
+    public <T> List<T> list(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return list(targetClass, null, whereClause);
     }
 
@@ -1802,7 +1820,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
-    public <T> List<T> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> List<T> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return list(targetClass, cp.query(), cp.parameters().toArray());
@@ -1831,7 +1850,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
-    public Dataset query(final Class<?> targetClass, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return query(targetClass, null, whereClause);
     }
 
@@ -1860,7 +1879,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
-    public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return query(targetClass, cp.query(), cp.parameters().toArray());
@@ -1898,7 +1918,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalBoolean queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalBoolean queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Boolean.class, propName, whereClause).mapToBoolean(ToBooleanFunction.UNBOX);
     }
 
@@ -1934,7 +1955,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalChar queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalChar queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Character.class, propName, whereClause).mapToChar(ToCharFunction.UNBOX);
     }
 
@@ -1970,7 +1992,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalByte queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalByte queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Byte.class, propName, whereClause).mapToByte(ToByteFunction.UNBOX);
     }
 
@@ -2006,7 +2029,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalShort queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalShort queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Short.class, propName, whereClause).mapToShort(ToShortFunction.UNBOX);
     }
 
@@ -2042,7 +2066,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalInt queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalInt queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Integer.class, propName, whereClause).mapToInt(ToIntFunction.UNBOX);
     }
 
@@ -2078,7 +2103,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalLong queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalLong queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Long.class, propName, whereClause).mapToLong(ToLongFunction.UNBOX);
     }
 
@@ -2114,7 +2140,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalFloat queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalFloat queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Float.class, propName, whereClause).mapToFloat(ToFloatFunction.UNBOX);
     }
 
@@ -2150,7 +2177,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public OptionalDouble queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public OptionalDouble queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(targetClass, Double.class, propName, whereClause).mapToDouble(ToDoubleFunction.UNBOX);
     }
 
@@ -2185,7 +2213,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public Nullable<String> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public Nullable<String> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(targetClass, String.class, propName, whereClause);
     }
 
@@ -2220,7 +2249,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public Nullable<Date> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause) {
+    public Nullable<Date> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(targetClass, Date.class, propName, whereClause);
     }
 
@@ -2259,8 +2289,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <E extends Date> Nullable<E> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName,
-            final Condition whereClause) {
+    public <E extends Date> Nullable<E> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(targetClass, valueClass, propName, whereClause);
     }
 
@@ -2300,7 +2330,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleNonNull(Class, Class, String, Condition)
      * @see #queryForSingleValue(Class, String, Object...)
      */
-    public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(valueClass, cs.valueClass);
         N.checkArgNotEmpty(propName, cs.propName);
@@ -2350,7 +2381,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
-    public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException, NullPointerException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(valueClass, cs.valueClass);
         N.checkArgNotEmpty(propName, cs.propName);
@@ -2383,7 +2415,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public <T> Stream<T> stream(final Class<T> targetClass, final Condition whereClause) {
+    public <T> Stream<T> stream(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return stream(targetClass, null, whereClause);
     }
 
@@ -2411,7 +2443,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public <T> Stream<T> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> Stream<T> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return stream(targetClass, cp.query(), cp.parameters().toArray());
@@ -2440,7 +2473,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public final boolean exists(final String query, final Object... parameters) {
+    public final boolean exists(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         final RS resultSet = execute(query, parameters);
 
         return resultSet.iterator().hasNext();
@@ -2474,7 +2507,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *             release.
      */
     @Deprecated
-    public final long count(final String query, final Object... parameters) {
+    public final long count(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return queryForSingleValue(long.class, query, parameters).orElse(0L);
     }
 
@@ -2509,7 +2542,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalBoolean queryForBoolean(final String query, final Object... parameters) {
+    public final OptionalBoolean queryForBoolean(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Boolean.class, query, parameters).mapToBoolean(ToBooleanFunction.UNBOX);
     }
 
@@ -2544,7 +2577,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalChar queryForChar(final String query, final Object... parameters) {
+    public final OptionalChar queryForChar(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Character.class, query, parameters).mapToChar(ToCharFunction.UNBOX);
     }
 
@@ -2579,7 +2612,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalByte queryForByte(final String query, final Object... parameters) {
+    public final OptionalByte queryForByte(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Byte.class, query, parameters).mapToByte(ToByteFunction.UNBOX);
     }
 
@@ -2614,7 +2647,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalShort queryForShort(final String query, final Object... parameters) {
+    public final OptionalShort queryForShort(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Short.class, query, parameters).mapToShort(ToShortFunction.UNBOX);
     }
 
@@ -2650,7 +2683,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalInt queryForInt(final String query, final Object... parameters) {
+    public final OptionalInt queryForInt(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Integer.class, query, parameters).mapToInt(ToIntFunction.UNBOX);
     }
 
@@ -2685,7 +2718,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalLong queryForLong(final String query, final Object... parameters) {
+    public final OptionalLong queryForLong(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Long.class, query, parameters).mapToLong(ToLongFunction.UNBOX);
     }
 
@@ -2720,7 +2753,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalFloat queryForFloat(final String query, final Object... parameters) {
+    public final OptionalFloat queryForFloat(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Float.class, query, parameters).mapToFloat(ToFloatFunction.UNBOX);
     }
 
@@ -2755,7 +2788,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final OptionalDouble queryForDouble(final String query, final Object... parameters) {
+    public final OptionalDouble queryForDouble(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Double.class, query, parameters).mapToDouble(ToDoubleFunction.UNBOX);
     }
 
@@ -2789,7 +2822,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final Nullable<String> queryForString(final String query, final Object... parameters) {
+    public final Nullable<String> queryForString(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(String.class, query, parameters);
     }
 
@@ -2824,7 +2857,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final Nullable<Date> queryForDate(final String query, final Object... parameters) {
+    public final Nullable<Date> queryForDate(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(Date.class, query, parameters);
     }
 
@@ -2862,7 +2895,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta
-    public final <E extends Date> Nullable<E> queryForDate(final Class<E> valueClass, final String query, final Object... parameters) {
+    public final <E extends Date> Nullable<E> queryForDate(final Class<E> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return this.queryForSingleValue(valueClass, query, parameters);
     }
 
@@ -2905,7 +2939,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
-    public abstract <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters);
+    public abstract <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException;
 
     /**
      * Executes the given CQL query and returns the first column of the first row converted to
@@ -2946,7 +2981,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, String, Object...)
      */
-    public abstract <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters);
+    public abstract <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException, NullPointerException;
 
     /**
      * Executes the given CQL query and returns the first row as a {@code Map<String, Object>} keyed by
@@ -2975,7 +3011,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #findFirst(Class, String, Object...)
      */
-    public final Optional<Map<String, Object>> findFirst(final String query, final Object... parameters) {
+    public final Optional<Map<String, Object>> findFirst(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return findFirst(PROP_MAP_TYPE, query, parameters);
     }
 
@@ -3017,16 +3053,17 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
-     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or
-     *         {@code targetClass} is a single-value type but the first row has more than one column
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed parameter
+     *         markers, the supplied parameter count or names do not match the prepared statement, or {@code targetClass} is a single-value type
+     *         but the first row does not have exactly one column
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if the first row maps to a null value, which {@link Optional#of(Object)} cannot contain
      * @see #findFirst(String, Object...)
      * @see #findFirst(Class, Condition)
      */
-    public abstract <T> Optional<T> findFirst(final Class<T> targetClass, final String query, final Object... parameters);
+    public abstract <T> Optional<T> findFirst(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException, NullPointerException;
 
     /**
      * Executes the given CQL query and returns every row as a {@code Map<String, Object>} keyed by
@@ -3050,7 +3087,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #list(Class, String, Object...)
      */
-    public final List<Map<String, Object>> list(final String query, final Object... parameters) {
+    public final List<Map<String, Object>> list(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return list(PROP_MAP_TYPE, query, parameters);
     }
 
@@ -3072,13 +3109,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a list of result rows mapped to {@code targetClass}
-     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or
-     *         {@code targetClass} is a single-value type but the result set has more than one column
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed parameter
+     *         markers, the supplied parameter count or names do not match the prepared statement, or {@code targetClass} is a single-value type
+     *         but the result set does not have exactly one column
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
-    public final <T> List<T> list(final Class<T> targetClass, final String query, final Object... parameters) {
+    public final <T> List<T> list(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return toList(targetClass, execute(query, parameters));
@@ -3106,7 +3144,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #query(Class, String, Object...)
      */
-    public final Dataset query(final String query, final Object... parameters) {
+    public final Dataset query(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return query(Map.class, query, parameters);
     }
 
@@ -3133,7 +3171,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
-    public final Dataset query(final Class<?> targetClass, final String query, final Object... parameters) {
+    public final Dataset query(final Class<?> targetClass, final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return extractData(targetClass, execute(query, parameters));
     }
 
@@ -3158,7 +3196,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         executing, or fetching the query fails
      * @see #stream(Class, String, Object...)
      */
-    public final Stream<Object[]> stream(final String query, final Object... parameters) {
+    public final Stream<Object[]> stream(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return stream(Object[].class, query, parameters);
     }
 
@@ -3187,7 +3225,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public final <T> Stream<T> stream(final Class<T> targetClass, final String query, final Object... parameters) {
+    public final <T> Stream<T> stream(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return Stream.of(execute(query, parameters).iterator()).map(createRowMapper(targetClass));
@@ -3211,11 +3250,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *        or {@code Map.class} (must not be {@code null})
      * @param statement the driver statement to execute (for example a bound or batch statement)
      * @return a stream of result rows mapped to {@code targetClass}
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly,
-     *         because the row mapper is only applied when the lazy stream is consumed
-     * @throws RuntimeException if {@code statement} is null (rejected by the concrete driver), the session is closed, or the driver rejects request submission or statement execution
+     * @throws IllegalArgumentException if {@code targetClass} or {@code statement} is {@code null}; the shipped executors reject a null
+     *         statement eagerly
+     * @throws RuntimeException if the session is closed or the driver rejects request submission or statement execution
      */
-    public <T> Stream<T> stream(final Class<T> targetClass, final ST statement) {
+    public <T> Stream<T> stream(final Class<T> targetClass, final ST statement) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return Stream.of(execute(statement).iterator()).map(createRowMapper(targetClass));
@@ -3251,7 +3290,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public abstract RS execute(final String query);
+    public abstract RS execute(final String query) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Executes a parameterized CQL statement and returns the result set.
@@ -3300,7 +3339,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public abstract RS execute(final String query, final Object... parameters);
+    public abstract RS execute(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Executes a CQL statement with named parameters provided as a Map.
@@ -3341,7 +3380,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    public abstract RS execute(String query, Map<String, Object> parameters);
+    public abstract RS execute(String query, Map<String, Object> parameters) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Executes a pre-configured CQL Statement and returns the result set.
@@ -3384,9 +3423,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param statement the configured CQL Statement to execute
      * @return the result set from the statement execution
-     * @throws RuntimeException if {@code statement} is null (rejected by the concrete driver), the session is closed, or the driver rejects request submission or statement execution
+     * @throws IllegalArgumentException if {@code statement} is null (enforced by the shipped executors)
+     * @throws RuntimeException if the session is closed or the driver rejects request submission or statement execution
      */
-    public abstract RS execute(final ST statement);
+    public abstract RS execute(final ST statement) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Executes the CQL string and bound positional parameters carried by the supplied {@link SP}
@@ -3403,7 +3443,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
-    protected RS execute(final SP cp) {
+    protected RS execute(final SP cp) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(cp, cs.cp);
 
         return execute(cp.query(), cp.parameters().toArray());
@@ -3415,8 +3455,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity to insert
      * @return the prepared statement with parameters
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not a supported bean, or exposes no insertable properties
+     * @throws RuntimeException if reading an insertable entity property invokes a failing getter or cannot access the property
      */
-    protected SP prepareInsert(final Object entity) {
+    protected SP prepareInsert(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
@@ -3444,8 +3485,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         } catch (final IllegalStateException e) {
             // A freshly created INSERT builder only fails into() with IllegalStateException when no column was
             // staged, i.e. the entity has no non-null insertable property: report the documented argument error.
-            throw new IllegalArgumentException("No insertable property value specified in entity of class: " + ClassUtil.getCanonicalClassName(targetClass),
-                    e);
+            throw new IllegalArgumentException("No insertable property value specified in entity of class: " + ClassUtil.getCanonicalClassName(targetClass), e);
         }
     }
 
@@ -3457,7 +3497,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or {@code props} is null or empty
      */
-    protected SP prepareInsert(final Class<?> targetClass, final Map<String, Object> props) {
+    protected SP prepareInsert(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         switch (namingPolicy) {
             case SNAKE_CASE:
@@ -3479,8 +3519,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param type the batch type
      * @return the prepared batch statement
+     * @throws IllegalArgumentException if configured statement settings are rejected by the driver
      */
-    protected abstract ST prepareBatchStatement(final BT type);
+    protected abstract ST prepareBatchStatement(final BT type) throws IllegalArgumentException;
 
     /**
      * Prepares a batch INSERT statement for multiple entities.
@@ -3488,8 +3529,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entities collection of entities to insert
      * @param type the batch type
      * @return the prepared batch statement
+     * @throws IllegalArgumentException if {@code entities} is null, empty, contains a null row, or an entity is not a supported bean or exposes
+     *         no insertable properties
+     * @throws RuntimeException if configuring, preparing, or binding a batch statement fails
+     * @throws IllegalStateException if the batch exceeds the driver's statement-count limit
      */
-    protected abstract ST prepareBatchInsertStatement(final Collection<?> entities, final BT type);
+    protected abstract ST prepareBatchInsertStatement(final Collection<?> entities, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException;
 
     /**
      * Prepares a batch INSERT statement for multiple property maps.
@@ -3498,8 +3544,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propsList collection of property maps
      * @param type the batch type
      * @return the prepared batch statement
+     * @throws IllegalArgumentException if {@code targetClass} is null, {@code propsList} is null, empty, or contains a null or empty map
+     * @throws RuntimeException if configuring, preparing, or binding a batch statement fails
+     * @throws IllegalStateException if the batch exceeds the driver's statement-count limit
      */
-    protected abstract ST prepareBatchInsertStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type);
+    protected abstract ST prepareBatchInsertStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException;
 
     /**
      * Prepares an UPDATE statement for the given entity.
@@ -3510,8 +3560,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code entity} is {@code null}, {@code propNamesToUpdate} is null or empty or contains
      *         a key property, the entity has no declared key or a null/empty key value, or a name in
      *         {@code propNamesToUpdate} is not a property of the entity's class
+     * @throws RuntimeException if reading a key or update property invokes a failing getter or cannot access the property
      */
-    protected SP prepareUpdate(final Object entity, final Collection<String> propNamesToUpdate) {
+    protected SP prepareUpdate(final Object entity, final Collection<String> propNamesToUpdate) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty.");
 
@@ -3534,7 +3585,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         }
     }
 
-    private static void checkNoPrimaryKeyProperties(final Class<?> targetClass, final Collection<String> propNames, final String argumentName) {
+    /**
+     * @throws IllegalArgumentException if {@code targetClass} is null or is not a bean class, or {@code propNames} contains a primary-key
+     *         property
+     */
+    private static void checkNoPrimaryKeyProperties(final Class<?> targetClass, final Collection<String> propNames, final String argumentName)
+            throws IllegalArgumentException {
         final Set<String> keyNames = getKeyNameSet(targetClass);
 
         for (final String propName : propNames) {
@@ -3554,7 +3610,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} or {@code whereClause} is {@code null}, {@code props} is null or empty
      *         or contains a key property, or the condition uses a relation unsupported by CQL
      */
-    protected SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+    protected SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
         checkNoPrimaryKeyProperties(targetClass, props.keySet(), "props");
@@ -3583,9 +3639,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass entity class defining the table and primary-key properties
      * @param props key and update properties for one batch row
      * @return a parameterized UPDATE statement for this row
-     * @throws IllegalArgumentException if the class has no key, a key is absent/null/empty, or no update property remains
+     * @throws IllegalArgumentException if {@code targetClass} or {@code props} is null, the class is not a bean or has no key, a key is
+     *         absent/null/empty, or no update property remains
      */
-    protected SP prepareBatchMapUpdate(final Class<?> targetClass, final Map<String, Object> props) {
+    protected SP prepareBatchMapUpdate(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(props, cs.props);
 
@@ -3626,8 +3683,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propNamesToUpdate collection of property names to update
      * @param type the batch type
      * @return the prepared batch statement
+     * @throws IllegalArgumentException if {@code entities} is null, empty, or contains a null row; {@code propNamesToUpdate} is null, empty,
+     *         contains a key or unknown property; or an entity has no declared key or a null/empty key value
+     * @throws RuntimeException if configuring, preparing, or binding a batch statement fails
+     * @throws IllegalStateException if the batch exceeds the driver's statement-count limit
      */
-    protected abstract ST prepareBatchUpdateStatement(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type);
+    protected abstract ST prepareBatchUpdateStatement(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException;
 
     /**
      * Prepares a batch UPDATE statement for multiple property maps.
@@ -3636,8 +3698,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propsList collection of property maps
      * @param type the batch type
      * @return the prepared batch statement
+     * @throws IllegalArgumentException if {@code targetClass} is null or has no key, {@code propsList} is null, empty, or contains a null map,
+     *         or a row lacks a non-null/nonempty key value or has no non-key property
+     * @throws RuntimeException if configuring, preparing, or binding a batch statement fails
+     * @throws IllegalStateException if the batch exceeds the driver's statement-count limit
      */
-    protected abstract ST prepareBatchUpdateStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type);
+    protected abstract ST prepareBatchUpdateStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException;
 
     /**
      * Prepares a batch UPDATE statement with parameterized queries.
@@ -3646,8 +3713,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parametersList collection of parameter arrays
      * @param type the batch type
      * @return the prepared batch statement
+     * @throws IllegalArgumentException if {@code query} is null, {@code parametersList} is null, empty, or contains a null element, the CQL
+     *         contains malformed or mixed markers, or a row does not match the statement parameter count or names
+     * @throws RuntimeException if configuring, preparing, or binding a batch statement fails
+     * @throws IllegalStateException if the batch exceeds the driver's statement-count limit
      */
-    protected abstract ST prepareBatchUpdateStatement(final String query, final Collection<?> parametersList, final BT type);
+    protected abstract ST prepareBatchUpdateStatement(final String query, final Collection<?> parametersList, final BT type)
+            throws IllegalArgumentException, RuntimeException, IllegalStateException;
 
     /**
      * Prepares a DELETE statement with a WHERE clause.
@@ -3659,7 +3731,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} or {@code whereClause} is {@code null}, a named deletion property is
      *         a primary key, or the condition uses a relation unsupported by CQL
      */
-    protected SP prepareDelete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
+    protected SP prepareDelete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause)
+            throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         if (N.notEmpty(propNamesToDelete)) {
             checkNoPrimaryKeyProperties(targetClass, propNamesToDelete, "propNamesToDelete");
@@ -3704,7 +3777,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, selected properties cannot be mapped, or the condition
      *         uses a relation unsupported by CQL
      */
-    protected SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    protected SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException {
         return prepareQuery(targetClass, selectPropNames, whereClause, 0);
     }
 
@@ -3742,7 +3816,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, selected properties cannot be mapped, or the condition
      *         uses a relation unsupported by CQL
      */
-    protected SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
+    protected SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count)
+            throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         final boolean isNonNullCond = whereClause != null;
         CqlBuilder cqlBuilder = null;
@@ -3791,8 +3866,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param query the CQL query
      * @return a bound (executable) statement ready for {@code execute}
+     * @throws IllegalArgumentException if {@code query} is null, contains malformed or mixed parameter markers, or its bind parameters do not
+     *         match the supplied values
+     * @throws RuntimeException if preparing CQL, reading a parameter property, or binding a value fails
      */
-    protected abstract ST prepareStatement(final String query);
+    protected abstract ST prepareStatement(final String query) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Prepares a statement from a CQL query with parameters.
@@ -3800,16 +3878,21 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param query the CQL query
      * @param parameters the query parameters
      * @return a bound (executable) statement ready for {@code execute}
+     * @throws IllegalArgumentException if {@code query} is null, contains malformed or mixed parameter markers, or its bind parameters do not
+     *         match the supplied values
+     * @throws RuntimeException if preparing CQL, reading a parameter property, or binding a value fails
      */
-    protected abstract ST prepareStatement(final String query, final Object... parameters);
+    protected abstract ST prepareStatement(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Prepares a reusable prepared statement from a CQL query.
      *
      * @param query the CQL query
      * @return the prepared statement
+     * @throws IllegalArgumentException if {@code query} is null (enforced by the shipped executors)
+     * @throws RuntimeException if the session is closed, the CQL cannot be prepared, or configured statement settings are rejected
      */
-    protected abstract PS prepare(final String query);
+    protected abstract PS prepare(final String query) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Binds parameters to a prepared statement.
@@ -3817,8 +3900,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param preStmt the prepared statement
      * @param parameters the query parameters
      * @return the bound statement ready for execution
+     * @throws IllegalArgumentException if {@code preStmt} is null (enforced by the shipped executors)
+     * @throws RuntimeException if a parameter cannot be encoded for its CQL type or configured statement settings are rejected
      */
-    protected abstract ST bind(final PS preStmt, final Object... parameters);
+    protected abstract ST bind(final PS preStmt, final Object... parameters) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Parses a CQL query string into a ParsedCql object with caching support.
@@ -3857,7 +3942,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see CqlMapper#get(String)
      * @see ParsedCql#parse(String)
      */
-    protected ParsedCql parseCql(final String cql) {
+    protected ParsedCql parseCql(final String cql) throws IllegalArgumentException {
         ParsedCql parsedCql = null;
 
         if (cqlMapper != null) {
@@ -3878,8 +3963,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param resultSet the result set to convert
      * @return a List of mapped objects
+     * @throws IllegalArgumentException if {@code targetClass} or {@code resultSet} is null, or a single-value target type does not match the
+     *         result column count
+     * @throws RuntimeException if fetching rows, converting a column, or assigning a bean property fails
      */
-    protected abstract <T> List<T> toList(Class<T> targetClass, RS resultSet);
+    protected abstract <T> List<T> toList(Class<T> targetClass, RS resultSet) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Extracts data from a result set into a Dataset.
@@ -3887,8 +3975,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param resultSet the result set to extract from
      * @return a Dataset containing the extracted data
+     * @throws IllegalArgumentException if {@code resultSet} is null
+     * @throws RuntimeException if fetching rows or converting a column to a requested property type fails
      */
-    protected abstract Dataset extractData(Class<?> targetClass, RS resultSet);
+    protected abstract Dataset extractData(Class<?> targetClass, RS resultSet) throws IllegalArgumentException, RuntimeException;
 
     /**
      * Fetches exactly one row from a result set.
@@ -3897,10 +3987,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param resultSet the result set to read from
      * @return the mapped row, or null if no row is present
-     * @throws DuplicateResultException if more than one row is present
+     * @throws IllegalArgumentException if {@code resultSet} is null (enforced by the shipped executors)
      * @throws RuntimeException if fetching a row fails or its columns cannot be mapped to {@code targetClass}
+     * @throws DuplicateResultException if more than one row is present
      */
-    protected abstract <T> T fetchOnlyOne(Class<T> targetClass, RS resultSet) throws DuplicateResultException;
+    protected abstract <T> T fetchOnlyOne(Class<T> targetClass, RS resultSet) throws IllegalArgumentException, RuntimeException, DuplicateResultException;
 
     /**
      * Creates a row mapper function for the specified target class.
@@ -3921,7 +4012,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param row the driver row to read from
      * @param targetClass the type to convert the first column value to
      * @return the converted first-column value (may be null)
+     * @throws IllegalArgumentException if {@code row} or {@code targetClass} is null (enforced by the shipped executors)
      * @throws RuntimeException if the first column cannot be read or converted to {@code targetClass}
      */
-    protected abstract <T> T readFirstColumn(RW row, Class<T> targetClass);
+    protected abstract <T> T readFirstColumn(RW row, Class<T> targetClass) throws IllegalArgumentException, RuntimeException;
 }

@@ -123,8 +123,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
      *         exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyGet(final Object rowKey) {
+    AnyGet(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         super(new Get(toRowKeyBytes(rowKey)));
         get = (Get) query;
     }
@@ -141,8 +142,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the
      *         converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyGet(final Object rowKey, final int rowOffset, final int rowLength) {
+    AnyGet(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         super(new Get(toRowKeyBytes(rowKey), rowOffset, rowLength));
         get = (Get) query;
     }
@@ -156,7 +159,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
      *         exceeds 32,767 bytes
      */
-    AnyGet(final ByteBuffer rowKey) {
+    AnyGet(final ByteBuffer rowKey) throws IllegalArgumentException {
         super(new Get(rowKey));
         get = (Get) query;
     }
@@ -169,7 +172,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param get the existing HBase Get object to wrap; must not be {@code null}
      * @throws IllegalArgumentException if {@code get} is {@code null}
      */
-    AnyGet(final Get get) {
+    AnyGet(final Get get) throws IllegalArgumentException {
         super(get);
         this.get = (Get) query;
     }
@@ -200,11 +203,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @return a new AnyGet instance configured with the specified row key
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
      *         exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, int, int)
      * @see #of(ByteBuffer)
      * @see #of(Get)
      */
-    public static AnyGet of(final Object rowKey) {
+    public static AnyGet of(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         return new AnyGet(rowKey);
     }
 
@@ -240,10 +244,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the
      *         converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #of(ByteBuffer)
      */
-    public static AnyGet of(final Object rowKey, final int rowOffset, final int rowLength) {
+    public static AnyGet of(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         return new AnyGet(rowKey, rowOffset, rowLength);
     }
 
@@ -277,7 +283,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see #of(Object)
      * @see java.nio.ByteBuffer
      */
-    public static AnyGet of(final ByteBuffer rowKey) {
+    public static AnyGet of(final ByteBuffer rowKey) throws IllegalArgumentException {
         return new AnyGet(rowKey);
     }
 
@@ -310,7 +316,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see org.apache.hadoop.hbase.client.Get
      * @see #val()
      */
-    public static AnyGet of(final Get get) {
+    public static AnyGet of(final Get get) throws IllegalArgumentException {
         return new AnyGet(get);
     }
 
@@ -602,7 +608,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see #getTimeRange()
      * @see TimeRange
      */
-    public AnyGet setTimeRange(final long minStamp, final long maxStamp) {
+    public AnyGet setTimeRange(final long minStamp, final long maxStamp) throws IllegalArgumentException {
         try {
             get.setTimeRange(minStamp, maxStamp);
         } catch (final IOException e) {
@@ -616,12 +622,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * <p>Delegates to {@link Get#setTimestamp(long)}, which configures the time range as
      * {@code [timestamp, timestamp + 1)} — i.e. only cells stamped with {@code timestamp} are
-     * returned. This is useful for point-in-time queries, snapshot reads, or audit-trail
-     * lookups of a specific version.</p>
+     * returned. This selects an exact version for audit-trail lookups; it does not return the
+     * latest version at or before that timestamp.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get data as it existed at a specific timestamp
+     * // Get cell versions written at this exact timestamp
      * long snapshotTime = 1609459200000L;  // Jan 1, 2021
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily("profile")
@@ -640,7 +646,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see #setTimeRange(long, long)
      * @see #getTimeRange()
      */
-    public AnyGet setTimestamp(final long timestamp) {
+    public AnyGet setTimestamp(final long timestamp) throws IllegalArgumentException {
         get.setTimestamp(timestamp);
         return this;
     }
@@ -698,7 +704,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see #readAllVersions()
      * @see #getMaxVersions()
      */
-    public AnyGet readVersions(final int maxVersions) {
+    public AnyGet readVersions(final int maxVersions) throws IllegalArgumentException {
         try {
             get.readVersions(maxVersions);
         } catch (final IOException e) {
@@ -1017,7 +1023,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      */
     @Override
     @Deprecated
-    public int compareTo(final Row other) {
+    public int compareTo(final Row other) throws NullPointerException {
         return get.compareTo(other);
     }
 
@@ -1145,7 +1151,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see Get
      * @see HBaseExecutor#get(String, Collection)
      */
-    public static List<Get> toGet(final Collection<AnyGet> anyGets) {
+    public static List<Get> toGet(final Collection<AnyGet> anyGets) throws IllegalArgumentException {
         N.checkArgNotNull(anyGets, cs.anyGets);
 
         for (final AnyGet anyGet : anyGets) {

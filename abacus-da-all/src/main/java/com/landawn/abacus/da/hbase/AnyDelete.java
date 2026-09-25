@@ -72,7 +72,7 @@ import com.landawn.abacus.util.N;
  *
  * // Delete column versions up to timestamp
  * AnyDelete columnVersionDelete = AnyDelete.of("user123")
- *                                          .addColumn("info", "name", timestamp);
+ *                                          .addColumns("info", "name", timestamp);
  *
  * // Delete family versions up to timestamp
  * AnyDelete familyVersionDelete = AnyDelete.of("user123")
@@ -157,8 +157,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyDelete(final Object rowKey) {
+    AnyDelete(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
         delete = (Delete) mutation;
     }
@@ -176,8 +177,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyDelete(final Object rowKey, final long timestamp) {
+    AnyDelete(final Object rowKey, final long timestamp) throws IllegalArgumentException, RuntimeException {
         super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp));
         delete = (Delete) mutation;
     }
@@ -192,8 +194,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyDelete(final Object rowKey, final int rowOffset, final int rowLength) {
+    AnyDelete(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         super(new Delete(toRowKeyBytes(rowKey), rowOffset, rowLength));
         delete = (Delete) mutation;
     }
@@ -210,8 +214,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyDelete(final Object rowKey, final int rowOffset, final int rowLength, final long timestamp) {
+    AnyDelete(final Object rowKey, final int rowOffset, final int rowLength, final long timestamp)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         super(new Delete(toRowKeyBytes(rowKey), rowOffset, rowLength, timestamp));
         delete = (Delete) mutation;
     }
@@ -224,8 +230,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
+    AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException, RuntimeException {
         super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
         delete = (Delete) mutation;
     }
@@ -240,8 +247,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param deleteToCopy the HBase Delete object to copy
      * @throws IllegalArgumentException if {@code deleteToCopy} is {@code null}
+     * @throws NullPointerException if {@code deleteToCopy}'s mutable family-cell map contains a null cell list
      */
-    AnyDelete(final Delete deleteToCopy) {
+    AnyDelete(final Delete deleteToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Delete(N.checkArgNotNull(deleteToCopy, cs.deleteToCopy)));
         delete = (Delete) mutation;
     }
@@ -271,11 +279,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @return a new AnyDelete instance configured for the specified row
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, long)
      * @see #addColumn(String, String)
      * @see #addFamily(String)
      */
-    public static AnyDelete of(final Object rowKey) {
+    public static AnyDelete of(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         return new AnyDelete(rowKey);
     }
 
@@ -309,11 +318,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @return a new AnyDelete instance configured for timestamp-based deletion
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
      */
-    public static AnyDelete of(final Object rowKey, final long timestamp) {
+    public static AnyDelete of(final Object rowKey, final long timestamp) throws IllegalArgumentException, RuntimeException {
         return new AnyDelete(rowKey, timestamp);
     }
 
@@ -347,10 +357,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #of(Object, int, int, long)
      */
-    public static AnyDelete of(final Object rowKey, final int rowOffset, final int rowLength) {
+    public static AnyDelete of(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         return new AnyDelete(rowKey, rowOffset, rowLength);
     }
 
@@ -388,10 +400,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, int, int)
      * @see #of(Object, long)
      */
-    public static AnyDelete of(final Object rowKey, final int rowOffset, final int rowLength, final long timestamp) {
+    public static AnyDelete of(final Object rowKey, final int rowOffset, final int rowLength, final long timestamp)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         return new AnyDelete(rowKey, rowOffset, rowLength, timestamp);
     }
 
@@ -423,12 +437,14 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @return a new AnyDelete instance with the specified configuration
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #of(Delete)
      * @see NavigableMap
      * @see Cell
      */
-    public static AnyDelete of(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
+    public static AnyDelete of(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap)
+            throws IllegalArgumentException, RuntimeException {
         return new AnyDelete(rowKey, timestamp, familyMap);
     }
 
@@ -460,10 +476,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param deleteToCopy the HBase Delete object to copy; must not be null
      * @return a new AnyDelete instance backed by a fresh Delete copied from {@code deleteToCopy}
      * @throws IllegalArgumentException if {@code deleteToCopy} is {@code null}
+     * @throws NullPointerException if {@code deleteToCopy}'s mutable family-cell map contains a null cell list
      * @see Delete
      * @see #val()
      */
-    public static AnyDelete of(final Delete deleteToCopy) {
+    public static AnyDelete of(final Delete deleteToCopy) throws IllegalArgumentException, NullPointerException {
         return new AnyDelete(deleteToCopy);
     }
 
@@ -524,7 +541,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see Cell
      * @see Delete#add(Cell)
      */
-    public AnyDelete add(final Cell cell) throws IOException {
+    public AnyDelete add(final Cell cell) throws IllegalArgumentException, IOException {
         N.checkArgNotNull(cell, cs.cell);
 
         delete.add(cell);
@@ -596,7 +613,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addFamily(String, long)
      * @see #addFamilyVersion(String, long)
      */
-    public AnyDelete addFamily(final String family) {
+    public AnyDelete addFamily(final String family) throws IllegalArgumentException {
         delete.addFamily(toFamilyQualifierBytes(family));
         return this;
     }
@@ -629,7 +646,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addFamily(String)
      * @see #addFamilyVersion(String, long)
      */
-    public AnyDelete addFamily(final String family, final long timestamp) {
+    public AnyDelete addFamily(final String family, final long timestamp) throws IllegalArgumentException {
         delete.addFamily(toFamilyQualifierBytes(family), timestamp);
         return this;
     }
@@ -659,7 +676,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addFamily(String)
      * @see #addFamily(byte[], long)
      */
-    public AnyDelete addFamily(final byte[] family) {
+    public AnyDelete addFamily(final byte[] family) throws IllegalArgumentException {
         delete.addFamily(family);
         return this;
     }
@@ -689,7 +706,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addFamily(byte[])
      * @see #addFamilyVersion(byte[], long)
      */
-    public AnyDelete addFamily(final byte[] family, final long timestamp) {
+    public AnyDelete addFamily(final byte[] family, final long timestamp) throws IllegalArgumentException {
         delete.addFamily(family, timestamp);
         return this;
     }
@@ -721,7 +738,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
      */
-    public AnyDelete addFamilyVersion(final String family, final long timestamp) {
+    public AnyDelete addFamilyVersion(final String family, final long timestamp) throws IllegalArgumentException {
         delete.addFamilyVersion(toFamilyQualifierBytes(family), timestamp);
         return this;
     }
@@ -752,7 +769,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addFamilyVersion(String, long)
      * @see #addFamily(byte[], long)
      */
-    public AnyDelete addFamilyVersion(final byte[] family, final long timestamp) {
+    public AnyDelete addFamilyVersion(final byte[] family, final long timestamp) throws IllegalArgumentException {
         delete.addFamilyVersion(family, timestamp);
         return this;
     }
@@ -787,7 +804,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumn(String, String, long)
      * @see #addColumns(String, String)
      */
-    public AnyDelete addColumn(final String family, final String qualifier) {
+    public AnyDelete addColumn(final String family, final String qualifier) throws IllegalArgumentException {
         delete.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier));
         return this;
     }
@@ -820,7 +837,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumn(String, String)
      * @see #addColumns(String, String, long)
      */
-    public AnyDelete addColumn(final String family, final String qualifier, final long timestamp) {
+    public AnyDelete addColumn(final String family, final String qualifier, final long timestamp) throws IllegalArgumentException {
         delete.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), timestamp);
         return this;
     }
@@ -852,7 +869,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumn(byte[], byte[], long)
      * @see #addColumns(byte[], byte[])
      */
-    public AnyDelete addColumn(final byte[] family, final byte[] qualifier) {
+    public AnyDelete addColumn(final byte[] family, final byte[] qualifier) throws IllegalArgumentException {
         delete.addColumn(family, qualifier);
         return this;
     }
@@ -884,7 +901,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumn(byte[], byte[])
      * @see #addColumns(byte[], byte[], long)
      */
-    public AnyDelete addColumn(final byte[] family, final byte[] qualifier, final long timestamp) {
+    public AnyDelete addColumn(final byte[] family, final byte[] qualifier, final long timestamp) throws IllegalArgumentException {
         delete.addColumn(family, qualifier, timestamp);
         return this;
     }
@@ -918,7 +935,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumns(String, String, long)
      * @see #addColumn(String, String)
      */
-    public AnyDelete addColumns(final String family, final String qualifier) {
+    public AnyDelete addColumns(final String family, final String qualifier) throws IllegalArgumentException {
         delete.addColumns(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier));
         return this;
     }
@@ -951,7 +968,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumns(String, String)
      * @see #addColumn(String, String, long)
      */
-    public AnyDelete addColumns(final String family, final String qualifier, final long timestamp) {
+    public AnyDelete addColumns(final String family, final String qualifier, final long timestamp) throws IllegalArgumentException {
         delete.addColumns(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), timestamp);
         return this;
     }
@@ -982,7 +999,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumns(byte[], byte[], long)
      * @see #addColumn(byte[], byte[])
      */
-    public AnyDelete addColumns(final byte[] family, final byte[] qualifier) {
+    public AnyDelete addColumns(final byte[] family, final byte[] qualifier) throws IllegalArgumentException {
         delete.addColumns(family, qualifier);
         return this;
     }
@@ -1014,7 +1031,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see #addColumns(byte[], byte[])
      * @see #addColumn(byte[], byte[], long)
      */
-    public AnyDelete addColumns(final byte[] family, final byte[] qualifier, final long timestamp) {
+    public AnyDelete addColumns(final byte[] family, final byte[] qualifier, final long timestamp) throws IllegalArgumentException {
         delete.addColumns(family, qualifier, timestamp);
         return this;
     }
@@ -1099,10 +1116,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @return a string representation of the delete operation
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the stored TTL attribute is shorter than eight bytes
      */
     @Override
-    public String toString() {
+    public String toString() throws NullPointerException, IllegalArgumentException {
         return delete.toString();
     }
 
@@ -1140,7 +1158,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see Delete
      * @see HBaseExecutor#delete(String, Collection)
      */
-    public static List<Delete> toDelete(final Collection<AnyDelete> anyDeletes) {
+    public static List<Delete> toDelete(final Collection<AnyDelete> anyDeletes) throws IllegalArgumentException {
         N.checkArgNotNull(anyDeletes, cs.anyDeletes);
 
         for (final AnyDelete anyDelete : anyDeletes) {

@@ -88,7 +88,7 @@ import com.landawn.abacus.util.stream.Stream;
  * underlying driver's vocabulary.</p>
  *
  * <h2>Query-Job Semantics (no streaming insert)</h2>
- * <p>Every method on this executor ultimately submits work as a synchronous BigQuery <i>query job</i>
+ * <p>The database operations exposed by this executor submit work as synchronous BigQuery <i>query jobs</i>
  * via {@link BigQuery#query(QueryJobConfiguration, com.google.cloud.bigquery.BigQuery.JobOption...)}.
  * That includes the DML helpers ({@link #insert(Object)}, {@link #update(Object)},
  * {@link #delete(Object)}), which build {@code INSERT}/{@code UPDATE}/{@code DELETE} statements
@@ -138,10 +138,11 @@ import com.landawn.abacus.util.stream.Stream;
  * <h2>Result Value Conversion</h2>
  * <p>BigQuery returns every scalar cell as text. When a row is mapped to a bean property or a single-value
  * type, {@code BYTES} cells (base64 text) are decoded for {@code byte[]}/{@link java.nio.ByteBuffer} targets and
- * {@code TIMESTAMP} cells (epoch seconds or microseconds) are decoded with microsecond precision for
- * {@code java.util.Date}/{@code Calendar}/{@code java.time} and {@code com.google.cloud.Timestamp} targets; other
- * cells go through the standard abacus type conversion. {@code Map} and {@code Object[]} rows keep the raw cell
- * values.</p>
+ * {@code TIMESTAMP} cells (epoch seconds or microseconds) are decoded for date/time targets. Microsecond precision
+ * is retained where the target supports it; {@code java.util.Date} and {@code Calendar} retain milliseconds.
+ * The same decoding applies to elements of typed collection and array bean properties for {@code REPEATED}
+ * columns. Other cells go through the standard abacus type conversion. {@code Map} and {@code Object[]} rows
+ * keep the raw cell values.</p>
  *
  * <h2>Result Set Pagination</h2>
  * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
@@ -252,7 +253,7 @@ public class BigQueryExecutor {
      * @see #BigQueryExecutor(BigQuery, NamingPolicy)
      * @see NamingPolicy#SNAKE_CASE
      */
-    public BigQueryExecutor(final BigQuery bigQuery) {
+    public BigQueryExecutor(final BigQuery bigQuery) throws IllegalArgumentException {
         this(bigQuery, NamingPolicy.SNAKE_CASE);
     }
 
@@ -285,7 +286,7 @@ public class BigQueryExecutor {
      *         the three supported policies
      * @see NamingPolicy
      */
-    public BigQueryExecutor(final BigQuery bigQuery, final NamingPolicy namingPolicy) {
+    public BigQueryExecutor(final BigQuery bigQuery, final NamingPolicy namingPolicy) throws IllegalArgumentException {
         if (bigQuery == null) {
             throw new IllegalArgumentException("bigQuery cannot be null");
         }
@@ -361,10 +362,12 @@ public class BigQueryExecutor {
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
      * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null}, the schema and row widths differ, or
      *         {@code targetClass} is null or not a recognised bean class
+     * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      * @see #toEntity(FieldList, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
-    public static <T> T toEntity(final Schema schema, final FieldValueList fieldValueList, final Class<T> targetClass) {
+    public static <T> T toEntity(final Schema schema, final FieldValueList fieldValueList, final Class<T> targetClass)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(schema, cs.schema);
 
         return toEntity(schema.getFields(), fieldValueList, targetClass);
@@ -409,10 +412,12 @@ public class BigQueryExecutor {
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
      * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is null, the field and row-value counts differ, or
      *         {@code targetClass} is null or not a recognised bean class
+     * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      * @see #toEntity(Schema, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
-    public static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final Class<T> targetClass) {
+    public static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final Class<T> targetClass)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(fields, cs.fields);
         N.checkArgNotNull(fieldValueList, cs.fieldValueList);
         checkFieldCount(fields, fieldValueList);
@@ -459,14 +464,7 @@ public class BigQueryExecutor {
                     propInfo.setPropValue(entity, readRow((FieldValueList) propValue, parameterType));
                 }
             } else if (propValue instanceof List) {
-                // REPEATED column: FieldValue.getValue() returns List<FieldValue>. Unwrap the wrapper
-                // elements (mirroring the toMap path's toMapValue) and convert through the property's
-                // FULL generic type so e.g. a List<Long> property holds typed values. N.convert can't be
-                // used here: it short-circuits when the raw container class is assignable
-                // (ArrayList -> List) and would keep the raw String elements, so the value is rebuilt
-                // through the parameterized Type's JSON codec instead.
-                final Object unwrapped = unwrapRepeatedValue(fields.get(i), (List<?>) propValue);
-                propInfo.setPropValue(entity, propInfo.jsonXmlType.isParameterizedType() ? propInfo.jsonXmlType.valueOf(N.toJson(unwrapped)) : unwrapped);
+                propInfo.setPropValue(entity, convertRepeatedValue(fields.get(i), (List<?>) propValue, propInfo.jsonXmlType));
             } else {
                 propInfo.setPropValue(entity, decodeTypedValue(fields.get(i), fieldValueList.get(i), parameterType));
             }
@@ -478,7 +476,12 @@ public class BigQueryExecutor {
     // Unwraps a REPEATED column's value — a List of FieldValue wrappers — into a List of plain values,
     // converting nested RECORD elements via the field's sub-fields. This is the entity/array/Dataset
     // sibling of the map path's toMapValue.
-    private static Object unwrapRepeatedValue(final Field field, final List<?> values) {
+    /**
+     * Converts BigQuery field values to their requested Java representation.
+     *
+     * @throws RuntimeException if a nested record has no readable schema or its schema does not describe every field value
+     */
+    private static Object unwrapRepeatedValue(final Field field, final List<?> values) throws RuntimeException {
         final List<Object> list = new ArrayList<>(values.size());
         final FieldList subFields = field == null ? null : field.getSubFields();
 
@@ -500,12 +503,59 @@ public class BigQueryExecutor {
         return list;
     }
 
+    /**
+     * Converts a repeated field using the bean property's element type. Binary and timestamp elements use
+     * BigQuery's typed accessors before constructing the container, preserving readable buffers and timestamp precision.
+     * Other parameterized values use the property's JSON codec so their elements are converted as well.
+     *
+     * @param field the schema field describing the repeated elements
+     * @param values the repeated values, normally wrapped in {@link FieldValue}
+     * @param targetType the bean property's complete Java type
+     * @return the decoded container, or unwrapped values converted using the property's normal type codec
+     * @throws RuntimeException if a repeated element cannot be decoded or converted, a nested record's schema is invalid,
+     *         or the requested container cannot be constructed or populated
+     */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static Object convertRepeatedValue(final Field field, final List<?> values, final Type<?> targetType) throws RuntimeException {
+        final Class<?> elementClass = targetType.isObjectArray() ? targetType.javaType().getComponentType()
+                : targetType.isCollection() && targetType.isParameterizedType() ? targetType.parameterTypes().get(0).javaType() : null;
+
+        if (elementClass != null && ((LegacySQLTypeName.BYTES.equals(field.getType()) && (elementClass == byte[].class || elementClass == ByteBuffer.class))
+                || (LegacySQLTypeName.TIMESTAMP.equals(field.getType()) && isDateTimeClass(elementClass)))) {
+            final Object[] array = targetType.isObjectArray() ? N.newArray(elementClass, values.size()) : null;
+            final Collection<Object> collection = array == null ? N.newCollection((Class<Collection>) targetType.javaType()) : null;
+
+            // Repeated values may use a sequential List; indexed reads would make decoding quadratic.
+            int index = 0;
+            for (final Object element : values) {
+                final Object decoded = element instanceof FieldValue ? decodeTypedValue(field, (FieldValue) element, elementClass) : element;
+
+                if (array == null) {
+                    collection.add(decoded);
+                } else {
+                    array[index++] = decoded;
+                }
+            }
+
+            return array == null ? collection : array;
+        }
+
+        final Object unwrapped = unwrapRepeatedValue(field, values);
+        return targetType.isParameterizedType() ? targetType.valueOf(N.toJson(unwrapped)) : unwrapped;
+    }
+
     // BigQuery returns a BYTES cell as base64 text and a TIMESTAMP cell as epoch seconds ("1.7189E9") or
     // epoch microseconds, none of which N.convert/setPropValue can decode (base64 -> NumberFormatException,
     // epoch seconds -> parse failure, epoch micros -> misread as millis). Decode those through FieldValue's
     // typed accessors when the target is a binary or date/time type; every other value (including the raw
     // String for String/Object targets) is returned unchanged for the caller's normal conversion path.
-    private static Object decodeTypedValue(final Field field, final FieldValue fieldValue, final Class<?> targetClass) {
+    /**
+     * Converts BigQuery field values to their requested Java representation.
+     *
+     * @throws RuntimeException if a BYTES value is not valid Base64, a TIMESTAMP value cannot be parsed, or its timestamp cannot be converted to the
+     *         requested date/time type
+     */
+    private static Object decodeTypedValue(final Field field, final FieldValue fieldValue, final Class<?> targetClass) throws RuntimeException {
         final Object value = fieldValue.getValue();
 
         if (field == null || targetClass == null || !(value instanceof String)) {
@@ -580,9 +630,10 @@ public class BigQueryExecutor {
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
      * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, if the schema cannot be retrieved from
      *         {@code fieldValueList}, or if {@code targetClass} is null or not a recognised bean class
+     * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      * @see #toEntity(FieldList, FieldValueList, Class)
      */
-    public static <T> T toEntity(final FieldValueList fieldValueList, final Class<T> targetClass) {
+    public static <T> T toEntity(final FieldValueList fieldValueList, final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(fieldValueList, cs.fieldValueList);
 
         return toEntity(getSchema(fieldValueList), fieldValueList, targetClass);
@@ -618,7 +669,7 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null}, or if the schema and row widths differ
      * @see #toMap(FieldList, FieldValueList)
      */
-    public static Map<String, Object> toMap(final Schema schema, final FieldValueList fieldValueList) {
+    public static Map<String, Object> toMap(final Schema schema, final FieldValueList fieldValueList) throws IllegalArgumentException {
         N.checkArgNotNull(schema, cs.schema);
 
         return toMap(schema.getFields(), fieldValueList);
@@ -654,7 +705,7 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is {@code null}, or if their sizes differ
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
-    public static Map<String, Object> toMap(final FieldList fields, final FieldValueList fieldValueList) {
+    public static Map<String, Object> toMap(final FieldList fields, final FieldValueList fieldValueList) throws IllegalArgumentException {
         return toMap(fields, fieldValueList, IntFunctions.ofMap());
     }
 
@@ -696,7 +747,7 @@ public class BigQueryExecutor {
      * @see IntFunctions#ofLinkedHashMap()
      */
     public static Map<String, Object> toMap(final FieldList fields, final FieldValueList fieldValueList,
-            final IntFunction<? extends Map<String, Object>> mapSupplier) throws IllegalArgumentException {
+            final IntFunction<? extends Map<String, Object>> mapSupplier) throws IllegalArgumentException, RuntimeException, NullPointerException {
         N.checkArgNotNull(fields, cs.fields);
         N.checkArgNotNull(fieldValueList, cs.fieldValueList);
         checkFieldCount(fields, fieldValueList);
@@ -715,13 +766,21 @@ public class BigQueryExecutor {
      * Verifies that an explicitly supplied schema has the same number of fields as the row. A
      * width mismatch would otherwise either omit trailing schema fields or fail later with an
      * unrelated index exception.
+     * @throws IllegalArgumentException if the schema field count differs from the row value count
      */
-    private static void checkFieldCount(final FieldList fields, final FieldValueList fieldValueList) {
+    private static void checkFieldCount(final FieldList fields, final FieldValueList fieldValueList) throws IllegalArgumentException {
         N.checkArgument(fields.size() == fieldValueList.size(), "Schema field count ({}) does not match row value count ({})", fields.size(),
                 fieldValueList.size());
     }
 
-    private static Object toMapValue(final Field field, final FieldValue fieldValue, final IntFunction<? extends Map<String, Object>> mapSupplier) {
+    /**
+     * Unwraps a field value, recursively converting nested records to maps.
+     *
+     * @throws IllegalArgumentException if a nested record has no schema or its field count differs from the schema
+     * @throws RuntimeException if the map supplier or a supplied map rejects a nested record or field value
+     */
+    private static Object toMapValue(final Field field, final FieldValue fieldValue, final IntFunction<? extends Map<String, Object>> mapSupplier)
+            throws IllegalArgumentException, RuntimeException {
         final Object value = fieldValue.getValue();
 
         if (value instanceof FieldValueList) {
@@ -775,10 +834,11 @@ public class BigQueryExecutor {
      * @return a HashMap containing column names as keys and corresponding values
      * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, or if the schema cannot be extracted from
      *         {@code fieldValueList}
+     * @throws RuntimeException if reflective access to the row schema becomes inaccessible
      * @see #toMap(Schema, FieldValueList)
      * @see #toMap(FieldList, FieldValueList)
      */
-    public static Map<String, Object> toMap(final FieldValueList fieldValueList) {
+    public static Map<String, Object> toMap(final FieldValueList fieldValueList) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(fieldValueList, cs.fieldValueList);
 
         return toMap(getSchema(fieldValueList), fieldValueList);
@@ -816,15 +876,20 @@ public class BigQueryExecutor {
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
     public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> mapSupplier)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException, NullPointerException {
         N.checkArgNotNull(fieldValueList, cs.fieldValueList);
         N.checkArgNotNull(mapSupplier, cs.mapSupplier);
 
         return toMap(getSchema(fieldValueList), fieldValueList, mapSupplier);
     }
 
+    /**
+     * Converts BigQuery field values to their requested Java representation.
+     *
+     * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
+     */
     @SuppressWarnings({ "rawtypes", "null" })
-    private static <T> T readRow(final FieldValueList row, final Class<T> rowClass) {
+    private static <T> T readRow(final FieldValueList row, final Class<T> rowClass) throws RuntimeException {
         if (row == null) {
             return rowClass == null ? null : N.defaultValueOf(rowClass);
         }
@@ -1109,10 +1174,13 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code tableResult} is {@code null}, or if {@code targetClass} is incompatible with the row width
      *         (see scalar case above)
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws RuntimeException if retrieving a result page fails, a field cannot be converted, or a target bean or container cannot be constructed or
+     *         populated
      * @see #toEntity(FieldValueList, Class)
      * @see #stream(Class, String, Object...)
      */
-    public static <T> List<T> toList(final TableResult tableResult, final Class<T> targetClass) {
+    public static <T> List<T> toList(final TableResult tableResult, final Class<T> targetClass)
+            throws IllegalArgumentException, ArithmeticException, RuntimeException {
         N.checkArgNotNull(tableResult, cs.tableResult);
 
         final Schema schema = tableResult.getSchema();
@@ -1183,11 +1251,14 @@ public class BigQueryExecutor {
      *         {@code tableResult} has no schema (e.g. it came from a DML statement)
      * @throws IllegalArgumentException if {@code tableResult} is {@code null}
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws RuntimeException if retrieving a result page fails, a field cannot be converted, or a target bean or container cannot be constructed or
+     *         populated
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
     @SuppressWarnings({ "null" })
-    public static Dataset extractData(final TableResult tableResult, final Class<?> targetClass) {
+    public static Dataset extractData(final TableResult tableResult, final Class<?> targetClass)
+            throws IllegalArgumentException, ArithmeticException, RuntimeException {
         N.checkArgNotNull(tableResult, cs.tableResult);
 
         final Schema schema = tableResult.getSchema();
@@ -1251,15 +1322,9 @@ public class BigQueryExecutor {
                 if (value instanceof FieldValueList && (columnClasses[i] == null || !FieldValueList.class.isAssignableFrom(columnClasses[i]))) {
                     columnList.get(i).add(readRow((FieldValueList) value, columnClasses[i]));
                 } else if (value instanceof List && !(value instanceof FieldValueList)) {
-                    // REPEATED column: unwrap the FieldValue wrapper elements (mirrors the toMap path) and,
-                    // when the matching bean property is parameterized (e.g. List<Long>), rebuild the list
-                    // through the property's JSON codec so elements are typed the same way toEntity types them.
-                    final Object unwrapped = unwrapRepeatedValue(fields.get(i), (List<?>) value);
-
                     columnList.get(i)
-                            .add(columnPropInfos[i] != null && columnPropInfos[i].jsonXmlType.isParameterizedType()
-                                    ? columnPropInfos[i].jsonXmlType.valueOf(N.toJson(unwrapped))
-                                    : unwrapped);
+                            .add(columnPropInfos[i] == null ? unwrapRepeatedValue(fields.get(i), (List<?>) value)
+                                    : convertRepeatedValue(fields.get(i), (List<?>) value, columnPropInfos[i].jsonXmlType));
                 } else if (value == null || targetClass == null || isMap || columnClasses[i] == null || columnClasses[i].isAssignableFrom(value.getClass())) {
                     columnList.get(i).add(value);
                 } else {
@@ -1305,10 +1370,11 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if {@code entity} is null, or if the SQL builder finds no insertable value in it (every insertable
      *         property is null, or only default-valued ID properties are set)
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
+     *         calling thread is interrupted while waiting for the job
      * @see #insert(Class, Map)
      */
-    public TableResult insert(final Object entity) {
+    public TableResult insert(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         final SP sp = prepareInsert(entity);
@@ -1316,7 +1382,13 @@ public class BigQueryExecutor {
         return execute(sp);
     }
 
-    private SP prepareInsert(final Object entity) {
+    /**
+     * Builds a parameterized statement using the configured naming policy.
+     *
+     * @throws IllegalArgumentException if {@code entity} cannot be mapped to insertable properties or its mapped property names are invalid
+     * @throws RuntimeException if reading or converting an entity property fails while constructing the statement
+     */
+    private SP prepareInsert(final Object entity) throws IllegalArgumentException, RuntimeException {
         final Class<?> targetClass = entity.getClass();
 
         switch (namingPolicy) {
@@ -1358,10 +1430,11 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if {@code targetClass} is null, if {@code props} is null or empty or contains a null, empty, or blank
      *         key, or if a value in {@code props} is an untyped null (wrap SQL nulls in a typed {@code QueryParameterValue})
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if a parameter converter fails, BigQuery rejects the statement or query job, or the calling thread is interrupted
+     *         while waiting for the job
      * @see #insert(Object)
      */
-    public TableResult insert(final Class<?> targetClass, final Map<String, Object> props) {
+    public TableResult insert(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "props cannot be null or empty");
 
@@ -1370,7 +1443,12 @@ public class BigQueryExecutor {
         return execute(sp);
     }
 
-    private SP prepareInsert(final Class<?> targetClass, final Map<String, Object> props) {
+    /**
+     * Builds a parameterized statement using the configured naming policy.
+     *
+     * @throws IllegalArgumentException if the target type has no usable table mapping or {@code props} contains invalid property names
+     */
+    private SP prepareInsert(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException {
         switch (namingPolicy) {
             case SNAKE_CASE:
                 return PSC.insert(props).into(targetClass).build();
@@ -1422,10 +1500,11 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null, if no primary key fields are found for the entity class, if a primary-key property of
      *         the entity has a null or blank value, or if every non-key property of the entity is null (nothing to update)
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
+     *         calling thread is interrupted while waiting for the job
      * @see #update(Object, Set)
      */
-    public TableResult update(final Object entity) {
+    public TableResult update(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         return update(entity, getKeyNameSet(entity.getClass()));
@@ -1471,10 +1550,11 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, if a named primary-key property of the entity has
      *         a null or blank value, or if every non-key property of the entity is null (nothing to update)
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
+     *         calling thread is interrupted while waiting for the job
      * @see #update(Class, Map, Condition)
      */
-    public TableResult update(final Object entity, final Set<String> primaryKeyNames) {
+    public TableResult update(final Object entity, final Set<String> primaryKeyNames) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         final SP sp = prepareUpdate(entity, primaryKeyNames);
@@ -1482,7 +1562,14 @@ public class BigQueryExecutor {
         return execute(sp);
     }
 
-    private SP prepareUpdate(final Object entity, final Set<String> primaryKeyNames) {
+    /**
+     * Builds a parameterized statement using the configured naming policy.
+     *
+     * @throws IllegalArgumentException if {@code primaryKeyNames} is null or empty, a key value is null or empty, there are no non-null non-key
+     *         properties, or a mapped property name is invalid
+     * @throws RuntimeException if reading or converting an entity property fails while constructing the statement
+     */
+    private SP prepareUpdate(final Object entity, final Set<String> primaryKeyNames) throws IllegalArgumentException, RuntimeException {
         N.checkArgument(N.notEmpty(primaryKeyNames), "primaryKeyNames cannot be null or empty");
 
         final Class<?> targetClass = entity.getClass();
@@ -1572,10 +1659,12 @@ public class BigQueryExecutor {
      *         empty, or blank key, or {@code whereClause} has a null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or
      *         other non-predicate condition; or if a value in {@code props} is an untyped null (wrap SQL nulls in a typed
      *         {@code QueryParameterValue})
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if a parameter converter fails, BigQuery rejects the statement or query job, or the calling thread is interrupted
+     *         while waiting for the job
      * @see com.landawn.abacus.query.Filters
      */
-    public TableResult update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+    public TableResult update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "props cannot be null or empty");
 
@@ -1586,7 +1675,13 @@ public class BigQueryExecutor {
         return execute(sp);
     }
 
-    private SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+    /**
+     * Builds a parameterized statement using the configured naming policy.
+     *
+     * @throws IllegalArgumentException if the target type has no usable table mapping, {@code props} contains invalid property names, or {@code
+     *         whereClause} cannot be represented by the SQL builder
+     */
+    private SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) throws IllegalArgumentException {
         switch (namingPolicy) {
             case SNAKE_CASE:
                 return PSC.update(targetClass).set(props).where(whereClause).build();
@@ -1632,10 +1727,11 @@ public class BigQueryExecutor {
      * @param entity the entity instance containing primary key values for deletion
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null, if no primary key fields are defined, or if no key value is set on the entity
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
+     *         calling thread is interrupted while waiting for the job
      * @see #delete(Class, Object...)
      */
-    public TableResult delete(final Object entity) {
+    public TableResult delete(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         return delete(entity.getClass(), entityToCondition(entity));
@@ -1672,10 +1768,11 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if targetClass is null, if ids is null or empty, or the number of IDs doesn't match the primary key
      *         structure
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if a parameter converter fails, BigQuery rejects the statement or query job, or the calling thread is interrupted
+     *         while waiting for the job
      * @see #delete(Class, Condition)
      */
-    public final TableResult delete(final Class<?> targetClass, final Object... ids) {
+    public final TableResult delete(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return delete(targetClass, idsToCondition(targetClass, ids));
@@ -1711,10 +1808,11 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if {@code targetClass} is null, if {@code whereClause} is {@code null}, or if {@code whereClause} has a
      *         null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL builder
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if a parameter converter fails, BigQuery rejects the statement or query job, or the calling thread is interrupted
+     *         while waiting for the job
      * @see com.landawn.abacus.query.Filters
      */
-    public TableResult delete(final Class<?> targetClass, final Condition whereClause) {
+    public TableResult delete(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(whereClause, cs.whereClause);
 
@@ -1723,7 +1821,13 @@ public class BigQueryExecutor {
         return execute(sp);
     }
 
-    private SP prepareDelete(final Class<?> targetClass, final Condition whereClause) {
+    /**
+     * Builds a parameterized statement using the configured naming policy.
+     *
+     * @throws IllegalArgumentException if the target type has no usable table mapping or {@code whereClause} cannot be represented by the SQL
+     *         builder
+     */
+    private SP prepareDelete(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException {
         switch (namingPolicy) {
             case SNAKE_CASE:
                 return PSC.deleteFrom(targetClass).where(whereClause).build();
@@ -1770,10 +1874,11 @@ public class BigQueryExecutor {
      * @return {@code true} if a record exists with the specified key values, {@code false} otherwise
      * @throws IllegalArgumentException if targetClass is null, if ids is null or empty, or the number of IDs doesn't match the primary key
      *         structure
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if a parameter converter fails, BigQuery rejects the statement or query job, or the calling thread is interrupted
+     *         while waiting for the job
      * @see #exists(Class, Condition)
      */
-    public final boolean exists(final Class<?> targetClass, final Object... ids) {
+    public final boolean exists(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return exists(targetClass, idsToCondition(targetClass, ids));
@@ -1821,7 +1926,7 @@ public class BigQueryExecutor {
      *         primary key structure
      * @see #entityToCondition(Object)
      */
-    static Condition idsToCondition(final Class<?> targetClass, final Object... ids) {
+    static Condition idsToCondition(final Class<?> targetClass, final Object... ids) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotEmpty(ids, cs.ids);
 
@@ -1868,9 +1973,10 @@ public class BigQueryExecutor {
      * @param entity the entity instance containing primary key values, must not be {@code null}
      * @return a Condition suitable for WHERE clauses based on the entity's key values
      * @throws IllegalArgumentException if entity is null or no valid primary key values are found
+     * @throws RuntimeException if reading an entity's primary-key property fails
      * @see #idsToCondition(Class, Object...)
      */
-    static Condition entityToCondition(final Object entity) {
+    static Condition entityToCondition(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
@@ -1944,10 +2050,11 @@ public class BigQueryExecutor {
      *         {@code NullPointerException} from the internal cache map); if {@code targetClass} declares no key property and no selectable
      *         property; or if {@code whereClause} has a null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other
      *         non-predicate condition rejected by the SQL builder
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if a parameter converter fails, BigQuery rejects the statement or query job, or the calling thread is interrupted
+     *         while waiting for the job
      * @see com.landawn.abacus.query.Filters
      */
-    public boolean exists(final Class<?> targetClass, final Condition whereClause) {
+    public boolean exists(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ImmutableList<String> keyNames = getKeyNames(targetClass);
@@ -1996,13 +2103,15 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}; if {@code propName} is null, empty, or blank; if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition
      *         rejected by the SQL builder; or if a row is returned and {@code valueClass} is null or the column value cannot be converted to it
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if a row is returned and the column value overflows an integral {@code valueClass}
      * @see #queryForSingleValue(Class, String, Object...)
      * @see #queryForSingleNonNull(Class, Class, String, Condition)
      * @see #execute(String, Object...)
      */
-    public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException {
         final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause, 1);
 
         return queryForSingleValue(valueClass, sp.query(), sp.parameters().toArray());
@@ -2049,13 +2158,15 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code query} is null or empty, if any positional parameter is an untyped null (wrap SQL nulls in a
      *         typed {@code QueryParameterValue}), or if a row is returned and {@code valueClass} is null or the column value cannot be
      *         converted to it
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if a row is returned and the column value overflows an integral {@code valueClass}
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForSingleNonNull(Class, String, Object...)
      * @see #execute(String, Object...)
      */
-    public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
+    public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException {
         final TableResult tableResult = execute(query, parameters);
         // For DML statements BigQuery reports the affected-row count via getTotalRows() while
         // getValues() is empty. Drive off the iterator rather than the row count so we don't
@@ -2115,7 +2226,8 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}; if {@code propName} is null, empty, or blank; if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition
      *         rejected by the SQL builder; or if a row is returned and {@code valueClass} is null or the column value cannot be converted to it
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if a row is returned and the column value overflows an integral {@code valueClass}
      * @throws NullPointerException if a row is returned but the column value (or its conversion) is {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload
@@ -2123,7 +2235,8 @@ public class BigQueryExecutor {
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #execute(String, Object...)
      */
-    public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException, NullPointerException {
         final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause, 1);
 
         return queryForSingleNonNull(valueClass, sp.query(), sp.parameters().toArray());
@@ -2172,7 +2285,8 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code query} is null or empty, if any positional parameter is an untyped null (wrap SQL nulls in a
      *         typed {@code QueryParameterValue}), or if a row is returned and {@code valueClass} is null or the column value cannot be
      *         converted to it
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if a row is returned and the column value overflows an integral {@code valueClass}
      * @throws NullPointerException if a row is returned but the column value (or its conversion) is {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload
@@ -2180,7 +2294,8 @@ public class BigQueryExecutor {
      * @see #queryForSingleValue(Class, String, Object...)
      * @see #execute(String, Object...)
      */
-    public final <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
+    public final <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException, NullPointerException {
         final TableResult tableResult = execute(query, parameters);
         // For DML statements BigQuery reports the affected-row count via getTotalRows() while
         // getValues() is empty. Drive off the iterator rather than the row count so we don't
@@ -2232,12 +2347,13 @@ public class BigQueryExecutor {
      * @return a Dataset containing all matching records in columnar format
      * @throws IllegalArgumentException if {@code targetClass} is null or declares no selectable property, or if {@code whereClause} has a
      *         null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL builder
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #query(Class, Collection, Condition)
      * @see Dataset
      */
-    public Dataset query(final Class<?> targetClass, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException, ArithmeticException {
         return query(targetClass, null, whereClause);
     }
 
@@ -2273,11 +2389,13 @@ public class BigQueryExecutor {
      *         if {@code selectPropNames} is null or empty and {@code targetClass} declares no selectable property; or if {@code whereClause}
      *         has a null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL
      *         builder
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #query(Class, String, Object...)
      */
-    public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException {
         final SP sp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return query(targetClass, sp.query(), sp.parameters().toArray());
@@ -2316,13 +2434,14 @@ public class BigQueryExecutor {
      * @return a Dataset containing query results in columnar format
      * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
      *         typed {@code QueryParameterValue})
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, retrieving a result page fails, or the calling thread is interrupted
-     *         while waiting for the job
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #execute(String, Object...)
      * @see Dataset
      */
-    public final Dataset query(final Class<?> targetClass, final String query, final Object... parameters) {
+    public final Dataset query(final Class<?> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException {
         return extractData(execute(query, parameters), targetClass);
     }
 
@@ -2361,12 +2480,13 @@ public class BigQueryExecutor {
      * @return a List containing all matching records converted to the target type, empty list if no matches
      * @throws IllegalArgumentException if {@code targetClass} is null or declares no selectable property, or if {@code whereClause} has a
      *         null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL builder
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, Collection, Condition)
      */
-    public <T> List<T> list(final Class<T> targetClass, final Condition whereClause) {
+    public <T> List<T> list(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException, ArithmeticException {
         return list(targetClass, null, whereClause);
     }
 
@@ -2401,12 +2521,14 @@ public class BigQueryExecutor {
      *         if {@code selectPropNames} is null or empty and {@code targetClass} declares no selectable property; or if {@code whereClause}
      *         has a null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL
      *         builder
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, String, Object...)
      */
-    public <T> List<T> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> List<T> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException {
         final SP sp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return list(targetClass, sp.query(), sp.parameters().toArray());
@@ -2446,13 +2568,14 @@ public class BigQueryExecutor {
      * @return a List containing all query results converted to the target type, empty list if no results
      * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
      *         typed {@code QueryParameterValue})
-     * @throws RuntimeException if BigQuery rejects the SQL or query job, retrieving a result page fails, or the calling thread is interrupted
-     *         while waiting for the job
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
+     *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
      * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #execute(String, Object...)
      * @see #toList(TableResult, Class)
      */
-    public final <T> List<T> list(final Class<T> targetClass, final String query, final Object... parameters) {
+    public final <T> List<T> list(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException, ArithmeticException {
         return toList(execute(query, parameters), targetClass);
     }
 
@@ -2495,7 +2618,7 @@ public class BigQueryExecutor {
      * @see com.landawn.abacus.query.Filters
      * @see #stream(Class, Collection, Condition)
      */
-    public <T> Stream<T> stream(final Class<T> targetClass, final Condition whereClause) {
+    public <T> Stream<T> stream(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return stream(targetClass, null, whereClause);
     }
 
@@ -2537,7 +2660,8 @@ public class BigQueryExecutor {
      * @see com.landawn.abacus.query.Filters
      * @see #stream(Class, String, Object...)
      */
-    public <T> Stream<T> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public <T> Stream<T> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
+            throws IllegalArgumentException, RuntimeException {
         final SP sp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return stream(targetClass, sp.query(), sp.parameters().toArray());
@@ -2582,7 +2706,8 @@ public class BigQueryExecutor {
      * @see #execute(String, Object...)
      * @see Stream
      */
-    public final <T> Stream<T> stream(final Class<T> targetClass, final String query, final Object... parameters) {
+    public final <T> Stream<T> stream(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         final TableResult tableResult = execute(query, parameters);
         // Pass the result schema instead of null: the null path falls back to the reflective
         // FieldValueList.schema accessor, which is unavailable on some library versions.
@@ -2634,7 +2759,7 @@ public class BigQueryExecutor {
      * @see QueryJobConfiguration
      * @see #stream(QueryJobConfiguration)
      */
-    public final <T> Stream<T> stream(final Class<T> targetClass, final QueryJobConfiguration queryConfig) {
+    public final <T> Stream<T> stream(final Class<T> targetClass, final QueryJobConfiguration queryConfig) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(queryConfig, cs.queryConfig);
 
         if (logger.isDebugEnabled()) {
@@ -2701,7 +2826,7 @@ public class BigQueryExecutor {
      * @see FieldValueList
      * @see #stream(Class, QueryJobConfiguration)
      */
-    public final Stream<FieldValueList> stream(final QueryJobConfiguration queryConfig) {
+    public final Stream<FieldValueList> stream(final QueryJobConfiguration queryConfig) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(queryConfig, cs.queryConfig);
 
         if (logger.isDebugEnabled()) {
@@ -2718,7 +2843,14 @@ public class BigQueryExecutor {
         }
     }
 
-    private TableResult execute(final SP sp) {
+    /**
+     * Executes a generated statement and its positional parameters.
+     *
+     * @throws IllegalArgumentException if the SQL is empty or a parameter is an untyped null or has an unsupported value
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the SQL, the query job fails or is cancelled, or the calling thread
+     *         is interrupted while waiting for its result
+     */
+    private TableResult execute(final SP sp) throws IllegalArgumentException, RuntimeException {
         return execute(sp.query(), sp.parameters().toArray());
     }
 
@@ -2757,12 +2889,12 @@ public class BigQueryExecutor {
      *         a result with no schema
      * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
      *         typed {@code QueryParameterValue})
-     * @throws RuntimeException if BigQuery rejects the SQL or query job (a {@code BigQueryException}), the job fails or is cancelled (a
-     *         wrapped {@link JobException}), or the calling thread is interrupted while waiting for the job
+     * @throws RuntimeException if parameter conversion fails, BigQuery rejects the SQL, the query job fails or is cancelled, or the calling thread
+     *         is interrupted while waiting for its result
      * @see #stream(Class, String, Object...)
      * @see #list(Class, String, Object...)
      */
-    public final TableResult execute(final String query, final Object... parameters) {
+    public final TableResult execute(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         N.checkArgument(Strings.isNotEmpty(query), "Provided query is null or empty");
         final List<QueryParameterValue> values = buildQueryParameterValue(parameters);
 
@@ -2781,11 +2913,24 @@ public class BigQueryExecutor {
         }
     }
 
-    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    /**
+     * Builds a parameterized statement using the configured naming policy.
+     *
+     * @throws IllegalArgumentException if {@code targetClass} is null or has no selectable properties, a selected property name is null or blank, or
+     *         {@code whereClause} cannot be represented by the SQL builder
+     */
+    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) throws IllegalArgumentException {
         return prepareQuery(targetClass, selectPropNames, whereClause, 0);
     }
 
-    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
+    /**
+     * Builds a parameterized statement using the configured naming policy.
+     *
+     * @throws IllegalArgumentException if {@code targetClass} is null or has no selectable properties, a selected property name is null or blank, or
+     *         {@code whereClause} cannot be represented by the SQL builder
+     */
+    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count)
+            throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         final boolean isNonNullCond = whereClause != null;
         SqlBuilder sqlBuilder = null;
@@ -2918,10 +3063,12 @@ public class BigQueryExecutor {
      * @return a list of {@link QueryParameterValue}s in the same order as {@code parameters}, or
      *         {@link N#emptyList()} when {@code parameters} is {@code null} or empty
      * @throws IllegalArgumentException if any element of {@code parameters} is {@code null} and not already a {@link QueryParameterValue}
+     * @throws RuntimeException if a parameter converter fails, including serialization of a parameter to JSON or conversion of its value to the
+     *         required BigQuery type
      * @see QueryParameterValue
      * @see #execute(String, Object...)
      */
-    static List<QueryParameterValue> buildQueryParameterValue(final Object... parameters) {
+    static List<QueryParameterValue> buildQueryParameterValue(final Object... parameters) throws IllegalArgumentException, RuntimeException {
         if (N.isEmpty(parameters)) {
             return N.emptyList();
         }
@@ -2976,7 +3123,7 @@ public class BigQueryExecutor {
      * @see FieldList
      * @see FieldValueList
      */
-    static FieldList getSchema(final FieldValueList fieldValueList) {
+    static FieldList getSchema(final FieldValueList fieldValueList) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(fieldValueList, cs.fieldValueList);
         // Capture the volatile accessor once. Another thread may disable the shared accessor after
         // an IllegalAccessException; reading the field twice could otherwise pass the null check and

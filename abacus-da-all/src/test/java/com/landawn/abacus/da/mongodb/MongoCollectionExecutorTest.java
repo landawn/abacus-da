@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
@@ -17,6 +18,7 @@ import java.util.List;
 
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.Binary;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -2183,6 +2185,44 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         verify(mockCollection, never()).watch((Class<Document>) any());
         verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+    }
+
+    @Test
+    public void testScalarQueriesPreserveNumericOverflowFailures() {
+        final Document row = new Document("value", Long.MAX_VALUE);
+        final Bson filter = new Document();
+        when(mockFindIterable.first()).thenReturn(row);
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForInt("value", filter));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForSingleValue("value", filter, Integer.class));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForSingleNonNull("value", filter, Integer.class));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.findFirst(Arrays.asList("value"), filter, Integer.class));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.list(Arrays.asList("value"), filter, Integer.class));
+    }
+
+    @Test
+    public void testBinaryScalarQueriesPreserveReadablePayloads() {
+        final byte[] bytes = { 1, 2, 3 };
+        final ByteBuffer expected = ByteBuffer.wrap(bytes);
+        final Bson filter = new Document();
+
+        for (final Object value : new Object[] { bytes, new Binary(bytes) }) {
+            final Document row = new Document("value", value);
+            when(mockFindIterable.first()).thenReturn(row);
+            when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+            Assertions.assertEquals(expected, executor.queryForSingleValue("value", filter, ByteBuffer.class).get());
+            Assertions.assertEquals(expected, executor.queryForSingleNonNull("value", filter, ByteBuffer.class).get());
+            Assertions.assertEquals(expected, executor.findFirst(Arrays.asList("value"), filter, ByteBuffer.class).get());
+            Assertions.assertEquals(Arrays.asList(expected), executor.list(Arrays.asList("value"), filter, ByteBuffer.class));
+
+            when(mockCursor.hasNext()).thenReturn(true, false);
+            when(mockCursor.next()).thenReturn(row);
+            try (Stream<ByteBuffer> stream = executor.stream(Arrays.asList("value"), filter, ByteBuffer.class)) {
+                Assertions.assertEquals(Arrays.asList(expected), stream.toList());
+            }
+        }
     }
 
     public static class GroupRow {

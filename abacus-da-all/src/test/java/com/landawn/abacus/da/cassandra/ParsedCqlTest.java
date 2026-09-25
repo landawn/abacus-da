@@ -460,4 +460,22 @@ public class ParsedCqlTest extends TestBase {
         assertEquals(1, parsed.parameterCount());
         assertEquals("id", parsed.namedParameters().get(0));
     }
+
+    @Test
+    public void testParse_BackslashesAreLiteralCqlCharacters() {
+        for (final String literal : new String[] { "'C:\\'", "'C:\\\\'", "'a\\''b'", "'\\$$0$$//tail'" }) {
+            final ParsedCql parsed = ParsedCql.parse("SELECT * FROM files WHERE path = " + literal + " AND id = :id");
+            assertEquals("SELECT * FROM files WHERE path = " + literal + " AND id = ?", parsed.parameterizedCql());
+            assertEquals(1, parsed.parameterCount());
+            assertEquals("id", parsed.namedParameters().get(0));
+        }
+
+        final ParsedCql commented = ParsedCql.parse("UPDATE files SET path = 'C:\\' // comment with :unused\n WHERE id = #{id}");
+        assertEquals("UPDATE files SET path = 'C:\\' WHERE id = ?", commented.parameterizedCql());
+        assertEquals(1, commented.parameterCount());
+
+        final ParsedCql identifier = ParsedCql.parse("SELECT \"path\\\" FROM files WHERE id = :id");
+        assertEquals("SELECT \"path\\\" FROM files WHERE id = ?", identifier.parameterizedCql());
+        assertEquals(1, identifier.parameterCount());
+    }
 }

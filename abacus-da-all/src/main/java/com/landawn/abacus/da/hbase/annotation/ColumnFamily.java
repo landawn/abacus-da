@@ -128,7 +128,9 @@ public @interface ColumnFamily {
      *       family name, overriding any class-level column family annotation.</li>
      * </ul>
      * 
-     * <p><strong>Default behavior (empty string):</strong></p>
+     * <p><strong>Default behavior (empty string):</strong> An empty annotation is ignored.
+     * A field therefore uses a nonempty class-level column family when one is present.
+     * Otherwise:</p>
      * <ul>
      *   <li>For scalar (non-entity) fields: field name becomes the column family, qualifier is empty</li>
      *   <li>For entity fields: field name becomes the column family, nested field names become qualifiers</li>

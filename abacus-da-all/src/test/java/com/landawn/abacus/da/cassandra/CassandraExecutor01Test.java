@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.ProtocolVersion;
 import com.datastax.oss.driver.api.core.cql.AsyncResultSet;
+import com.datastax.oss.driver.api.core.cql.BatchType;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
@@ -106,6 +108,16 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
         when(mockColumnDef.getType()).thenReturn(mockDataType);
         when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
+    }
+
+    @Test
+    public void invalidLaterBatchRowIsRejectedBeforePreparingAnyStatement() {
+        final List<Map<String, Object>> props = List.of(Map.of("id", 1L), Map.of());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.prepareBatchInsertStatement(TestEntity.class, props, BatchType.LOGGED));
+
+        verify(mockSession, never()).prepare(anyString());
     }
 
     @Test
@@ -789,6 +801,126 @@ public class CassandraExecutor01Test extends TestBase {
         // extractData with an entity whose matching property is byte[]
         final Dataset ds = CassandraExecutor.extractData(mockResultSet, SliceNBlobEntity.class);
         org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, (byte[]) ds.getColumn("data").get(0));
+    }
+
+    @Test
+    public void testUdtBlobFieldsAcceptByteArraysInBeansMapsAndLists() {
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("blob_type"),
+                false, List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("data")), List.of(com.datastax.oss.driver.api.core.type.DataTypes.BLOB));
+        final CassandraExecutor.UDTCodec<SliceNBlobEntity> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNBlobEntity.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final CassandraExecutor.UDTCodec<List> listCodec = CassandraExecutor.UDTCodec.create(userType, List.class);
+
+        for (final byte[] bytes : new byte[][] { new byte[0], { 1, 2, 3 } }) {
+            final SliceNBlobEntity bean = new SliceNBlobEntity();
+            bean.setData(bytes);
+            org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, beanCodec.decode(beanCodec.encode(bean, ProtocolVersion.V4), ProtocolVersion.V4).getData());
+            assertEquals(ByteBuffer.wrap(bytes), mapCodec.decode(mapCodec.encode(Map.of("data", bytes), ProtocolVersion.V4), ProtocolVersion.V4).get("data"));
+            assertEquals(ByteBuffer.wrap(bytes), listCodec.decode(listCodec.encode(List.of(bytes), ProtocolVersion.V4), ProtocolVersion.V4).get(0));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, beanCodec.parse(beanCodec.format(bean)).getData());
+        }
+
+        final ByteBuffer buffer = ByteBuffer.wrap(new byte[] { 9, 4, 5 });
+        buffer.position(1);
+        assertEquals(ByteBuffer.wrap(new byte[] { 4, 5 }), mapCodec.decode(mapCodec.encode(Map.of("data", buffer), ProtocolVersion.V4), ProtocolVersion.V4).get("data"));
+        assertEquals(1, buffer.position());
+        assertNull(beanCodec.decode(beanCodec.encode(new SliceNBlobEntity(), ProtocolVersion.V4), ProtocolVersion.V4).getData());
+    }
+
+    @Test
+    public void testRegisteredBeanCodecTakesPrecedenceOverParameterExpansion() {
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("bean-test");
+        CassandraExecutor.registerTypeCodec(registry, TestEntity.class);
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "INSERT INTO custom_values (payload) VALUES (?)";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.TEXT);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("payload"));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final TestEntity value = new TestEntity();
+        value.setName("original");
+
+        codecExecutor.prepareStatement(query, value);
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertSame(value, bound[0][0]);
+    }
+
+    @Test
+    public void testRegisteredEnumCodecTakesPrecedenceOverScalarConversion() {
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("enum-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "INSERT INTO custom_values (payload) VALUES (?)";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.TEXT);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("payload"));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final java.time.DayOfWeek value = java.time.DayOfWeek.MONDAY;
+
+        // Without a value-specific codec, the existing scalar conversion remains available.
+        codecExecutor.prepareStatement(query, value);
+        assertEquals("MONDAY", bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertEquals("MONDAY", bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertEquals("MONDAY", bound[0][0]);
+
+        final java.util.concurrent.atomic.AtomicReference<RuntimeException> acceptanceFailure = new java.util.concurrent.atomic.AtomicReference<>();
+        registry.register(new CassandraExecutor.StringCodec<java.time.DayOfWeek>(java.time.DayOfWeek.class) {
+            @Override
+            public boolean accepts(final Object candidate) {
+                if (candidate instanceof java.time.DayOfWeek && acceptanceFailure.get() != null) {
+                    throw acceptanceFailure.get();
+                }
+                return super.accepts(candidate);
+            }
+        });
+
+        codecExecutor.prepareStatement(query, value);
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertSame(value, bound[0][0]);
+
+        // A registered codec's failure must propagate, rather than silently falling back to String.
+        final IllegalStateException failure = new IllegalStateException("codec acceptance failed");
+        acceptanceFailure.set(failure);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, value)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, List.of(value))));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, Map.of("payload", value))));
+    }
+
+    @Test
+    public void testToMapPropagatesColumnDecodingFailure() {
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("payload"));
+        final IllegalStateException failure = new IllegalStateException("column codec failed");
+        when(mockRow.getObject(0)).thenThrow(failure);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(mockRow)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(mockRow, HashMap::new)));
     }
 
     public static class SliceNBlobEntity {

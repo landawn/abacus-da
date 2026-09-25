@@ -195,7 +195,7 @@ public final class Neo4jExecutor {
      * @param sessionFactory the Neo4j {@link SessionFactory} used to open new sessions on demand
      * @throws IllegalArgumentException if {@code sessionFactory} is {@code null}
      */
-    public Neo4jExecutor(final SessionFactory sessionFactory) {
+    public Neo4jExecutor(final SessionFactory sessionFactory) throws IllegalArgumentException {
         if (sessionFactory == null) {
             throw new IllegalArgumentException("sessionFactory cannot be null");
         }
@@ -306,7 +306,7 @@ public final class Neo4jExecutor {
      * @see #call(Function)
      */
     @Beta
-    public void run(final Consumer<? super Session> action) throws IllegalArgumentException {
+    public void run(final Consumer<? super Session> action) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(action, cs.action);
 
         final Session session = getSession();
@@ -348,7 +348,7 @@ public final class Neo4jExecutor {
      * @see #run(Consumer)
      */
     @Beta
-    public <T> T call(final Function<? super Session, ? extends T> action) throws IllegalArgumentException {
+    public <T> T call(final Function<? super Session, ? extends T> action) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(action, cs.action);
 
         final Session session = getSession();
@@ -388,7 +388,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Serializable, int)
      * @see #loadAll(Class, Collection)
      */
-    public <T> T load(final Class<T> targetClass, final Serializable id) throws IllegalArgumentException {
+    public <T> T load(final Class<T> targetClass, final Serializable id) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(id, cs.id);
 
@@ -432,7 +432,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Serializable)
      * @see #loadAll(Class, Collection, int)
      */
-    public <T> T load(final Class<T> targetClass, final Serializable id, final int depth) throws IllegalArgumentException {
+    public <T> T load(final Class<T> targetClass, final Serializable id, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(id, cs.id);
 
@@ -478,7 +478,8 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, int)
      * @see #load(Class, Serializable)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -522,7 +523,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Serializable, int)
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -568,7 +569,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -613,7 +614,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -658,7 +659,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -704,7 +705,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -752,7 +753,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder,
-            final Pagination pagination) throws IllegalArgumentException {
+            final Pagination pagination) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -803,7 +804,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder,
-            final Pagination pagination, final int depth) throws IllegalArgumentException {
+            final Pagination pagination, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -842,7 +843,7 @@ public final class Neo4jExecutor {
      *         load query
      * @see #loadAll(Collection, int)
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects) {
+    public <T> Collection<T> loadAll(final Collection<T> objects) throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -881,7 +882,7 @@ public final class Neo4jExecutor {
      *         load query
      * @see #loadAll(Collection)
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects, final int depth) {
+    public <T> Collection<T> loadAll(final Collection<T> objects, final int depth) throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -924,7 +925,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder) {
+    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder) throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -966,7 +967,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final int depth) {
+    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final int depth) throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -1009,7 +1010,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Collection<T> objects, final Pagination pagination) throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -1052,7 +1053,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Collection<T> objects, final Pagination pagination, final int depth) throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -1098,7 +1099,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final Pagination pagination) throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -1145,7 +1146,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final Pagination pagination, final int depth) {
+    public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final Pagination pagination, final int depth)
+            throws RuntimeException {
         final Session session = getSession();
 
         try {
@@ -1187,7 +1189,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, int)
      * @see #loadAll(Class, Pagination)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1226,7 +1228,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class)
      * @see #loadAll(Class, Pagination, int)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final int depth) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1267,7 +1269,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1307,7 +1309,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final int depth) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1349,7 +1351,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1390,7 +1392,8 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination, final int depth) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination, final int depth)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1434,7 +1437,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final Pagination pagination) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final Pagination pagination)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1480,7 +1484,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final Pagination pagination, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1522,7 +1526,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Filter, int)
      * @see org.neo4j.ogm.cypher.Filter
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1564,7 +1568,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filter
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final int depth) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1610,7 +1614,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1656,7 +1661,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1701,7 +1706,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final Pagination pagination) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final Pagination pagination)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1747,7 +1753,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final Pagination pagination, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1797,7 +1803,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final Pagination pagination)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1847,7 +1853,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filter filter, final SortOrder sortOrder, final Pagination pagination, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1895,7 +1901,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filters
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1939,7 +1945,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Filters)
      * @see org.neo4j.ogm.cypher.Filters
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final int depth) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -1987,7 +1993,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2035,7 +2042,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2081,7 +2088,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final Pagination pagination) throws IllegalArgumentException {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final Pagination pagination)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2128,7 +2136,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final Pagination pagination, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2179,7 +2187,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final Pagination pagination)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2231,7 +2239,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final SortOrder sortOrder, final Pagination pagination, final int depth)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2272,7 +2280,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object, int)
      */
-    public void save(final Object object) throws IllegalArgumentException {
+    public void save(final Object object) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(object, cs.object);
 
         final Session session = getSession();
@@ -2313,7 +2321,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object)
      */
-    public void save(final Object object, final int depth) throws IllegalArgumentException {
+    public void save(final Object object, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(object, cs.object);
 
         final Session session = getSession();
@@ -2354,7 +2362,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #deleteAll(Class)
      */
-    public void delete(final Object object) throws IllegalArgumentException {
+    public void delete(final Object object) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(object, cs.object);
 
         final Session session = getSession();
@@ -2393,7 +2401,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #delete(Object)
      */
-    public void deleteAll(final Class<?> targetClass) throws IllegalArgumentException {
+    public void deleteAll(final Class<?> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2450,7 +2458,8 @@ public final class Neo4jExecutor {
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> Optional<T> findOnly(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) throws IllegalArgumentException {
+    public <T> Optional<T> findOnly(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(cypher, cs.cypher);
         N.checkArgNotNull(parameters, cs.parameters);
@@ -2502,7 +2511,7 @@ public final class Neo4jExecutor {
      * @see #stream(String, Map, boolean)
      * @see #findOnly(Class, String, Map)
      */
-    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters) throws IllegalArgumentException {
+    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(cypher, cs.cypher);
         N.checkArgNotNull(parameters, cs.parameters);
 
@@ -2567,7 +2576,8 @@ public final class Neo4jExecutor {
      * @see #stream(String, Map)
      * @see #stream(Class, String, Map)
      */
-    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters, final boolean readOnly) throws IllegalArgumentException {
+    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters, final boolean readOnly)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(cypher, cs.cypher);
         N.checkArgNotNull(parameters, cs.parameters);
 
@@ -2621,7 +2631,8 @@ public final class Neo4jExecutor {
      * @see #findOnly(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> Stream<T> stream(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) throws IllegalArgumentException {
+    public <T> Stream<T> stream(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters)
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(cypher, cs.cypher);
         N.checkArgNotNull(parameters, cs.parameters);
@@ -2678,7 +2689,7 @@ public final class Neo4jExecutor {
      * @see #count(Class)
      * @see org.neo4j.ogm.cypher.Filter
      */
-    public long count(final Class<?> targetClass, final Iterable<Filter> filters) throws IllegalArgumentException {
+    public long count(final Class<?> targetClass, final Iterable<Filter> filters) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filters, cs.filters);
 
@@ -2725,7 +2736,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if OGM cannot map the target class, the database cannot be reached, or Neo4j rejects the count query
      * @see #count(Class, Iterable)
      */
-    public long count(final Class<?> targetClass) throws IllegalArgumentException {
+    public long count(final Class<?> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Session session = getSession();
@@ -2762,9 +2773,10 @@ public final class Neo4jExecutor {
      *                       {@code null}, in which case {@code null} is returned
      * @return the native Neo4j graph ID for the entity, or {@code null} if {@code possibleEntity}
      *         is not a mapped/managed entity with an assigned ID
+     * @throws RuntimeException if OGM cannot read or convert the mapped graph identifier of {@code possibleEntity}
      * @see #load(Class, Serializable)
      */
-    public Long getGraphId(final Object possibleEntity) {
+    public Long getGraphId(final Object possibleEntity) throws RuntimeException {
         final Session session = getSession();
 
         try {

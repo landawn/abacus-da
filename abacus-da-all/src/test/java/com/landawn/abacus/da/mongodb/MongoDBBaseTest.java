@@ -1,5 +1,6 @@
 package com.landawn.abacus.da.mongodb;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -9,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -22,6 +24,7 @@ import java.util.TreeMap;
 import org.bson.BasicBSONObject;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.Binary;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -811,6 +814,290 @@ public class MongoDBBaseTest extends TestBase {
     }
 
     // -- Entities used by tests --
+
+    @Test
+    public void testBinaryRowsDecodeToReadableBuffersAndArrays() {
+        final byte[] expected = { 1, 2, 3 };
+        final Document decoded = new org.bson.codecs.DocumentCodec().decode(
+                new org.bson.BsonDocumentReader(new org.bson.BsonDocument("value", new org.bson.BsonBinary(expected))),
+                org.bson.codecs.DecoderContext.builder().build());
+
+        assertTrue(decoded.get("value") instanceof Binary);
+
+        for (final Document row : Arrays.asList(new Document("value", expected), decoded)) {
+            assertEquals(ByteBuffer.wrap(expected), MongoDBBase.readRow(row, ByteBuffer.class));
+            assertArrayEquals(expected, MongoDBBase.readRow(row, byte[].class));
+        }
+    }
+
+    @Test
+    public void testBinaryBeanPropertiesDecodeWithoutChangingDocuments() {
+        final byte[] expected = { 4, 5, 6 };
+        final Binary binary = new Binary(expected);
+        final Document child = new Document("buffer", binary).append("bytes", binary);
+        final Document row = new Document("buffer", expected).append("bytes", binary).append("child", child);
+
+        final BinaryEntity entity = MongoDBBase.toEntity(row, BinaryEntity.class);
+
+        assertEquals(ByteBuffer.wrap(expected), entity.getBuffer());
+        assertArrayEquals(expected, entity.getBytes());
+        assertEquals(ByteBuffer.wrap(expected), entity.getChild().getBuffer());
+        assertArrayEquals(expected, entity.getChild().getBytes());
+        assertSame(expected, row.get("buffer"));
+        assertSame(binary, row.get("bytes"));
+        assertSame(child, row.get("child"));
+        assertSame(binary, child.get("buffer"));
+
+        final BinaryEntity dotted = MongoDBBase.toEntity(new Document("child.buffer", binary), BinaryEntity.class);
+        assertEquals(ByteBuffer.wrap(expected), dotted.getChild().getBuffer());
+    }
+
+    @Test
+    public void testToListBinaryValuesPreservesEachPayload() {
+        final byte[] first = { 1, 2 };
+        final byte[] second = { 3, 4, 5 };
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(new Document("value", first), new Document("value", new Binary(second))));
+
+        assertEquals(Arrays.asList(ByteBuffer.wrap(first), ByteBuffer.wrap(second)), MongoDBBase.toList(mockFindIterable, ByteBuffer.class));
+    }
+
+    @Test
+    public void testBinaryBufferConversionsDoNotConsumeSource() {
+        final ByteBuffer input = ByteBuffer.allocateDirect(5);
+        input.put(new byte[] { 0, 1, 2, 3, 4 }).flip();
+        input.position(1);
+        input.limit(4);
+        final ByteBuffer readOnly = input.asReadOnlyBuffer();
+
+        assertArrayEquals(new byte[] { 1, 2, 3 }, MongoDBBase.readRow(new Document("value", readOnly), byte[].class));
+        final BinaryEntity entity = MongoDBBase.toEntity(new Document("bytes", readOnly).append("buffer", readOnly), BinaryEntity.class);
+        assertArrayEquals(new byte[] { 1, 2, 3 }, entity.getBytes());
+        assertSame(readOnly, entity.getBuffer());
+        assertEquals(1, readOnly.position());
+        assertEquals(4, readOnly.limit());
+    }
+
+    @Test
+    public void testTypedBinaryCollectionsConvertElementsWithoutChangingSource() {
+        final byte[] bytes = { 7, 8, 9 };
+        final Binary binary = new Binary(bytes);
+        final List<Object> values = Arrays.asList(bytes, binary, null);
+        final Document row = new Document("buffers", values).append("byteArrays", values).append("rawValues", values);
+
+        final BinaryEntity entity = MongoDBBase.toEntity(row, BinaryEntity.class);
+
+        assertEquals(ByteBuffer.wrap(bytes), entity.getBuffers().get(0));
+        assertEquals(ByteBuffer.wrap(bytes), entity.getBuffers().get(1));
+        assertNull(entity.getBuffers().get(2));
+        assertArrayEquals(bytes, entity.getByteArrays().get(0));
+        assertArrayEquals(bytes, entity.getByteArrays().get(1));
+        assertNull(entity.getByteArrays().get(2));
+        assertSame(values, entity.getRawValues());
+        assertSame(values, row.get("buffers"));
+        assertSame(bytes, values.get(0));
+        assertSame(binary, values.get(1));
+    }
+
+    @Test
+    public void testScalarConversionPreservesNumericOverflowFailures() {
+        final Document row = new Document("value", Long.MAX_VALUE);
+
+        assertThrows(ArithmeticException.class, () -> MongoDBBase.readRow(row, Integer.class));
+        assertThrows(ArithmeticException.class, () -> MongoDBBase.convertBsonValue(Long.MAX_VALUE, int.class));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.convertBsonValue(Long.MAX_VALUE, null));
+        assertEquals(Long.MAX_VALUE, MongoDBBase.readRow(row, Long.class));
+    }
+
+    @Test
+    public void testTypedBinaryArraySourcesPopulateCollectionsWithoutChangingSource() {
+        final byte[] bytes = { 7, 8, 9 };
+        final Binary binary = new Binary(bytes);
+        final ByteBuffer buffer = ByteBuffer.wrap(new byte[] { 0, 7, 8, 9, 0 }).asReadOnlyBuffer();
+        buffer.position(1);
+        buffer.limit(4);
+
+        for (final Object[] values : Arrays.asList(new Binary[] { binary, null }, new byte[][] { bytes, null },
+                new ByteBuffer[] { buffer, null }, new Object[] { bytes, binary, buffer, null })) {
+            final Document row = new Document("buffers", values).append("byteArrays", values).append("rawArray", values);
+            final BinaryEntity entity = MongoDBBase.toEntity(row, BinaryEntity.class);
+
+            assertEquals(values.length, entity.getBuffers().size());
+            assertEquals(values.length, entity.getByteArrays().size());
+            for (int i = 0; i < values.length - 1; i++) {
+                assertEquals(ByteBuffer.wrap(bytes), entity.getBuffers().get(i));
+                assertArrayEquals(bytes, entity.getByteArrays().get(i));
+            }
+            assertNull(entity.getBuffers().get(values.length - 1));
+            assertNull(entity.getByteArrays().get(values.length - 1));
+            assertSame(values, row.get("buffers"));
+            assertSame(values, row.get("byteArrays"));
+            assertSame(values, entity.getRawArray());
+            assertEquals(1, buffer.position());
+            assertEquals(4, buffer.limit());
+        }
+    }
+
+    @Test
+    public void testTypedBinaryMapsConvertValuesWithoutChangingSource() {
+        final byte[] bytes = { 7, 8, 9 };
+        final Binary binary = new Binary(bytes);
+        final Map<String, Object> values = new LinkedHashMap<>();
+        values.put("array", bytes);
+        values.put("binary", binary);
+        values.put("missing", null);
+        final Document row = new Document("bufferMap", values).append("byteArrayMap", values).append("rawMap", values);
+
+        final BinaryEntity entity = MongoDBBase.toEntity(row, BinaryEntity.class);
+
+        assertEquals(ByteBuffer.wrap(bytes), entity.getBufferMap().get("array"));
+        assertEquals(ByteBuffer.wrap(bytes), entity.getBufferMap().get("binary"));
+        assertNull(entity.getBufferMap().get("missing"));
+        assertArrayEquals(bytes, entity.getByteArrayMap().get("array"));
+        assertArrayEquals(bytes, entity.getByteArrayMap().get("binary"));
+        assertNull(entity.getByteArrayMap().get("missing"));
+        assertSame(values, entity.getRawMap());
+        assertSame(values, row.get("bufferMap"));
+        assertSame(binary, values.get("binary"));
+    }
+
+    @Test
+    public void testTypedBinaryArraysConvertElementsWithoutChangingSource() {
+        final byte[] bytes = { 7, 8, 9 };
+        final Binary binary = new Binary(bytes);
+        final Object[] values = { bytes, binary, null };
+
+        for (final Object input : Arrays.asList(values, Arrays.asList(values))) {
+            final Document row = new Document("bufferArray", input).append("byteArrayArray", input).append("rawArray", values);
+            final BinaryEntity entity = MongoDBBase.toEntity(row, BinaryEntity.class);
+
+            assertEquals(ByteBuffer.wrap(bytes), entity.getBufferArray()[0]);
+            assertEquals(ByteBuffer.wrap(bytes), entity.getBufferArray()[1]);
+            assertNull(entity.getBufferArray()[2]);
+            assertArrayEquals(bytes, entity.getByteArrayArray()[0]);
+            assertArrayEquals(bytes, entity.getByteArrayArray()[1]);
+            assertNull(entity.getByteArrayArray()[2]);
+            assertSame(values, entity.getRawArray());
+            assertSame(input, row.get("bufferArray"));
+            assertSame(binary, values[1]);
+        }
+
+        final ByteBuffer[] buffers = { ByteBuffer.wrap(bytes), null };
+        final byte[][] arrays = { bytes, null };
+        final BinaryEntity typed = MongoDBBase.toEntity(new Document("bufferArray", buffers).append("byteArrayArray", arrays), BinaryEntity.class);
+        assertSame(buffers, typed.getBufferArray());
+        assertSame(arrays, typed.getByteArrayArray());
+    }
+
+    public static class BinaryEntity {
+        private ByteBuffer buffer;
+        private byte[] bytes;
+        private BinaryEntity child;
+        private List<ByteBuffer> buffers;
+        private List<byte[]> byteArrays;
+        private List<Object> rawValues;
+        private Map<String, ByteBuffer> bufferMap;
+        private Map<String, byte[]> byteArrayMap;
+        private Map<String, Object> rawMap;
+        private ByteBuffer[] bufferArray;
+        private byte[][] byteArrayArray;
+        private Object[] rawArray;
+
+        public ByteBuffer getBuffer() {
+            return buffer;
+        }
+
+        public void setBuffer(final ByteBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        public byte[] getBytes() {
+            return bytes;
+        }
+
+        public void setBytes(final byte[] bytes) {
+            this.bytes = bytes;
+        }
+
+        public BinaryEntity getChild() {
+            return child;
+        }
+
+        public void setChild(final BinaryEntity child) {
+            this.child = child;
+        }
+
+        public List<ByteBuffer> getBuffers() {
+            return buffers;
+        }
+
+        public void setBuffers(final List<ByteBuffer> buffers) {
+            this.buffers = buffers;
+        }
+
+        public List<byte[]> getByteArrays() {
+            return byteArrays;
+        }
+
+        public void setByteArrays(final List<byte[]> byteArrays) {
+            this.byteArrays = byteArrays;
+        }
+
+        public List<Object> getRawValues() {
+            return rawValues;
+        }
+
+        public void setRawValues(final List<Object> rawValues) {
+            this.rawValues = rawValues;
+        }
+
+        public Map<String, ByteBuffer> getBufferMap() {
+            return bufferMap;
+        }
+
+        public void setBufferMap(final Map<String, ByteBuffer> bufferMap) {
+            this.bufferMap = bufferMap;
+        }
+
+        public Map<String, byte[]> getByteArrayMap() {
+            return byteArrayMap;
+        }
+
+        public void setByteArrayMap(final Map<String, byte[]> byteArrayMap) {
+            this.byteArrayMap = byteArrayMap;
+        }
+
+        public Map<String, Object> getRawMap() {
+            return rawMap;
+        }
+
+        public void setRawMap(final Map<String, Object> rawMap) {
+            this.rawMap = rawMap;
+        }
+
+        public ByteBuffer[] getBufferArray() {
+            return bufferArray;
+        }
+
+        public void setBufferArray(final ByteBuffer[] bufferArray) {
+            this.bufferArray = bufferArray;
+        }
+
+        public byte[][] getByteArrayArray() {
+            return byteArrayArray;
+        }
+
+        public void setByteArrayArray(final byte[][] byteArrayArray) {
+            this.byteArrayArray = byteArrayArray;
+        }
+
+        public Object[] getRawArray() {
+            return rawArray;
+        }
+
+        public void setRawArray(final Object[] rawArray) {
+            this.rawArray = rawArray;
+        }
+    }
 
     public static class TestEntity {
         private String id;

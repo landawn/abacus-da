@@ -13,6 +13,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -24,6 +25,7 @@ import java.util.Map;
 
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.Binary;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -2652,6 +2654,39 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         StepVerifier.create(executor.queryForSingleValue("age", filter, Integer.class)).verifyComplete();
         StepVerifier.create(executor.queryForSingleValue("age", filter, int.class)).expectNext(0).verifyComplete();
+    }
+
+    @Test
+    public void testScalarQueryNumericOverflowIsDeferredUntilSubscription() {
+        final Bson filter = new Document();
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("value", Long.MAX_VALUE));
+
+        final Mono<Integer> result = executor.queryForInt("value", filter);
+        StepVerifier.create(result).expectError(ArithmeticException.class).verify();
+        StepVerifier.create(executor.queryForSingleValue("value", filter, Integer.class)).expectError(ArithmeticException.class).verify();
+        StepVerifier.create(executor.findFirst(Arrays.asList("value"), filter, Integer.class)).expectError(ArithmeticException.class).verify();
+        StepVerifier.create(executor.list(Arrays.asList("value"), filter, Integer.class)).expectError(ArithmeticException.class).verify();
+    }
+
+    @Test
+    public void testBinaryScalarQueriesPreserveReadablePayloads() {
+        final byte[] bytes = { 1, 2, 3 };
+        final ByteBuffer expected = ByteBuffer.wrap(bytes);
+        final Bson filter = new Document();
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+
+        for (final Object value : new Object[] { bytes, new Binary(bytes) }) {
+            stubEmits(mockFindPublisher, new Document("value", value));
+
+            StepVerifier.create(executor.queryForSingleValue("value", filter, ByteBuffer.class)).expectNext(expected).verifyComplete();
+            StepVerifier.create(executor.findFirst(Arrays.asList("value"), filter, ByteBuffer.class)).expectNext(expected).verifyComplete();
+            StepVerifier.create(executor.list(Arrays.asList("value"), filter, ByteBuffer.class)).expectNext(expected).verifyComplete();
+        }
     }
 
     public static class GroupRow {

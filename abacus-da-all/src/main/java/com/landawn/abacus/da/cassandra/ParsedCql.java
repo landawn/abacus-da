@@ -203,7 +203,7 @@ public final class ParsedCql {
      *         mixes different parameter styles ({@code ?}, {@code :name}, {@code #{name}}) in the same statement,
      *         or contains a malformed iBatis/MyBatis parameter that is missing its closing brace
      */
-    private ParsedCql(final String cql) {
+    private ParsedCql(final String cql) throws IllegalArgumentException {
         this.cql = cql.trim();
         Map<Integer, String> localNamedParameters = new HashMap<>();
         hashCode = Objects.hash(this.cql);
@@ -211,8 +211,9 @@ public final class ParsedCql {
         // SqlParser does not know CQL dollar-quoted string constants ($$...$$): it would collapse whitespace inside
         // them and treat quote characters, "--", "#" or "/*" inside them as literal/comment starts. Each complete
         // constant is therefore replaced by an opaque placeholder before tokenization and restored when appended.
+        // Ordinary quoted CQL literals treat backslashes as data; double them temporarily for the SQL tokenizer.
         final List<String> dollarQuotedStrings = new ArrayList<>(0);
-        final List<String> words = SqlParser.tokenize(maskDollarQuotedStrings(removeDoubleSlashComments(this.cql), dollarQuotedStrings));
+        final List<String> words = SqlParser.tokenize(maskCqlStrings(removeDoubleSlashComments(this.cql), dollarQuotedStrings));
         final boolean isOpSqlPrefix = isOpSqlPrefix(words);
 
         int type = 0; // bit mask: 1 - '?', 2 - ':propName', 4 - '#{propName}'
@@ -328,7 +329,7 @@ public final class ParsedCql {
                         throw new IllegalArgumentException("Cannot mix parameter styles ('?', ':propName', '#{propName}') in the same CQL statement: " + cql);
                     }
 
-                    sb.append(dollarQuotedStrings.isEmpty() ? word : restoreDollarQuotedStrings(word, dollarQuotedStrings));
+                    sb.append(restoreCqlStrings(word, dollarQuotedStrings));
                 }
 
                 parameterizedCql = stripTrailingSemicolons(Strings.stripToEmpty(sb.toString()));
@@ -483,9 +484,7 @@ public final class ParsedCql {
                     final char quotedChar = cql.charAt(i);
                     result.append(quotedChar);
 
-                    if (quotedChar == '\\' && i + 1 < len) {
-                        result.append(cql.charAt(++i));
-                    } else if (quotedChar == quoteChar) {
+                    if (quotedChar == quoteChar) {
                         if (i + 1 < len && cql.charAt(i + 1) == quoteChar) {
                             result.append(cql.charAt(++i));
                         } else {
@@ -539,12 +538,13 @@ public final class ParsedCql {
      * ({@code $$0$$}, {@code $$1$$}, ...) and appends the original constants, in order, to
      * {@code dollarQuotedStrings}. The placeholders contain no separator, quote or comment characters, so
      * SqlParser keeps each one as a single token that {@link #updateLiteralState(int[], String)} still recognizes
-     * as dollar quoted. Quoted literals, {@code --} comments and block comments are copied verbatim so a
-     * {@code $$} inside them is not mistaken for a constant, and an unterminated {@code $$} is left as-is.
+     * as dollar quoted. Backslashes in ordinary quoted literals/identifiers are doubled temporarily because
+     * SqlParser recognizes backslash escaping while CQL does not. A {@code $$} inside an ordinary quoted
+     * region or comment is left untouched, and an unterminated {@code $$} is left as-is.
      * {@code //} comments must already have been removed (see {@link #removeDoubleSlashComments(String)}).
      */
-    private static String maskDollarQuotedStrings(final String cql, final List<String> dollarQuotedStrings) {
-        if (!cql.contains("$$")) {
+    private static String maskCqlStrings(final String cql, final List<String> dollarQuotedStrings) {
+        if (!cql.contains("$$") && cql.indexOf('\\') < 0) {
             return cql;
         }
 
@@ -561,8 +561,8 @@ public final class ParsedCql {
                     final char quotedChar = cql.charAt(i);
                     result.append(quotedChar);
 
-                    if (quotedChar == '\\' && i + 1 < len) {
-                        result.append(cql.charAt(++i));
+                    if (quotedChar == '\\') {
+                        result.append('\\');
                     } else if (quotedChar == quoteChar) {
                         if (i + 1 < len && cql.charAt(i + 1) == quoteChar) {
                             result.append(cql.charAt(++i));
@@ -608,12 +608,12 @@ public final class ParsedCql {
     }
 
     /**
-     * Replaces the placeholders produced by {@link #maskDollarQuotedStrings(String, List)} in one token with the
-     * original dollar-quoted constants. Placeholder-like text inside a quoted literal of the token, and comment
-     * tokens (retained only in "-- Keep comments" mode), are left untouched.
+     * Reverses {@link #maskCqlStrings(String, List)} in one token: restores dollar-quoted constants and removes
+     * the extra backslash from every encoded pair inside an ordinary quoted region. Placeholder-like text
+     * inside an ordinary quoted region, and comment tokens (retained only in "-- Keep comments" mode), are left untouched.
      */
-    private static String restoreDollarQuotedStrings(final String word, final List<String> dollarQuotedStrings) {
-        if (word.indexOf("$$") < 0 || isCommentOrSpaceToken(word)) {
+    private static String restoreCqlStrings(final String word, final List<String> dollarQuotedStrings) {
+        if (word.indexOf("$$") < 0 && word.indexOf('\\') < 0 || isCommentOrSpaceToken(word)) {
             return word;
         }
 
@@ -626,8 +626,8 @@ public final class ParsedCql {
             if (quoteChar != 0) {
                 result.append(ch);
 
-                if (ch == '\\' && i + 1 < len) {
-                    result.append(word.charAt(++i));
+                if (ch == '\\' && i + 1 < len && word.charAt(i + 1) == '\\') {
+                    i++;
                 } else if (ch == quoteChar) {
                     if (i + 1 < len && word.charAt(i + 1) == quoteChar) {
                         result.append(word.charAt(++i));
@@ -769,7 +769,7 @@ public final class ParsedCql {
      *         with an empty name, mixes different parameter styles, or contains a malformed
      *         iBatis/MyBatis parameter that is missing its closing brace
      */
-    public static ParsedCql parse(final String cql) {
+    public static ParsedCql parse(final String cql) throws IllegalArgumentException {
         N.checkArgNotNull(cql, cs.cql);
 
         ParsedCql result = null;
@@ -830,6 +830,8 @@ public final class ParsedCql {
      * <li>Leading and trailing whitespace is stripped</li>
      * <li>All trailing semicolons (and any whitespace between or around them) are removed</li>
      * </ul>
+     * <p>Inside CQL string literals and quoted identifiers, doubled quotes escape the quote character;
+     * backslashes are ordinary characters and are preserved without escaping the following quote.</p>
      * <p>Statements whose first keyword is not a recognized data operation are not scanned for
      * placeholders; only surrounding whitespace and trailing semicolons are removed.</p>
      *

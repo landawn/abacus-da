@@ -230,7 +230,7 @@ public final class AsyncDynamoDBExecutor {
      * @param dynamoDBClient the DynamoDB async client to use for operations. Must not be null.
      * @throws IllegalArgumentException if {@code dynamoDBClient} is null
      */
-    public AsyncDynamoDBExecutor(final DynamoDbAsyncClient dynamoDBClient) {
+    public AsyncDynamoDBExecutor(final DynamoDbAsyncClient dynamoDBClient) throws IllegalArgumentException {
         if (dynamoDBClient == null) {
             throw new IllegalArgumentException("dynamoDBClient cannot be null");
         }
@@ -290,7 +290,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if {@code dynamoDBSyncClient} is null
      * @see DynamoDBExecutor#async(DynamoDbAsyncClient)
      */
-    public DynamoDBExecutor sync(final DynamoDbClient dynamoDBSyncClient) {
+    public DynamoDBExecutor sync(final DynamoDbClient dynamoDBSyncClient) throws IllegalArgumentException {
         return new DynamoDBExecutor(dynamoDBSyncClient);
     }
 
@@ -347,7 +347,7 @@ public final class AsyncDynamoDBExecutor {
      *         has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id} fields, or
      *         has two IDs that map to the same attribute name
      */
-    public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
+    public <T> Mapper<T> mapper(final Class<T> targetEntityClass) throws IllegalArgumentException {
         N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
 
         // computeIfAbsent (matching the sync executor) so concurrent callers get the documented
@@ -416,7 +416,7 @@ public final class AsyncDynamoDBExecutor {
      *         entity has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id}
      *         fields, or two IDs map to the same attribute name
      */
-    public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
+    public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) throws IllegalArgumentException {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
     }
 
@@ -568,7 +568,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if {@code getItemRequest} is null — it is rejected before the request is sent, so this is thrown
      *         synchronously instead of being reported through the returned {@code CompletableFuture}
      */
-    public CompletableFuture<Map<String, Object>> getItem(final GetItemRequest getItemRequest) {
+    public CompletableFuture<Map<String, Object>> getItem(final GetItemRequest getItemRequest) throws IllegalArgumentException {
         return getItem(getItemRequest, PROP_MAP_TYPE);
     }
 
@@ -613,13 +613,14 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert the result to. Must not be null.
      * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
      *         when the item does not exist; completes exceptionally with a
-     *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK exception
+     *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK or result-conversion exception
      *         on failure
      * @throws IllegalArgumentException if {@code targetClass} is null
      * @see DynamoDbAsyncClient#getItem(GetItemRequest)
      * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html">GetItem API Reference</a>
      */
-    public <T> CompletableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass) {
+    public <T> CompletableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass)
+            throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final GetItemRequest getItemRequest = GetItemRequest.builder().tableName(tableName).key(key).build();
@@ -663,14 +664,14 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert the result to. Must not be null.
      * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
      *         when the item does not exist; completes exceptionally with a
-     *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK exception
+     *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK or result-conversion exception
      *         on failure
      * @throws IllegalArgumentException if {@code targetClass} is null
      * @see DynamoDbAsyncClient#getItem(GetItemRequest)
      * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html">GetItem API Reference</a>
      */
     public <T> CompletableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead,
-            final Class<T> targetClass) {
+            final Class<T> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final GetItemRequest getItemRequest = GetItemRequest.builder().tableName(tableName).key(key).consistentRead(consistentRead).build();
@@ -729,12 +730,12 @@ public final class AsyncDynamoDBExecutor {
      * @return a {@code CompletableFuture} that completes with the item converted to {@code T}
      *         (or {@code null} for reference types when the item does not exist; a primitive
      *         {@code targetClass} yields its default value such as {@code 0} or {@code false}),
-     *         or completes exceptionally with the underlying SDK exception wrapped in
+     *         or completes exceptionally with the underlying SDK or result-conversion exception wrapped in
      *         {@link java.util.concurrent.CompletionException}
      * @throws IllegalArgumentException if {@code getItemRequest} or {@code targetClass} is null — the null argument is rejected before
      *         the request is sent, so this is thrown synchronously instead of being reported through the returned {@code CompletableFuture}
      */
-    public <T> CompletableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
+    public <T> CompletableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(getItemRequest, cs.getItemRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -902,7 +903,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing a map of table names to lists of retrieved items
      * @throws IllegalArgumentException if {@code batchGetItemRequest} is null
      */
-    public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
+    public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest)
+            throws IllegalArgumentException {
         return batchGetItem(batchGetItemRequest, PROP_MAP_TYPE);
     }
 
@@ -943,7 +945,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing a map of table names to lists of retrieved items
      * @throws IllegalArgumentException if {@code targetClass} is null
      */
-    public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final Class<T> targetClass) {
+    public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final Class<T> targetClass)
+            throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final BatchGetItemRequest batchGetItemRequest = BatchGetItemRequest.builder().requestItems(requestItems).build();
@@ -987,7 +990,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if {@code targetClass} is null
      */
     public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity,
-            final Class<T> targetClass) {
+            final Class<T> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         final BatchGetItemRequest batchGetItemRequest = BatchGetItemRequest.builder()
@@ -1040,7 +1043,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing a map of table names to lists of retrieved items
      * @throws IllegalArgumentException if batchGetItemRequest or targetClass is null
      */
-    public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
+    public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass)
+            throws IllegalArgumentException {
         N.checkArgNotNull(batchGetItemRequest, cs.batchGetItemRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -1218,7 +1222,7 @@ public final class AsyncDynamoDBExecutor {
      * @see PutItemRequest
      * @see PutItemResponse
      */
-    public CompletableFuture<PutItemResponse> putItem(final PutItemRequest putItemRequest) {
+    public CompletableFuture<PutItemResponse> putItem(final PutItemRequest putItemRequest) throws IllegalArgumentException {
         N.checkArgNotNull(putItemRequest, cs.putItemRequest);
 
         return dynamoDBClient.putItem(putItemRequest);
@@ -1241,10 +1245,11 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not an Entity, Map, or Object[], or is an Object[] of odd
      *         length or with a non-String property name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a
      *         floating-point infinity
+     * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
      * @see #putItem(String, Object, String)
      * @see #putItem(String, Map)
      */
-    CompletableFuture<PutItemResponse> putItem(final String tableName, final Object entity) {
+    CompletableFuture<PutItemResponse> putItem(final String tableName, final Object entity) throws IllegalArgumentException, RuntimeException {
         // There isn't much benefit to adding a method for "Object entity",
         // and it may cause errors because "Object" is ambiguous with any type.
         final PutItemRequest putItemRequest = PutItemRequest.builder().tableName(tableName).item(toItem(entity)).build();
@@ -1270,10 +1275,12 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not an Entity, Map, or Object[], or is an Object[] of odd
      *         length or with a non-String property name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a
      *         floating-point infinity
+     * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
      * @see #putItem(String, Object)
      * @see #putItem(String, Map, String)
      */
-    CompletableFuture<PutItemResponse> putItem(final String tableName, final Object entity, final String returnValues) {
+    CompletableFuture<PutItemResponse> putItem(final String tableName, final Object entity, final String returnValues)
+            throws IllegalArgumentException, RuntimeException {
         final PutItemRequest putItemRequest = PutItemRequest.builder().tableName(tableName).item(toItem(entity)).returnValues(returnValues).build();
 
         return putItem(putItemRequest);
@@ -1385,7 +1392,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if {@code batchWriteItemRequest} is null — it is rejected before the request is sent, so this is thrown
      *         synchronously instead of being reported through the returned {@code CompletableFuture}
      */
-    public CompletableFuture<BatchWriteItemResponse> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
+    public CompletableFuture<BatchWriteItemResponse> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) throws IllegalArgumentException {
         N.checkArgNotNull(batchWriteItemRequest, cs.batchWriteItemRequest);
 
         return dynamoDBClient.batchWriteItem(batchWriteItemRequest);
@@ -1557,7 +1564,7 @@ public final class AsyncDynamoDBExecutor {
      * @see UpdateItemRequest
      * @see UpdateItemResponse
      */
-    public CompletableFuture<UpdateItemResponse> updateItem(final UpdateItemRequest updateItemRequest) {
+    public CompletableFuture<UpdateItemResponse> updateItem(final UpdateItemRequest updateItemRequest) throws IllegalArgumentException {
         N.checkArgNotNull(updateItemRequest, cs.updateItemRequest);
 
         return dynamoDBClient.updateItem(updateItemRequest);
@@ -1690,7 +1697,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if {@code deleteItemRequest} is null — it is rejected before the request is sent, so this is thrown
      *         synchronously instead of being reported through the returned {@code CompletableFuture}
      */
-    public CompletableFuture<DeleteItemResponse> deleteItem(final DeleteItemRequest deleteItemRequest) {
+    public CompletableFuture<DeleteItemResponse> deleteItem(final DeleteItemRequest deleteItemRequest) throws IllegalArgumentException {
         N.checkArgNotNull(deleteItemRequest, cs.deleteItemRequest);
 
         return dynamoDBClient.deleteItem(deleteItemRequest);
@@ -1745,7 +1752,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #list(QueryRequest, Class)
      * @see #stream(QueryRequest)
      */
-    public CompletableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) {
+    public CompletableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) throws IllegalArgumentException {
         return list(queryRequest, PROP_MAP_TYPE);
     }
 
@@ -1796,7 +1803,7 @@ public final class AsyncDynamoDBExecutor {
      *         behavior above as typed objects
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
-    public <T> CompletableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) {
+    public <T> CompletableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -1875,7 +1882,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if queryRequest is null
      * @see #query(QueryRequest, Class)
      */
-    public CompletableFuture<Dataset> query(final QueryRequest queryRequest) {
+    public CompletableFuture<Dataset> query(final QueryRequest queryRequest) throws IllegalArgumentException {
         return query(queryRequest, Map.class);
     }
 
@@ -1926,7 +1933,7 @@ public final class AsyncDynamoDBExecutor {
      *         results (possibly empty)
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
-    public CompletableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) {
+    public CompletableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2013,7 +2020,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #stream(QueryRequest, Class)
      * @see #list(QueryRequest)
      */
-    public CompletableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
+    public CompletableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) throws IllegalArgumentException {
         return stream(queryRequest, PROP_MAP_TYPE);
     }
 
@@ -2075,7 +2082,7 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture that completes with a lazy {@link Stream} of typed objects
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
-    public <T> CompletableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
+    public <T> CompletableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2084,8 +2091,13 @@ public final class AsyncDynamoDBExecutor {
             private QueryResponse queryResult = null;
             private List<Map<String, AttributeValue>> items = null;
 
+            /**
+             * Fetches pages as needed to determine whether another nonempty page exists.
+             *
+             * @throws RuntimeException if fetching a page fails, its future is cancelled, or the waiting thread is interrupted
+             */
             @Override
-            public boolean hasNext() {
+            public boolean hasNext() throws RuntimeException {
                 if (items == null || items.isEmpty()) {
                     while (queryResult == null || N.notEmpty(queryResult.lastEvaluatedKey())) {
                         if (queryResult != null && N.notEmpty(queryResult.lastEvaluatedKey())) {
@@ -2114,8 +2126,14 @@ public final class AsyncDynamoDBExecutor {
                 return N.notEmpty(items);
             }
 
+            /**
+             * Returns the next nonempty page, fetching it if necessary.
+             *
+             * @throws RuntimeException if fetching a page fails, its future is cancelled, or the waiting thread is interrupted
+             * @throws NoSuchElementException if all result pages have been exhausted
+             */
             @Override
-            public List<Map<String, AttributeValue>> next() {
+            public List<Map<String, AttributeValue>> next() throws RuntimeException, NoSuchElementException {
                 if (!hasNext()) {
                     throw new NoSuchElementException(InternalUtil.ERROR_MSG_FOR_NO_SUCH_EX);
                 }
@@ -2161,7 +2179,7 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing a Stream of items as Maps
      * @throws IllegalArgumentException if tableName is null
      */
-    public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet) {
+    public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet) throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
 
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).build();
@@ -2201,7 +2219,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing a Stream of filtered items
      * @throws IllegalArgumentException if tableName is null
      */
-    public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter) {
+    public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter)
+            throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
 
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).scanFilter(scanFilter).build();
@@ -2244,7 +2263,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if tableName is null
      */
     public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet,
-            final Map<String, Condition> scanFilter) {
+            final Map<String, Condition> scanFilter) throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
 
         final ScanRequest scanRequest = ScanRequest.builder()
@@ -2297,7 +2316,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if scanRequest is null
      * @see #scan(ScanRequest, Class)
      */
-    public CompletableFuture<Stream<Map<String, Object>>> scan(final ScanRequest scanRequest) {
+    public CompletableFuture<Stream<Map<String, Object>>> scan(final ScanRequest scanRequest) throws IllegalArgumentException {
         return scan(scanRequest, PROP_MAP_TYPE);
     }
 
@@ -2328,7 +2347,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing a Stream of typed objects
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
-    public <T> CompletableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
+    public <T> CompletableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass)
+            throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2365,7 +2385,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing a Stream of typed objects
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
-    public <T> CompletableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
+    public <T> CompletableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass)
+            throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2406,7 +2427,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> CompletableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter,
-            final Class<T> targetClass) {
+            final Class<T> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2457,7 +2478,7 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture that completes with a lazy {@link Stream} of typed objects
      * @throws IllegalArgumentException if scanRequest or targetClass is null
      */
-    public <T> CompletableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
+    public <T> CompletableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(scanRequest, cs.scanRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
@@ -2466,8 +2487,13 @@ public final class AsyncDynamoDBExecutor {
             private ScanResponse scanResult = null;
             private List<Map<String, AttributeValue>> items = null;
 
+            /**
+             * Fetches pages as needed to determine whether another nonempty page exists.
+             *
+             * @throws RuntimeException if fetching a page fails, its future is cancelled, or the waiting thread is interrupted
+             */
             @Override
-            public boolean hasNext() {
+            public boolean hasNext() throws RuntimeException {
                 if (items == null || items.isEmpty()) {
                     while (scanResult == null || N.notEmpty(scanResult.lastEvaluatedKey())) {
                         if (scanResult != null && N.notEmpty(scanResult.lastEvaluatedKey())) {
@@ -2496,8 +2522,14 @@ public final class AsyncDynamoDBExecutor {
                 return N.notEmpty(items);
             }
 
+            /**
+             * Returns the next nonempty page, fetching it if necessary.
+             *
+             * @throws RuntimeException if fetching a page fails, its future is cancelled, or the waiting thread is interrupted
+             * @throws NoSuchElementException if all result pages have been exhausted
+             */
             @Override
-            public List<Map<String, AttributeValue>> next() {
+            public List<Map<String, AttributeValue>> next() throws RuntimeException, NoSuchElementException {
                 if (!hasNext()) {
                     throw new NoSuchElementException(InternalUtil.ERROR_MSG_FOR_NO_SUCH_EX);
                 }
@@ -2611,7 +2643,6 @@ public final class AsyncDynamoDBExecutor {
         private final AsyncDynamoDBExecutor dynamoDBExecutor;
         private final String tableName;
         private final Class<T> targetEntityClass;
-        private final BeanInfo entityInfo;
         private final List<String> keyPropNames;
         private final List<PropInfo> keyPropInfos;
         private final NamingPolicy namingPolicy;
@@ -2641,11 +2672,9 @@ public final class AsyncDynamoDBExecutor {
          *         is not a bean class or has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than
          *         two {@code @Id} fields, or two IDs map to the same attribute name
          */
-        Mapper(final Class<T> targetEntityClass, final AsyncDynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
+        Mapper(final Class<T> targetEntityClass, final AsyncDynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy)
+                throws IllegalArgumentException {
             N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
-            N.checkArgNotNull(dynamoDBExecutor, cs.dynamoDBExecutor);
-            N.checkArgNotEmpty(tableName, cs.tableName);
-
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
@@ -2655,21 +2684,26 @@ public final class AsyncDynamoDBExecutor {
                         + idPropNames.size() + " ID properties " + idPropNames + " in class: " + ClassUtil.getCanonicalClassName(targetEntityClass));
             }
 
+            final NamingPolicy effectiveNamingPolicy = namingPolicy == null ? NamingPolicy.CAMEL_CASE : namingPolicy;
+            final BeanInfo validatedEntityInfo = ParserUtil.getBeanInfo(targetEntityClass);
+            final List<PropInfo> validatedKeyPropInfos = Stream.of(idPropNames).map(validatedEntityInfo::getPropInfo).toList();
+            // Key names must use the same property metadata and naming policy as item conversion.
+            final List<String> validatedKeyPropNames = Stream.of(validatedKeyPropInfos).map(it -> getAttrName(it, effectiveNamingPolicy)).toList();
+
+            if (validatedKeyPropNames.size() == 2 && validatedKeyPropNames.get(0).equals(validatedKeyPropNames.get(1))) {
+                throw new IllegalArgumentException("ID properties " + idPropNames + " in " + ClassUtil.getCanonicalClassName(targetEntityClass)
+                        + " both map to DynamoDB key attribute '" + validatedKeyPropNames.get(0) + "'");
+            }
+
+            N.checkArgNotNull(dynamoDBExecutor, cs.dynamoDBExecutor);
+            N.checkArgNotEmpty(tableName, cs.tableName);
+
             this.dynamoDBExecutor = dynamoDBExecutor;
             this.targetEntityClass = targetEntityClass;
             this.tableName = tableName;
-            this.namingPolicy = namingPolicy == null ? NamingPolicy.CAMEL_CASE : namingPolicy;
-            entityInfo = ParserUtil.getBeanInfo(targetEntityClass);
-            keyPropInfos = Stream.of(idPropNames).map(entityInfo::getPropInfo).toList();
-            // Key attribute names must mirror what toItem(entity, namingPolicy) writes for the same property,
-            // otherwise getItem/updateItem/deleteItem/batchGetItem/batchDeleteItem will look up the wrong
-            // attribute when a non-CAMEL_CASE NamingPolicy renames the id field (e.g. "userId" -> "user_id").
-            keyPropNames = Stream.of(keyPropInfos).map(it -> getAttrName(it, this.namingPolicy)).toList();
-
-            if (keyPropNames.size() == 2 && keyPropNames.get(0).equals(keyPropNames.get(1))) {
-                throw new IllegalArgumentException("ID properties " + idPropNames + " in " + ClassUtil.getCanonicalClassName(targetEntityClass)
-                        + " both map to DynamoDB key attribute '" + keyPropNames.get(0) + "'");
-            }
+            this.namingPolicy = effectiveNamingPolicy;
+            keyPropInfos = validatedKeyPropInfos;
+            keyPropNames = validatedKeyPropNames;
         }
 
         /**
@@ -2693,10 +2727,12 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param entity the entity instance with key attributes set. Must not be null.
-         * @return a CompletableFuture containing the retrieved entity, or null if not found
+         * @return a CompletableFuture that completes with the retrieved entity, or {@code null} if not found;
+         *         result-mapping failures complete the future exceptionally
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<T> getItem(final T entity) {
+        public CompletableFuture<T> getItem(final T entity) throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), targetEntityClass);
         }
 
@@ -2720,10 +2756,12 @@ public final class AsyncDynamoDBExecutor {
          * @param entity the entity instance with key attributes set. Must not be null.
          * @param consistentRead true for strongly consistent reads, {@code false} for eventually consistent,
          *                      null to use AWS-default behavior
-         * @return a CompletableFuture containing the retrieved entity, or null if not found
+         * @return a CompletableFuture that completes with the retrieved entity, or {@code null} if not found;
+         *         result-mapping failures complete the future exceptionally
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<T> getItem(final T entity, final Boolean consistentRead) {
+        public CompletableFuture<T> getItem(final T entity, final Boolean consistentRead) throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), consistentRead, targetEntityClass);
         }
 
@@ -2746,7 +2784,8 @@ public final class AsyncDynamoDBExecutor {
          * @param key a map of attribute names to AttributeValues representing the primary key.
          *           Must not be null and must contain all key attributes; a null or incomplete key
          *           fails with the SDK's validation exception through the returned future
-         * @return a CompletableFuture containing the retrieved entity, or null if not found
+         * @return a CompletableFuture that completes with the retrieved entity, or {@code null} if not found;
+         *         result-mapping failures complete the future exceptionally
          */
         public CompletableFuture<T> getItem(final Map<String, AttributeValue> key) {
             return dynamoDBExecutor.getItem(tableName, key, targetEntityClass);
@@ -2782,11 +2821,11 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param getItemRequest the complete GetItemRequest. Must not be null.
          * @return a CompletableFuture that completes with the retrieved entity, or {@code null}
-         *         when the item does not exist
+         *         when the item does not exist; result-mapping failures complete the future exceptionally
          * @throws IllegalArgumentException if {@code getItemRequest} is null, or if the request specifies a non-empty table name that differs
          *         from this mapper's table
          */
-        public CompletableFuture<T> getItem(final GetItemRequest getItemRequest) {
+        public CompletableFuture<T> getItem(final GetItemRequest getItemRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.getItem(checkItem(getItemRequest), targetEntityClass);
         }
 
@@ -2821,11 +2860,13 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param entities collection of entity instances with key attributes set. Must not be null.
-         * @return a CompletableFuture containing a list of retrieved entities (may be fewer than requested)
+         * @return a CompletableFuture containing a list of retrieved entities (may be fewer than requested);
+         *         result-mapping failures complete the future exceptionally
          * @throws IllegalArgumentException if {@code entities} (or any element in it) is null, or an ID is null, empty, or not a supported
          *         scalar key value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities) {
+        public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities) throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.batchGetItem(createKeys(entities), targetEntityClass).thenApply(batchGetItemResponse -> {
                 if (N.isEmpty(batchGetItemResponse)) {
                     return new ArrayList<>();
@@ -2857,11 +2898,14 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entities collection of entity instances with key attributes set. Must not be null.
          * @param returnConsumedCapacity "INDEXES", "TOTAL", or "NONE", forwarded to the service (not returned here)
-         * @return a CompletableFuture containing a list of retrieved entities
+         * @return a CompletableFuture containing a list of retrieved entities;
+         *         result-mapping failures complete the future exceptionally
          * @throws IllegalArgumentException if {@code entities} (or any element in it) is null, or an ID is null, empty, or not a supported
          *         scalar key value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity) {
+        public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity)
+                throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.batchGetItem(createKeys(entities), returnConsumedCapacity, targetEntityClass).thenApply(batchGetItemResponse -> {
 
                 if (N.isEmpty(batchGetItemResponse)) {
@@ -2895,7 +2939,7 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing a list of retrieved entities from this mapper's table
          * @throws IllegalArgumentException if {@code batchGetItemRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<List<T>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
+        public CompletableFuture<List<T>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.batchGetItem(checkItem(batchGetItemRequest), targetEntityClass).thenApply(batchGetItemResponse -> {
 
                 if (N.isEmpty(batchGetItemResponse)) {
@@ -2931,8 +2975,9 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the PutItemResponse with operation metadata
          * @throws IllegalArgumentException if {@code entity} is null, an ID is null, empty, or not a supported scalar key value, or a
          *         property value is {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<PutItemResponse> putItem(final T entity) {
+        public CompletableFuture<PutItemResponse> putItem(final T entity) throws IllegalArgumentException, RuntimeException {
             createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
             return dynamoDBExecutor.putItem(tableName, toItem(entity, namingPolicy));
         }
@@ -2962,8 +3007,9 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the PutItemResponse with specified return values
          * @throws IllegalArgumentException if {@code entity} is null, an ID is null, empty, or not a supported scalar key value, or a
          *         property value is {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<PutItemResponse> putItem(final T entity, final String returnValues) {
+        public CompletableFuture<PutItemResponse> putItem(final T entity, final String returnValues) throws IllegalArgumentException, RuntimeException {
             createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
             return dynamoDBExecutor.putItem(tableName, toItem(entity, namingPolicy), returnValues);
         }
@@ -2994,7 +3040,7 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the PutItemResponse
          * @throws IllegalArgumentException if {@code putItemRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<PutItemResponse> putItem(final PutItemRequest putItemRequest) {
+        public CompletableFuture<PutItemResponse> putItem(final PutItemRequest putItemRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.putItem(checkItem(putItemRequest));
         }
 
@@ -3038,8 +3084,10 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
          * @throws IllegalArgumentException if {@code entities} (or any element in it) is null, an ID is null, empty, or not a supported
          *         scalar key value, or a property value is {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<BatchWriteItemResponse> batchPutItem(final Collection<? extends T> entities) {
+        public CompletableFuture<BatchWriteItemResponse> batchPutItem(final Collection<? extends T> entities)
+                throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
         }
 
@@ -3076,8 +3124,9 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the UpdateItemResponse with operation metadata
          * @throws IllegalArgumentException if {@code entity} is null, an ID is invalid, a property value is {@code Float.NaN},
          *         {@code Double.NaN}, or a floating-point infinity, or no non-key attributes are populated
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<UpdateItemResponse> updateItem(final T entity) {
+        public CompletableFuture<UpdateItemResponse> updateItem(final T entity) throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity));
         }
 
@@ -3107,8 +3156,9 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the UpdateItemResponse with specified return values
          * @throws IllegalArgumentException if {@code entity} is null, an ID is invalid, a property value is {@code Float.NaN},
          *         {@code Double.NaN}, or a floating-point infinity, or no non-key attributes are populated
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<UpdateItemResponse> updateItem(final T entity, final String returnValues) {
+        public CompletableFuture<UpdateItemResponse> updateItem(final T entity, final String returnValues) throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity), returnValues);
         }
 
@@ -3139,7 +3189,7 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the UpdateItemResponse
          * @throws IllegalArgumentException if {@code updateItemRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<UpdateItemResponse> updateItem(final UpdateItemRequest updateItemRequest) {
+        public CompletableFuture<UpdateItemResponse> updateItem(final UpdateItemRequest updateItemRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.updateItem(checkItem(updateItemRequest));
         }
 
@@ -3162,8 +3212,9 @@ public final class AsyncDynamoDBExecutor {
          * @param entity the entity instance with key attributes set. Must not be null.
          * @return a CompletableFuture containing the DeleteItemResponse with operation metadata
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<DeleteItemResponse> deleteItem(final T entity) {
+        public CompletableFuture<DeleteItemResponse> deleteItem(final T entity) throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity));
         }
 
@@ -3192,8 +3243,9 @@ public final class AsyncDynamoDBExecutor {
          *                    "NONE" (default), "ALL_OLD"
          * @return a CompletableFuture containing the DeleteItemResponse with specified return values
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<DeleteItemResponse> deleteItem(final T entity, final String returnValues) {
+        public CompletableFuture<DeleteItemResponse> deleteItem(final T entity, final String returnValues) throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity), returnValues);
         }
 
@@ -3249,7 +3301,7 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the DeleteItemResponse
          * @throws IllegalArgumentException if {@code deleteItemRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<DeleteItemResponse> deleteItem(final DeleteItemRequest deleteItemRequest) {
+        public CompletableFuture<DeleteItemResponse> deleteItem(final DeleteItemRequest deleteItemRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.deleteItem(checkItem(deleteItemRequest));
         }
 
@@ -3287,8 +3339,10 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
          * @throws IllegalArgumentException if {@code entities} (or any element in it) is null, or an ID is null, empty, or not a supported
          *         scalar key value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
-        public CompletableFuture<BatchWriteItemResponse> batchDeleteItem(final Collection<? extends T> entities) {
+        public CompletableFuture<BatchWriteItemResponse> batchDeleteItem(final Collection<? extends T> entities)
+                throws IllegalArgumentException, RuntimeException {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));
         }
 
@@ -3327,7 +3381,7 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing the BatchWriteItemResponse
          * @throws IllegalArgumentException if {@code batchWriteItemRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<BatchWriteItemResponse> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
+        public CompletableFuture<BatchWriteItemResponse> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.batchWriteItem(checkItem(batchWriteItemRequest));
         }
 
@@ -3360,7 +3414,7 @@ public final class AsyncDynamoDBExecutor {
          *         behavior above
          * @throws IllegalArgumentException if {@code queryRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<List<T>> list(final QueryRequest queryRequest) {
+        public CompletableFuture<List<T>> list(final QueryRequest queryRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.list(checkQueryRequest(queryRequest), targetEntityClass);
         }
 
@@ -3393,7 +3447,7 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing a Dataset of matching entities
          * @throws IllegalArgumentException if {@code queryRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<Dataset> query(final QueryRequest queryRequest) {
+        public CompletableFuture<Dataset> query(final QueryRequest queryRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.query(checkQueryRequest(queryRequest), targetEntityClass);
         }
 
@@ -3427,7 +3481,7 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing a Stream of matching entities
          * @throws IllegalArgumentException if {@code queryRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<Stream<T>> stream(final QueryRequest queryRequest) {
+        public CompletableFuture<Stream<T>> stream(final QueryRequest queryRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.stream(checkQueryRequest(queryRequest), targetEntityClass);
         }
 
@@ -3549,11 +3603,18 @@ public final class AsyncDynamoDBExecutor {
          * @return a CompletableFuture containing a Stream of entities from the scan
          * @throws IllegalArgumentException if {@code scanRequest} is null or the request specifies a different table name
          */
-        public CompletableFuture<Stream<T>> scan(final ScanRequest scanRequest) {
+        public CompletableFuture<Stream<T>> scan(final ScanRequest scanRequest) throws IllegalArgumentException {
             return dynamoDBExecutor.scan(checkScanRequest(scanRequest), targetEntityClass);
         }
 
-        private Map<String, AttributeValue> createKey(final T entity) {
+        /**
+         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         *
+         * @throws IllegalArgumentException if {@code entity} is null or one of its primary-key values is missing or is not a supported nonempty
+         *         scalar value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
+         */
+        private Map<String, AttributeValue> createKey(final T entity) throws IllegalArgumentException, RuntimeException {
             N.checkArgNotNull(entity, cs.entity);
 
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
@@ -3566,7 +3627,13 @@ public final class AsyncDynamoDBExecutor {
             return key;
         }
 
-        private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
+        /**
+         * Builds the non-key attributes for an update request.
+         *
+         * @throws IllegalArgumentException if the entity is null, an attribute value is invalid, or there are no non-key attributes to update
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
+         */
+        private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) throws IllegalArgumentException, RuntimeException {
             N.checkArgNotNull(entity, cs.entity);
 
             final Map<String, AttributeValueUpdate> attributeUpdates = toUpdateItem(entity, namingPolicy);
@@ -3580,7 +3647,14 @@ public final class AsyncDynamoDBExecutor {
             return attributeUpdates;
         }
 
-        private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) {
+        /**
+         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         *
+         * @throws IllegalArgumentException if {@code entities} is null, contains a null entity, or a primary-key value is missing or is not a
+         *         supported nonempty scalar value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
+         */
+        private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) throws IllegalArgumentException, RuntimeException {
             N.checkArgNotNull(entities, cs.entities);
 
             final List<Map<String, AttributeValue>> keys = new ArrayList<>(entities.size());
@@ -3592,7 +3666,15 @@ public final class AsyncDynamoDBExecutor {
             return N.newLinkedHashMap(N.asMap(tableName, KeysAndAttributes.builder().keys(keys).build()));
         }
 
-        private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities) {
+        /**
+         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         *
+         * @throws IllegalArgumentException if {@code entities} is null, contains a null entity, or a primary-key value is missing or is not a
+         *         supported nonempty scalar value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
+         */
+        private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities)
+                throws IllegalArgumentException, RuntimeException {
             N.checkArgNotNull(entities, cs.entities);
 
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
@@ -3605,7 +3687,15 @@ public final class AsyncDynamoDBExecutor {
             return N.newLinkedHashMap(N.asMap(tableName, keys));
         }
 
-        private Map<String, List<WriteRequest>> createBatchDeleteRequest(final Collection<? extends T> entities) {
+        /**
+         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         *
+         * @throws IllegalArgumentException if {@code entities} is null, contains a null entity, or a primary-key value is missing or is not a
+         *         supported nonempty scalar value
+         * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
+         */
+        private Map<String, List<WriteRequest>> createBatchDeleteRequest(final Collection<? extends T> entities)
+                throws IllegalArgumentException, RuntimeException {
             N.checkArgNotNull(entities, cs.entities);
 
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
@@ -3617,7 +3707,12 @@ public final class AsyncDynamoDBExecutor {
             return N.newLinkedHashMap(N.asMap(tableName, keys));
         }
 
-        private GetItemRequest checkItem(final GetItemRequest item) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private GetItemRequest checkItem(final GetItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.getItemRequest);
 
             if (Strings.isEmpty(item.tableName())) {
@@ -3629,7 +3724,12 @@ public final class AsyncDynamoDBExecutor {
             return item;
         }
 
-        private BatchGetItemRequest checkItem(final BatchGetItemRequest item) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private BatchGetItemRequest checkItem(final BatchGetItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.batchGetItemRequest);
 
             if (item.requestItems() != null) {
@@ -3642,7 +3742,12 @@ public final class AsyncDynamoDBExecutor {
 
         }
 
-        private BatchWriteItemRequest checkItem(final BatchWriteItemRequest item) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private BatchWriteItemRequest checkItem(final BatchWriteItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.batchWriteItemRequest);
 
             if (item.requestItems() != null) {
@@ -3654,7 +3759,12 @@ public final class AsyncDynamoDBExecutor {
             return item;
         }
 
-        private PutItemRequest checkItem(final PutItemRequest item) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private PutItemRequest checkItem(final PutItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.putItemRequest);
 
             if (Strings.isEmpty(item.tableName())) {
@@ -3666,7 +3776,12 @@ public final class AsyncDynamoDBExecutor {
             return item;
         }
 
-        private UpdateItemRequest checkItem(final UpdateItemRequest item) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private UpdateItemRequest checkItem(final UpdateItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.updateItemRequest);
 
             if (Strings.isEmpty(item.tableName())) {
@@ -3678,7 +3793,12 @@ public final class AsyncDynamoDBExecutor {
             return item;
         }
 
-        private DeleteItemRequest checkItem(final DeleteItemRequest item) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private DeleteItemRequest checkItem(final DeleteItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.deleteItemRequest);
 
             if (Strings.isEmpty(item.tableName())) {
@@ -3690,7 +3810,12 @@ public final class AsyncDynamoDBExecutor {
             return item;
         }
 
-        private QueryRequest checkQueryRequest(final QueryRequest queryRequest) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private QueryRequest checkQueryRequest(final QueryRequest queryRequest) throws IllegalArgumentException {
             N.checkArgNotNull(queryRequest, cs.queryRequest);
 
             if (Strings.isEmpty(queryRequest.tableName())) {
@@ -3702,7 +3827,12 @@ public final class AsyncDynamoDBExecutor {
             return queryRequest;
         }
 
-        private ScanRequest checkScanRequest(final ScanRequest scanRequest) {
+        /**
+         * Checks the request and applies this mapper's table name when none is specified.
+         *
+         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         */
+        private ScanRequest checkScanRequest(final ScanRequest scanRequest) throws IllegalArgumentException {
             N.checkArgNotNull(scanRequest, cs.scanRequest);
 
             if (Strings.isEmpty(scanRequest.tableName())) {
@@ -3714,7 +3844,12 @@ public final class AsyncDynamoDBExecutor {
             return scanRequest;
         }
 
-        private void checkTableName(final String tableNameInRequest) {
+        /**
+         * Checks that a request targets this mapper's table.
+         *
+         * @throws IllegalArgumentException if {@code tableNameInRequest} differs from this mapper's table name
+         */
+        private void checkTableName(final String tableNameInRequest) throws IllegalArgumentException {
             if (!tableName.equals(tableNameInRequest)) {
                 throw new IllegalArgumentException("Table name mismatch: request has '" + tableNameInRequest + "' but mapper expects '" + tableName + "'");
             }

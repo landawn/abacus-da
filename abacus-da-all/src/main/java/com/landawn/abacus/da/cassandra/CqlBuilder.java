@@ -219,7 +219,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         same property names as its first row
      */
     @Override
-    public CqlBuilder into(final String tableName) {
+    public CqlBuilder into(final String tableName) throws IllegalStateException, IllegalArgumentException {
         final boolean isBatchInsert = checkCanAppendCqlInto();
 
         checkCqlTableReference(tableName, cs.tableName);
@@ -298,7 +298,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #into(String)
      */
     @Override
-    public CqlBuilder into(final Class<?> entityClass) {
+    public CqlBuilder into(final Class<?> entityClass) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlInto();
         N.checkArgNotNull(entityClass, cs.entityClass);
 
@@ -327,7 +327,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #into(String)
      */
     @Override
-    public CqlBuilder into(final String tableName, final Class<?> entityClass) {
+    public CqlBuilder into(final String tableName, final Class<?> entityClass) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlInto();
         checkCqlTableReference(tableName, cs.tableName);
 
@@ -350,7 +350,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalStateException if this builder is closed, the operation is neither INSERT nor SELECT (a batch
      *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted
      */
-    private boolean checkCanAppendCqlInto() {
+    private boolean checkCanAppendCqlInto() throws IllegalStateException {
         assertNotClosed();
 
         if (N.notEmpty(_propsList)) {
@@ -411,7 +411,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException if {@code count} is negative
      */
     @Beta
-    public static String repeatPlaceholders(final int count) {
+    public static String repeatPlaceholders(final int count) throws IllegalArgumentException {
         N.checkArgNotNegative(count, cs.count);
 
         return QueryUtil.placeholders(count);
@@ -444,7 +444,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Beta
     @Deprecated
-    public static String repeatQM(final int count) {
+    public static String repeatQM(final int count) throws IllegalArgumentException {
         return repeatPlaceholders(count);
     }
 
@@ -481,7 +481,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         {@code set(...)} columns have not been specified
      * @throws IllegalArgumentException if {@code ttl} is negative
      */
-    public CqlBuilder usingTTL(final long ttl) {
+    public CqlBuilder usingTTL(final long ttl) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendUsingOption(TTL);
         N.checkArgNotNegative(ttl, cs.ttl);
 
@@ -523,7 +523,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException if {@code ttl} is {@code null}, empty, or blank
      * @see #usingTTL(long)
      */
-    public CqlBuilder usingTTL(final String ttl) {
+    public CqlBuilder usingTTL(final String ttl) throws IllegalStateException, IllegalArgumentException {
         appendUsingOption(TTL, ttl);
 
         return this;
@@ -559,7 +559,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #usingTimestampMicros(long)
      * @see #usingTimestamp(String)
      */
-    public CqlBuilder usingTimestamp(final Date timestamp) {
+    public CqlBuilder usingTimestamp(final Date timestamp) throws IllegalStateException, IllegalArgumentException, ArithmeticException {
         checkCanAppendUsingOption(TIMESTAMP);
         N.checkArgNotNull(timestamp, cs.timestamp);
 
@@ -595,7 +595,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #usingTimestampMicros(long)
      * @see #usingTimestamp(String)
      */
-    public CqlBuilder usingTimestamp(final long timestampMillis) {
+    public CqlBuilder usingTimestamp(final long timestampMillis) throws IllegalStateException, ArithmeticException {
         checkCanAppendUsingOption(TIMESTAMP);
         return usingTimestampMicros(Math.multiplyExact(timestampMillis, 1000L));
     }
@@ -625,7 +625,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #usingTimestamp(Date)
      * @see #usingTimestamp(String)
      */
-    public CqlBuilder usingTimestampMicros(final long timestampMicros) {
+    public CqlBuilder usingTimestampMicros(final long timestampMicros) throws IllegalStateException {
         checkCanAppendUsingOption(TIMESTAMP);
         return usingTimestamp(String.valueOf(timestampMicros));
     }
@@ -664,13 +664,17 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #usingTimestamp(long)
      * @see #usingTimestampMicros(long)
      */
-    public CqlBuilder usingTimestamp(final String timestamp) {
+    public CqlBuilder usingTimestamp(final String timestamp) throws IllegalStateException, IllegalArgumentException {
         appendUsingOption(TIMESTAMP, timestamp);
 
         return this;
     }
 
-    private void checkCanAppendUsingOption(final String optionName) {
+    /**
+     * @throws IllegalStateException if this builder is closed, the operation does not support the option, the option was already specified, a
+     *         timestamp conflicts with an IF clause, or the table has not been specified
+     */
+    private void checkCanAppendUsingOption(final String optionName) throws IllegalStateException {
         assertNotClosed();
 
         if (_op == OperationType.QUERY || TTL.equals(optionName) && _op == OperationType.DELETE) {
@@ -688,7 +692,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkTableSpecified();
     }
 
-    private void appendUsingOption(final String optionName, final String optionValue) {
+    /**
+     * @throws IllegalStateException if this builder is closed, its operation or staged clauses do not permit the option, or the table or
+     *         required UPDATE columns have not been specified
+     * @throws IllegalArgumentException if {@code optionValue} is null, empty, or blank
+     */
+    private void appendUsingOption(final String optionName, final String optionValue) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendUsingOption(optionName);
         N.checkArgument(Strings.isNotBlank(optionValue), "'" + optionName + "' can't be null or blank");
 
@@ -769,7 +778,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         return insertionIndex;
     }
 
-    private void checkTableSpecified() {
+    /**
+     * @throws IllegalStateException if an INSERT, DELETE, or SELECT builder has no table name
+     */
+    private void checkTableSpecified() throws IllegalStateException {
         // SELECT/DELETE builders created with select(...)/delete(...) do not know their table until
         // from(...) is called; INSERT similarly needs into(...). Emitting a trailing clause earlier
         // lets the later FROM/INTO text land after that clause and creates malformed CQL.
@@ -779,7 +791,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
-    private void checkWhereSpecifiedForIfClause() {
+    /**
+     * @throws IllegalStateException if the current CQL has no WHERE clause
+     */
+    private void checkWhereSpecifiedForIfClause() throws IllegalStateException {
         final String cql = _sb.toString();
 
         if (indexOfOutsideQuotes(cql, SPACE_WHERE, 0, cql.length()) < 0) {
@@ -799,20 +814,29 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
-    private void checkIfClauseNotSpecified() {
+    /**
+     * @throws IllegalStateException if an IF clause has already been appended
+     */
+    private void checkIfClauseNotSpecified() throws IllegalStateException {
         if (_ifClauseSpecified) {
             throw new IllegalStateException("An IF clause has already been specified");
         }
     }
 
-    private void checkTimestampNotSpecifiedForIfClause() {
+    /**
+     * @throws IllegalStateException if USING TIMESTAMP has already been appended
+     */
+    private void checkTimestampNotSpecifiedForIfClause() throws IllegalStateException {
         if (_timestampSpecified) {
             throw new IllegalStateException("An IF clause can't be combined with USING TIMESTAMP");
         }
     }
 
+    /**
+     * @throws IllegalStateException if this builder was closed by a terminal build operation
+     */
     @Override
-    protected void assertNotClosed() {
+    protected void assertNotClosed() throws IllegalStateException {
         if (_sb == null) {
             throw new IllegalStateException("This CqlBuilder has been closed after build() was called. No further operation is supported");
         }
@@ -823,11 +847,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * other value is rendered by the parent builder.
      *
      * @param propValue the value to render into the CQL string
+     * @throws IllegalStateException if this builder is closed
      * @throws IllegalArgumentException if {@code propValue} is a {@code Float} or {@code Double} that is {@code NaN} or
      *         infinite, or another {@code Number} whose text is not a valid numeric literal
      */
     @Override
-    protected void setParameterForRawSql(final Object propValue) {
+    protected void setParameterForRawSql(final Object propValue) throws IllegalStateException, IllegalArgumentException {
+        assertNotClosed();
+
         // CQL escapes a single quote inside a string literal by doubling it ('O''Brien'); a backslash is not an
         // escape character in CQL. Kept explicit so the CQL rendering does not depend on the parent's
         // (dialect-oriented) string-literal escaping.
@@ -872,7 +899,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         _sb.append(ifClause);
     }
 
-    /** Returns semicolon indexes that terminate batch statements, ignoring quoted literal content. */
+    /** Returns semicolon indexes that terminate batch statements, ignoring quoted literals, identifiers, and comments. */
     private static List<Integer> findBatchStatementEnds(final String cql) {
         final List<Integer> result = new ArrayList<>();
 
@@ -881,6 +908,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             if (ch == '\'' || ch == '"') {
                 i = skipQuoted(cql, i, ch);
+            } else if (ch == '$' && i + 1 < len && cql.charAt(i + 1) == '$') {
+                i = skipDollarQuoted(cql, i);
+            } else if ((ch == '-' && i + 1 < len && cql.charAt(i + 1) == '-') || (ch == '/' && i + 1 < len && cql.charAt(i + 1) == '/')) {
+                i = skipLineComment(cql, i, len);
+            } else if (ch == '/' && i + 1 < len && cql.charAt(i + 1) == '*') {
+                i = skipBlockComment(cql, i, len);
             } else if (ch == ';') {
                 result.add(i);
             }
@@ -910,14 +943,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         return -1;
     }
 
-    /** Skips a CQL string/quoted identifier, including doubled and backslash-escaped quotes. */
+    /** Skips a CQL string/quoted identifier, including doubled quotes; a backslash is an ordinary CQL character. */
     private static int skipQuoted(final String cql, int index, final char quoteChar) {
         for (index++; index < cql.length(); index++) {
             final char ch = cql.charAt(index);
 
-            if (ch == '\\') {
-                index++;
-            } else if (ch == quoteChar) {
+            if (ch == quoteChar) {
                 if (index + 1 < cql.length() && cql.charAt(index + 1) == quoteChar) {
                     index++;
                 } else {
@@ -994,7 +1025,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException if {@code expr} is {@code null}, empty, or blank
      * @see #onlyIf(Condition)
      */
-    public CqlBuilder onlyIf(final String expr) {
+    public CqlBuilder onlyIf(final String expr) throws IllegalStateException, IllegalArgumentException {
         assertNotClosed();
         if (_op != OperationType.UPDATE && _op != OperationType.DELETE) {
             throw new IllegalStateException("IF conditions are valid only for UPDATE and DELETE statements");
@@ -1022,6 +1053,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p>The method is named {@code onlyIf} because {@code if} is a Java keyword. Note that
      * Cassandra accepts arbitrary IF conditions on UPDATE and DELETE only; INSERT supports only
      * {@link #ifNotExists()}.</p>
+     *
+     * <p>If rendering rejects the condition, the builder retains its previous CQL, values, and parameter
+     * names so the caller can retry with a valid condition.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1052,7 +1086,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #onlyIf(String)
      * @see com.landawn.abacus.query.Filters
      */
-    public CqlBuilder onlyIf(final Condition cond) {
+    public CqlBuilder onlyIf(final Condition cond) throws IllegalStateException, IllegalArgumentException {
         assertNotClosed();
         if (_op != OperationType.UPDATE && _op != OperationType.DELETE) {
             throw new IllegalStateException("IF conditions are valid only for UPDATE and DELETE statements");
@@ -1064,38 +1098,22 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkIfClauseNotSpecified();
         N.checkArgNotNull(cond, cs.cond);
 
-        init(true);
+        return mutateAtomically(() -> {
+            init(true);
+            _sb.append(_SPACE_IF_SPACE);
 
-        // Render the IF clause atomically: appendCondition rejects the many constructs CQL has no
-        // syntax for (BETWEEN, NOT IN, sub-queries, OR, null comparisons, ...), and without this
-        // rollback a rejected condition would leave the half-emitted clause behind — build() would
-        // then silently return corrupt CQL such as "... IF " or "... IF s IN (?, ".
-        final int cqlLengthBeforeIfClause = _sb.length();
-        final int parameterCountBeforeIfClause = _parameters.size();
+            // The parent checkpoint restores both rendered text/values and named-parameter bookkeeping
+            // when a later condition fails, so a retry uses the same parameter names as a fresh builder.
+            _renderingIfCondition = true;
 
-        _sb.append(_SPACE_IF_SPACE);
-
-        // While set, this flag relaxes/tightens two LWT-specific rules in appendCondition: LIKE is
-        // rejected inside an IF clause, and a null value is allowed with '=' / '!=' only there.
-        _renderingIfCondition = true;
-
-        try {
-            appendCondition(cond);
-        } catch (final RuntimeException | Error e) {
-            _sb.setLength(cqlLengthBeforeIfClause);
-
-            while (_parameters.size() > parameterCountBeforeIfClause) {
-                _parameters.remove(_parameters.size() - 1);
+            try {
+                appendCondition(cond);
+            } finally {
+                _renderingIfCondition = false;
             }
 
-            throw e;
-        } finally {
-            _renderingIfCondition = false;
-        }
-
-        _ifClauseSpecified = true;
-
-        return this;
+            _ifClauseSpecified = true;
+        });
     }
 
     /**
@@ -1131,7 +1149,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #onlyIf(String)
      * @see #onlyIf(Condition)
      */
-    public CqlBuilder ifExists() {
+    public CqlBuilder ifExists() throws IllegalStateException {
         assertNotClosed();
 
         if (_op != OperationType.UPDATE && _op != OperationType.DELETE) {
@@ -1177,7 +1195,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #onlyIf(String)
      * @see #onlyIf(Condition)
      */
-    public CqlBuilder ifNotExists() {
+    public CqlBuilder ifNotExists() throws IllegalStateException {
         assertNotClosed();
 
         if (_op != OperationType.ADD) {
@@ -1235,7 +1253,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalStateException if this builder is closed, this builder is not a SELECT statement, or if
      *         {@code from(...)} has not yet supplied the table, or ALLOW FILTERING was already specified
      */
-    public CqlBuilder allowFiltering() {
+    public CqlBuilder allowFiltering() throws IllegalStateException {
         assertNotClosed();
 
         if (_op != OperationType.QUERY) {
@@ -1276,7 +1294,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
     @Override
-    public CqlBuilder from(final String expr) {
+    public CqlBuilder from(final String expr) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
         checkCqlTableReference(expr, cs.expr);
         return super.from(expr);
@@ -1294,7 +1312,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
     @Override
-    public CqlBuilder from(final String... tableNames) {
+    public CqlBuilder from(final String... tableNames) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
         N.checkArgNotEmpty(tableNames, cs.tableNames);
 
@@ -1317,7 +1335,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         name staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
     @Override
-    public CqlBuilder from(final Collection<String> tableNames) {
+    public CqlBuilder from(final Collection<String> tableNames) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
         N.checkArgNotEmpty(tableNames, cs.tableNames);
 
@@ -1350,7 +1368,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         column name staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
     @Override
-    public CqlBuilder from(final Class<?> entityClass) {
+    public CqlBuilder from(final Class<?> entityClass) throws IllegalStateException, IllegalArgumentException {
         return from(entityClass, (String) null);
     }
 
@@ -1372,7 +1390,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         {@code delete(...)} is blank or contains a CQL comment token
      */
     @Override
-    public CqlBuilder from(final Class<?> entityClass, final String alias) {
+    public CqlBuilder from(final Class<?> entityClass, final String alias) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
         N.checkArgNotNull(entityClass, cs.entityClass);
 
@@ -1402,7 +1420,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
     @Override
-    public CqlBuilder from(final String expr, final Class<?> entityClass) {
+    public CqlBuilder from(final String expr, final Class<?> entityClass) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
         checkCqlTableReference(expr, cs.expr);
 
@@ -1426,7 +1444,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException otherwise, because CQL does not support a sub-query in the FROM clause
      */
     @Override
-    public CqlBuilder from(final CqlBuilder sqlBuilder, final String alias) {
+    public CqlBuilder from(final CqlBuilder sqlBuilder, final String alias) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
 
         throw new IllegalArgumentException("Cassandra CQL does not support sub-queries (derived tables) in the FROM clause");
@@ -1446,7 +1464,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @SuppressWarnings("deprecation")
     @Override
-    protected CqlBuilder from(final String tableName, final String fromClause) {
+    protected CqlBuilder from(final String tableName, final String fromClause) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
         checkCqlTableReference(tableName, cs.tableName);
         checkCqlTableReference(fromClause, cs.fromClause);
@@ -1458,7 +1476,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         return super.from(tableName, fromClause);
     }
 
-    private static void checkCqlTableReference(final String tableReference, final String argName) {
+    /**
+     * @throws IllegalArgumentException if {@code tableReference} is null, empty, or does not identify exactly one optionally keyspace-qualified
+     *         CQL table
+     */
+    private static void checkCqlTableReference(final String tableReference, final String argName) throws IllegalArgumentException {
         N.checkArgNotEmpty(tableReference, argName);
 
         final int len = tableReference.length();
@@ -1532,8 +1554,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * Validates the structural preconditions for the overridden {@code from(...)} entry points.
      * Mirrors the parent builder's checks except that DELETE is also accepted: CQL supports
      * {@code DELETE col1, col2 FROM tbl}, while the parent treats {@code from(...)} as SELECT-only.
+     * @throws IllegalStateException if this builder is closed, its operation is neither SELECT nor DELETE, FROM was already specified, or a
+     *         SELECT has no staged columns
      */
-    private void checkCanAppendCqlFrom() {
+    private void checkCanAppendCqlFrom() throws IllegalStateException {
         assertNotClosed();
 
         if (_op != OperationType.QUERY && _op != OperationType.DELETE) {
@@ -1554,12 +1578,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * Unlike the parent builder, DELETE is accepted because CQL supports {@code DELETE col1, col2 FROM tbl}.
      *
      * @param tableName the single table reference already validated by {@code from(...)}; must not be {@code null}
-     * @throws IllegalStateException if the operation is not SELECT or DELETE, {@code from(...)} was already called for
-     *         the current query segment, or a SELECT has no columns
+     * @throws IllegalStateException if this builder is closed, the operation is not SELECT or DELETE, or {@code from(...)} was already called
+     *         for the current query segment, or a SELECT has no columns
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
      */
     @Override
-    protected void appendOperationBeforeFrom(final String tableName) {
+    protected void appendOperationBeforeFrom(final String tableName) throws IllegalStateException, IllegalArgumentException {
+        assertNotClosed();
+
         if (_op != OperationType.QUERY && _op != OperationType.DELETE) {
             throw new IllegalStateException("Invalid operation for from(): " + opCqlKeyword() + ". Expected SELECT or DELETE");
         }
@@ -1603,6 +1629,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * parentheses.
      *
      * @param cond the condition to render; must not be {@code null}
+     * @throws IllegalStateException if this builder is closed
      * @throws IllegalArgumentException if {@code cond} is {@code null}; if {@code cond} or a nested condition is not supported by CQL (a binary
      *         operator other than {@code =}, {@code !=}, {@code >}, {@code >=}, {@code <}, {@code <=} or {@code LIKE};
      *         {@code LIKE} in an IF clause; BETWEEN, NOT BETWEEN, NOT IN, a sub-query, HAVING or another clause
@@ -1612,7 +1639,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         containing a CQL comment token
      */
     @Override
-    protected void appendCondition(final Condition cond) {
+    protected void appendCondition(final Condition cond) throws IllegalStateException, IllegalArgumentException {
+        assertNotClosed();
         N.checkArgNotNull(cond, cs.cond);
 
         if (cond instanceof final Binary binary) {
@@ -1730,7 +1758,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
-    private static void validateColumnAliases(final Map<String, String> propOrColumnNameAliases) {
+    /**
+     * @throws IllegalArgumentException if an alias is null, blank, quoted, contains a line break, or contains a CQL comment token
+     */
+    private static void validateColumnAliases(final Map<String, String> propOrColumnNameAliases) throws IllegalArgumentException {
         for (final String alias : propOrColumnNameAliases.values()) {
             if (Strings.isBlank(alias) || alias.indexOf('"') >= 0 || alias.indexOf('`') >= 0 || alias.indexOf('\r') >= 0 || alias.indexOf('\n') >= 0
                     || alias.contains("--") || alias.contains("/*") || alias.contains("*/")) {
@@ -1739,7 +1770,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
-    private static Collection<String> getDeletePropNamesByClass(final Class<?> entityClass, final Set<String> excludedPropNames) {
+    /**
+     * @throws IllegalArgumentException if {@code entityClass} is null or is not an entity bean class
+     */
+    private static Collection<String> getDeletePropNamesByClass(final Class<?> entityClass, final Set<String> excludedPropNames)
+            throws IllegalArgumentException {
         final Collection<String>[] val = loadPropNamesByClass(entityClass);
         // val[2] (writable props: @ReadOnly/@ReadOnlyId/@Transient removed, no dotted sub-entity props):
         // the documented contract for delete(Class). Id props are removed as well because Cassandra
@@ -1865,8 +1900,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Constructs a {@code Dsl} bound to the given dialect.
          *
          * @param sqlDialect the dialect (naming policy + parameter style) to bind
+         * @throws IllegalArgumentException if {@code sqlDialect} is null
          */
-        Dsl(final SqlDialect sqlDialect) {
+        Dsl(final SqlDialect sqlDialect) throws IllegalArgumentException {
+            N.checkArgNotNull(sqlDialect, cs.sqlDialect);
+
             this.sqlDialect = sqlDialect;
             namingPolicy = sqlDialect.namingPolicy() == null ? NamingPolicy.SNAKE_CASE : sqlDialect.namingPolicy();
         }
@@ -1884,7 +1922,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a {@code Dsl} that produces {@link CqlBuilder} instances using the given dialect
          * @throws IllegalArgumentException if {@code sqlDialect} is {@code null}
          */
-        public static Dsl forDialect(final SqlDialect sqlDialect) {
+        public static Dsl forDialect(final SqlDialect sqlDialect) throws IllegalArgumentException {
             N.checkArgNotNull(sqlDialect, cs.sqlDialect);
 
             final Dsl dsl = dslCache.get(sqlDialect);
@@ -1916,7 +1954,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if expr is null or empty
          */
-        public CqlBuilder insert(final String expr) {
+        public CqlBuilder insert(final String expr) throws IllegalArgumentException {
             N.checkArgNotEmpty(expr, INSERTION_PART_MSG);
 
             return insert(N.asArray(expr));
@@ -1941,7 +1979,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if propOrColumnNames is null or empty
          */
-        public CqlBuilder insert(final String... propOrColumnNames) {
+        public CqlBuilder insert(final String... propOrColumnNames) throws IllegalArgumentException {
             N.checkArgNotEmpty(propOrColumnNames, INSERTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -1969,7 +2007,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if propOrColumnNames is null or empty
          */
-        public CqlBuilder insert(final Collection<String> propOrColumnNames) {
+        public CqlBuilder insert(final Collection<String> propOrColumnNames) throws IllegalArgumentException {
             N.checkArgNotEmpty(propOrColumnNames, INSERTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2002,7 +2040,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if props is null or empty
          */
-        public CqlBuilder insert(final Map<String, Object> props) {
+        public CqlBuilder insert(final Map<String, Object> props) throws IllegalArgumentException {
             N.checkArgNotEmpty(props, INSERTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2037,7 +2075,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entity is null; if a String entity is blank; if a Map entity is empty or
          *         has a non-String or blank key; or if any other entity is not an instance of an entity bean class
          */
-        public CqlBuilder insert(final Object entity) {
+        public CqlBuilder insert(final Object entity) throws IllegalArgumentException {
             return insert(entity, null);
         }
 
@@ -2069,7 +2107,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *         has a non-String or blank key, or has no entries left after exclusions are applied; or if any other
          *         entity is not an instance of an entity bean class
          */
-        public CqlBuilder insert(final Object entity, final Set<String> excludedPropNames) {
+        public CqlBuilder insert(final Object entity, final Set<String> excludedPropNames) throws IllegalArgumentException {
             N.checkArgNotNull(entity, INSERTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2099,7 +2137,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder insert(final Class<?> entityClass) {
+        public CqlBuilder insert(final Class<?> entityClass) throws IllegalArgumentException {
             return insert(entityClass, null);
         }
 
@@ -2122,7 +2160,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder insert(final Class<?> entityClass, final Set<String> excludedPropNames) {
+        public CqlBuilder insert(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, INSERTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2151,7 +2189,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder insertInto(final Class<?> entityClass) {
+        public CqlBuilder insertInto(final Class<?> entityClass) throws IllegalArgumentException {
             return insertInto(entityClass, null);
         }
 
@@ -2173,7 +2211,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder insertInto(final Class<?> entityClass, final Set<String> excludedPropNames) {
+        public CqlBuilder insertInto(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             return insert(entityClass, excludedPropNames).into(entityClass);
         }
 
@@ -2209,7 +2247,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *         rows)
          */
         @Beta
-        public CqlBuilder batchInsert(final Collection<?> propsList) {
+        public CqlBuilder batchInsert(final Collection<?> propsList) throws IllegalArgumentException {
             N.checkArgNotEmpty(propsList, INSERTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2247,7 +2285,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference
          */
-        public CqlBuilder update(final String tableName) {
+        public CqlBuilder update(final String tableName) throws IllegalArgumentException {
             N.checkArgNotEmpty(tableName, UPDATE_PART_MSG);
             checkCqlTableReference(tableName, cs.tableName);
 
@@ -2281,7 +2319,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference, or {@code entityClass} is null
          */
-        public CqlBuilder update(final String tableName, final Class<?> entityClass) {
+        public CqlBuilder update(final String tableName, final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotEmpty(tableName, UPDATE_PART_MSG);
             checkCqlTableReference(tableName, cs.tableName);
             N.checkArgNotNull(entityClass, UPDATE_PART_MSG);
@@ -2315,7 +2353,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder update(final Class<?> entityClass) {
+        public CqlBuilder update(final Class<?> entityClass) throws IllegalArgumentException {
             return update(entityClass, null);
         }
 
@@ -2340,7 +2378,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder update(final Class<?> entityClass, final Set<String> excludedPropNames) {
+        public CqlBuilder update(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, UPDATE_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2373,7 +2411,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance configured for DELETE operation
          * @throws IllegalArgumentException if expr is null or empty
          */
-        public CqlBuilder delete(final String expr) {
+        public CqlBuilder delete(final String expr) throws IllegalArgumentException {
             N.checkArgNotEmpty(expr, DELETION_PART_MSG);
 
             return delete(N.asArray(expr));
@@ -2399,7 +2437,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance configured for DELETE operation
          * @throws IllegalArgumentException if columnNames is null or empty
          */
-        public CqlBuilder delete(final String... columnNames) {
+        public CqlBuilder delete(final String... columnNames) throws IllegalArgumentException {
             N.checkArgNotEmpty(columnNames, DELETION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2431,7 +2469,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance configured for DELETE operation
          * @throws IllegalArgumentException if columnNames is null or empty
          */
-        public CqlBuilder delete(final Collection<String> columnNames) {
+        public CqlBuilder delete(final Collection<String> columnNames) throws IllegalArgumentException {
             N.checkArgNotEmpty(columnNames, DELETION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2464,7 +2502,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance configured for DELETE operation
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder delete(final Class<?> entityClass) {
+        public CqlBuilder delete(final Class<?> entityClass) throws IllegalArgumentException {
             return delete(entityClass, null);
         }
 
@@ -2491,7 +2529,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance configured for DELETE operation
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder delete(final Class<?> entityClass, final Set<String> excludedPropNames) {
+        public CqlBuilder delete(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, DELETION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2522,7 +2560,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference
          */
-        public CqlBuilder deleteFrom(final String tableName) {
+        public CqlBuilder deleteFrom(final String tableName) throws IllegalArgumentException {
             N.checkArgNotEmpty(tableName, DELETION_PART_MSG);
             checkCqlTableReference(tableName, cs.tableName);
 
@@ -2554,7 +2592,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference, or {@code entityClass} is null
          */
-        public CqlBuilder deleteFrom(final String tableName, final Class<?> entityClass) {
+        public CqlBuilder deleteFrom(final String tableName, final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotEmpty(tableName, DELETION_PART_MSG);
             checkCqlTableReference(tableName, cs.tableName);
             N.checkArgNotNull(entityClass, DELETION_PART_MSG);
@@ -2587,7 +2625,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder deleteFrom(final Class<?> entityClass) {
+        public CqlBuilder deleteFrom(final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, DELETION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2625,7 +2663,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if selectPart is null or empty
          */
-        public CqlBuilder select(final String selectPart) {
+        public CqlBuilder select(final String selectPart) throws IllegalArgumentException {
             N.checkArgNotEmpty(selectPart, SELECTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2655,7 +2693,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if propOrColumnNames is null or empty
          */
-        public CqlBuilder select(final String... propOrColumnNames) {
+        public CqlBuilder select(final String... propOrColumnNames) throws IllegalArgumentException {
             N.checkArgNotEmpty(propOrColumnNames, SELECTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2685,7 +2723,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if propOrColumnNames is null or empty
          */
-        public CqlBuilder select(final Collection<String> propOrColumnNames) {
+        public CqlBuilder select(final Collection<String> propOrColumnNames) throws IllegalArgumentException {
             N.checkArgNotEmpty(propOrColumnNames, SELECTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2721,7 +2759,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if propOrColumnNameAliases is null or empty, or if any
          *         alias is blank, quoted, or contains CQL comment tokens
          */
-        public CqlBuilder select(final Map<String, String> propOrColumnNameAliases) {
+        public CqlBuilder select(final Map<String, String> propOrColumnNameAliases) throws IllegalArgumentException {
             N.checkArgNotEmpty(propOrColumnNameAliases, SELECTION_PART_MSG);
             validateColumnAliases(propOrColumnNameAliases);
 
@@ -2752,7 +2790,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder select(final Class<?> entityClass) {
+        public CqlBuilder select(final Class<?> entityClass) throws IllegalArgumentException {
             return select(entityClass, false);
         }
 
@@ -2781,7 +2819,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder select(final Class<?> entityClass, final boolean includeSubEntityProperties) {
+        public CqlBuilder select(final Class<?> entityClass, final boolean includeSubEntityProperties) throws IllegalArgumentException {
             return select(entityClass, includeSubEntityProperties, null);
         }
 
@@ -2805,7 +2843,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder select(final Class<?> entityClass, final Set<String> excludedPropNames) {
+        public CqlBuilder select(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             return select(entityClass, false, excludedPropNames);
         }
 
@@ -2830,7 +2868,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder select(final Class<?> entityClass, final boolean includeSubEntityProperties, final Set<String> excludedPropNames) {
+        public CqlBuilder select(final Class<?> entityClass, final boolean includeSubEntityProperties, final Set<String> excludedPropNames)
+                throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);
 
             final CqlBuilder instance = createCqlBuilderInstance();
@@ -2861,7 +2900,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder selectFrom(final Class<?> entityClass) {
+        public CqlBuilder selectFrom(final Class<?> entityClass) throws IllegalArgumentException {
             return selectFrom(entityClass, false);
         }
 
@@ -2882,7 +2921,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entityClass is null, alias is non-empty, or entityClass is not an entity
          *         bean class
          */
-        public CqlBuilder selectFrom(final Class<?> entityClass, final String alias) {
+        public CqlBuilder selectFrom(final Class<?> entityClass, final String alias) throws IllegalArgumentException {
             return selectFrom(entityClass, alias, false);
         }
 
@@ -2906,7 +2945,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or nested entity
          *         tables would be required
          */
-        public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties) {
+        public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties) throws IllegalArgumentException {
             return selectFrom(entityClass, includeSubEntityProperties, null);
         }
 
@@ -2928,7 +2967,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entityClass is null, alias is non-empty, entityClass is not an entity
          *         bean class, or nested entity tables would be required
          */
-        public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final boolean includeSubEntityProperties) {
+        public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final boolean includeSubEntityProperties) throws IllegalArgumentException {
             return selectFrom(entityClass, alias, includeSubEntityProperties, null);
         }
 
@@ -2952,7 +2991,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder selectFrom(final Class<?> entityClass, final Set<String> excludedPropNames) {
+        public CqlBuilder selectFrom(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             return selectFrom(entityClass, false, excludedPropNames);
         }
 
@@ -2974,7 +3013,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entityClass is null, alias is non-empty, or entityClass is not an entity
          *         bean class
          */
-        public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final Set<String> excludedPropNames) {
+        public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final Set<String> excludedPropNames) throws IllegalArgumentException {
             return selectFrom(entityClass, alias, false, excludedPropNames);
         }
 
@@ -3000,7 +3039,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or nested entity
          *         tables would be required
          */
-        public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties, final Set<String> excludedPropNames) {
+        public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties, final Set<String> excludedPropNames)
+                throws IllegalArgumentException {
             return selectFrom(entityClass, null, includeSubEntityProperties, excludedPropNames);
         }
 
@@ -3026,7 +3066,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *         bean class, or nested entity tables would be required
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final boolean includeSubEntityProperties,
-                final Set<String> excludedPropNames) {
+                final Set<String> excludedPropNames) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);
 
             if (Strings.isNotEmpty(alias)) {
@@ -3058,8 +3098,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference
          */
-        public CqlBuilder count(final String tableName) {
+        public CqlBuilder count(final String tableName) throws IllegalArgumentException {
             N.checkArgNotEmpty(tableName, SELECTION_PART_MSG);
+            checkCqlTableReference(tableName, cs.tableName);
 
             return select(COUNT_ALL_LIST).from(tableName);
         }
@@ -3083,7 +3124,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
-        public CqlBuilder count(final Class<?> entityClass) {
+        public CqlBuilder count(final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);
 
             return select(COUNT_ALL_LIST).from(entityClass);
@@ -3116,7 +3157,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if {@code cond} is {@code null}, uses a condition unsupported by CQL (such as OR, BETWEEN,
          *         NOT IN, or a subquery), contains a null comparison or IN value, or has an empty junction/IN list
          */
-        public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) {
+        public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(cond, cs.cond);
 
             final CqlBuilder instance = createCqlBuilderInstance();

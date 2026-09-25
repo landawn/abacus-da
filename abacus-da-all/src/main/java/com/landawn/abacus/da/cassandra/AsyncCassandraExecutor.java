@@ -56,7 +56,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param cassandraExecutor the synchronous executor to delegate to; must not be {@code null}
      * @throws IllegalArgumentException if {@code cassandraExecutor} is {@code null}
      */
-    AsyncCassandraExecutor(final CassandraExecutor cassandraExecutor) {
+    AsyncCassandraExecutor(final CassandraExecutor cassandraExecutor) throws IllegalArgumentException {
         super(cassandraExecutor);
         this.cassandraExecutor = cassandraExecutor;
     }
@@ -119,7 +119,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     @Override
-    public ContinuableFuture<Stream<Object[]>> stream(final String query, final Object... parameters) {
+    public ContinuableFuture<Stream<Object[]>> stream(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return super.stream(query, parameters);
     }
 
@@ -161,7 +161,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
@@ -205,7 +205,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(statement, cs.statement);
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
@@ -252,7 +252,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     @Override
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return super.findFirst(targetClass, query, parameters);
     }
 
@@ -297,7 +298,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     @Override
-    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return super.queryForSingleValue(valueClass, query, parameters);
     }
 
@@ -344,7 +346,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     @Override
-    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters)
+            throws IllegalArgumentException, RuntimeException {
         return super.queryForSingleNonNull(valueClass, query, parameters);
     }
 
@@ -384,7 +387,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     @Override
-    public ContinuableFuture<ResultSet> execute(final String query) {
+    public ContinuableFuture<ResultSet> execute(final String query) throws IllegalArgumentException, RuntimeException {
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(cassandraExecutor.prepareStatement(query)).toCompletableFuture())
                 .map(memoize(ResultSets::wrap));
     }
@@ -425,7 +428,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     @Override
-    public ContinuableFuture<ResultSet> execute(final String query, final Object... parameters) {
+    public ContinuableFuture<ResultSet> execute(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException {
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(cassandraExecutor.prepareStatement(query, parameters)).toCompletableFuture())
                 .map(memoize(ResultSets::wrap));
     }
@@ -464,7 +467,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         submission; failures after submission are reported by the returned future
      */
     @Override
-    public ContinuableFuture<ResultSet> execute(final String query, final Map<String, Object> parameters) {
+    public ContinuableFuture<ResultSet> execute(final String query, final Map<String, Object> parameters) throws IllegalArgumentException, RuntimeException {
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(cassandraExecutor.prepareStatement(query, parameters)).toCompletableFuture())
                 .map(memoize(ResultSets::wrap));
     }
@@ -503,7 +506,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         reported by the returned future
      */
     @Override
-    public ContinuableFuture<ResultSet> execute(final Statement<?> statement) {
+    public ContinuableFuture<ResultSet> execute(final Statement<?> statement) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(statement, cs.statement);
 
         return ContinuableFuture.wrap(cassandraExecutor.session().executeAsync(statement).toCompletableFuture()).map(memoize(ResultSets::wrap));

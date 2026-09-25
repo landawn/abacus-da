@@ -102,7 +102,7 @@ final class ResultSets {
      * @see com.datastax.oss.driver.api.core.cql.AsyncResultSet
      * @see com.datastax.oss.driver.api.core.cql.ResultSet
      */
-    public static ResultSet wrap(final AsyncResultSet asyncResultSet) {
+    public static ResultSet wrap(final AsyncResultSet asyncResultSet) throws IllegalArgumentException {
         N.checkArgNotNull(asyncResultSet, cs.asyncResultSet);
 
         return new ResultSet() {
@@ -113,11 +113,11 @@ final class ResultSets {
             private final Iterator<Row> rowIterator = new Iterator<>() {
                 /**
                  * @return whether a row remains, fetching subsequent pages as necessary
-                 * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
                  * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
+                 * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
                  */
                 @Override
-                public boolean hasNext() throws UncheckedInterruptedException {
+                public boolean hasNext() throws RuntimeException, UncheckedInterruptedException {
                     while ((currentRows == null || !currentRows.hasNext()) && currentResultSet.hasMorePages()) {
                         try {
                             currentResultSet = currentResultSet.fetchNextPage().toCompletableFuture().get();
@@ -137,12 +137,12 @@ final class ResultSets {
 
                 /**
                  * @return the next row, fetching another page if necessary
-                 * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
                  * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
+                 * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
                  * @throws NoSuchElementException if all rows in all pages have been consumed
                  */
                 @Override
-                public Row next() throws UncheckedInterruptedException, NoSuchElementException {
+                public Row next() throws RuntimeException, UncheckedInterruptedException, NoSuchElementException {
                     if (!hasNext()) {
                         throw new NoSuchElementException();
                     }
@@ -185,11 +185,11 @@ final class ResultSets {
 
             /**
              * @return all remaining rows
-             * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
              * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
+             * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
              */
             @Override
-            public List<Row> all() throws UncheckedInterruptedException {
+            public List<Row> all() throws RuntimeException, UncheckedInterruptedException {
                 return N.toList(iterator());
             }
 

@@ -1,10 +1,12 @@
 package com.landawn.abacus.da.mongodb;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import java.util.Arrays;
 import java.util.Collection;
 
 import org.bson.Document;
@@ -13,8 +15,34 @@ import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.util.AsyncExecutor;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.InsertOneModel;
 
 class MongoValidationOrderTest {
+
+    @Test
+    void validatesEmptyCollectionNameBeforeResultType() {
+        final MongoDB database = new MongoDB(mock(MongoDatabase.class));
+
+        assertArgument("collectionName", () -> database.collection("", null));
+        assertArgument("collectionName", () -> database.collectionMapper("", null));
+    }
+
+    @Test
+    void validatesAllBatchElementsBeforeConvertingBeansOrCallingDriver() {
+        final MongoCollection<Document> collection = mock(MongoCollection.class);
+        final MongoCollectionExecutor executor = new MongoCollectionExecutor(collection, mock(AsyncExecutor.class));
+        final ValidationBean bean = new ValidationBean();
+
+        assertThrows(IllegalArgumentException.class, () -> executor.insertMany(Arrays.asList(bean, null)));
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(Arrays.asList(bean, null)));
+        assertThrows(IllegalArgumentException.class, () -> executor.updateMany(new Document(), Arrays.asList(bean, null)));
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.bulkWrite(Arrays.asList(new InsertOneModel<>(new Document()), null)));
+
+        assertEquals(0, bean.readCount);
+        verifyNoInteractions(collection);
+    }
 
     @Test
     void validatesReadArgumentsBeforeAccessingCollection() {
@@ -53,5 +81,18 @@ class MongoValidationOrderTest {
     private static void assertArgument(final String parameter, final org.junit.jupiter.api.function.Executable action) {
         final IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, action);
         assertTrue(exception.getMessage().contains(parameter), exception.getMessage());
+    }
+
+    public static class ValidationBean {
+        private int readCount;
+
+        public String getName() {
+            readCount++;
+            return "name";
+        }
+
+        public void setName(final String name) {
+            // Bean setter required for the document conversion path.
+        }
     }
 }

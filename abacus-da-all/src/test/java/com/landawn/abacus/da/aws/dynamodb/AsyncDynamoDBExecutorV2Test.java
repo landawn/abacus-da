@@ -80,6 +80,48 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testMapperResultConversionFailuresCompleteFuturesExceptionally() {
+        final AsyncDynamoDBExecutor.Mapper<NumericResultEntity> mapper = asyncExecutor.mapper(NumericResultEntity.class, "TestTable", NamingPolicy.CAMEL_CASE);
+        final NumericResultEntity key = new NumericResultEntity();
+        key.setId("1");
+        final Map<String, AttributeValue> invalidItem = Map.of("id", AttributeValue.builder().s("1").build(),
+                "count", AttributeValue.builder().s("not-a-number").build());
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().item(invalidItem).build()));
+        when(mockDynamoDbAsyncClient.batchGetItem(any(BatchGetItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(BatchGetItemResponse.builder().responses(Map.of("TestTable", List.of(invalidItem))).build()));
+
+        // Even an already completed SDK response must report mapper failures through its future.
+        final List<CompletableFuture<?>> results = List.of(mapper.getItem(key), mapper.getItem(key, true),
+                mapper.batchGetItem(List.of(key)), mapper.batchGetItem(List.of(key), "TOTAL"));
+        for (final CompletableFuture<?> result : results) {
+            assertTrue(result.isCompletedExceptionally());
+            assertTrue(assertThrows(ExecutionException.class, result::get).getCause() instanceof RuntimeException);
+        }
+    }
+
+    public static class NumericResultEntity {
+        private String id;
+        private int count;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public void setCount(final int count) {
+            this.count = count;
+        }
+    }
+
+    @Test
     public void testMapperWithTargetEntityClass() {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         assertNotNull(mapper);

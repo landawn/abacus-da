@@ -7,6 +7,7 @@ package com.landawn.abacus.da.hbase;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -530,6 +531,29 @@ public class HBaseExecutorToValueTest {
         shared.setPrimary(new FullName("John"));
         shared.setName("nick");
         assertEquals(shared, HBaseExecutor.toEntity(toResult(AnyPut.create(shared).val()), NestedBeanAndScalarSharingFamily.class));
+    }
+
+    @Test
+    public void test_toEntity_emptyQualifierDoesNotSelectArbitraryNestedProperty() {
+        final Cell unknown = new KeyValue(Bytes.toBytes("row-empty-qualifier"), Bytes.toBytes("cf"), new byte[0], Bytes.toBytes("unexpected"));
+
+        final CustomerWithTwoNestedBeans entity = HBaseExecutor.toEntity(Result.create(List.of(unknown)), CustomerWithTwoNestedBeans.class);
+
+        assertEquals("row-empty-qualifier", entity.getId());
+        assertNull(entity.getName());
+        assertNull(entity.getAddr(), "The family fallback must not map an empty qualifier to the nested bean's last property");
+    }
+
+    @Test
+    public void test_toEntity_unknownQualifierDoesNotCreateNestedBean() {
+        final byte[] row = Bytes.toBytes("row-unknown-qualifier");
+        final Cell known = new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("firstName"), Bytes.toBytes("John"));
+        final Cell unknown = new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("unknownFutureColumn"), Bytes.toBytes("ignored"));
+
+        final CustomerWithTwoNestedBeans entity = HBaseExecutor.toEntity(Result.create(List.of(known, unknown)), CustomerWithTwoNestedBeans.class);
+
+        assertEquals("John", entity.getName().getFirstName());
+        assertNull(entity.getAddr(), "Ignoring an unknown qualifier must not instantiate an unrelated nested bean");
     }
 
     private static Result toResult(final org.apache.hadoop.hbase.client.Put put) {

@@ -7,6 +7,7 @@ package com.landawn.abacus.da.cassandra.v3;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -647,6 +648,170 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final CassandraExecutor.UDTCodec<SlicePBlobEntity> codec = CassandraExecutor.UDTCodec.create(userType, SlicePBlobEntity.class);
 
         org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 6, 7 }, codec.deserialize(udtValue).getData());
+    }
+
+    @Test
+    public void testUdtBlobFieldsAcceptByteArraysInBeansMapsAndLists() throws ReflectiveOperationException {
+        // Driver 3 exposes UDT metadata only through cluster discovery; construct the real metadata offline.
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class, com.datastax.driver.core.DataType.class);
+        fieldConstructor.setAccessible(true);
+        final var field = fieldConstructor.newInstance("data", com.datastax.driver.core.DataType.blob());
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, ProtocolVersion.class, CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        final CodecRegistry registry = new CodecRegistry();
+        final var userType = typeConstructor.newInstance("ks", "blob_type", false, List.of(field), ProtocolVersion.V4, registry);
+        final CassandraExecutor.UDTCodec<SlicePBlobEntity> beanCodec = CassandraExecutor.UDTCodec.create(userType, SlicePBlobEntity.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final CassandraExecutor.UDTCodec<List> listCodec = CassandraExecutor.UDTCodec.create(userType, List.class);
+
+        for (final byte[] bytes : new byte[][] { new byte[0], { 1, 2, 3 } }) {
+            final SlicePBlobEntity bean = new SlicePBlobEntity();
+            bean.setData(bytes);
+            org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, beanCodec.deserialize(beanCodec.serialize(bean, ProtocolVersion.V4), ProtocolVersion.V4).getData());
+            assertEquals(java.nio.ByteBuffer.wrap(bytes), mapCodec.deserialize(mapCodec.serialize(Map.of("data", bytes), ProtocolVersion.V4), ProtocolVersion.V4).get("data"));
+            assertEquals(java.nio.ByteBuffer.wrap(bytes), listCodec.deserialize(listCodec.serialize(List.of(bytes), ProtocolVersion.V4), ProtocolVersion.V4).get(0));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, beanCodec.parse(beanCodec.format(bean)).getData());
+        }
+
+        final java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(new byte[] { 9, 4, 5 });
+        buffer.position(1);
+        assertEquals(java.nio.ByteBuffer.wrap(new byte[] { 4, 5 }), mapCodec.deserialize(mapCodec.serialize(Map.of("data", buffer), ProtocolVersion.V4), ProtocolVersion.V4).get("data"));
+        assertEquals(1, buffer.position());
+        assertNull(beanCodec.deserialize(beanCodec.serialize(new SlicePBlobEntity(), ProtocolVersion.V4), ProtocolVersion.V4).getData());
+
+        final java.util.concurrent.atomic.AtomicReference<RuntimeException> codecFailure = new java.util.concurrent.atomic.AtomicReference<>();
+        registry.register(new com.datastax.driver.core.TypeCodec<byte[]>(com.datastax.driver.core.DataType.blob(), byte[].class) {
+            @Override
+            public java.nio.ByteBuffer serialize(final byte[] value, final ProtocolVersion version) {
+                if (codecFailure.get() != null) {
+                    throw codecFailure.get();
+                }
+                return java.nio.ByteBuffer.wrap(new byte[] { 42 });
+            }
+
+            @Override
+            public byte[] deserialize(final java.nio.ByteBuffer bytes, final ProtocolVersion version) {
+                return new byte[] { 42 };
+            }
+
+            @Override
+            public byte[] parse(final String value) {
+                return new byte[] { 42 };
+            }
+
+            @Override
+            public String format(final byte[] value) {
+                return "0x2a";
+            }
+        });
+        final SlicePBlobEntity customValue = new SlicePBlobEntity();
+        customValue.setData(new byte[] { 1, 2, 3 });
+        assertEquals(java.nio.ByteBuffer.wrap(new byte[] { 42 }), beanCodec.serialize(customValue).getBytes("data"));
+        final IllegalStateException failure = new IllegalStateException("custom serializer failed");
+        codecFailure.set(failure);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> beanCodec.serialize(customValue)));
+        final com.datastax.driver.core.exceptions.CodecNotFoundException unspecifiedType = new com.datastax.driver.core.exceptions.CodecNotFoundException(
+                "custom lookup failed", com.datastax.driver.core.DataType.blob(), null);
+        codecFailure.set(unspecifiedType);
+        assertSame(unspecifiedType, assertThrows(com.datastax.driver.core.exceptions.CodecNotFoundException.class, () -> beanCodec.serialize(customValue)));
+    }
+
+    @Test
+    public void testRegisteredBeanCodecTakesPrecedenceOverParameterExpansion() {
+        final Session session = mock(Session.class);
+        final CassandraExecutor codecExecutor = newSlicePExecutor(session);
+        codecExecutor.registerTypeCodec(SlicePBlobEntity.class);
+        final String query = "INSERT INTO custom_values (payload) VALUES (?)";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        when(session.prepare(query)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(1);
+        when(variables.getType(0)).thenReturn(com.datastax.driver.core.DataType.varchar());
+        when(variables.getName(0)).thenReturn("payload");
+        final Object[][] bound = new Object[1][];
+        when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mock(BoundStatement.class);
+        });
+        final SlicePBlobEntity value = new SlicePBlobEntity();
+        value.setData(new byte[] { 1, 2, 3 });
+
+        codecExecutor.prepareStatement(query, value);
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertSame(value, bound[0][0]);
+    }
+
+    @Test
+    public void testRegisteredEnumCodecTakesPrecedenceOverScalarConversion() {
+        final Session session = mock(Session.class);
+        final CassandraExecutor codecExecutor = newSlicePExecutor(session);
+        final CodecRegistry registry = session.getCluster().getConfiguration().getCodecRegistry();
+        final String query = "INSERT INTO custom_values (payload) VALUES (?)";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        when(session.prepare(query)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(1);
+        when(variables.getType(0)).thenReturn(com.datastax.driver.core.DataType.varchar());
+        when(variables.getName(0)).thenReturn("payload");
+        final Object[][] bound = new Object[1][];
+        when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mock(BoundStatement.class);
+        });
+        final java.time.DayOfWeek value = java.time.DayOfWeek.MONDAY;
+
+        // Without a value-specific codec, the existing scalar conversion remains available.
+        codecExecutor.prepareStatement(query, value);
+        assertEquals("MONDAY", bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertEquals("MONDAY", bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertEquals("MONDAY", bound[0][0]);
+
+        final java.util.concurrent.atomic.AtomicReference<RuntimeException> acceptanceFailure = new java.util.concurrent.atomic.AtomicReference<>();
+        registry.register(new CassandraExecutor.StringCodec<java.time.DayOfWeek>(java.time.DayOfWeek.class) {
+            @Override
+            public boolean accepts(final Object candidate) {
+                if (candidate instanceof java.time.DayOfWeek && acceptanceFailure.get() != null) {
+                    throw acceptanceFailure.get();
+                }
+                return super.accepts(candidate);
+            }
+        });
+
+        codecExecutor.prepareStatement(query, value);
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertSame(value, bound[0][0]);
+
+        // A registered codec's failure must propagate, rather than silently falling back to String.
+        final IllegalStateException failure = new IllegalStateException("codec acceptance failed");
+        acceptanceFailure.set(failure);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, value)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, List.of(value))));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, Map.of("payload", value))));
+    }
+
+    @Test
+    public void testToMapPropagatesColumnDecodingFailure() {
+        final Row row = mock(Row.class);
+        final ColumnDefinitions columns = mock(ColumnDefinitions.class);
+        when(row.getColumnDefinitions()).thenReturn(columns);
+        when(columns.size()).thenReturn(1);
+        when(columns.getName(0)).thenReturn("payload");
+        final IllegalStateException failure = new IllegalStateException("column codec failed");
+        when(row.getObject(0)).thenThrow(failure);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(row)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(row, HashMap::new)));
     }
 
     public static class SlicePBlobEntity {

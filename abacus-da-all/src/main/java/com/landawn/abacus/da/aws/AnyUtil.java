@@ -81,7 +81,7 @@ public final class AnyUtil {
      * @throws IllegalArgumentException if {@code propNameAndValues} has an odd length,
      *         or if any property name is not a {@link String}
      */
-    public static Map<String, Object> asProps(final Object[] propNameAndValues) {
+    public static Map<String, Object> asProps(final Object[] propNameAndValues) throws IllegalArgumentException {
         if (propNameAndValues == null) {
             return new LinkedHashMap<>(); // NOSONAR
         }

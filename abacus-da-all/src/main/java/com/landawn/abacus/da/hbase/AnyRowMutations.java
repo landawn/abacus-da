@@ -90,8 +90,9 @@ public final class AnyRowMutations implements Row {
      *
      * @param rowKey the row key shared by all mutations in this batch
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyRowMutations(final Object rowKey) {
+    AnyRowMutations(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         rowMutations = new RowMutations(toRowKeyBytes(rowKey));
     }
 
@@ -102,8 +103,9 @@ public final class AnyRowMutations implements Row {
      * @param rowKey the row key shared by all mutations in this batch
      * @param initialCapacity the initial capacity for the internal mutation list
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyRowMutations(final Object rowKey, final int initialCapacity) {
+    AnyRowMutations(final Object rowKey, final int initialCapacity) throws IllegalArgumentException, RuntimeException {
         rowMutations = new RowMutations(toRowKeyBytes(rowKey), initialCapacity);
     }
 
@@ -114,7 +116,7 @@ public final class AnyRowMutations implements Row {
      * @param rowKey the row key shared by all mutations in this batch, as a byte array
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
-    AnyRowMutations(final byte[] rowKey) {
+    AnyRowMutations(final byte[] rowKey) throws IllegalArgumentException {
         rowMutations = new RowMutations(rowKey);
     }
 
@@ -126,7 +128,7 @@ public final class AnyRowMutations implements Row {
      * @param initialCapacity the initial capacity for the internal mutation list
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
-    AnyRowMutations(final byte[] rowKey, final int initialCapacity) {
+    AnyRowMutations(final byte[] rowKey, final int initialCapacity) throws IllegalArgumentException {
         rowMutations = new RowMutations(rowKey, initialCapacity);
     }
 
@@ -151,8 +153,9 @@ public final class AnyRowMutations implements Row {
      * @param rowKey the row key shared by all mutations in this batch; must not be {@code null}
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    public static AnyRowMutations of(final Object rowKey) {
+    public static AnyRowMutations of(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         return new AnyRowMutations(rowKey);
     }
 
@@ -179,8 +182,9 @@ public final class AnyRowMutations implements Row {
      * @param initialCapacity the initial capacity for the internal mutation list
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    public static AnyRowMutations of(final Object rowKey, final int initialCapacity) {
+    public static AnyRowMutations of(final Object rowKey, final int initialCapacity) throws IllegalArgumentException, RuntimeException {
         return new AnyRowMutations(rowKey, initialCapacity);
     }
 
@@ -204,7 +208,7 @@ public final class AnyRowMutations implements Row {
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
-    public static AnyRowMutations of(final byte[] rowKey) {
+    public static AnyRowMutations of(final byte[] rowKey) throws IllegalArgumentException {
         return new AnyRowMutations(rowKey);
     }
 
@@ -233,7 +237,7 @@ public final class AnyRowMutations implements Row {
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
      */
-    public static AnyRowMutations of(final byte[] rowKey, final int initialCapacity) {
+    public static AnyRowMutations of(final byte[] rowKey, final int initialCapacity) throws IllegalArgumentException {
         return new AnyRowMutations(rowKey, initialCapacity);
     }
 
@@ -298,7 +302,7 @@ public final class AnyRowMutations implements Row {
      * @see Delete
      * @see #add(List)
      */
-    public AnyRowMutations add(final Mutation mutation) throws IOException {
+    public AnyRowMutations add(final Mutation mutation) throws IllegalArgumentException, IOException {
         N.checkArgNotNull(mutation, cs.mutation);
 
         rowMutations.add(mutation);
@@ -350,7 +354,7 @@ public final class AnyRowMutations implements Row {
      * @see Delete
      * @see #add(Mutation)
      */
-    public AnyRowMutations add(final List<? extends Mutation> mutations) throws IOException {
+    public AnyRowMutations add(final List<? extends Mutation> mutations) throws IllegalArgumentException, IOException {
         N.checkArgNotNull(mutations, cs.mutations);
 
         for (final Mutation mutation : mutations) {
@@ -410,7 +414,7 @@ public final class AnyRowMutations implements Row {
      */
     @Override
     @Deprecated
-    public int compareTo(final Row other) {
+    public int compareTo(final Row other) throws NullPointerException {
         return rowMutations.compareTo(other);
     }
 

@@ -1,5 +1,6 @@
 package com.landawn.abacus.da.aws.dynamodb;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -81,6 +82,43 @@ public class DynamoDBExecutorV2Test extends TestBase {
         DynamoDbClient client = executor.dynamoDBClient();
         assertNotNull(client);
         assertEquals(mockDynamoDbClient, client);
+    }
+
+    @Test
+    public void testMapperRejectsNonFinitePropertyValuesBeforeSendingWrites() {
+        final DynamoDBExecutor.Mapper<NonFiniteValueEntity> mapper = executor.mapper(NonFiniteValueEntity.class, "TestTable", NamingPolicy.CAMEL_CASE);
+        final NonFiniteValueEntity entity = new NonFiniteValueEntity();
+        entity.setId("1");
+        for (final double value : new double[] { Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY }) {
+            entity.setValue(value);
+            assertThrows(IllegalArgumentException.class, () -> mapper.putItem(entity));
+            assertThrows(IllegalArgumentException.class, () -> mapper.putItem(entity, "ALL_OLD"));
+            assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem(List.of(entity)));
+            assertThrows(IllegalArgumentException.class, () -> mapper.updateItem(entity));
+            assertThrows(IllegalArgumentException.class, () -> mapper.updateItem(entity, "ALL_NEW"));
+        }
+        org.mockito.Mockito.verifyNoInteractions(mockDynamoDbClient);
+    }
+
+    public static class NonFiniteValueEntity {
+        private String id;
+        private double value;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public double getValue() {
+            return value;
+        }
+
+        public void setValue(final double value) {
+            this.value = value;
+        }
     }
 
     @Test
@@ -2785,6 +2823,177 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertEquals(2, buf.remaining());
         assertEquals(4, buf.get(0));
         assertEquals(5, buf.get(1));
+    }
+
+
+    @Test
+    public void testToEntity_NativeBinarySetsPreserveTypedElementsAndArrays() {
+        final ByteBuffer source = ByteBuffer.wrap(new byte[] { 9, 1, 2, -3, 8 }).asReadOnlyBuffer();
+        source.position(1);
+        source.limit(4);
+        final AttributeValue binarySet = AttributeValue.fromBs(List.of(software.amazon.awssdk.core.SdkBytes.fromByteBuffer(source)));
+
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+
+        for (final String name : List.of("bytes", "buffers", "byteArray", "bufferArray", "bufferSet", "rawValues", "rawArray")) {
+            item.put(name, binarySet);
+        }
+
+        final BinaryContainerEntity entity = DynamoDBExecutor.toEntity(item, BinaryContainerEntity.class);
+        final byte[] expected = { 1, 2, -3 };
+        assertArrayEquals(expected, entity.getBytes().get(0));
+        assertEquals(ByteBuffer.wrap(expected), entity.getBuffers().get(0));
+        assertArrayEquals(expected, entity.getByteArray()[0]);
+        assertEquals(ByteBuffer.wrap(expected), entity.getBufferArray()[0]);
+        assertEquals(java.util.Set.of(ByteBuffer.wrap(expected)), entity.getBufferSet());
+        assertEquals(1, source.position());
+        assertEquals(4, source.limit());
+
+        assertEquals(0, entity.getBuffers().get(0).position());
+        assertEquals(0, entity.getBufferArray()[0].position());
+        assertArrayEquals(expected, (byte[]) entity.getRawValues().get(0));
+        assertArrayEquals(expected, (byte[]) entity.getRawArray()[0]);
+    }
+
+    @Test
+    public void testToEntity_NativeBinaryListsAndMapsPreserveNullAndEmptyValues() {
+        final AttributeValue binary = AttributeValue.fromB(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[] { 4, 5 }));
+        final AttributeValue missing = AttributeValue.fromNul(true);
+        final AttributeValue empty = AttributeValue.fromB(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[0]));
+        final AttributeValue binaryList = AttributeValue.fromL(List.of(binary, missing, empty));
+        final AttributeValue binaryMap = AttributeValue.fromM(Map.of("7", binary, "8", missing, "9", empty));
+
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("bytes", binaryList);
+        item.put("buffers", binaryList);
+        item.put("byteArray", binaryList);
+        item.put("bufferArray", binaryList);
+        item.put("byteMap", binaryMap);
+        item.put("bufferMap", binaryMap);
+
+        final BinaryContainerEntity entity = DynamoDBExecutor.toEntity(item, BinaryContainerEntity.class);
+        assertArrayEquals(new byte[] { 4, 5 }, entity.getBytes().get(0));
+        assertEquals(ByteBuffer.wrap(new byte[] { 4, 5 }), entity.getBuffers().get(0));
+        assertNull(entity.getBytes().get(1));
+        assertNull(entity.getBuffers().get(1));
+        assertArrayEquals(new byte[0], entity.getBytes().get(2));
+        assertEquals(0, entity.getBuffers().get(2).remaining());
+        assertArrayEquals(new byte[] { 4, 5 }, entity.getByteArray()[0]);
+        assertNull(entity.getByteArray()[1]);
+        assertArrayEquals(new byte[0], entity.getByteArray()[2]);
+        assertEquals(ByteBuffer.wrap(new byte[] { 4, 5 }), entity.getBufferArray()[0]);
+        assertNull(entity.getBufferArray()[1]);
+        assertEquals(0, entity.getBufferArray()[2].remaining());
+        assertArrayEquals(new byte[] { 4, 5 }, entity.getByteMap().get(7));
+        assertNull(entity.getByteMap().get(8));
+        assertArrayEquals(new byte[0], entity.getByteMap().get(9));
+        assertEquals(ByteBuffer.wrap(new byte[] { 4, 5 }), entity.getBufferMap().get("7"));
+        assertNull(entity.getBufferMap().get("8"));
+        assertEquals(0, entity.getBufferMap().get("9").remaining());
+
+    }
+
+    @Test
+    public void testToEntity_EmptyBinaryContainersRemainEmpty() {
+        final AttributeValue emptyList = AttributeValue.fromL(List.of());
+        final AttributeValue emptyMap = AttributeValue.fromM(Map.of());
+
+        final BinaryContainerEntity entity = DynamoDBExecutor.toEntity(
+                Map.of("bytes", emptyList, "buffers", emptyList, "byteArray", emptyList, "bufferArray", emptyList,
+                        "bufferSet", emptyList, "byteMap", emptyMap, "bufferMap", emptyMap), BinaryContainerEntity.class);
+
+        assertTrue(entity.getBytes().isEmpty());
+        assertTrue(entity.getBuffers().isEmpty());
+        assertEquals(0, entity.getByteArray().length);
+        assertEquals(0, entity.getBufferArray().length);
+        assertTrue(entity.getBufferSet().isEmpty());
+        assertTrue(entity.getByteMap().isEmpty());
+        assertTrue(entity.getBufferMap().isEmpty());
+    }
+
+
+    public static class BinaryContainerEntity {
+        private List<byte[]> bytes;
+        private List<ByteBuffer> buffers;
+        private byte[][] byteArray;
+        private ByteBuffer[] bufferArray;
+        private java.util.Set<ByteBuffer> bufferSet;
+        private Map<Integer, byte[]> byteMap;
+        private Map<String, ByteBuffer> bufferMap;
+        private List<Object> rawValues;
+        private Object[] rawArray;
+
+        public List<byte[]> getBytes() {
+            return bytes;
+        }
+
+        public void setBytes(final List<byte[]> bytes) {
+            this.bytes = bytes;
+        }
+
+        public List<ByteBuffer> getBuffers() {
+            return buffers;
+        }
+
+        public void setBuffers(final List<ByteBuffer> buffers) {
+            this.buffers = buffers;
+        }
+
+        public byte[][] getByteArray() {
+            return byteArray;
+        }
+
+        public void setByteArray(final byte[][] byteArray) {
+            this.byteArray = byteArray;
+        }
+
+        public ByteBuffer[] getBufferArray() {
+            return bufferArray;
+        }
+
+        public void setBufferArray(final ByteBuffer[] bufferArray) {
+            this.bufferArray = bufferArray;
+        }
+
+        public java.util.Set<ByteBuffer> getBufferSet() {
+            return bufferSet;
+        }
+
+        public void setBufferSet(final java.util.Set<ByteBuffer> bufferSet) {
+            this.bufferSet = bufferSet;
+        }
+
+        public Map<Integer, byte[]> getByteMap() {
+            return byteMap;
+        }
+
+        public void setByteMap(final Map<Integer, byte[]> byteMap) {
+            this.byteMap = byteMap;
+        }
+
+        public Map<String, ByteBuffer> getBufferMap() {
+            return bufferMap;
+        }
+
+        public void setBufferMap(final Map<String, ByteBuffer> bufferMap) {
+            this.bufferMap = bufferMap;
+        }
+
+        public List<Object> getRawValues() {
+            return rawValues;
+        }
+
+        public void setRawValues(final List<Object> rawValues) {
+            this.rawValues = rawValues;
+        }
+
+        public Object[] getRawArray() {
+            return rawArray;
+        }
+
+        public void setRawArray(final Object[] rawArray) {
+            this.rawArray = rawArray;
+        }
     }
 
     private static class ByteBufferEntity {

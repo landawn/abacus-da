@@ -217,7 +217,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see ContinuableFuture
      * @see #exists(ObjectId)
      */
-    public ContinuableFuture<Boolean> exists(final String objectId) {
+    public ContinuableFuture<Boolean> exists(final String objectId) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.exists(objectId));
@@ -248,7 +248,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see ObjectId
      * @see ContinuableFuture
      */
-    public ContinuableFuture<Boolean> exists(final ObjectId objectId) {
+    public ContinuableFuture<Boolean> exists(final ObjectId objectId) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.exists(objectId));
@@ -278,7 +278,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
-    public ContinuableFuture<Boolean> exists(final Bson filter) {
+    public ContinuableFuture<Boolean> exists(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.exists(filter));
@@ -306,7 +306,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see ContinuableFuture
      * @see #count(Bson)
      */
-    public ContinuableFuture<Long> count() {
+    public ContinuableFuture<Long> count() throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute((Callable<Long>) collectionExecutor::count);
     }
 
@@ -335,7 +335,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
-    public ContinuableFuture<Long> count(final Bson filter) {
+    public ContinuableFuture<Long> count(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.count(filter));
@@ -367,7 +367,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see CountOptions
      * @see ContinuableFuture
      */
-    public ContinuableFuture<Long> count(final Bson filter, final CountOptions options) {
+    public ContinuableFuture<Long> count(final Bson filter, final CountOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.count(filter, options));
@@ -397,7 +398,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #count()
      * @see ContinuableFuture
      */
-    public ContinuableFuture<Long> estimatedDocumentCount() {
+    public ContinuableFuture<Long> estimatedDocumentCount() throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute((Callable<Long>) collectionExecutor::estimatedDocumentCount);
     }
 
@@ -428,7 +429,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see EstimatedDocumentCountOptions
      * @see ContinuableFuture
      */
-    public ContinuableFuture<Long> estimatedDocumentCount(final EstimatedDocumentCountOptions options) {
+    public ContinuableFuture<Long> estimatedDocumentCount(final EstimatedDocumentCountOptions options)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> collectionExecutor.estimatedDocumentCount(options));
     }
 
@@ -458,7 +460,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Document
      * @see #get(ObjectId)
      */
-    public ContinuableFuture<Optional<Document>> get(final String objectId) {
+    public ContinuableFuture<Optional<Document>> get(final String objectId) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId));
@@ -490,7 +492,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Optional
      * @see Document
      */
-    public ContinuableFuture<Optional<Document>> get(final ObjectId objectId) {
+    public ContinuableFuture<Optional<Document>> get(final ObjectId objectId)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId));
@@ -522,7 +525,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #get(ObjectId, Class)
      */
-    public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -556,7 +560,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #get(String, Class)
      */
-    public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -591,7 +596,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #get(ObjectId, Collection, Class)
      */
-    public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -628,7 +634,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see com.mongodb.client.model.Projections
      */
-    public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -665,7 +672,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(String)
      * @see #gett(ObjectId)
      */
-    public ContinuableFuture<Document> gett(final String objectId) {
+    public ContinuableFuture<Document> gett(final String objectId) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId));
@@ -701,7 +708,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId)
      * @see #gett(String)
      */
-    public ContinuableFuture<Document> gett(final ObjectId objectId) {
+    public ContinuableFuture<Document> gett(final ObjectId objectId) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.gett(objectId));
@@ -738,7 +745,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(String, Class)
      * @see #gett(ObjectId, Class)
      */
-    public <T> ContinuableFuture<T> gett(final String objectId, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> gett(final String objectId, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -777,7 +785,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId, Class)
      * @see #gett(String, Class)
      */
-    public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -817,7 +826,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(String, Collection, Class)
      * @see #gett(ObjectId, Collection, Class)
      */
-    public <T> ContinuableFuture<T> gett(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> gett(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -859,7 +869,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId, Collection, Class)
      * @see com.mongodb.client.model.Projections
      */
-    public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -893,7 +904,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Document
      * @see com.mongodb.client.model.Filters
      */
-    public ContinuableFuture<Optional<Document>> findFirst(final Bson filter) {
+    public ContinuableFuture<Optional<Document>> findFirst(final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.findFirst(filter));
@@ -926,7 +938,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findFirst(Bson)
      * @see #findFirst(Collection, Bson, Class)
      */
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -962,7 +975,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findFirst(Bson, Class)
      * @see #findFirst(Collection, Bson, Bson, Class)
      */
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -999,7 +1013,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      * @see #findFirst(Collection, Bson, Class)
      */
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1036,7 +1051,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> ContinuableFuture<Optional<T>> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> ContinuableFuture<Optional<T>> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1070,7 +1086,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
      */
-    public ContinuableFuture<List<Document>> list(final Bson filter) {
+    public ContinuableFuture<List<Document>> list(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(filter));
@@ -1103,7 +1119,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #list(Bson, int, int, Class)
      * @see #list(Collection, Bson, Class)
      */
-    public <T> ContinuableFuture<List<T>> list(final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<List<T>> list(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1138,7 +1155,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #list(Bson, Class)
      */
-    public <T> ContinuableFuture<List<T>> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public <T> ContinuableFuture<List<T>> list(final Bson filter, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1173,7 +1191,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #list(Bson, Class)
      */
-    public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1211,7 +1230,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #list(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1247,7 +1266,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1285,7 +1305,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1322,7 +1342,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> ContinuableFuture<List<T>> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> ContinuableFuture<List<T>> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1361,7 +1382,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1414,7 +1435,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalBoolean> queryForBoolean(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalBoolean> queryForBoolean(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1459,7 +1481,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalChar> queryForChar(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalChar> queryForChar(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1490,6 +1513,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code queryForByte} operation fails while converting documents or
      * executing the MongoDB command.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is reported by exceptional completion of the returned future.</p>
+     *
      * @param propName the name of the byte property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalByte}
@@ -1504,7 +1530,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalByte> queryForByte(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalByte> queryForByte(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1535,6 +1562,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code queryForShort} operation fails while converting documents or
      * executing the MongoDB command.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is reported by exceptional completion of the returned future.</p>
+     *
      * @param propName the name of the short property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalShort}
@@ -1549,7 +1579,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalShort> queryForShort(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalShort> queryForShort(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1583,6 +1614,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code queryForInt} operation fails while converting documents or
      * executing the MongoDB command.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is reported by exceptional completion of the returned future.</p>
+     *
      * @param propName the name of the integer property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalInt}
@@ -1597,7 +1631,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalInt> queryForInt(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalInt> queryForInt(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1628,6 +1663,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code queryForLong} operation fails while converting documents or
      * executing the MongoDB command.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is reported by exceptional completion of the returned future.</p>
+     *
      * @param propName the name of the long property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalLong}
@@ -1642,7 +1680,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalLong> queryForLong(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalLong> queryForLong(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1688,7 +1727,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalFloat> queryForFloat(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalFloat> queryForFloat(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1734,7 +1774,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<OptionalDouble> queryForDouble(final String propName, final Bson filter) {
+    public ContinuableFuture<OptionalDouble> queryForDouble(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1779,7 +1820,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<Nullable<String>> queryForString(final String propName, final Bson filter) {
+    public ContinuableFuture<Nullable<String>> queryForString(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1826,7 +1868,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public ContinuableFuture<Nullable<Date>> queryForDate(final String propName, final Bson filter) {
+    public ContinuableFuture<Nullable<Date>> queryForDate(final String propName, final Bson filter)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -1873,7 +1916,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
      */
-    public <T extends Date> ContinuableFuture<Nullable<T>> queryForDate(final String propName, final Bson filter, final Class<T> valueType) {
+    public <T extends Date> ContinuableFuture<Nullable<T>> queryForDate(final String propName, final Bson filter, final Class<T> valueType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(valueType, cs.valueType);
@@ -1887,15 +1931,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>Only the named property of the first matched document is read; any remaining documents or
      * fields are ignored. The value is converted to {@code valueType} via
-     * {@link com.landawn.abacus.util.N#convert(Object, Class)} (not the MongoDB codec registry).</p>
+     * binary-aware scalar conversion: binary payloads can be read as byte arrays or readable {@link java.nio.ByteBuffer} values;
+     * other values use {@link com.landawn.abacus.util.N#convert(Object, Class)}.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()}
-     * <i>only</i> when no document matches the filter. If a document is found but the named field is
-     * absent or BSON null, the future completes with a <i>present-but-null</i> {@code Nullable}
-     * ({@code Nullable.of(null)}). Unlike the primitive {@code queryForXxx} variants (which surface
-     * missing/null fields as the primitive default wrapped in a present Optional), this method —
-     * driven by a wrapper / object {@code Class<V>} — always conveys missing/null precisely as Java
-     * {@code null} inside the Nullable.</p>
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()} when no nonempty document is found.
+     * For a matched document, the {@code Nullable} holds the converted field value. A missing or BSON {@code null} field
+     * produces a present-but-null {@code Nullable} for a wrapper or reference {@code valueType}. A primitive class token,
+     * such as {@code int.class}, instead produces the primitive default value, such as {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1908,13 +1950,16 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code queryForSingleValue} operation fails while converting documents or
      * executing the MongoDB command.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is reported by exceptional completion of the returned future.</p>
+     *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @param valueType the Class object representing the value type
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<V>}
      *         holding the converted value (possibly {@code null} for missing/null fields) when at
-     *         least one document matches; {@code Nullable.empty()} when no document matches
+     *         least one document matches; {@code Nullable.empty()} when no nonempty document is found
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
@@ -1923,7 +1968,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
-    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(valueType, cs.valueType);
@@ -1938,13 +1984,12 @@ public final class AsyncMongoCollectionExecutor {
      * <p>Only the named property of the first matched document is read; any remaining documents or
      * fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Optional.empty()}
-     * <i>only</i> when no document matches the filter. When a document is matched, its field value is
-     * converted and wrapped in the {@code Optional} via {@link Optional#of(Object)}, which does not
-     * accept a null payload — so if the field is absent, the raw BSON value is {@code null}, or the
-     * conversion yields {@code null}, the future completes exceptionally with
-     * {@link NullPointerException}. Use {@link #queryForSingleValue(String, Bson, Class)} (returns
-     * {@link Nullable}) when the field may legitimately be absent or {@code null}.</p>
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Optional.empty()} when no nonempty document is found.
+     * For a matched document, its selected field is converted before {@link Optional#of(Object)} wraps the result.
+     * If conversion yields {@code null}, the future completes exceptionally with {@link NullPointerException}.
+     * Missing or BSON {@code null} fields yield {@code null} for wrapper and reference type tokens, but a primitive token,
+     * such as {@code int.class}, yields its non-null boxed default. Use {@link #queryForSingleValue(String, Bson, Class)}
+     * with a wrapper or reference type when a matched-but-null value must be represented.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1955,16 +2000,18 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code queryForSingleNonNull} operation fails while converting documents
-     * or executing the MongoDB command. This includes a {@link NullPointerException} when a matched, nonempty document has no non-null
-     * convertible value for {@code propName}.</p>
+     * or executing the MongoDB command. This includes a {@link NullPointerException} when conversion of the selected field of a matched, nonempty document
+     * yields {@code null}.</p>
+     *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is reported by exceptional completion of the returned future.</p>
      *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @param valueType the Class object representing the value type
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Optional<V>}
-     *         holding the (non-null) converted value when a document is matched and the field carries
-     *         a non-null value; {@code Optional.empty()} when no document matches the filter
+     *         holding the non-null converted value when a document is matched; {@code Optional.empty()} when no nonempty document is found
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
@@ -1973,7 +2020,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForSingleNonNull(String, Bson, Class)
      */
-    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(valueType, cs.valueType);
@@ -2005,7 +2053,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see #query(Bson, Class)
      */
-    public ContinuableFuture<Dataset> query(final Bson filter) {
+    public ContinuableFuture<Dataset> query(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(filter));
@@ -2037,7 +2085,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see #query(Bson)
      */
-    public ContinuableFuture<Dataset> query(final Bson filter, final Class<?> rowType) {
+    public ContinuableFuture<Dataset> query(final Bson filter, final Class<?> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2072,7 +2121,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see #query(Bson, Class)
      */
-    public ContinuableFuture<Dataset> query(final Bson filter, final int offset, final int count, final Class<?> rowType) {
+    public ContinuableFuture<Dataset> query(final Bson filter, final int offset, final int count, final Class<?> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2105,7 +2155,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
-    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType) {
+    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2141,7 +2192,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
-            final Class<?> rowType) {
+            final Class<?> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2176,7 +2227,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see com.mongodb.client.model.Sorts
      */
-    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType) {
+    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2214,7 +2266,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<?> rowType) {
+            final Class<?> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2252,7 +2304,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
-    public ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
+    public ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2292,7 +2345,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<?> rowType) {
+            final Class<?> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2324,7 +2377,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      * @see Document
      */
-    public ContinuableFuture<Stream<Document>> stream(final Bson filter) {
+    public ContinuableFuture<Stream<Document>> stream(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(filter));
@@ -2357,7 +2410,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see Stream
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2392,7 +2446,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see Stream
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2425,7 +2480,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see Stream
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2463,7 +2519,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2499,7 +2555,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2538,7 +2595,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset,
-            final int count, final Class<T> rowType) {
+            final int count, final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2575,7 +2632,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      * @see com.mongodb.client.model.Projections
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2619,7 +2677,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2649,7 +2707,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see ChangeStreamIterable
      * @see #watch(Class)
      */
-    public ContinuableFuture<ChangeStreamIterable<Document>> watch() {
+    public ContinuableFuture<ChangeStreamIterable<Document>> watch() throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute((Callable<ChangeStreamIterable<Document>>) collectionExecutor::watch);
     }
 
@@ -2679,7 +2737,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see ChangeStreamIterable
      * @see #watch()
      */
-    public <T> ContinuableFuture<ChangeStreamIterable<T>> watch(final Class<T> rowType) {
+    public <T> ContinuableFuture<ChangeStreamIterable<T>> watch(final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.watch(rowType));
@@ -2712,7 +2771,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see ChangeStreamIterable
      * @see com.mongodb.client.model.Aggregates
      */
-    public ContinuableFuture<ChangeStreamIterable<Document>> watch(final List<? extends Bson> pipeline) {
+    public ContinuableFuture<ChangeStreamIterable<Document>> watch(final List<? extends Bson> pipeline)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(pipeline, cs.pipeline);
 
         return asyncExecutor.execute(() -> collectionExecutor.watch(pipeline));
@@ -2747,7 +2807,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see ChangeStreamIterable
      * @see com.mongodb.client.model.Aggregates
      */
-    public <T> ContinuableFuture<ChangeStreamIterable<T>> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
+    public <T> ContinuableFuture<ChangeStreamIterable<T>> watch(final List<? extends Bson> pipeline, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2793,7 +2854,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
-    public ContinuableFuture<InsertOneResult> insertOne(final Object obj) {
+    public ContinuableFuture<InsertOneResult> insertOne(final Object obj) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(obj, cs.obj);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertOne(obj));
@@ -2828,7 +2889,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see InsertOneOptions
      * @see #insertOne(Object)
      */
-    public ContinuableFuture<InsertOneResult> insertOne(final Object obj, final InsertOneOptions options) {
+    public ContinuableFuture<InsertOneResult> insertOne(final Object obj, final InsertOneOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(obj, cs.obj);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertOne(obj, options));
@@ -2865,7 +2927,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #insertMany(Collection, InsertManyOptions)
      * @see #insertOne(Object)
      */
-    public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList) {
+    public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertMany(objList));
@@ -2902,7 +2965,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see InsertManyOptions
      * @see #insertMany(Collection)
      */
-    public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList, final InsertManyOptions options) {
+    public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList, final InsertManyOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objList, cs.objList);
 
         return asyncExecutor.execute(() -> collectionExecutor.insertMany(objList, options));
@@ -2947,7 +3011,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #updateOne(ObjectId, Object)
      * @see com.mongodb.client.model.Updates
      */
-    public ContinuableFuture<UpdateResult> updateOne(final String objectId, final Object update) {
+    public ContinuableFuture<UpdateResult> updateOne(final String objectId, final Object update)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(update, cs.update);
 
@@ -2995,7 +3060,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #updateOne(String, Object)
      * @see ObjectId
      */
-    public ContinuableFuture<UpdateResult> updateOne(final ObjectId objectId, final Object update) {
+    public ContinuableFuture<UpdateResult> updateOne(final ObjectId objectId, final Object update)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(update, cs.update);
 
@@ -3040,7 +3106,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Updates
      */
-    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update) {
+    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
 
@@ -3074,7 +3141,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see UpdateOptions
      * @see UpdateResult
      */
-    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update, final UpdateOptions options) {
+    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update, final UpdateOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
 
@@ -3115,7 +3183,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see UpdateResult
      */
-    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
+    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
 
@@ -3156,7 +3225,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see UpdateResult
      */
-    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
+    public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
 
@@ -3201,7 +3271,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #updateMany(Bson, Object, UpdateOptions)
      * @see #updateOne(Bson, Object)
      */
-    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update) {
+    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
 
@@ -3237,7 +3308,8 @@ public final class AsyncMongoCollectionExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
      *         shut down
      */
-    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options) {
+    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
 
@@ -3278,7 +3350,8 @@ public final class AsyncMongoCollectionExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
      *         shut down
      */
-    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList) {
+    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
 
@@ -3318,7 +3391,8 @@ public final class AsyncMongoCollectionExecutor {
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
      *         shut down
      */
-    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
+    public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
 
@@ -3356,7 +3430,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #replaceOne(ObjectId, Object)
      * @see #replaceOne(Bson, Object)
      */
-    public ContinuableFuture<UpdateResult> replaceOne(final String objectId, final Object replacement) {
+    public ContinuableFuture<UpdateResult> replaceOne(final String objectId, final Object replacement)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -3393,7 +3468,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #replaceOne(String, Object)
      * @see #replaceOne(Bson, Object)
      */
-    public ContinuableFuture<UpdateResult> replaceOne(final ObjectId objectId, final Object replacement) {
+    public ContinuableFuture<UpdateResult> replaceOne(final ObjectId objectId, final Object replacement)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -3443,7 +3519,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #replaceOne(Bson, Object, ReplaceOptions)
      * @see #updateOne(Bson, Object)
      */
-    public ContinuableFuture<UpdateResult> replaceOne(final Bson filter, final Object replacement) {
+    public ContinuableFuture<UpdateResult> replaceOne(final Bson filter, final Object replacement)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -3482,7 +3559,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see ReplaceOptions
      * @see #replaceOne(Bson, Object)
      */
-    public ContinuableFuture<UpdateResult> replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
+    public ContinuableFuture<UpdateResult> replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -3524,7 +3602,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(ObjectId)
      * @see #deleteOne(Bson)
      */
-    public ContinuableFuture<DeleteResult> deleteOne(final String objectId) {
+    public ContinuableFuture<DeleteResult> deleteOne(final String objectId) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteOne(objectId));
@@ -3557,7 +3635,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(String)
      * @see #deleteOne(Bson)
      */
-    public ContinuableFuture<DeleteResult> deleteOne(final ObjectId objectId) {
+    public ContinuableFuture<DeleteResult> deleteOne(final ObjectId objectId)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(objectId, cs.objectId);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteOne(objectId));
@@ -3590,7 +3669,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(Bson, DeleteOptions)
      * @see #deleteMany(Bson)
      */
-    public ContinuableFuture<DeleteResult> deleteOne(final Bson filter) {
+    public ContinuableFuture<DeleteResult> deleteOne(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteOne(filter));
@@ -3626,7 +3705,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see DeleteOptions
      * @see #deleteOne(Bson)
      */
-    public ContinuableFuture<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
+    public ContinuableFuture<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteOne(filter, options));
@@ -3672,7 +3752,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteMany(Bson, DeleteOptions)
      * @see #deleteOne(Bson)
      */
-    public ContinuableFuture<DeleteResult> deleteMany(final Bson filter) {
+    public ContinuableFuture<DeleteResult> deleteMany(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteMany(filter));
@@ -3706,7 +3786,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see DeleteOptions
      * @see #deleteMany(Bson)
      */
-    public ContinuableFuture<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
+    public ContinuableFuture<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.deleteMany(filter, options));
@@ -3738,7 +3819,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #bulkWrite(List)
      */
-    public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities) {
+    public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(entities, cs.entities);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities));
@@ -3771,7 +3853,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see BulkWriteOptions
      * @see #bulkInsert(Collection)
      */
-    public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
+    public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(entities, cs.entities);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities, options));
@@ -3808,7 +3891,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see WriteModel
      * @see #bulkWrite(List, BulkWriteOptions)
      */
-    public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
+    public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(requests, cs.requests);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkWrite(requests));
@@ -3844,7 +3928,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see BulkWriteOptions
      * @see #bulkWrite(List)
      */
-    public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
+    public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(requests, cs.requests);
 
         return asyncExecutor.execute(() -> collectionExecutor.bulkWrite(requests, options));
@@ -3877,7 +3962,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
-    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update) {
+    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
 
@@ -3912,7 +3998,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions, Class)
      */
-    public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -3950,7 +4037,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object)
      */
-    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
+    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
 
@@ -3987,7 +4075,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
-    public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4028,7 +4117,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
-    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList) {
+    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
 
@@ -4065,7 +4155,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #findOneAndUpdate(Bson, Collection)
      */
-    public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4104,7 +4195,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Collection)
      */
-    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
+    public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
 
@@ -4145,7 +4237,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Collection, Class)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4179,7 +4271,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
      */
-    public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement) {
+    public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -4213,7 +4306,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #findOneAndReplace(Bson, Object)
      */
-    public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4251,7 +4345,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see FindOneAndReplaceOptions
      * @see #findOneAndReplace(Bson, Object)
      */
-    public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
+    public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -4288,7 +4383,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndReplace(Bson, Object, Class)
      */
     public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4321,7 +4416,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions)
      * @see #deleteOne(Bson)
      */
-    public ContinuableFuture<Document> findOneAndDelete(final Bson filter) {
+    public ContinuableFuture<Document> findOneAndDelete(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndDelete(filter));
@@ -4352,7 +4447,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #findOneAndDelete(Bson)
      */
-    public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4388,7 +4484,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson)
      */
-    public ContinuableFuture<Document> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
+    public ContinuableFuture<Document> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndDelete(filter, options));
@@ -4422,7 +4519,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson, Class)
      */
-    public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
+    public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4455,7 +4553,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #distinct(String, Bson, Class)
      */
-    public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4489,7 +4588,8 @@ public final class AsyncMongoCollectionExecutor {
      *         shut down
      * @see #distinct(String, Class)
      */
-    public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4526,7 +4626,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List, Class)
      * @see com.mongodb.client.model.Aggregates
      */
-    public ContinuableFuture<Stream<Document>> aggregate(final List<? extends Bson> pipeline) {
+    public ContinuableFuture<Stream<Document>> aggregate(final List<? extends Bson> pipeline)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(pipeline, cs.pipeline);
 
         return asyncExecutor.execute(() -> collectionExecutor.aggregate(pipeline));
@@ -4563,7 +4664,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List)
      * @see com.mongodb.client.model.Aggregates
      */
-    public <T> ContinuableFuture<Stream<T>> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4596,7 +4698,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List)
      */
     @Beta
-    public ContinuableFuture<Stream<Document>> groupBy(final String fieldName) {
+    public ContinuableFuture<Stream<Document>> groupBy(final String fieldName)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
 
         return asyncExecutor.execute(() -> collectionExecutor.groupBy(fieldName));
@@ -4628,7 +4731,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List)
      */
     @Beta
-    public ContinuableFuture<Stream<Document>> groupBy(final Collection<String> fieldNames) {
+    public ContinuableFuture<Stream<Document>> groupBy(final Collection<String> fieldNames)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
         return asyncExecutor.execute(() -> collectionExecutor.groupBy(fieldNames));
@@ -4674,7 +4778,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List)
      */
     @Beta
-    public ContinuableFuture<Stream<Document>> groupByAndCount(final String fieldName) {
+    public ContinuableFuture<Stream<Document>> groupByAndCount(final String fieldName)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
 
         return asyncExecutor.execute(() -> collectionExecutor.groupByAndCount(fieldName));
@@ -4723,7 +4828,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List)
      */
     @Beta
-    public ContinuableFuture<Stream<Document>> groupByAndCount(final Collection<String> fieldNames) {
+    public ContinuableFuture<Stream<Document>> groupByAndCount(final Collection<String> fieldNames)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
         return asyncExecutor.execute(() -> collectionExecutor.groupByAndCount(fieldNames));
@@ -4758,7 +4864,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List)
      */
     @Deprecated
-    public ContinuableFuture<Stream<Document>> mapReduce(final String mapFunction, final String reduceFunction) {
+    public ContinuableFuture<Stream<Document>> mapReduce(final String mapFunction, final String reduceFunction)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(mapFunction, cs.mapFunction);
         N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
 
@@ -4795,7 +4902,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see #aggregate(List, Class)
      */
     @Deprecated
-    public <T> ContinuableFuture<Stream<T>> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
+    public <T> ContinuableFuture<Stream<T>> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(mapFunction, cs.mapFunction);
         N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
         N.checkArgNotNull(rowType, cs.rowType);

@@ -146,7 +146,7 @@ public final class MongoDB extends MongoDBBase {
      * @throws IllegalArgumentException if {@code mongoDB} is {@code null}
      * @see com.mongodb.reactivestreams.client.MongoDatabase
      */
-    public MongoDB(final MongoDatabase mongoDB) {
+    public MongoDB(final MongoDatabase mongoDB) throws IllegalArgumentException {
         N.checkArgNotNull(mongoDB, cs.mongoDB);
         mongoDatabase = mongoDB.withCodecRegistry(codecRegistry);
     }
@@ -210,8 +210,8 @@ public final class MongoDB extends MongoDBBase {
      * @see Document
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
-    public MongoCollection<Document> collection(final String collectionName) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public MongoCollection<Document> collection(final String collectionName) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
 
         return mongoDatabase.getCollection(collectionName);
     }
@@ -251,8 +251,8 @@ public final class MongoDB extends MongoDBBase {
      * @throws IllegalArgumentException if collectionName is null or empty, or rowType is null
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
-    public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return mongoDatabase.getCollection(collectionName, rowType);
@@ -293,8 +293,8 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollectionExecutor
      * @see org.reactivestreams.Publisher
      */
-    public MongoCollectionExecutor collectionExecutor(final String collectionName) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public MongoCollectionExecutor collectionExecutor(final String collectionName) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
 
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName));
     }
@@ -331,7 +331,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollectionExecutor
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
-    public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) {
+    public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) throws IllegalArgumentException {
         N.checkArgNotNull(collection, cs.collection);
 
         return new MongoCollectionExecutor(collection);
@@ -367,11 +367,11 @@ public final class MongoDB extends MongoDBBase {
      * @param rowType the Class object representing the entity type
      * @return a reactive MongoCollectionMapper for the specified entity type
      * @throws IllegalArgumentException if rowType is null, or if rowType has an empty simple name (for example, an anonymous
-     *         class), which the driver rejects as a collection name
+     *         class), because the derived collection name must not be empty
      * @see MongoCollectionMapper
      * @see org.reactivestreams.Publisher
      */
-    public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) throws IllegalArgumentException {
         N.checkArgNotNull(rowType, cs.rowType);
 
         return collectionMapper(ClassUtil.getSimpleClassName(rowType), rowType);
@@ -416,8 +416,8 @@ public final class MongoDB extends MongoDBBase {
      * @see #collectionMapper(Class)
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
@@ -462,7 +462,7 @@ public final class MongoDB extends MongoDBBase {
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) throws IllegalArgumentException {
         N.checkArgNotNull(collection, cs.collection);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -483,13 +483,31 @@ public final class MongoDB extends MongoDBBase {
      * @param rowType the target Java class to map the document to
      * @return an instance of {@code rowType} populated from {@code row}
      * @throws IllegalArgumentException if {@code rowType} is a {@link java.util.Collection} or {@link java.util.Map} type that cannot be
-     *         instantiated, if a bean {@code rowType} cannot be populated from the row, if a scalar {@code rowType} is requested for a row
-     *         with multiple non-{@code _id} fields, or if a field value cannot be converted to {@code rowType}
+     *         instantiated, if a bean {@code rowType} cannot be populated from the row, if a scalar {@code rowType} is requested for a row with multiple
+     *         non-{@code _id} fields, or if a field value cannot be converted to {@code rowType}
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
+     * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing the requested collection, map, or bean, adding row values, or invoking a bean accessor fails
      * @see MongoDBBase#readRow(Document, Class)
      */
-    protected static <T> T readRow(final Document row, final Class<T> rowType) {
+    protected static <T> T readRow(final Document row, final Class<T> rowType) throws IllegalArgumentException, ArrayStoreException, RuntimeException {
         return MongoDBBase.readRow(row, rowType);
+    }
+
+    /**
+     * Converts a decoded scalar for reactive result mapping, including readable binary buffers.
+     *
+     * @param <T> the requested value type
+     * @param value the decoded field value, possibly null
+     * @param targetType the requested Java type
+     * @return the converted field value
+     * @throws IllegalArgumentException if {@code targetType} is null or the value cannot be converted to the requested type
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
+     *         while converting the selected value
+     * @see MongoDBBase#convertBsonValue(Object, Class)
+     */
+    protected static <T> T convertBsonValue(final Object value, final Class<T> targetType) throws IllegalArgumentException, RuntimeException {
+        return MongoDBBase.convertBsonValue(value, targetType);
     }
 
 }

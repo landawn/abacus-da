@@ -84,7 +84,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoDatabase
      * @see AsyncExecutor
      */
-    public MongoDB(final MongoDatabase mongoDB) {
+    public MongoDB(final MongoDatabase mongoDB) throws IllegalArgumentException {
         this(mongoDB, DEFAULT_ASYNC_EXECUTOR);
     }
 
@@ -112,7 +112,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoDatabase
      * @see AsyncExecutor
      */
-    public MongoDB(final MongoDatabase mongoDB, final AsyncExecutor asyncExecutor) {
+    public MongoDB(final MongoDatabase mongoDB, final AsyncExecutor asyncExecutor) throws IllegalArgumentException {
         super();
         N.checkArgNotNull(mongoDB, cs.mongoDB);
         N.checkArgNotNull(asyncExecutor, cs.asyncExecutor);
@@ -165,8 +165,8 @@ public final class MongoDB extends MongoDBBase {
      * @see Document
      * @see MongoCollection
      */
-    public MongoCollection<Document> collection(final String collectionName) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public MongoCollection<Document> collection(final String collectionName) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
 
         return mongoDatabase.getCollection(collectionName);
     }
@@ -198,8 +198,8 @@ public final class MongoDB extends MongoDBBase {
      * @throws IllegalArgumentException if collectionName is null or empty, or rowType is null
      * @see MongoCollection
      */
-    public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return mongoDatabase.getCollection(collectionName, rowType);
@@ -226,8 +226,8 @@ public final class MongoDB extends MongoDBBase {
      * @throws IllegalArgumentException if collectionName is null or empty
      * @see MongoCollectionExecutor
      */
-    public MongoCollectionExecutor collectionExecutor(final String collectionName) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public MongoCollectionExecutor collectionExecutor(final String collectionName) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
 
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
     }
@@ -254,7 +254,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollectionExecutor
      * @see MongoCollection
      */
-    public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) {
+    public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) throws IllegalArgumentException {
         N.checkArgNotNull(collection, cs.collection);
 
         return new MongoCollectionExecutor(collection, asyncExecutor);
@@ -282,10 +282,11 @@ public final class MongoDB extends MongoDBBase {
      * @param <T> the entity type for mapping
      * @param rowType the Class object representing the entity type
      * @return a MongoCollectionMapper for the specified entity type
-     * @throws IllegalArgumentException if rowType is null
+     * @throws IllegalArgumentException if {@code rowType} is null, or its simple name is empty (for example, for an anonymous class) and cannot be
+     *         used as a collection name
      * @see MongoCollectionMapper
      */
-    public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) throws IllegalArgumentException {
         N.checkArgNotNull(rowType, cs.rowType);
 
         return collectionMapper(ClassUtil.getSimpleClassName(rowType), rowType);
@@ -320,8 +321,8 @@ public final class MongoDB extends MongoDBBase {
      * @see #collectionMapper(Class)
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) {
-        N.checkArgNotNull(collectionName, cs.collectionName);
+    public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) throws IllegalArgumentException {
+        N.checkArgNotEmpty(collectionName, cs.collectionName);
         N.checkArgNotNull(rowType, cs.rowType);
 
         return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
@@ -357,7 +358,7 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollection
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) throws IllegalArgumentException {
         N.checkArgNotNull(collection, cs.collection);
         N.checkArgNotNull(rowType, cs.rowType);
 

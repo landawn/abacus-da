@@ -132,8 +132,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * @param rowKey the row key for the append operation
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyAppend(final Object rowKey) {
+    AnyAppend(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         super(new Append(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
         append = (Append) mutation;
     }
@@ -145,7 +146,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param rowKey the row key as a byte array; must not be {@code null}
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      */
-    AnyAppend(final byte[] rowKey) {
+    AnyAppend(final byte[] rowKey) throws IllegalArgumentException {
         super(new Append(N.checkArgNotNull(rowKey, cs.rowKey)));
         append = (Append) mutation;
     }
@@ -161,7 +162,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the end of {@code rowKey}
      */
-    AnyAppend(final byte[] rowKey, final int rowOffset, final int rowLength) {
+    AnyAppend(final byte[] rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException {
         super(new Append(rowKey, rowOffset, rowLength));
         append = (Append) mutation;
     }
@@ -177,8 +179,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyAppend(final Object rowKey, final int rowOffset, final int rowLength) {
+    AnyAppend(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         super(new Append(toRowKeyBytes(rowKey), rowOffset, rowLength));
         append = (Append) mutation;
     }
@@ -188,11 +192,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * HBase {@link Append} pre-populated with the given family map and timestamp.
      *
      * @param rowKey the row key as a byte array
-     * @param timestamp the timestamp to apply to every cell in this append
+     * @param timestamp the append's default timestamp; existing cells retain their own timestamps
      * @param familyMap a pre-populated map of column families to their cells
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
-    AnyAppend(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
+    AnyAppend(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException {
         super(new Append(N.checkArgNotNull(rowKey, cs.rowKey), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
         append = (Append) mutation;
     }
@@ -203,8 +207,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * @param appendToCopy the existing {@link Append} to copy
      * @throws IllegalArgumentException if {@code appendToCopy} is {@code null}
+     * @throws NullPointerException if {@code appendToCopy}'s mutable family-cell map contains a null cell list
      */
-    AnyAppend(final Append appendToCopy) {
+    AnyAppend(final Append appendToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Append(N.checkArgNotNull(appendToCopy, cs.appendToCopy)));
         append = (Append) mutation;
     }
@@ -228,9 +233,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param rowKey the row key to append data to; converted to bytes automatically
      * @return a new AnyAppend instance configured for the specified row
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #addColumn(String, String, Object)
      */
-    public static AnyAppend of(final Object rowKey) {
+    public static AnyAppend of(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         return new AnyAppend(rowKey);
     }
 
@@ -256,7 +262,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      * @see #of(Object)
      */
-    public static AnyAppend of(final byte[] rowKey) {
+    public static AnyAppend of(final byte[] rowKey) throws IllegalArgumentException {
         return new AnyAppend(rowKey);
     }
 
@@ -287,7 +293,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the end of {@code rowKey}
      * @see #of(byte[])
      */
-    public static AnyAppend of(final byte[] rowKey, final int rowOffset, final int rowLength) {
+    public static AnyAppend of(final byte[] rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException {
         return new AnyAppend(rowKey, rowOffset, rowLength);
     }
 
@@ -316,9 +323,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(byte[], int, int)
      */
-    public static AnyAppend of(final Object rowKey, final int rowOffset, final int rowLength) {
+    public static AnyAppend of(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         return new AnyAppend(rowKey, rowOffset, rowLength);
     }
 
@@ -328,7 +337,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p>This advanced factory method creates an append operation with a specific timestamp
      * and pre-built family map containing the data to append. This is typically used for
      * bulk operations or when reconstructing append operations from existing data structures.
-     * The family map contains column families as keys and lists of cells as values.</p>
+     * The family map contains column families as keys and lists of cells as values. The map
+     * is retained by reference, and its existing cells retain their own timestamps.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -342,14 +352,14 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * }</pre>
      *
      * @param rowKey the row key as a byte array; must not be {@code null} or empty
-     * @param timestamp the timestamp for all append operations (milliseconds since epoch)
+     * @param timestamp the default timestamp for subsequently added columns (milliseconds since epoch)
      * @param familyMap a map of column family names to lists of cells to append
      * @return a new AnyAppend instance configured with the specified data
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      * @see #of(Object)
      * @see org.apache.hadoop.hbase.Cell
      */
-    public static AnyAppend of(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
+    public static AnyAppend of(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException {
         return new AnyAppend(rowKey, timestamp, familyMap);
     }
 
@@ -378,9 +388,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param appendToCopy the existing HBase {@link Append} to copy; must not be {@code null}
      * @return a new AnyAppend instance backed by a fresh Append copied from {@code appendToCopy}
      * @throws IllegalArgumentException if {@code appendToCopy} is {@code null}
+     * @throws NullPointerException if {@code appendToCopy}'s mutable family-cell map contains a null cell list
      * @see org.apache.hadoop.hbase.client.Append
      */
-    public static AnyAppend of(final Append appendToCopy) {
+    public static AnyAppend of(final Append appendToCopy) throws IllegalArgumentException, NullPointerException {
         return new AnyAppend(appendToCopy);
     }
 
@@ -442,7 +453,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @see #getTimeRange()
      * @see org.apache.hadoop.hbase.io.TimeRange
      */
-    public AnyAppend setTimeRange(final long minStamp, final long maxStamp) {
+    public AnyAppend setTimeRange(final long minStamp, final long maxStamp) throws IllegalArgumentException {
         append.setTimeRange(minStamp, maxStamp);
 
         return this;
@@ -533,7 +544,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @throws IllegalArgumentException if the stored return-results attribute is not exactly one byte
      * @see #setReturnResults(boolean)
      */
-    public boolean isReturnResults() {
+    public boolean isReturnResults() throws IllegalArgumentException {
         return append.isReturnResults();
     }
 
@@ -571,7 +582,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *         exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @see #addColumn(String, String, Object)
      */
-    public AnyAppend addColumn(final byte[] family, final byte[] qualifier, final byte[] value) {
+    public AnyAppend addColumn(final byte[] family, final byte[] qualifier, final byte[] value) throws IllegalArgumentException {
         append.addColumn(family, qualifier, value);
 
         return this;
@@ -605,10 +616,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @return this AnyAppend instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code family} is null or empty (validated by the underlying {@link Append}), or the encoded family
      *         exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
      * @see #addColumn(byte[], byte[], byte[])
      * @see AnyIncrement
      */
-    public AnyAppend addColumn(final String family, final String qualifier, final Object value) {
+    public AnyAppend addColumn(final String family, final String qualifier, final Object value) throws IllegalArgumentException, RuntimeException {
         append.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), toValueBytes(value));
 
         return this;
@@ -642,7 +654,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @see org.apache.hadoop.hbase.Cell
      * @see #addColumn(String, String, Object)
      */
-    public AnyAppend add(final Cell cell) {
+    public AnyAppend add(final Cell cell) throws IllegalArgumentException {
         N.checkArgNotNull(cell, cs.cell);
 
         N.checkArgument(CellUtil.matchingRows(cell, append.getRow()), "The cell row does not match this append's row");
@@ -763,10 +775,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * }</pre>
      *
      * @return a string representation of the append operation
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the stored TTL attribute is shorter than eight bytes
      */
     @Override
-    public String toString() {
+    public String toString() throws NullPointerException, IllegalArgumentException {
         return append.toString();
     }
 }

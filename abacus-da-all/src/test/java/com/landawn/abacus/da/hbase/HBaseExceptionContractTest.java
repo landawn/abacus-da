@@ -4,18 +4,23 @@
 package com.landawn.abacus.da.hbase;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -27,15 +32,160 @@ import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.filter.FilterBase;
 import org.apache.hadoop.hbase.filter.IncompatibleFilterException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
 
+import com.google.protobuf.Service;
+import com.landawn.abacus.annotation.Id;
 import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.util.AsyncExecutor;
+import com.landawn.abacus.util.HBaseColumn;
 
 class HBaseExceptionContractTest {
+
+    @Test
+    void mapperValidatesEntityMetadataBeforeLaterParameters() {
+        final IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> new HBaseExecutor.HBaseMapper<>(EntityWithoutId.class, null, null, null));
+
+        assertTrue(failure.getMessage().contains("No or multiple ids"));
+    }
+
+    @Test
+    void typedBatchReadAcquiresTableBeforeDelegatingNullElements() throws IOException {
+        final Connection connection = mock(Connection.class);
+        when(connection.getAdmin()).thenReturn(mock(Admin.class));
+        final HBaseExecutor executor = new HBaseExecutor(connection);
+        final IOException failure = new IOException("table unavailable");
+        when(connection.getTable(any(TableName.class))).thenThrow(failure);
+
+        final UncheckedIOException actual = assertThrows(UncheckedIOException.class,
+                () -> executor.get("table", Arrays.asList((Get) null), String.class));
+
+        assertSame(failure, actual.getCause());
+    }
+
+    @Test
+    void mapperWritesPropagateByteConversionFailuresBeforeAcquiringTable() throws IOException {
+        final Connection connection = mock(Connection.class);
+        when(connection.getAdmin()).thenReturn(mock(Admin.class));
+        final HBaseExecutor executor = new HBaseExecutor(connection);
+        final HBaseExecutor.HBaseMapper<OpaqueKeyEntity, Object> mapper = executor.mapper(OpaqueKeyEntity.class, "table", null);
+        final IllegalStateException failure = new IllegalStateException("cannot encode key");
+        final Object key = new Object() {
+            @Override
+            public String toString() {
+                throw failure;
+            }
+        };
+        final OpaqueKeyEntity entity = new OpaqueKeyEntity();
+        entity.setId(key);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> mapper.put(entity)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> mapper.put((Collection<OpaqueKeyEntity>) List.of(entity))));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> mapper.delete(entity)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> mapper.delete((Collection<OpaqueKeyEntity>) List.of(entity))));
+        verify(connection, never()).getTable(any(TableName.class));
+    }
+
+    @Test
+    void mapperReadsPropagateUnsupportedRowKeyMetadata() throws IOException {
+        final Connection connection = mock(Connection.class);
+        final Table table = mock(Table.class);
+        when(connection.getAdmin()).thenReturn(mock(Admin.class));
+        when(connection.getTable(any(TableName.class))).thenReturn(table);
+        final Result row = Result.create(List.of(new KeyValue(Bytes.toBytes("row"), Bytes.toBytes("family"), new byte[0], Bytes.toBytes("value"))));
+        when(table.get(any(Get.class))).thenReturn(row);
+        when(table.get(anyList())).thenReturn(new Result[] { row });
+        final HBaseExecutor.HBaseMapper<VersionedKeyEntity, String> mapper = new HBaseExecutor(connection).mapper(VersionedKeyEntity.class, "table", null);
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.get("row"));
+        assertThrows(IllegalArgumentException.class, () -> mapper.get((Collection<String>) List.of("row")));
+        assertThrows(IllegalArgumentException.class, () -> mapper.get(AnyGet.of("row")));
+        assertThrows(IllegalArgumentException.class, () -> mapper.get(List.of(AnyGet.of("row"))));
+    }
+
+    @Test
+    void coprocessorBoundaryConversionFailuresPreserveCauseAndCloseTable() throws IOException {
+        final Connection connection = mock(Connection.class);
+        final Table table = mock(Table.class);
+        when(connection.getAdmin()).thenReturn(mock(Admin.class));
+        when(connection.getTable(any(TableName.class))).thenReturn(table);
+        final HBaseExecutor executor = new HBaseExecutor(connection);
+
+        for (final Throwable failure : List.of(new IllegalStateException("cannot encode boundary"), new AssertionError("boundary conversion error"))) {
+            final Object boundary = new Object() {
+                @Override
+                public String toString() {
+                    if (failure instanceof Error error) {
+                        throw error;
+                    }
+                    throw (RuntimeException) failure;
+                }
+            };
+
+            assertSame(failure, assertThrows(failure.getClass(), () -> executor.coprocessorService("table", Service.class, boundary, null, service -> null)));
+            assertSame(failure, assertThrows(failure.getClass(),
+                    () -> executor.coprocessorService("table", Service.class, boundary, null, service -> null, (region, row, value) -> { })));
+            assertSame(failure, assertThrows(failure.getClass(), () -> executor.batchCoprocessorService("table", null, null, boundary, null, null)));
+            assertSame(failure, assertThrows(failure.getClass(),
+                    () -> executor.batchCoprocessorService("table", null, null, boundary, null, null, (region, row, value) -> { })));
+        }
+
+        verify(table, times(8)).close();
+    }
+
+    @Test
+    void explicitColumnTimestampOverridesByteBufferPutDefault() {
+        final AnyPut put = AnyPut.of(ByteBuffer.wrap(Bytes.toBytes("row")), 10L)
+                .addColumn("family", "default", "value")
+                .addColumn("family", "explicit", 20L, "value");
+
+        assertEquals(10L, put.getTimestamp());
+        assertEquals(10L, put.get("family", "default").get(0).getTimestamp());
+        assertEquals(20L, put.get("family", "explicit").get(0).getTimestamp());
+    }
+
+    public static final class OpaqueKeyEntity {
+        @Id
+        private Object id;
+
+        public Object getId() {
+            return id;
+        }
+
+        public void setId(final Object id) {
+            this.id = id;
+        }
+    }
+
+    public static final class VersionedKeyEntity {
+        @Id
+        private HBaseColumn<String> id;
+
+        public HBaseColumn<String> getId() {
+            return id;
+        }
+
+        public void setId(final HBaseColumn<String> id) {
+            this.id = id;
+        }
+    }
+
+    public static final class EntityWithoutId {
+        private String value;
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(final String value) {
+            this.value = value;
+        }
+    }
 
     @Test
     void typedReadsValidateBeforeAcquiringATable() throws IOException {

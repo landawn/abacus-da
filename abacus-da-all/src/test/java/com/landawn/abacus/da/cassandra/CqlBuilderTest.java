@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -4257,6 +4258,39 @@ public class CqlBuilderTest extends TestBase {
         final SP recoveredSp = recovered.onlyIf(Filters.eq("status", "inactive")).build();
         assertEquals(expected + " IF status = ?", recoveredSp.query());
         assertEquals(2, recoveredSp.parameters().size());
+    }
+
+    @Test
+    public void test_onlyIf_rejectedCondition_restoresNamedParameterState() {
+        final CqlBuilder recovered = NSC.update("account").set(Map.of("name", "new")).where(Filters.eq("id", 1));
+        final Condition rejected = Filters.and(Filters.eq("status", "unused"), Filters.between("version", 1, 2));
+
+        assertThrows(IllegalArgumentException.class, () -> recovered.onlyIf(rejected));
+
+        final SP actual = recovered.onlyIf(Filters.eq("status", "old")).build();
+        final SP expected = NSC.update("account").set(Map.of("name", "new")).where(Filters.eq("id", 1)).onlyIf(Filters.eq("status", "old")).build();
+        assertEquals(expected.query(), actual.query());
+        assertEquals(expected.parameters(), actual.parameters());
+        assertEquals(Map.of(0, "name", 1, "id", 2, "status"), ParsedCql.parse(actual.query()).namedParameters());
+    }
+
+    @Test
+    public void test_insertClauses_afterLiteralEndingInBackslash() {
+        final String cql = SCCB.insert(Map.of("path", "C:\\")).into("files").usingTTL(60).ifNotExists().build().query();
+        assertEquals("INSERT INTO files (path) VALUES ('C:\\') IF NOT EXISTS USING TTL 60", cql);
+
+        final String batch = SCCB.batchInsert(List.of(Map.of("path", "C:\\"), Map.of("path", "D:\\")))
+                .into("files").usingTTL(60).ifNotExists().build().query();
+        assertEquals("BEGIN BATCH INSERT INTO files (path) VALUES ('C:\\') IF NOT EXISTS USING TTL 60;"
+                + " INSERT INTO files (path) VALUES ('D:\\') IF NOT EXISTS USING TTL 60; APPLY BATCH", batch);
+    }
+
+    @Test
+    public void test_batchInsertClauses_ignoreSemicolonsInsideDollarQuotedValues() {
+        final String cql = SCCB.batchInsert(List.of(Map.of("path", com.landawn.abacus.query.condition.SqlExpression.of("$$a;b$$"))))
+                .into("files").usingTTL(60).ifNotExists().build().query();
+
+        assertEquals("BEGIN BATCH INSERT INTO files (path) VALUES ($$a;b$$) IF NOT EXISTS USING TTL 60; APPLY BATCH", cql);
     }
 
     /**

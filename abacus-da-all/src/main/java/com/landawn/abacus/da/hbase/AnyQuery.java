@@ -107,7 +107,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @param query the HBase {@link Query} to wrap; must not be {@code null}
      * @throws IllegalArgumentException if {@code query} is {@code null}
      */
-    protected AnyQuery(final Query query) {
+    protected AnyQuery(final Query query) throws IllegalArgumentException {
         super(query);
         this.query = query;
     }
@@ -205,7 +205,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @see #getAuthorizations()
      * @see Authorizations
      */
-    public AQ setAuthorizations(final Authorizations authorizations) {
+    public AQ setAuthorizations(final Authorizations authorizations) throws IllegalArgumentException {
         N.checkArgNotNull(authorizations, cs.authorizations);
 
         query.setAuthorizations(authorizations);
@@ -249,7 +249,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @see #setACL(Map)
      * @see Permission
      */
-    public AQ setACL(final String user, final Permission perms) {
+    public AQ setACL(final String user, final Permission perms) throws IllegalArgumentException {
         N.checkArgNotNull(user, cs.user);
         N.checkArgNotNull(perms, cs.perms);
 
@@ -283,7 +283,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @see #setACL(String, Permission)
      * @see Permission
      */
-    public AQ setACL(final Map<String, Permission> perms) {
+    public AQ setACL(final Map<String, Permission> perms) throws IllegalArgumentException, NullPointerException {
         N.checkArgNotNull(perms, cs.perms);
 
         query.setACL(perms);
@@ -378,7 +378,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @see #setIsolationLevel(IsolationLevel)
      * @see IsolationLevel
      */
-    public IsolationLevel getIsolationLevel() {
+    public IsolationLevel getIsolationLevel() throws ArrayIndexOutOfBoundsException {
         return query.getIsolationLevel();
     }
 
@@ -397,7 +397,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @see #getIsolationLevel()
      * @see IsolationLevel
      */
-    public AQ setIsolationLevel(final IsolationLevel level) {
+    public AQ setIsolationLevel(final IsolationLevel level) throws IllegalArgumentException {
         N.checkArgNotNull(level, cs.level);
 
         query.setIsolationLevel(level);
@@ -539,7 +539,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @see #getColumnFamilyTimeRange()
      * @see TimeRange
      */
-    public AQ setColumnFamilyTimeRange(final String cf, final long minStamp, final long maxStamp) {
+    public AQ setColumnFamilyTimeRange(final String cf, final long minStamp, final long maxStamp) throws IllegalArgumentException {
         query.setColumnFamilyTimeRange(toFamilyQualifierBytes(cf), minStamp, maxStamp);
 
         return (AQ) this;
@@ -581,7 +581,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @see #getColumnFamilyTimeRange()
      * @see TimeRange
      */
-    public AQ setColumnFamilyTimeRange(final byte[] cf, final long minStamp, final long maxStamp) {
+    public AQ setColumnFamilyTimeRange(final byte[] cf, final long minStamp, final long maxStamp) throws IllegalArgumentException {
         query.setColumnFamilyTimeRange(cf, minStamp, maxStamp);
 
         return (AQ) this;

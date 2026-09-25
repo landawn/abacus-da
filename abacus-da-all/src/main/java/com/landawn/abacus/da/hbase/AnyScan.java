@@ -130,10 +130,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after; converted via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
     @Deprecated
-    AnyScan(final Object startRow) {
+    AnyScan(final Object startRow) throws IllegalArgumentException, RuntimeException {
         super(new Scan(toRowKeyBytes(startRow)));
         scan = (Scan) query;
     }
@@ -145,10 +146,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param startRow row to start scanner at or after (inclusive)
      * @param stopRow row to stop scanner before (exclusive)
      * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow}, {@code stopRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).withStopRow(stopRow)} instead.
      */
     @Deprecated
-    AnyScan(final Object startRow, final Object stopRow) {
+    AnyScan(final Object startRow, final Object stopRow) throws IllegalArgumentException, RuntimeException {
         super(new Scan(toRowKeyBytes(startRow), toRowKeyBytes(stopRow)));
         scan = (Scan) query;
     }
@@ -161,10 +163,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param startRow row to start scanner at or after
      * @param filter the {@link Filter} to apply to the scan
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).setFilter(filter)} instead.
      */
     @Deprecated
-    AnyScan(final Object startRow, final Filter filter) {
+    AnyScan(final Object startRow, final Filter filter) throws IllegalArgumentException, RuntimeException {
         super(new Scan(toRowKeyBytes(startRow), filter));
         scan = (Scan) query;
     }
@@ -179,7 +182,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param scan the HBase {@link Scan} object to wrap; must not be {@code null}
      * @throws IllegalArgumentException if {@code scan} is {@code null}
      */
-    AnyScan(final Scan scan) {
+    AnyScan(final Scan scan) throws IllegalArgumentException {
         super(scan);
         this.scan = (Scan) query;
     }
@@ -196,8 +199,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @throws IllegalArgumentException if {@code get} is {@code null}
      * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid
      *         isolation-level ordinal
+     * @throws NullPointerException if {@code get}'s column-family time-range map contains a null range
      */
-    AnyScan(final Get get) {
+    AnyScan(final Get get) throws IllegalArgumentException, ArrayIndexOutOfBoundsException, NullPointerException {
         this(new Scan(N.checkArgNotNull(get, cs.get)));
     }
 
@@ -274,7 +278,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *         32,767 bytes
      * @see #setNeedCursorResult(boolean)
      */
-    public static AnyScan createScanFromCursor(final Cursor cursor) {
+    public static AnyScan createScanFromCursor(final Cursor cursor) throws IllegalArgumentException {
         N.checkArgNotNull(cursor, cs.cursor);
 
         return new AnyScan(Scan.createScanFromCursor(cursor));
@@ -303,10 +307,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param startRow row to start scanner at or after
      * @return a new AnyScan instance configured with the specified start row
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
     @Deprecated
-    public static AnyScan of(final Object startRow) {
+    public static AnyScan of(final Object startRow) throws IllegalArgumentException, RuntimeException {
         return new AnyScan(startRow);
     }
 
@@ -328,10 +333,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param stopRow row to stop scanner before (exclusive)
      * @return a new AnyScan instance configured with the specified start and stop rows
      * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow}, {@code stopRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).withStopRow(stopRow)} instead.
      */
     @Deprecated
-    public static AnyScan of(final Object startRow, final Object stopRow) {
+    public static AnyScan of(final Object startRow, final Object stopRow) throws IllegalArgumentException, RuntimeException {
         return new AnyScan(startRow, stopRow);
     }
 
@@ -351,10 +357,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param filter the filter to apply to the scan
      * @return a new AnyScan instance configured with the specified start row and filter
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).setFilter(filter)} instead.
      */
     @Deprecated
-    public static AnyScan of(final Object startRow, final Filter filter) {
+    public static AnyScan of(final Object startRow, final Filter filter) throws IllegalArgumentException, RuntimeException {
         return new AnyScan(startRow, filter);
     }
 
@@ -383,7 +390,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @return a new AnyScan instance that wraps the provided Scan by reference
      * @throws IllegalArgumentException if {@code scan} is null
      */
-    public static AnyScan of(final Scan scan) {
+    public static AnyScan of(final Scan scan) throws IllegalArgumentException {
         return new AnyScan(scan);
     }
 
@@ -410,8 +417,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @throws IllegalArgumentException if {@code get} is {@code null}
      * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid
      *         isolation-level ordinal
+     * @throws NullPointerException if {@code get}'s column-family time-range map contains a null range
      */
-    public static AnyScan of(final Get get) {
+    public static AnyScan of(final Get get) throws IllegalArgumentException, ArrayIndexOutOfBoundsException, NullPointerException {
         return new AnyScan(get);
     }
 
@@ -652,7 +660,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @throws IllegalArgumentException if {@code familyMap} is {@code null}
      * @see #getFamilyMap()
      */
-    public AnyScan setFamilyMap(final Map<byte[], NavigableSet<byte[]>> familyMap) {
+    public AnyScan setFamilyMap(final Map<byte[], NavigableSet<byte[]>> familyMap) throws IllegalArgumentException {
         N.checkArgNotNull(familyMap, cs.familyMap);
 
         scan.setFamilyMap(familyMap);
@@ -698,7 +706,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #setTimeRange(long, long)
      */
     @Override
-    public AnyScan setColumnFamilyTimeRange(final String family, final long minTimestamp, final long maxTimestamp) {
+    public AnyScan setColumnFamilyTimeRange(final String family, final long minTimestamp, final long maxTimestamp) throws IllegalArgumentException {
         scan.setColumnFamilyTimeRange(toFamilyQualifierBytes(family), minTimestamp, maxTimestamp);
 
         return this;
@@ -733,7 +741,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #setColumnFamilyTimeRange(String, long, long)
      */
     @Override
-    public AnyScan setColumnFamilyTimeRange(final byte[] family, final long minTimestamp, final long maxTimestamp) {
+    public AnyScan setColumnFamilyTimeRange(final byte[] family, final long minTimestamp, final long maxTimestamp) throws IllegalArgumentException {
         scan.setColumnFamilyTimeRange(family, minTimestamp, maxTimestamp);
 
         return this;
@@ -855,7 +863,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #getTimeRange()
      * @see #setTimestamp(long)
      */
-    public AnyScan setTimeRange(final long minStamp, final long maxStamp) {
+    public AnyScan setTimeRange(final long minStamp, final long maxStamp) throws IllegalArgumentException {
         try {
             scan.setTimeRange(minStamp, maxStamp);
         } catch (final IOException e) {
@@ -870,12 +878,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p>Delegates to {@link Scan#setTimestamp(long)}, which configures the time range as
      * {@code [timestamp, timestamp + 1)} — i.e. only cells stamped with {@code timestamp} are
-     * returned. The default maximum versions returned is 1; if you need every version that
-     * happens to share this timestamp, also call {@link #readVersions(int)}.</p>
+     * returned. Versions of a column are distinguished by timestamp, so increasing
+     * {@link #readVersions(int)} does not widen this exact-timestamp selection.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setTimestamp(1234567890L).readVersions(5);   // returns this scan
+     * AnyScan scan = AnyScan.create().setTimestamp(1234567890L);   // returns this scan
      * long min = scan.getTimeRange().getMin();                                     // returns 1234567890
      * long max = scan.getTimeRange().getMax();                                     // returns 1234567891 (timestamp + 1)
      *
@@ -890,7 +898,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #setTimeRange(long, long)
      * @see #readVersions(int)
      */
-    public AnyScan setTimestamp(final long timestamp) {
+    public AnyScan setTimestamp(final long timestamp) throws IllegalArgumentException {
         scan.setTimestamp(timestamp);
         return this;
     }
@@ -937,7 +945,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * byte[] sr = scan.getStartRow();    // returns the bytes of "a"
      * }</pre>
      *
-     * @return the start row key as byte array, or empty array if scanning from table beginning
+     * @return the start row key as a byte array; empty or {@code null} for an unbounded start
      * @see #withStartRow(Object)
      * @see #includeStartRow()
      */
@@ -969,10 +977,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                 {@code null})
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @see #withStartRow(Object, boolean)
      * @see #includeStartRow()
      */
-    public AnyScan withStartRow(final Object startRow) {
+    public AnyScan withStartRow(final Object startRow) throws IllegalArgumentException, RuntimeException {
         scan.withStartRow(toRowKeyBytes(startRow));
 
         return this;
@@ -999,10 +1008,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param inclusive {@code true} to include the start row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @see #withStartRow(Object)
      * @see #includeStartRow()
      */
-    public AnyScan withStartRow(final Object startRow, final boolean inclusive) {
+    public AnyScan withStartRow(final Object startRow, final boolean inclusive) throws IllegalArgumentException, RuntimeException {
         scan.withStartRow(toRowKeyBytes(startRow), inclusive);
 
         return this;
@@ -1050,7 +1060,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * byte[] sr = scan.getStopRow();    // returns the bytes of "z"
      * }</pre>
      *
-     * @return the stop row key as byte array, or empty array if scanning to table end
+     * @return the stop row key as a byte array; empty or {@code null} for an unbounded stop
      * @see #withStopRow(Object)
      * @see #includeStopRow()
      */
@@ -1077,10 +1087,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                {@code null})
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code stopRow} to bytes invokes a failing string conversion
      * @see #withStopRow(Object, boolean)
      * @see #includeStopRow()
      */
-    public AnyScan withStopRow(final Object stopRow) {
+    public AnyScan withStopRow(final Object stopRow) throws IllegalArgumentException, RuntimeException {
         scan.withStopRow(toRowKeyBytes(stopRow));
 
         return this;
@@ -1107,10 +1118,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param inclusive {@code true} to include the stop row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code stopRow} to bytes invokes a failing string conversion
      * @see #withStopRow(Object)
      * @see #includeStopRow()
      */
-    public AnyScan withStopRow(final Object stopRow, final boolean inclusive) {
+    public AnyScan withStopRow(final Object stopRow, final boolean inclusive) throws IllegalArgumentException, RuntimeException {
         scan.withStopRow(toRowKeyBytes(stopRow), inclusive);
 
         return this;
@@ -1137,11 +1149,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param rowPrefix the row prefix; converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @return this {@link AnyScan} instance for method chaining
      * @throws IllegalArgumentException if the converted {@code rowPrefix} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowPrefix} to bytes invokes a failing string conversion
      * @deprecated Since HBase 2.5.0, scheduled for removal in 4.0.0. The name is misleading because
      *             no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(Object)} instead.
      */
     @Deprecated
-    public AnyScan setRowPrefixFilter(final Object rowPrefix) {
+    public AnyScan setRowPrefixFilter(final Object rowPrefix) throws IllegalArgumentException, RuntimeException {
         scan.setRowPrefixFilter(toRowKeyBytes(rowPrefix));
 
         return this;
@@ -1173,9 +1186,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                  empty (unbounded) row keys
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code rowPrefix} exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowPrefix} to bytes invokes a failing string conversion
      * @see Scan#setStartStopRowForPrefixScan(byte[])
      */
-    public AnyScan setStartStopRowForPrefixScan(final Object rowPrefix) {
+    public AnyScan setStartStopRowForPrefixScan(final Object rowPrefix) throws IllegalArgumentException, RuntimeException {
         scan.setStartStopRowForPrefixScan(toRowKeyBytes(rowPrefix));
 
         return this;
@@ -1314,7 +1328,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #getBatch()
      * @see #setCaching(int)
      */
-    public AnyScan setBatch(final int batch) {
+    public AnyScan setBatch(final int batch) throws IncompatibleFilterException {
         scan.setBatch(batch);
 
         return this;
@@ -1817,7 +1831,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @throws IllegalArgumentException if the corresponding stored boolean attribute is not exactly one byte
      * @see #setRaw(boolean)
      */
-    public boolean isRaw() {
+    public boolean isRaw() throws IllegalArgumentException {
         return scan.isRaw();
     }
 
@@ -1877,7 +1891,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @throws IllegalArgumentException if the corresponding stored boolean attribute is not exactly one byte
      * @see #setScanMetricsEnabled(boolean)
      */
-    public boolean isScanMetricsEnabled() {
+    public boolean isScanMetricsEnabled() throws IllegalArgumentException {
         return scan.isScanMetricsEnabled();
     }
 
@@ -2025,7 +2039,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #getReadType()
      * @see ReadType
      */
-    public AnyScan setReadType(final ReadType readType) {
+    public AnyScan setReadType(final ReadType readType) throws IllegalArgumentException {
         N.checkArgNotNull(readType, cs.readType);
 
         scan.setReadType(readType);
@@ -2127,7 +2141,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @param obj the reference object with which to compare
-     * @return {@code true} if this object is the same as the obj argument;
+     * @return {@code true} if {@code obj} is an {@code AnyScan} wrapping the same {@link Scan} instance;
      *         {@code false} otherwise
      */
     @SuppressFBWarnings

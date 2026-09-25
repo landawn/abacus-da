@@ -20,6 +20,7 @@ import java.util.Date;
 import java.util.List;
 
 import org.bson.Document;
+import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
@@ -263,10 +264,12 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ObjectId
      */
-    public Mono<Boolean> exists(final String objectId) {
+    public Mono<Boolean> exists(final String objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.exists(objectId);
     }
 
@@ -300,10 +303,12 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ObjectId
      */
-    public Mono<Boolean> exists(final ObjectId objectId) {
+    public Mono<Boolean> exists(final ObjectId objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.exists(objectId);
     }
 
@@ -337,11 +342,13 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against; must not be null
      * @return a Mono that emits {@code true} if any documents match the filter, {@code false} otherwise
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
-    public Mono<Boolean> exists(final Bson filter) {
+    public Mono<Boolean> exists(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.exists(filter);
     }
 
@@ -375,7 +382,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the total count of documents in the collection
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<Long> count() {
+    public Mono<Long> count() throws IllegalStateException {
         return collectionExecutor.count();
     }
 
@@ -409,11 +416,13 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents; must not be null
      * @return a Mono that emits the count of documents matching the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
-    public Mono<Long> count(final Bson filter) {
+    public Mono<Long> count(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.count(filter);
     }
 
@@ -448,12 +457,14 @@ public final class MongoCollectionMapper<T> {
      * @param options the count options to apply (can be null)
      * @return a Mono that emits the count of documents matching the filter with applied options
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
      */
-    public Mono<Long> count(final Bson filter, final CountOptions options) {
+    public Mono<Long> count(final Bson filter, final CountOptions options) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.count(filter, options);
     }
 
@@ -495,7 +506,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
      * @see ObjectId
      */
-    public Mono<T> get(final String objectId) {
+    public Mono<T> get(final String objectId) throws IllegalArgumentException {
         return collectionExecutor.get(objectId, rowType);
     }
 
@@ -534,7 +545,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code objectId} is null
      * @see ObjectId
      */
-    public Mono<T> get(final ObjectId objectId) {
+    public Mono<T> get(final ObjectId objectId) throws IllegalArgumentException {
         return collectionExecutor.get(objectId, rowType);
     }
 
@@ -575,7 +586,7 @@ public final class MongoCollectionMapper<T> {
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
-    public Mono<T> get(final String objectId, final Collection<String> selectPropNames) {
+    public Mono<T> get(final String objectId, final Collection<String> selectPropNames) throws IllegalArgumentException {
         return collectionExecutor.get(objectId, selectPropNames, rowType);
     }
 
@@ -617,7 +628,7 @@ public final class MongoCollectionMapper<T> {
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
-    public Mono<T> get(final ObjectId objectId, final Collection<String> selectPropNames) {
+    public Mono<T> get(final ObjectId objectId, final Collection<String> selectPropNames) throws IllegalArgumentException {
         return collectionExecutor.get(objectId, selectPropNames, rowType);
     }
 
@@ -665,7 +676,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      * @see MongoCollectionExecutor#findFirst(Bson, Class)
      */
-    public Mono<T> findFirst(final Bson filter) {
+    public Mono<T> findFirst(final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.findFirst(filter, rowType);
     }
 
@@ -708,7 +719,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
      */
-    public Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter) {
+    public Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.findFirst(selectPropNames, filter, rowType);
     }
 
@@ -752,7 +763,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
-    public Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
+    public Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort) throws IllegalArgumentException {
         return collectionExecutor.findFirst(selectPropNames, filter, sort, rowType);
     }
 
@@ -800,7 +811,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
-    public Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort) {
+    public Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort) throws IllegalArgumentException {
         return collectionExecutor.findFirst(projection, filter, sort, rowType);
     }
 
@@ -848,7 +859,7 @@ public final class MongoCollectionMapper<T> {
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
-    public Flux<T> list(final Bson filter) {
+    public Flux<T> list(final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.list(filter, rowType);
     }
 
@@ -886,7 +897,7 @@ public final class MongoCollectionMapper<T> {
      *         decoded as {@code T} (honouring downstream demand), then completes
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
-    public Flux<T> list(final Bson filter, final int offset, final int count) {
+    public Flux<T> list(final Bson filter, final int offset, final int count) throws IllegalArgumentException {
         return collectionExecutor.list(filter, offset, count, rowType);
     }
 
@@ -925,7 +936,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Flux that emits matching entities with only the specified fields populated
      * @throws IllegalArgumentException if {@code filter} is null
      */
-    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter) {
+    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.list(selectPropNames, filter, rowType);
     }
 
@@ -965,7 +976,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Flux that emits the paginated matching entities with specified fields
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
-    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
+    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) throws IllegalArgumentException {
         return collectionExecutor.list(selectPropNames, filter, offset, count, rowType);
     }
 
@@ -1005,7 +1016,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null
      * @see com.mongodb.client.model.Sorts
      */
-    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
+    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort) throws IllegalArgumentException {
         return collectionExecutor.list(selectPropNames, filter, sort, rowType);
     }
 
@@ -1046,7 +1057,8 @@ public final class MongoCollectionMapper<T> {
      * @return a Flux that emits the fully controlled query results
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
-    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
+    public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count)
+            throws IllegalArgumentException {
         return collectionExecutor.list(selectPropNames, filter, sort, offset, count, rowType);
     }
 
@@ -1087,7 +1099,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null
      * @see com.mongodb.client.model.Projections
      */
-    public Flux<T> list(final Bson projection, final Bson filter, final Bson sort) {
+    public Flux<T> list(final Bson projection, final Bson filter, final Bson sort) throws IllegalArgumentException {
         return collectionExecutor.list(projection, filter, sort, rowType);
     }
 
@@ -1129,7 +1141,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Flux that emits the fully controlled query results with projection
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
-    public Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
+    public Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) throws IllegalArgumentException {
         return collectionExecutor.list(projection, filter, sort, offset, count, rowType);
     }
 
@@ -1179,7 +1191,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
      */
     @Beta
-    public Mono<Boolean> queryForBoolean(final String propName, final Bson filter) {
+    public Mono<Boolean> queryForBoolean(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForBoolean(propName, filter);
     }
 
@@ -1225,7 +1237,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
      */
     @Beta
-    public Mono<Character> queryForChar(final String propName, final Bson filter) {
+    public Mono<Character> queryForChar(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForChar(propName, filter);
     }
 
@@ -1264,6 +1276,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is signalled by the publisher after subscription.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Byte} field value on subscription, or completes
@@ -1273,7 +1288,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
      */
     @Beta
-    public Mono<Byte> queryForByte(final String propName, final Bson filter) {
+    public Mono<Byte> queryForByte(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForByte(propName, filter);
     }
 
@@ -1312,6 +1327,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is signalled by the publisher after subscription.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Short} field value on subscription, or completes
@@ -1321,7 +1339,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
      */
     @Beta
-    public Mono<Short> queryForShort(final String propName, final Bson filter) {
+    public Mono<Short> queryForShort(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForShort(propName, filter);
     }
 
@@ -1360,6 +1378,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is signalled by the publisher after subscription.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Integer} field value on subscription, or completes
@@ -1369,7 +1390,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
      */
     @Beta
-    public Mono<Integer> queryForInt(final String propName, final Bson filter) {
+    public Mono<Integer> queryForInt(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForInt(propName, filter);
     }
 
@@ -1408,6 +1429,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is signalled by the publisher after subscription.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Long} field value on subscription, or completes
@@ -1417,7 +1441,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
      */
     @Beta
-    public Mono<Long> queryForLong(final String propName, final Bson filter) {
+    public Mono<Long> queryForLong(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForLong(propName, filter);
     }
 
@@ -1466,7 +1490,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForFloat(String, Bson)
      */
     @Beta
-    public Mono<Float> queryForFloat(final String propName, final Bson filter) {
+    public Mono<Float> queryForFloat(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForFloat(propName, filter);
     }
 
@@ -1515,7 +1539,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForDouble(String, Bson)
      */
     @Beta
-    public Mono<Double> queryForDouble(final String propName, final Bson filter) {
+    public Mono<Double> queryForDouble(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForDouble(propName, filter);
     }
 
@@ -1566,7 +1590,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForString(String, Bson)
      */
     @Beta
-    public Mono<String> queryForString(final String propName, final Bson filter) {
+    public Mono<String> queryForString(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForString(propName, filter);
     }
 
@@ -1615,7 +1639,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#queryForDate(String, Bson)
      */
     @Beta
-    public Mono<Date> queryForDate(final String propName, final Bson filter) {
+    public Mono<Date> queryForDate(final String propName, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.queryForDate(propName, filter);
     }
 
@@ -1665,7 +1689,7 @@ public final class MongoCollectionMapper<T> {
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
      */
-    public <V extends Date> Mono<V> queryForDate(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V extends Date> Mono<V> queryForDate(final String propName, final Bson filter, final Class<V> valueType) throws IllegalArgumentException {
         return collectionExecutor.queryForDate(propName, filter, valueType);
     }
 
@@ -1715,6 +1739,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
+     * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
+     * this failure is signalled by the publisher after subscription.</p>
+     *
      * @param <V> the type of value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
@@ -1725,7 +1752,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
-    public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) throws IllegalArgumentException {
         return collectionExecutor.queryForSingleValue(propName, filter, valueType);
     }
 
@@ -1770,7 +1797,7 @@ public final class MongoCollectionMapper<T> {
      * @see Dataset
      * @see MongoCollectionExecutor#query(Bson, Class)
      */
-    public Mono<Dataset> query(final Bson filter) {
+    public Mono<Dataset> query(final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.query(filter, rowType);
     }
 
@@ -1808,7 +1835,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
      *         mapped type is neither a bean class nor a Map type
      */
-    public Mono<Dataset> query(final Bson filter, final int offset, final int count) {
+    public Mono<Dataset> query(final Bson filter, final int offset, final int count) throws IllegalArgumentException {
         return collectionExecutor.query(filter, offset, count, rowType);
     }
 
@@ -1846,7 +1873,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits a Dataset with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
      */
-    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter) {
+    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter) throws IllegalArgumentException {
         return collectionExecutor.query(selectPropNames, filter, rowType);
     }
 
@@ -1886,7 +1913,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
      *         mapped type is neither a bean class nor a Map type
      */
-    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
+    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) throws IllegalArgumentException {
         return collectionExecutor.query(selectPropNames, filter, offset, count, rowType);
     }
 
@@ -1926,7 +1953,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits a sorted Dataset with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
      */
-    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
+    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort) throws IllegalArgumentException {
         return collectionExecutor.query(selectPropNames, filter, sort, rowType);
     }
 
@@ -1968,7 +1995,8 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
      *         mapped type is neither a bean class nor a Map type
      */
-    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
+    public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count)
+            throws IllegalArgumentException {
         return collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
     }
 
@@ -2011,7 +2039,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits a Dataset with projection and sorting applied
      * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
      */
-    public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort) {
+    public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort) throws IllegalArgumentException {
         return collectionExecutor.query(projection, filter, sort, rowType);
     }
 
@@ -2053,7 +2081,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
      *         mapped type is neither a bean class nor a Map type
      */
-    public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
+    public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) throws IllegalArgumentException {
         return collectionExecutor.query(projection, filter, sort, offset, count, rowType);
     }
 
@@ -2093,11 +2121,14 @@ public final class MongoCollectionMapper<T> {
      *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
-    public Mono<InsertOneResult> insertOne(final T obj) {
+    public Mono<InsertOneResult> insertOne(final T obj) throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.insertOne(obj);
     }
 
@@ -2135,11 +2166,15 @@ public final class MongoCollectionMapper<T> {
      *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see #insertOne(Object)
      * @see InsertOneOptions
      */
-    public Mono<InsertOneResult> insertOne(final T obj, final InsertOneOptions options) {
+    public Mono<InsertOneResult> insertOne(final T obj, final InsertOneOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.insertOne(obj, options);
     }
 
@@ -2177,11 +2212,15 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities to insert
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertManyResult} when the operation completes, then completes
-     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList) {
+    public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.insertMany(objList);
     }
 
@@ -2209,12 +2248,16 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities to insert
      * @param options the insert options to apply (can be null)
      * @return a Mono that emits the insert result when the operation completes
-     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see InsertManyOptions
      */
-    public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList, final InsertManyOptions options) {
+    public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList, final InsertManyOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.insertMany(objList, options);
     }
 
@@ -2250,12 +2293,16 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the MongoDB ObjectId
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null,
-     *         or if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null, or
+     *         if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id},
+     *         or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateOne(final String objectId, final T update) {
+    public Mono<UpdateResult> updateOne(final String objectId, final T update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateOne(objectId, update);
     }
 
@@ -2280,12 +2327,16 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the MongoDB ObjectId to match
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field
-     *         name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot
-     *         be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateOne(final ObjectId objectId, final T update) {
+    public Mono<UpdateResult> updateOne(final ObjectId objectId, final T update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateOne(objectId, update);
     }
 
@@ -2311,11 +2362,15 @@ public final class MongoCollectionMapper<T> {
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateOne(final Bson filter, final T update) {
+    public Mono<UpdateResult> updateOne(final Bson filter, final T update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateOne(filter, update);
     }
 
@@ -2342,12 +2397,16 @@ public final class MongoCollectionMapper<T> {
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see UpdateOptions
      */
-    public Mono<UpdateResult> updateOne(final Bson filter, final T update, final UpdateOptions options) {
+    public Mono<UpdateResult> updateOne(final Bson filter, final T update, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateOne(filter, update, options);
     }
 
@@ -2377,11 +2436,15 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities containing update values
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList) {
+    public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateOne(filter, objList);
     }
 
@@ -2410,11 +2473,15 @@ public final class MongoCollectionMapper<T> {
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
+    public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateOne(filter, objList, options);
     }
 
@@ -2453,11 +2520,15 @@ public final class MongoCollectionMapper<T> {
      * @param update the entity containing the update values
      * @return a Mono that emits the update result with modified count
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateMany(final Bson filter, final T update) {
+    public Mono<UpdateResult> updateMany(final Bson filter, final T update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateMany(filter, update);
     }
 
@@ -2484,11 +2555,15 @@ public final class MongoCollectionMapper<T> {
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result with modified count
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateMany(final Bson filter, final T update, final UpdateOptions options) {
+    public Mono<UpdateResult> updateMany(final Bson filter, final T update, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateMany(filter, update, options);
     }
 
@@ -2518,11 +2593,15 @@ public final class MongoCollectionMapper<T> {
      * @param objList the collection of entities containing update values
      * @return a Mono that emits the update result with modified count
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList) {
+    public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateMany(filter, objList);
     }
 
@@ -2551,11 +2630,15 @@ public final class MongoCollectionMapper<T> {
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result with modified count
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
+    public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.updateMany(filter, objList, options);
     }
 
@@ -2591,9 +2674,13 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
      *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> replaceOne(final String objectId, final T replacement) {
+    public Mono<UpdateResult> replaceOne(final String objectId, final T replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.replaceOne(objectId, replacement);
     }
 
@@ -2616,11 +2703,15 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the MongoDB ObjectId to match
      * @param replacement the entity to replace the existing document with
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> replaceOne(final ObjectId objectId, final T replacement) {
+    public Mono<UpdateResult> replaceOne(final ObjectId objectId, final T replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.replaceOne(objectId, replacement);
     }
 
@@ -2645,9 +2736,13 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement) {
+    public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.replaceOne(filter, replacement);
     }
 
@@ -2674,10 +2769,14 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the update result
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see ReplaceOptions
      */
-    public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement, final ReplaceOptions options) {
+    public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement, final ReplaceOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.replaceOne(filter, replacement, options);
     }
 
@@ -2710,9 +2809,11 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the MongoDB ObjectId
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<DeleteResult> deleteOne(final String objectId) {
+    public Mono<DeleteResult> deleteOne(final String objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.deleteOne(objectId);
     }
 
@@ -2735,9 +2836,11 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the MongoDB ObjectId to match
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<DeleteResult> deleteOne(final ObjectId objectId) {
+    public Mono<DeleteResult> deleteOne(final ObjectId objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.deleteOne(objectId);
     }
 
@@ -2772,9 +2875,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<DeleteResult> deleteOne(final Bson filter) {
+    public Mono<DeleteResult> deleteOne(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.deleteOne(filter);
     }
 
@@ -2800,10 +2905,13 @@ public final class MongoCollectionMapper<T> {
      * @param options the delete options to apply (can be null)
      * @return a Mono that emits the delete result
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see DeleteOptions
      */
-    public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
+    public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.deleteOne(filter, options);
     }
 
@@ -2838,9 +2946,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @return a Mono that emits the delete result with deleted count
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<DeleteResult> deleteMany(final Bson filter) {
+    public Mono<DeleteResult> deleteMany(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.deleteMany(filter);
     }
 
@@ -2866,9 +2976,12 @@ public final class MongoCollectionMapper<T> {
      * @return a cold {@code Mono} that, on subscription, emits exactly one {@link DeleteResult}
      *         with deletion statistics, then completes
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
+    public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.deleteMany(filter, options);
     }
 
@@ -2904,12 +3017,16 @@ public final class MongoCollectionMapper<T> {
      * @param entities the collection of entities to insert (must not be null or empty)
      * @return a {@code Mono} that, on subscription, emits exactly one {@link BulkWriteResult}
      *         (use {@link BulkWriteResult#getInsertedCount()} for the inserted count), then completes
-     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#bulkInsert(Collection)
      */
-    public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities) {
+    public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.bulkInsert(entities);
     }
 
@@ -2934,11 +3051,15 @@ public final class MongoCollectionMapper<T> {
      * @param options configuration options for the bulk write operation (may be null to use defaults)
      * @return a Mono emitting the {@link BulkWriteResult} (use {@link BulkWriteResult#getInsertedCount()}
      *         for the inserted count)
-     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
+    public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.bulkInsert(entities, options);
     }
 
@@ -2979,9 +3100,13 @@ public final class MongoCollectionMapper<T> {
      * @param requests list of write operations to execute (must not be null or empty)
      * @return a Mono emitting BulkWriteResult with detailed operation statistics
      * @throws IllegalArgumentException if {@code requests} is null or empty, or if it contains a null element
+     * @throws UnsupportedOperationException if {@code requests} contains a WriteModel subtype that the MongoDB driver does not support
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
+    public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests)
+            throws IllegalArgumentException, UnsupportedOperationException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.bulkWrite(requests);
     }
 
@@ -3008,9 +3133,13 @@ public final class MongoCollectionMapper<T> {
      * @param options configuration for the bulk write behavior (may be null to use defaults)
      * @return a Mono emitting BulkWriteResult with operation statistics
      * @throws IllegalArgumentException if {@code requests} is null or empty, or if it contains a null element
+     * @throws UnsupportedOperationException if {@code requests} contains a WriteModel subtype that the MongoDB driver does not support
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
+    public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options)
+            throws IllegalArgumentException, UnsupportedOperationException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.bulkWrite(requests, options);
     }
 
@@ -3054,12 +3183,16 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the matched document (before update) decoded as {@code T},
      *         or completes empty when no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#findOneAndUpdate(Bson, Object, Class)
      */
-    public Mono<T> findOneAndUpdate(final Bson filter, final T update) {
+    public Mono<T> findOneAndUpdate(final Bson filter, final T update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndUpdate(filter, update, rowType);
     }
 
@@ -3088,11 +3221,15 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<T> findOneAndUpdate(final Bson filter, final T update, final FindOneAndUpdateOptions options) {
+    public Mono<T> findOneAndUpdate(final Bson filter, final T update, final FindOneAndUpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndUpdate(filter, update, options, rowType);
     }
 
@@ -3124,11 +3261,15 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the matched document (before update) decoded as {@code T},
      *         or completes empty when no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList) {
+    public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndUpdate(filter, objList, rowType);
     }
 
@@ -3158,11 +3299,15 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList, final FindOneAndUpdateOptions options) {
+    public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList, final FindOneAndUpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndUpdate(filter, objList, options, rowType);
     }
 
@@ -3209,10 +3354,14 @@ public final class MongoCollectionMapper<T> {
      *         {@code T}, or completes empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#findOneAndReplace(Bson, Object, Class)
      */
-    public Mono<T> findOneAndReplace(final Bson filter, final T replacement) {
+    public Mono<T> findOneAndReplace(final Bson filter, final T replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndReplace(filter, replacement, rowType);
     }
 
@@ -3242,9 +3391,13 @@ public final class MongoCollectionMapper<T> {
      *         post-write version per {@code options} — or completes empty when no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<T> findOneAndReplace(final Bson filter, final T replacement, final FindOneAndReplaceOptions options) {
+    public Mono<T> findOneAndReplace(final Bson filter, final T replacement, final FindOneAndReplaceOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndReplace(filter, replacement, options, rowType);
     }
 
@@ -3284,10 +3437,12 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the deleted document decoded as {@code T}, or completes
      *         empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @see MongoCollectionExecutor#findOneAndDelete(Bson, Class)
      */
-    public Mono<T> findOneAndDelete(final Bson filter) {
+    public Mono<T> findOneAndDelete(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndDelete(filter, rowType);
     }
 
@@ -3314,9 +3469,12 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the deleted document decoded as {@code T}, or completes
      *         empty when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or the document type has no usable BSON codec while the driver constructs the
+     *         operation
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      */
-    public Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
+    public Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException {
         return collectionExecutor.findOneAndDelete(filter, options, rowType);
     }
 
@@ -3367,7 +3525,7 @@ public final class MongoCollectionMapper<T> {
      * @see #groupBy(String)
      * @see MongoCollectionExecutor#distinct(String, Class)
      */
-    public Flux<T> distinct(final String fieldName) {
+    public Flux<T> distinct(final String fieldName) throws IllegalArgumentException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
 
         return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
@@ -3427,7 +3585,7 @@ public final class MongoCollectionMapper<T> {
      * @see #distinct(String)
      * @see MongoCollectionExecutor#distinct(String, Bson, Class)
      */
-    public Flux<T> distinct(final String fieldName, final Bson filter) {
+    public Flux<T> distinct(final String fieldName, final Bson filter) throws IllegalArgumentException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(filter, cs.filter);
 
@@ -3472,7 +3630,7 @@ public final class MongoCollectionMapper<T> {
      *         empty if the pipeline produces no documents
      * @throws IllegalArgumentException if {@code pipeline} is null
      */
-    public Flux<T> aggregate(final List<? extends Bson> pipeline) {
+    public Flux<T> aggregate(final List<? extends Bson> pipeline) throws IllegalArgumentException {
         return collectionExecutor.aggregate(pipeline, rowType);
     }
 
@@ -3512,7 +3670,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
      */
     @Beta
-    public Flux<T> groupBy(final String fieldName) {
+    public Flux<T> groupBy(final String fieldName) throws IllegalArgumentException {
         return collectionExecutor.groupBy(fieldName, rowType);
     }
 
@@ -3551,7 +3709,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty
      */
     @Beta
-    public Flux<T> groupBy(final Collection<String> fieldNames) {
+    public Flux<T> groupBy(final Collection<String> fieldNames) throws IllegalArgumentException {
         return collectionExecutor.groupBy(fieldNames, rowType);
     }
 
@@ -3591,7 +3749,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
      */
     @Beta
-    public Flux<T> groupByAndCount(final String fieldName) {
+    public Flux<T> groupByAndCount(final String fieldName) throws IllegalArgumentException {
         return collectionExecutor.groupByAndCount(fieldName, rowType);
     }
 
@@ -3629,7 +3787,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty
      */
     @Beta
-    public Flux<T> groupByAndCount(final Collection<String> fieldNames) {
+    public Flux<T> groupByAndCount(final Collection<String> fieldNames) throws IllegalArgumentException {
         return collectionExecutor.groupByAndCount(fieldNames, rowType);
     }
 
@@ -3672,7 +3830,7 @@ public final class MongoCollectionMapper<T> {
      *             aggregation pipeline instead.
      */
     @Deprecated
-    public Flux<T> mapReduce(final String mapFunction, final String reduceFunction) {
+    public Flux<T> mapReduce(final String mapFunction, final String reduceFunction) throws IllegalArgumentException {
         return collectionExecutor.mapReduce(mapFunction, reduceFunction, rowType);
     }
 }

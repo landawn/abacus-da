@@ -64,7 +64,7 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * @param op the HBase {@link Operation} to wrap; must not be {@code null}
      * @throws IllegalArgumentException if {@code op} is {@code null}
      */
-    protected AnyOperation(final Operation op) {
+    protected AnyOperation(final Operation op) throws IllegalArgumentException {
         N.checkArgument(op != null, "Operation must not be null");
         this.op = op;
     }
@@ -92,12 +92,13 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * is intended for debugging, logging, or serialization.
      *
      * @return a {@code Map} representation of this operation; never {@code null}
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
      *         than eight bytes
      * @see #toMap(int)
      * @see #getFingerprint()
      */
-    public Map<String, Object> toMap() {
+    public Map<String, Object> toMap() throws NullPointerException, IllegalArgumentException {
         return op.toMap();
     }
 
@@ -109,11 +110,12 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      *
      * @param maxCols HBase's total-column truncation budget for the map representation
      * @return a {@code Map} representation generated with the requested truncation budget; never {@code null}
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
      *         than eight bytes
      * @see #toMap()
      */
-    public Map<String, Object> toMap(final int maxCols) {
+    public Map<String, Object> toMap(final int maxCols) throws NullPointerException, IllegalArgumentException {
         return op.toMap(maxCols);
     }
 
@@ -125,12 +127,13 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * {@link IOException} thrown by HBase is wrapped as an {@link UncheckedIOException}.
      *
      * @return a JSON string representation of this operation; never {@code null}
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
      *         than eight bytes
      * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
      * @see #toJson(int)
      */
-    public String toJson() {
+    public String toJson() throws NullPointerException, IllegalArgumentException, UncheckedIOException {
         try {
             return op.toJSON();
         } catch (final IOException e) {
@@ -145,12 +148,13 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      *
      * @param maxCols HBase's total-column truncation budget for the JSON representation
      * @return a JSON string representation generated with the requested truncation budget; never {@code null}
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
      *         than eight bytes
      * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
      * @see #toJson()
      */
-    public String toJson(final int maxCols) {
+    public String toJson(final int maxCols) throws NullPointerException, IllegalArgumentException, UncheckedIOException {
         try {
             return op.toJSON(maxCols);
         } catch (final IOException e) {
@@ -163,12 +167,13 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * delegated to the underlying HBase {@link Operation#toString()} implementation.
      *
      * @return a string representation of this operation; never {@code null}
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
      *         than eight bytes
      * @see #toString(int)
      */
     @Override
-    public String toString() {
+    public String toString() throws NullPointerException, IllegalArgumentException {
         return op.toString();
     }
 
@@ -178,11 +183,12 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      *
      * @param maxCols HBase's total-column truncation budget for the string representation
      * @return a string representation generated with the requested truncation budget; never {@code null}
+     * @throws NullPointerException if a wrapped mutation has a null cell list or a null cell that falls within the column-description limit
      * @throws IllegalArgumentException if the wrapped operation is a mutation whose stored TTL attribute is shorter
      *         than eight bytes
      * @see #toString()
      */
-    public String toString(final int maxCols) {
+    public String toString(final int maxCols) throws NullPointerException, IllegalArgumentException {
         return op.toString(maxCols);
     }
 }

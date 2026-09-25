@@ -182,6 +182,11 @@ public final class cs { // NOSONAR
     public static final String cell = "cell";
 
     /**
+     * Parameter name for the class requested from a codec registry.
+     */
+    public static final String clazz = "clazz";
+
+    /**
      * Parameter name for Class objects (camelCase {@code cls} form).
      */
     public static final String cls = "cls";
@@ -290,6 +295,11 @@ public final class cs { // NOSONAR
      * Parameter name for a {@code DynamoDBExecutor} instance.
      */
     public static final String dynamoDBExecutor = "dynamoDBExecutor";
+
+    /**
+     * Parameter name for a BSON encoder context.
+     */
+    public static final String encoderContext = "encoderContext";
 
     /**
      * Parameter name for a collection of entity objects.
@@ -577,6 +587,11 @@ public final class cs { // NOSONAR
     public static final String pipeline = "pipeline";
 
     /**
+     * Parameter name for a prepared Cassandra statement.
+     */
+    public static final String preStmt = "preStmt";
+
+    /**
      * Parameter name for a single entity property name.
      */
     public static final String propName = "propName";
@@ -637,6 +652,11 @@ public final class cs { // NOSONAR
     public static final String readType = "readType";
 
     /**
+     * Parameter name for a BSON reader.
+     */
+    public static final String reader = "reader";
+
+    /**
      * Parameter name for a reduce function.
      */
     public static final String reduceFunction = "reduceFunction";
@@ -657,9 +677,19 @@ public final class cs { // NOSONAR
     public static final String result = "result";
 
     /**
+     * Parameter name for an HBase result scanner.
+     */
+    public static final String resultScanner = "resultScanner";
+
+    /**
      * Parameter name for a query result set.
      */
     public static final String resultSet = "resultSet";
+
+    /**
+     * Parameter name for a collection of HBase results.
+     */
+    public static final String results = "results";
 
     /**
      * Parameter name for an HBase {@code RowMutations} instance.
@@ -732,6 +762,11 @@ public final class cs { // NOSONAR
     public static final String statement = "statement";
 
     /**
+     * Parameter name for a Cassandra statement.
+     */
+    public static final String stmt = "stmt";
+
+    /**
      * Parameter name for supplier functions that provide objects or values on demand.
      */
     public static final String supplier = "supplier";
@@ -802,6 +837,11 @@ public final class cs { // NOSONAR
     public static final String userTypeName = "userTypeName";
 
     /**
+     * Parameter name for a value to encode or convert.
+     */
+    public static final String value = "value";
+
+    /**
      * Parameter name for the class that values are converted to.
      */
     public static final String valueClass = "valueClass";
@@ -815,4 +855,9 @@ public final class cs { // NOSONAR
      * Parameter name for a WHERE clause.
      */
     public static final String whereClause = "whereClause";
+
+    /**
+     * Parameter name for a BSON writer.
+     */
+    public static final String writer = "writer";
 }

@@ -68,8 +68,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param rowKey the row key for the increment operation
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyIncrement(final Object rowKey) {
+    AnyIncrement(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         super(new Increment(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
         increment = (Increment) mutation;
     }
@@ -81,7 +82,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param rowKey the row key for the increment operation, as a byte array
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      */
-    AnyIncrement(final byte[] rowKey) {
+    AnyIncrement(final byte[] rowKey) throws IllegalArgumentException {
         super(new Increment(N.checkArgNotNull(rowKey, cs.rowKey)));
         increment = (Increment) mutation;
     }
@@ -97,7 +98,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the end of {@code rowKey}
      */
-    AnyIncrement(final byte[] rowKey, final int rowOffset, final int rowLength) {
+    AnyIncrement(final byte[] rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException {
         super(new Increment(rowKey, rowOffset, rowLength));
         increment = (Increment) mutation;
     }
@@ -113,8 +115,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
-    AnyIncrement(final Object rowKey, final int rowOffset, final int rowLength) {
+    AnyIncrement(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         super(new Increment(toRowKeyBytes(rowKey), rowOffset, rowLength));
         increment = (Increment) mutation;
     }
@@ -124,11 +128,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * HBase {@link Increment} pre-populated with the given family map and timestamp.
      *
      * @param rowKey the row key as a byte array
-     * @param timestamp the timestamp to apply to every cell in this increment
+     * @param timestamp the increment's default timestamp; existing cells retain their own timestamps
      * @param familyMap a pre-populated map of column families to their cells
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
-    AnyIncrement(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
+    AnyIncrement(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException {
         super(new Increment(N.checkArgNotNull(rowKey, cs.rowKey), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
         increment = (Increment) mutation;
     }
@@ -139,8 +143,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param incrementToCopy the existing {@link Increment} to copy
      * @throws IllegalArgumentException if {@code incrementToCopy} is {@code null}
+     * @throws NullPointerException if {@code incrementToCopy}'s mutable family-cell map contains a null cell list
      */
-    AnyIncrement(final Increment incrementToCopy) {
+    AnyIncrement(final Increment incrementToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Increment(N.checkArgNotNull(incrementToCopy, cs.incrementToCopy)));
         increment = (Increment) mutation;
     }
@@ -173,10 +178,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param rowKey the row key for the increment operation; automatically converted to bytes
      * @return a new AnyIncrement instance configured for the specified row
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(byte[])
      * @see #addColumn(String, String, long)
      */
-    public static AnyIncrement of(final Object rowKey) {
+    public static AnyIncrement of(final Object rowKey) throws IllegalArgumentException, RuntimeException {
         return new AnyIncrement(rowKey);
     }
 
@@ -207,7 +213,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty, or longer than 32,767 bytes
      * @see #of(Object)
      */
-    public static AnyIncrement of(final byte[] rowKey) {
+    public static AnyIncrement of(final byte[] rowKey) throws IllegalArgumentException {
         return new AnyIncrement(rowKey);
     }
 
@@ -243,7 +249,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the end of {@code rowKey}
      * @see #of(byte[])
      */
-    public static AnyIncrement of(final byte[] rowKey, final int rowOffset, final int rowLength) {
+    public static AnyIncrement of(final byte[] rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException {
         return new AnyIncrement(rowKey, rowOffset, rowLength);
     }
 
@@ -274,9 +281,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
+     * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(byte[], int, int)
      */
-    public static AnyIncrement of(final Object rowKey, final int rowOffset, final int rowLength) {
+    public static AnyIncrement of(final Object rowKey, final int rowOffset, final int rowLength)
+            throws IllegalArgumentException, NegativeArraySizeException, ArrayIndexOutOfBoundsException, RuntimeException {
         return new AnyIncrement(rowKey, rowOffset, rowLength);
     }
 
@@ -286,7 +295,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * This advanced factory method is useful for reconstructing increment operations from
      * existing data or for scenarios where you need precise control over the increment
      * structure and timing. The family map should contain the column families and their
-     * respective Cell objects with the increment values.
+     * respective Cell objects with the increment values. The map is retained by reference,
+     * and its existing cells retain their own timestamps.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -306,13 +316,13 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * }</pre>
      *
      * @param rowKey the row key for the increment operation as a byte array
-     * @param timestamp the timestamp to apply to all cells in this increment operation
+     * @param timestamp the default timestamp for subsequently added columns
      * @param familyMap a pre-populated NavigableMap of column families to their Cell lists
      * @return a new AnyIncrement instance with the specified configuration
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      * @see #of(Increment)
      */
-    public static AnyIncrement of(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
+    public static AnyIncrement of(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException {
         return new AnyIncrement(rowKey, timestamp, familyMap);
     }
 
@@ -345,9 +355,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param incrementToCopy the HBase Increment object to copy; must not be {@code null}
      * @return a new AnyIncrement instance backed by a fresh Increment copied from {@code incrementToCopy}
      * @throws IllegalArgumentException if {@code incrementToCopy} is {@code null}
+     * @throws NullPointerException if {@code incrementToCopy}'s mutable family-cell map contains a null cell list
      * @see Increment
      */
-    public static AnyIncrement of(final Increment incrementToCopy) {
+    public static AnyIncrement of(final Increment incrementToCopy) throws IllegalArgumentException, NullPointerException {
         return new AnyIncrement(incrementToCopy);
     }
 
@@ -406,7 +417,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @see Cell
      * @see #addColumn(String, String, long)
      */
-    public AnyIncrement add(final Cell cell) throws IOException {
+    public AnyIncrement add(final Cell cell) throws IllegalArgumentException, IOException {
         N.checkArgNotNull(cell, cs.cell);
 
         increment.add(cell);
@@ -445,7 +456,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *         maximum size
      * @see #addColumn(String, String, long)
      */
-    public AnyIncrement addColumn(final byte[] family, final byte[] qualifier, final long amount) {
+    public AnyIncrement addColumn(final byte[] family, final byte[] qualifier, final long amount) throws IllegalArgumentException {
         increment.addColumn(family, qualifier, amount);
 
         return this;
@@ -490,7 +501,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *         maximum size
      * @see #addColumn(byte[], byte[], long)
      */
-    public AnyIncrement addColumn(final String family, final String qualifier, final long amount) {
+    public AnyIncrement addColumn(final String family, final String qualifier, final long amount) throws IllegalArgumentException {
         increment.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), amount);
 
         return this;
@@ -565,7 +576,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @see #getTimeRange()
      * @see TimeRange
      */
-    public AnyIncrement setTimeRange(final long minStamp, final long maxStamp) {
+    public AnyIncrement setTimeRange(final long minStamp, final long maxStamp) throws IllegalArgumentException {
         try {
             increment.setTimeRange(minStamp, maxStamp);
         } catch (final IOException e) {
@@ -647,7 +658,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @throws IllegalArgumentException if the stored return-results attribute is not exactly one byte
      * @see #setReturnResults(boolean)
      */
-    public boolean isReturnResults() {
+    public boolean isReturnResults() throws IllegalArgumentException {
         return increment.isReturnResults();
     }
 
@@ -718,11 +729,12 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * }</pre>
      *
      * @return a Map of column families to their qualifier-value mappings; never null but may be empty
+     * @throws NullPointerException if the mutable family-cell map contains a null cell list or a null cell
      * @throws IllegalArgumentException if a queued cell value is not exactly eight bytes and cannot be decoded as a long
      * @see #hasFamilies()
      * @see #addColumn(String, String, long)
      */
-    public Map<byte[], NavigableMap<byte[], Long>> getFamilyMapOfLongs() {
+    public Map<byte[], NavigableMap<byte[], Long>> getFamilyMapOfLongs() throws NullPointerException, IllegalArgumentException {
         return increment.getFamilyMapOfLongs();
     }
 
@@ -849,10 +861,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * }</pre>
      *
      * @return a string representation of the increment operation
+     * @throws NullPointerException if the mutable family-cell map contains a null cell
      * @throws IllegalArgumentException if a queued cell value is not exactly eight bytes and cannot be decoded as a long
      */
     @Override
-    public String toString() {
+    public String toString() throws NullPointerException, IllegalArgumentException {
         return increment.toString();
     }
 }

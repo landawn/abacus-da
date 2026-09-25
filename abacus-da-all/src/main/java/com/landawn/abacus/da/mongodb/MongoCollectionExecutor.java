@@ -21,6 +21,7 @@ import java.util.Date;
 import java.util.List;
 
 import org.bson.Document;
+import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
@@ -115,7 +116,7 @@ import com.mongodb.client.result.UpdateResult;
  * </ul>
  *
  * <h3>Error Handling:</h3>
- * <p>All methods may throw {@code MongoException} and its subclasses for MongoDB-specific errors.
+ * <p>Methods that execute MongoDB commands or open cursors may throw {@code MongoException} and its subclasses.
  * Common exceptions include:</p>
  * <ul>
  *   <li>{@code MongoWriteException} - For write operation failures</li>
@@ -267,13 +268,14 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to check for existence
      * @return {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #exists(ObjectId)
      * @see #exists(Bson)
      * @see #async()
      */
-    public boolean exists(final String objectId) {
+    public boolean exists(final String objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return exists(createObjectId(objectId));
     }
 
@@ -292,12 +294,13 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId to check for existence
      * @return {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see ObjectId
      * @see #exists(String)
      */
-    public boolean exists(final ObjectId objectId) {
+    public boolean exists(final ObjectId objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return exists(MongoDBBase.objectIdToFilter(objectId));
     }
 
@@ -318,11 +321,12 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return {@code true} if any documents match the filter, {@code false} otherwise
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see com.mongodb.client.model.Filters
      */
-    public boolean exists(final Bson filter) {
+    public boolean exists(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return count(filter, new CountOptions().limit(1)) > 0;
     }
 
@@ -348,7 +352,7 @@ public final class MongoCollectionExecutor {
      * @see #estimatedDocumentCount()
      * @see #async()
      */
-    public long count() {
+    public long count() throws IllegalStateException, MongoException {
         return coll.countDocuments();
     }
 
@@ -369,12 +373,13 @@ public final class MongoCollectionExecutor {
      *               for an unfiltered count)
      * @return the number of documents matching the filter
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see com.mongodb.client.model.Filters
      * @see #count(Bson, CountOptions)
      */
-    public long count(final Bson filter) {
+    public long count(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return coll.countDocuments(filter);
@@ -398,12 +403,14 @@ public final class MongoCollectionExecutor {
      * @param options additional options for the count operation (null uses defaults)
      * @return the number of documents matching the filter within the specified constraints
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
      */
-    public long count(final Bson filter, final CountOptions options) {
+    public long count(final Bson filter, final CountOptions options)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
@@ -432,7 +439,7 @@ public final class MongoCollectionExecutor {
      * @see MongoCollection#estimatedDocumentCount()
      * @see #count()
      */
-    public long estimatedDocumentCount() {
+    public long estimatedDocumentCount() throws IllegalStateException, MongoException {
         return coll.estimatedDocumentCount();
     }
 
@@ -457,7 +464,7 @@ public final class MongoCollectionExecutor {
      * @see EstimatedDocumentCountOptions
      * @see MongoCollection#estimatedDocumentCount(EstimatedDocumentCountOptions)
      */
-    public long estimatedDocumentCount(final EstimatedDocumentCountOptions options) {
+    public long estimatedDocumentCount(final EstimatedDocumentCountOptions options) throws IllegalStateException, MongoException {
         if (options == null) {
             return coll.estimatedDocumentCount();
         } else {
@@ -484,13 +491,14 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to search for
      * @return an Optional containing the document if found, or empty if not found
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Optional
      * @see #get(ObjectId)
      * @see #gett(String)
      */
-    public Optional<Document> get(final String objectId) {
+    public Optional<Document> get(final String objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return get(createObjectId(objectId));
     }
 
@@ -509,13 +517,14 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId to search for
      * @return an Optional containing the document if found, or empty if not found
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see ObjectId
      * @see Optional
      * @see #gett(ObjectId)
      */
-    public Optional<Document> get(final ObjectId objectId) {
+    public Optional<Document> get(final ObjectId objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return get(objectId, Document.class);
     }
 
@@ -535,15 +544,20 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to search for
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object if found, or empty if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType} is null,
-     *         or if a returned document has multiple non-{@code _id} fields for a scalar result type or
-     *         a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType} is null, or
+     *         if a returned document has multiple non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #get(ObjectId, Class)
      * @see #gett(String, Class)
      */
-    public <T> Optional<T> get(final String objectId, final Class<T> rowType) {
+    public <T> Optional<T> get(final String objectId, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         return get(createObjectId(objectId), rowType);
     }
 
@@ -564,14 +578,19 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object if found, or empty if not found
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #get(ObjectId, Collection, Class)
      * @see #gett(ObjectId, Class)
      */
-    public <T> Optional<T> get(final ObjectId objectId, final Class<T> rowType) {
+    public <T> Optional<T> get(final ObjectId objectId, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         return get(objectId, null, rowType);
     }
 
@@ -593,15 +612,23 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object with projected fields, or empty if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType} is null,
-     *         or if a returned document has multiple non-{@code _id} fields for a scalar result type or
-     *         a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType}
+     *         is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type or a value that cannot be
+     *         converted to the requested type, or if a single selected property name is null and a scalar value is extracted from a
+     *         returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #get(ObjectId, Collection, Class)
      * @see #gett(String, Collection, Class)
      */
-    public <T> Optional<T> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> Optional<T> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) throws IllegalArgumentException,
+            CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, ClassCastException, RuntimeException {
         return get(createObjectId(objectId), selectPropNames, rowType);
     }
 
@@ -623,15 +650,22 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames collection of field names to include (null includes all fields)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object with only the specified fields, or empty if not found
-     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null, or if a returned document has
+     *         multiple non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type, or if
+     *         a single selected property name is null and a scalar value is extracted from a returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see com.mongodb.client.model.Projections
      * @see #gett(ObjectId, Collection, Class)
      */
-    public <T> Optional<T> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> Optional<T> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) throws IllegalArgumentException,
+            CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, ClassCastException, RuntimeException {
         return findFirst(selectPropNames, MongoDBBase.objectIdToFilter(objectId), null, rowType);
     }
 
@@ -654,12 +688,13 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @return the matching document, or {@code null} if not found
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(String)
      * @see #gett(ObjectId)
      */
-    public Document gett(final String objectId) {
+    public Document gett(final String objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return gett(createObjectId(objectId));
     }
 
@@ -682,12 +717,13 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId to search for
      * @return the matching document, or {@code null} if not found
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(ObjectId)
      * @see #gett(String)
      */
-    public Document gett(final ObjectId objectId) {
+    public Document gett(final ObjectId objectId) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return gett(objectId, Document.class);
     }
 
@@ -710,15 +746,20 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @param rowType the Class representing the target type for conversion
      * @return the matching document converted to the specified type, or {@code null} if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType} is null,
-     *         or if a returned document has multiple non-{@code _id} fields for a scalar result type or
-     *         a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType} is null, or
+     *         if a returned document has multiple non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #get(String, Class)
      * @see #gett(ObjectId, Class)
      */
-    public <T> T gett(final String objectId, final Class<T> rowType) {
+    public <T> T gett(final String objectId, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         return gett(createObjectId(objectId), rowType);
     }
 
@@ -743,14 +784,19 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return the matching document converted to the specified type, or {@code null} if not found
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #get(ObjectId, Class)
      * @see #gett(String, Class)
      */
-    public <T> T gett(final ObjectId objectId, final Class<T> rowType) {
+    public <T> T gett(final ObjectId objectId, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         return gett(objectId, null, rowType);
     }
 
@@ -775,15 +821,23 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param rowType the Class representing the target type for conversion
      * @return the matching document with projected fields converted to the specified type, or {@code null} if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType} is null,
-     *         or if a returned document has multiple non-{@code _id} fields for a scalar result type or
-     *         a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code rowType}
+     *         is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type or a value that cannot be
+     *         converted to the requested type, or if a single selected property name is null and a scalar value is extracted from a
+     *         returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #get(String, Collection, Class)
      * @see #gett(ObjectId, Collection, Class)
      */
-    public <T> T gett(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> T gett(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) throws IllegalArgumentException,
+            CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, ClassCastException, RuntimeException {
         return gett(createObjectId(objectId), selectPropNames, rowType);
     }
 
@@ -810,15 +864,22 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param rowType the Class representing the target type for conversion
      * @return the matching document with projected fields converted to the specified type, or {@code null} if not found
-     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null, or if a returned document has
+     *         multiple non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type, or if
+     *         a single selected property name is null and a scalar value is extracted from a returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #get(ObjectId, Collection, Class)
      * @see com.mongodb.client.model.Projections
      */
-    public <T> T gett(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
+    public <T> T gett(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) throws IllegalArgumentException,
+            CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, ClassCastException, RuntimeException {
         return findFirst(selectPropNames, MongoDBBase.objectIdToFilter(objectId), null, rowType).orElse(null);
     }
 
@@ -838,13 +899,14 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return an Optional containing the first matching document, or empty if none found
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Optional
      * @see Document
      * @see com.mongodb.client.model.Filters
      */
-    public Optional<Document> findFirst(final Bson filter) {
+    public Optional<Document> findFirst(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return findFirst(filter, Document.class);
     }
 
@@ -865,14 +927,19 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object, or empty if none found
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple non-{@code
+     *         _id} fields for a scalar result type or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #findFirst(Collection, Bson, Class)
      */
-    public <T> Optional<T> findFirst(final Bson filter, final Class<T> rowType) {
+    public <T> Optional<T> findFirst(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         return findFirst(null, filter, rowType);
     }
 
@@ -896,13 +963,20 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object with projected fields, or empty if none found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type, or if a single
+     *         selected property name is null and a scalar value is extracted from a returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see com.mongodb.client.model.Projections
      */
-    public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) throws IllegalArgumentException,
+            CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, ClassCastException, RuntimeException {
         return findFirst(selectPropNames, filter, null, rowType);
     }
 
@@ -933,14 +1007,22 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the requested type, or if a single
+     *         selected property name is null and a scalar value is extracted from a returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, ClassCastException,
+            RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -981,15 +1063,20 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria for ordering results (null for no sorting)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple non-{@code
+     *         _id} fields for a scalar result type or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> Optional<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> Optional<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -1017,13 +1104,14 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a List containing all matching documents (empty list if none found)
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Document
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
      */
-    public List<Document> list(final Bson filter) {
+    public List<Document> list(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return list(filter, Document.class);
     }
 
@@ -1044,14 +1132,17 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return a List containing all matching converted objects (empty list if none found)
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the
-     *         requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple non-{@code
+     *         _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #list(Bson, int, int, Class)
      */
-    public <T> List<T> list(final Bson filter, final Class<T> rowType) {
+    public <T> List<T> list(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return list(null, filter, rowType);
     }
 
@@ -1076,14 +1167,18 @@ public final class MongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the target type for conversion
      * @return a List containing the specified range of matching converted objects
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent
-     *         scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection
+     *         fields, or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #list(Collection, Bson, int, int, Class)
      */
-    public <T> List<T> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public <T> List<T> list(final Bson filter, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return list(null, filter, offset, count, rowType);
     }
 
@@ -1106,14 +1201,20 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a list of all matching documents converted to the specified type
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the
-     *         requested type
+     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         converted to the requested type, or if a single selected property name is null and a scalar value is extracted from a
+     *         returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #list(Collection, Bson, int, int, Class)
      * @see #list(Collection, Bson, Bson, Class)
      */
-    public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return list(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -1137,15 +1238,21 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a paginated list of matching documents converted to the specified type
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent
-     *         scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or
+     *         if {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type,
+     *         inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or if a single selected
+     *         property name is null and a scalar value is extracted from a returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #list(Collection, Bson, Class)
      * @see #list(Collection, Bson, Bson, int, int, Class)
      */
-    public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return list(selectPropNames, filter, null, offset, count, rowType);
     }
 
@@ -1170,15 +1277,21 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a sorted list of all matching documents converted to the specified type
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the
-     *         requested type
+     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         converted to the requested type, or if a single selected property name is null and a scalar value is extracted from a
+     *         returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #list(Collection, Bson, Class)
      * @see #list(Collection, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return list(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -1209,17 +1322,23 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return (Integer.MAX_VALUE for all matching)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent
-     *         scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or
+     *         if {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type,
+     *         inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or if a single selected
+     *         property name is null and a scalar value is extracted from a returned document
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #list(Bson, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Sorts
      */
     public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+            final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -1262,15 +1381,18 @@ public final class MongoCollectionExecutor {
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of all matching documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the
-     *         requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple non-{@code
+     *         _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #list(Bson, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Projections
      */
-    public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return list(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -1302,16 +1424,20 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return (Integer.MAX_VALUE for all matching)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent
-     *         scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection
+     *         fields, or a value that cannot be converted to the requested type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+    public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -1349,14 +1475,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalBoolean} holding the converted field value (or {@code false}
      *         for a missing/null field) when a document is matched; {@code OptionalBoolean.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalBoolean queryForBoolean(final String propName, final Bson filter) {
+    public OptionalBoolean queryForBoolean(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Boolean.class).mapToBoolean(ToBooleanFunction.UNBOX);
     }
 
@@ -1385,14 +1516,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalChar} holding the converted field value (or {@code (char) 0}
      *         for a missing/null field) when a document is matched; {@code OptionalChar.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalChar queryForChar(final String propName, final Bson filter) {
+    public OptionalChar queryForChar(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Character.class).mapToChar(ToCharFunction.UNBOX);
     }
 
@@ -1421,14 +1557,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalByte} holding the converted field value (or {@code (byte) 0}
      *         for a missing/null field) when a document is matched; {@code OptionalByte.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalByte queryForByte(final String propName, final Bson filter) {
+    public OptionalByte queryForByte(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Byte.class).mapToByte(ToByteFunction.UNBOX);
     }
 
@@ -1459,14 +1600,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalShort} holding the converted field value (or
      *         {@code (short) 0} for a missing/null field) when a document is matched;
      *         {@code OptionalShort.empty()} when no document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalShort queryForShort(final String propName, final Bson filter) {
+    public OptionalShort queryForShort(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Short.class).mapToShort(ToShortFunction.UNBOX);
     }
 
@@ -1495,14 +1641,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalInt} holding the converted field value (or {@code 0} for a
      *         missing/null field) when a document is matched; {@code OptionalInt.empty()} when no document
      *         matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalInt queryForInt(final String propName, final Bson filter) {
+    public OptionalInt queryForInt(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Integer.class).mapToInt(ToIntFunction.UNBOX);
     }
 
@@ -1531,14 +1682,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalLong} holding the converted field value (or {@code 0L} for a
      *         missing/null field) when a document is matched; {@code OptionalLong.empty()} when no document
      *         matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalLong queryForLong(final String propName, final Bson filter) {
+    public OptionalLong queryForLong(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Long.class).mapToLong(ToLongFunction.UNBOX);
     }
 
@@ -1567,14 +1723,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalFloat} holding the converted field value (or {@code 0.0f}
      *         for a missing/null field) when a document is matched; {@code OptionalFloat.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalFloat queryForFloat(final String propName, final Bson filter) {
+    public OptionalFloat queryForFloat(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Float.class).mapToFloat(ToFloatFunction.UNBOX);
     }
 
@@ -1603,14 +1764,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code OptionalDouble} holding the converted field value (or {@code 0.0d}
      *         for a missing/null field) when a document is matched; {@code OptionalDouble.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public OptionalDouble queryForDouble(final String propName, final Bson filter) {
+    public OptionalDouble queryForDouble(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Double.class).mapToDouble(ToDoubleFunction.UNBOX);
     }
 
@@ -1639,14 +1805,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code Nullable<String>} holding the field value (possibly {@code null}
      *         for a missing/null field) when a document is matched; {@code Nullable.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public Nullable<String> queryForString(final String propName, final Bson filter) {
+    public Nullable<String> queryForString(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, String.class);
     }
 
@@ -1673,15 +1844,20 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code Nullable<Date>} holding the field value (possibly {@code null} for
      *         a missing/null field) when a document is matched; {@code Nullable.empty()} when no document
      *         matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
-     *         be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
+     *         converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
-    public Nullable<Date> queryForDate(final String propName, final Bson filter) {
+    public Nullable<Date> queryForDate(final String propName, final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, Date.class);
     }
 
@@ -1713,14 +1889,19 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code Nullable<T>} holding the converted field value (possibly
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or
-     *         if the selected field value cannot be converted to the requested value type
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or if
+     *         the selected field value cannot be converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
-    public <T extends Date> Nullable<T> queryForDate(final String propName, final Bson filter, final Class<T> valueType) {
+    public <T extends Date> Nullable<T> queryForDate(final String propName, final Bson filter, final Class<T> valueType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return queryForSingleValue(propName, filter, valueType);
     }
 
@@ -1732,14 +1913,10 @@ public final class MongoCollectionExecutor {
      * convenience methods. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve
      * to the nested value.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
-     * document matches the filter ({@code findIterable.first()} yields {@code null}). When a document
-     * matches, the returned {@code Nullable} is <i>present</i> and holds the converted value — which
-     * itself may be {@code null} when the field is absent on the matched document or the stored value is
-     * BSON null ({@code Nullable.of(null)}). {@link Nullable} therefore preserves the distinction between
-     * "no document matched" and "document matched but value is null"; use
-     * {@link #queryForSingleNonNull(String, Bson, Class)} when a matched value is required to be
-     * non-null (that method throws {@link NullPointerException} for a matched-but-null payload).</p>
+     * <p><b>Empty vs. present semantics:</b> this method returns {@code Nullable.empty()} when no nonempty document is found.
+     * For a matched document, the {@code Nullable} holds the converted field value. A missing or BSON {@code null} field
+     * produces a present-but-null {@code Nullable} for a wrapper or reference {@code valueType}. A primitive class token,
+     * such as {@code int.class}, instead produces the primitive default value, such as {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1755,15 +1932,20 @@ public final class MongoCollectionExecutor {
      * @param valueType the target type for conversion of the field value
      * @return a <i>present</i> {@code Nullable<V>} holding the converted field value (possibly
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
-     *         when no document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or
-     *         if the selected field value cannot be converted to the requested value type
+     *         when no nonempty document is found
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or if
+     *         the selected field value cannot be converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
+     *         while converting the selected value
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Nullable
      */
-    public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(valueType, cs.valueType);
@@ -1772,12 +1954,25 @@ public final class MongoCollectionExecutor {
 
         final Document doc = findIterable.first();
 
-        return N.isEmpty(doc) ? (Nullable<V>) Nullable.empty() : Nullable.of(N.convert(getPropValueByPath(doc, propName), valueType));
+        return N.isEmpty(doc) ? (Nullable<V>) Nullable.empty() : Nullable.of(MongoDBBase.convertBsonValue(getPropValueByPath(doc, propName), valueType));
     }
 
     // Document.get does a flat key lookup, but a dotted path like "address.city" is a valid projection:
     // the server returns {address: {city: ...}}, so the nested value must be resolved via getEmbedded.
-    private static Object getPropValueByPath(final Document doc, final String propName) {
+    /**
+     * Reads a property directly or follows its dotted path through embedded Documents.
+     *
+     * @param doc the source document
+     * @param propName the property name or dotted path
+     * @return the selected value, or null if the path is absent
+     * @throws IllegalArgumentException if {@code propName} is null
+     * @throws NullPointerException if {@code doc} is null (callers only pass returned documents)
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     */
+    private static Object getPropValueByPath(final Document doc, final String propName)
+            throws IllegalArgumentException, NullPointerException, ClassCastException {
+        N.checkArgNotNull(propName, cs.propName);
+
         return propName.indexOf('.') < 0 ? doc.get(propName) : doc.getEmbedded(Arrays.asList(propName.split("\\.")), Object.class);
     }
 
@@ -1788,13 +1983,12 @@ public final class MongoCollectionExecutor {
      * or fields are ignored. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve
      * to the nested value.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when no
-     * document matches the filter. When a document is matched, its {@code propName} value is converted
-     * via {@link N#convert(Object, Class)} and wrapped in the {@code Optional} via
-     * {@link Optional#of(Object)}, which does not accept a null payload — so if the field is absent,
-     * the raw BSON value is {@code null}, or the conversion yields {@code null}, this method throws
-     * {@link NullPointerException}. Use {@link #queryForSingleValue(String, Bson, Class)} (which
-     * returns {@link Nullable}) when the field may legitimately be absent or {@code null}.</p>
+     * <p><b>Empty vs. present semantics:</b> this method returns {@code Optional.empty()} when no nonempty document is found.
+     * For a matched document, its selected field is converted before {@link Optional#of(Object)} wraps the result.
+     * If conversion yields {@code null}, this method throws {@link NullPointerException}.
+     * Missing or BSON {@code null} fields yield {@code null} for wrapper and reference type tokens, but a primitive token,
+     * such as {@code int.class}, yields its non-null boxed default. Use {@link #queryForSingleValue(String, Bson, Class)}
+     * with a wrapper or reference type when a matched-but-null value must be represented.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1811,18 +2005,23 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param valueType the target type for conversion of the field value
      * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a
-     *         document is matched and the field carries a non-null value; {@code Optional.empty()}
-     *         when no document matches the filter
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or
-     *         if the selected field value cannot be converted to the requested value type
+     *         document is matched and conversion yields a non-null value; {@code Optional.empty()}
+     *         when no nonempty document is found
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or if
+     *         the selected field value cannot be converted to the requested value type
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
-     * @throws NullPointerException if a document is matched but the field is absent, the raw value is {@code null}, or the conversion to {@code
-     *         valueType} yields {@code null}, because {@link Optional#of(Object)} rejects a null payload
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
+     *         while converting the selected value
+     * @throws NullPointerException if a nonempty document is matched and conversion of its selected field to {@code valueType}
+     *         yields {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Optional
      */
-    public <V> Optional<V> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V> Optional<V> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) throws IllegalArgumentException,
+            CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException, NullPointerException {
         N.checkArgNotEmpty(propName, cs.propName);
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(valueType, cs.valueType);
@@ -1835,7 +2034,7 @@ public final class MongoCollectionExecutor {
             return (Optional<V>) Optional.empty();
         }
 
-        return Optional.of(N.convert(getPropValueByPath(doc, propName), valueType));
+        return Optional.of(MongoDBBase.convertBsonValue(getPropValueByPath(doc, propName), valueType));
     }
 
     /**
@@ -1864,13 +2063,14 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (must not be null)
      * @return a Dataset containing the query results with Document-based rows
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Dataset
      * @see #query(Bson, Class)
      * @see #query(Collection, Bson, Class)
      */
-    public Dataset query(final Bson filter) {
+    public Dataset query(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return query(filter, Document.class);
     }
 
@@ -1901,15 +2101,19 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the query results with typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class
-     *         nor a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class nor
+     *         a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      * @see #query(Bson)
      * @see #query(Collection, Bson, Class)
      */
-    public Dataset query(final Bson filter, final Class<?> rowType) {
+    public Dataset query(final Bson filter, final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return query(null, filter, rowType);
     }
 
@@ -1938,15 +2142,19 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be
-     *         converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be converted to a bean
+     *         {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      * @see #query(Bson, Class)
      */
-    public Dataset query(final Bson filter, final int offset, final int count, final Class<?> rowType) {
+    public Dataset query(final Bson filter, final int offset, final int count, final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return query(null, filter, offset, count, rowType);
     }
 
@@ -1974,14 +2182,18 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the query results with projected fields and typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class
-     *         nor a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class nor
+     *         a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      * @see #query(Collection, Bson, int, int, Class)
      */
-    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType) {
+    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return query(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2016,15 +2228,19 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be
-     *         converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be converted to a bean
+     *         {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      * @see #query(Collection, Bson, Class)
      */
-    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<?> rowType) {
+    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return query(selectPropNames, filter, null, offset, count, rowType);
     }
 
@@ -2056,15 +2272,19 @@ public final class MongoCollectionExecutor {
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the sorted query results with projected fields and typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class
-     *         nor a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class nor
+     *         a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      * @see #query(Collection, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Sorts
      */
-    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType) {
+    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return query(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2097,14 +2317,17 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the sorted and paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be
-     *         converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be converted to a bean
+     *         {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<?> rowType) {
+            final Class<?> rowType) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -2146,12 +2369,16 @@ public final class MongoCollectionExecutor {
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing all matching query results with projected fields and typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class
-     *         nor a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class nor
+     *         a Map type, or if a returned document cannot be converted to a bean {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      */
-    public Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
+    public Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2184,13 +2411,17 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be
-     *         converted to a bean {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null, or if {@code rowType} is neither a bean class nor a Map type, or if a returned document cannot be converted to a bean
+     *         {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      */
-    public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType) {
+    public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -2232,13 +2463,14 @@ public final class MongoCollectionExecutor {
      * stream.</p>
      *
      * @return a Stream of Document objects representing all documents in the collection
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Stream
      * @see #stream(Class)
      * @see #stream(Bson)
      */
-    public Stream<Document> stream() {
+    public Stream<Document> stream() throws CodecConfigurationException, IllegalStateException, MongoException {
         return stream(Document.class);
     }
 
@@ -2279,13 +2511,14 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects representing all documents in the collection
      * @throws IllegalArgumentException if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Stream
      * @see #stream()
      * @see #stream(Bson, Class)
      */
-    public <T> Stream<T> stream(final Class<T> rowType) {
+    public <T> Stream<T> stream(final Class<T> rowType) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<Document> cursor = coll.find().iterator();
@@ -2331,13 +2564,14 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (must not be null)
      * @return a Stream of Document objects matching the filter criteria
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Stream
      * @see #stream(Bson, Class)
      * @see com.mongodb.client.model.Filters
      */
-    public Stream<Document> stream(final Bson filter) {
+    public Stream<Document> stream(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return stream(filter, Document.class);
     }
 
@@ -2378,13 +2612,15 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects matching the filter criteria
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Stream
      * @see #stream(Bson)
      * @see #stream(Bson, int, int, Class)
      */
-    public <T> Stream<T> stream(final Bson filter, final Class<T> rowType) {
+    public <T> Stream<T> stream(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return stream(null, filter, rowType);
     }
 
@@ -2411,12 +2647,14 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return (must be >= 0)
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects with pagination applied
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> stream(final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public <T> Stream<T> stream(final Bson filter, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return stream(null, filter, offset, count, rowType);
     }
 
@@ -2444,10 +2682,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects with specified fields
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return stream(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2475,12 +2715,14 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return stream(selectPropNames, filter, null, offset, count, rowType);
     }
 
@@ -2509,10 +2751,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a sorted Stream of typed objects
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return stream(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2543,13 +2787,14 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects matching the projection, filter, sort, and pagination constraints
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+            final Class<T> rowType) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -2591,10 +2836,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects with the specified projection applied
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return stream(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2626,12 +2873,14 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects matching the projection, filter, sort, and pagination constraints
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
-     *         {@code rowType} is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
+     *         rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+    public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -2656,12 +2905,18 @@ public final class MongoCollectionExecutor {
      * @param findIterable the MongoDB find result
      * @param rowType the target class for conversion
      * @return the converted entity or null if no document found
-     * @throws IllegalArgumentException if the first document has multiple non-{@code _id} fields for a scalar {@code rowType}, or a value
-     *         that cannot be converted to {@code rowType}
+     * @throws CodecConfigurationException if a request value or result document has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws IllegalArgumentException if the first document has multiple non-{@code _id} fields for a scalar {@code rowType}, or a value that
+     *         cannot be converted to {@code rowType}
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating the requested map, collection, or bean, or invoking a bean accessor, fails
      */
-    private static <T> T toEntity(final FindIterable<Document> findIterable, final Class<T> rowType) {
+    private static <T> T toEntity(final FindIterable<Document> findIterable, final Class<T> rowType)
+            throws CodecConfigurationException, IllegalStateException, MongoException, IllegalArgumentException, ArrayStoreException, RuntimeException {
         if (findIterable == null) {
             return null;
         }
@@ -2675,16 +2930,20 @@ public final class MongoCollectionExecutor {
      * Converts a Document to an entity of the specified type.
      *
      * <p>Internal helper method for converting a single Document to the target type.
-     * Returns null if the document is null or empty.</p>
+     * Returns null if the document is null, or if it is empty and the requested type is scalar.</p>
      *
      * @param <T> the target type
      * @param doc the document to convert
      * @param rowType the target class for conversion
-     * @return the converted entity or null if document is empty
-     * @throws IllegalArgumentException if {@code doc} has multiple non-{@code _id} fields for a scalar {@code rowType}, or a value that
-     *         cannot be converted to {@code rowType}
+     * @return the converted result, or null for a null document or an empty scalar result
+     * @throws IllegalArgumentException if {@code doc} has multiple non-{@code _id} fields for a scalar {@code rowType}, or a value that cannot be
+     *         converted to {@code rowType}
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating the requested map, collection, or bean, or invoking a bean accessor, fails
      */
-    private static <T> T toEntity(final Document doc, final Class<T> rowType) {
+    private static <T> T toEntity(final Document doc, final Class<T> rowType) throws IllegalArgumentException, ArrayStoreException, RuntimeException {
         return shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDBBase.readRow(doc, rowType);
     }
 
@@ -2706,7 +2965,25 @@ public final class MongoCollectionExecutor {
         return doc -> toEntity(doc, rowType, selectPropNames);
     }
 
-    private static <T> T toEntity(final Document doc, final Class<T> rowType, final Collection<String> selectPropNames) {
+    /**
+     * Converts a returned document, honoring an explicit single-property projection.
+     *
+     * @param <T> the requested result type
+     * @param doc the source document
+     * @param rowType the requested result type
+     * @param selectPropNames the selected property names, or null to include all properties
+     * @return the converted result, or null when no result value is available
+     * @throws IllegalArgumentException if a returned value cannot be converted to {@code rowType}, or a scalar result has multiple
+     *         non-{@code _id} fields, or if a single selected property name is null and a scalar value is extracted from a returned
+     *         document
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating the requested map, collection, or bean, or invoking a bean accessor, fails
+     */
+    private static <T> T toEntity(final Document doc, final Class<T> rowType, final Collection<String> selectPropNames)
+            throws IllegalArgumentException, ClassCastException, ArrayStoreException, RuntimeException {
         if (doc == null) {
             return null;
         }
@@ -2717,7 +2994,7 @@ public final class MongoCollectionExecutor {
         if (selectPropNames != null && selectPropNames.size() == 1 && isSingleValueType(rowType)) {
             final Object value = getPropValueByPath(doc, selectPropNames.iterator().next());
 
-            return value == null ? null : N.convert(value, rowType);
+            return value == null ? null : MongoDBBase.convertBsonValue(value, rowType);
         }
 
         return toEntity(doc, rowType);
@@ -2755,7 +3032,12 @@ public final class MongoCollectionExecutor {
      * @return FindIterable for the query results
      * @throws IllegalArgumentException if {@code filter} is null, or {@code offset} or {@code count} is negative
      */
-    private FindIterable<Document> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
+    private FindIterable<Document> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNegative(offset, cs.offset);
+        N.checkArgNotNegative(count, cs.count);
+
         if (N.isEmpty(selectPropNames)) {
             return executeQuery(null, filter, sort, offset, count);
         } else if (selectPropNames instanceof List) {
@@ -2779,7 +3061,8 @@ public final class MongoCollectionExecutor {
      * @return FindIterable for the query results
      * @throws IllegalArgumentException if {@code filter} is null, or {@code offset} or {@code count} is negative
      */
-    private FindIterable<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
+    private FindIterable<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count)
+            throws IllegalArgumentException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -2859,7 +3142,7 @@ public final class MongoCollectionExecutor {
      * @return a typed ChangeStreamIterable
      * @throws IllegalArgumentException if {@code rowType} is null
      */
-    public <T> ChangeStreamIterable<T> watch(final Class<T> rowType) {
+    public <T> ChangeStreamIterable<T> watch(final Class<T> rowType) throws IllegalArgumentException {
         N.checkArgNotNull(rowType, cs.rowType);
 
         return coll.watch(rowType);
@@ -2887,7 +3170,7 @@ public final class MongoCollectionExecutor {
      * @return a filtered ChangeStreamIterable
      * @throws IllegalArgumentException if {@code pipeline} is null
      */
-    public ChangeStreamIterable<Document> watch(final List<? extends Bson> pipeline) {
+    public ChangeStreamIterable<Document> watch(final List<? extends Bson> pipeline) throws IllegalArgumentException {
         N.checkArgNotNull(pipeline, cs.pipeline);
 
         return coll.watch(pipeline);
@@ -2918,7 +3201,7 @@ public final class MongoCollectionExecutor {
      * @return a filtered and typed ChangeStreamIterable
      * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
      */
-    public <T> ChangeStreamIterable<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
+    public <T> ChangeStreamIterable<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) throws IllegalArgumentException {
         N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -2954,6 +3237,8 @@ public final class MongoCollectionExecutor {
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2961,7 +3246,8 @@ public final class MongoCollectionExecutor {
      * @see #insertMany(Collection)
      * @see #async()
      */
-    public InsertOneResult insertOne(final Object obj) {
+    public InsertOneResult insertOne(final Object obj)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(obj, cs.obj);
 
         return insertOne(obj, null);
@@ -2989,13 +3275,16 @@ public final class MongoCollectionExecutor {
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
      *         name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see InsertOneOptions
      * @see #insertOne(Object)
      */
-    public InsertOneResult insertOne(final Object obj, final InsertOneOptions options) {
+    public InsertOneResult insertOne(final Object obj, final InsertOneOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(obj, cs.obj);
 
         if (options == null) {
@@ -3028,8 +3317,10 @@ public final class MongoCollectionExecutor {
      *
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
-     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3037,7 +3328,8 @@ public final class MongoCollectionExecutor {
      * @see #insertOne(Object)
      * @see #async()
      */
-    public InsertManyResult insertMany(final Collection<?> objList) {
+    public InsertManyResult insertMany(final Collection<?> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoBulkWriteException, MongoException {
         return insertMany(objList, null);
     }
 
@@ -3066,15 +3358,18 @@ public final class MongoCollectionExecutor {
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @param options additional options for the insert operation (null uses defaults)
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
-     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see InsertManyOptions
      * @see #insertMany(Collection)
      */
-    public InsertManyResult insertMany(final Collection<?> objList, final InsertManyOptions options) {
+    public InsertManyResult insertMany(final Collection<?> objList, final InsertManyOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoBulkWriteException, MongoException {
         N.checkArgNotEmpty(objList, cs.objList);
 
         final List<Document> docs = toDocument(objList);
@@ -3095,10 +3390,11 @@ public final class MongoCollectionExecutor {
      *
      * @param obj the object to convert
      * @return a Document representation of the object
-     * @throws IllegalArgumentException if {@code obj} is null or is not a Document, Map, bean, or array of String name/value pairs, or if
-     *         such an array has an odd length or a non-String name
+     * @throws IllegalArgumentException if {@code obj} is null or is not a Document, Map, bean, or array of String name/value pairs, or if such an
+     *         array has an odd length or a non-String name
+     * @throws RuntimeException if a bean property getter cannot be accessed or throws while constructing a document
      */
-    private static Document toDocument(final Object obj) {
+    private static Document toDocument(final Object obj) throws IllegalArgumentException, RuntimeException {
         return obj instanceof Document ? (Document) obj : MongoDBBase.toDocument(obj);
     }
 
@@ -3112,17 +3408,19 @@ public final class MongoCollectionExecutor {
      * @param objList the collection of objects to convert
      * @return a List of Documents
      * @throws NullPointerException if {@code objList} is null (callers validate it first)
-     * @throws IllegalArgumentException if an element is null or is not a Document, Map, bean, or array of String name/value pairs, or if
-     *         such an array has an odd length or a non-String name
+     * @throws IllegalArgumentException if an element is null or is not a Document, Map, bean, or array of String name/value pairs, or if such an
+     *         array has an odd length or a non-String name
+     * @throws RuntimeException if a bean property getter cannot be accessed or throws while constructing a document
      */
-    private List<Document> toDocument(final Collection<?> objList) {
+    private List<Document> toDocument(final Collection<?> objList) throws NullPointerException, IllegalArgumentException, RuntimeException {
         List<Document> docs = null;
         boolean allDocuments = true;
 
         for (final Object obj : objList) {
+            N.checkArgNotNull(obj, cs.obj);
+
             if (!(obj instanceof Document)) {
                 allDocuments = false;
-                break;
             }
         }
 
@@ -3188,9 +3486,11 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId identifying the document to update
      * @param update the update operations - can be Bson, Document with update operators, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null,
-     *         or if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null, or
+     *         if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id},
+     *         or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3199,7 +3499,8 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Updates
      * @see #async()
      */
-    public UpdateResult updateOne(final String objectId, final Object update) {
+    public UpdateResult updateOne(final String objectId, final Object update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         return updateOne(createObjectId(objectId), update);
     }
 
@@ -3221,15 +3522,18 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId of the document to update
      * @param update can be Bson/Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing update operation details
-     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field
-     *         name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot
-     *         be converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(String, Object)
      */
-    public UpdateResult updateOne(final ObjectId objectId, final Object update) {
+    public UpdateResult updateOne(final ObjectId objectId, final Object update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         return updateOne(MongoDBBase.objectIdToFilter(objectId), update);
     }
 
@@ -3251,14 +3555,17 @@ public final class MongoCollectionExecutor {
      * @param update can be Bson/Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(String, Object)
      */
-    public UpdateResult updateOne(final Bson filter, final Object update) {
+    public UpdateResult updateOne(final Bson filter, final Object update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return updateOne(filter, update, null);
@@ -3282,13 +3589,16 @@ public final class MongoCollectionExecutor {
      * @param options additional update options (null uses defaults)
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public UpdateResult updateOne(final Bson filter, final Object update, final UpdateOptions options) {
+    public UpdateResult updateOne(final Bson filter, final Object update, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
@@ -3323,13 +3633,16 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public UpdateResult updateOne(final Bson filter, final Collection<?> objList) {
+    public UpdateResult updateOne(final Bson filter, final Collection<?> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return updateOne(filter, objList, null);
@@ -3355,13 +3668,16 @@ public final class MongoCollectionExecutor {
      * @param options additional update options (null uses defaults)
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public UpdateResult updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
+    public UpdateResult updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         final List<Bson> updateToUse = toBson(objList);
@@ -3383,7 +3699,7 @@ public final class MongoCollectionExecutor {
      * @return the created ObjectId
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
      */
-    private static ObjectId createObjectId(final String objectId) {
+    private static ObjectId createObjectId(final String objectId) throws IllegalArgumentException {
         N.checkArgNotEmpty(objectId, cs.objectId);
 
         return new ObjectId(objectId);
@@ -3399,11 +3715,12 @@ public final class MongoCollectionExecutor {
      *
      * @param update the update object to convert
      * @return BSON representation of the update
-     * @throws IllegalArgumentException if {@code update} is null, or if a non-Bson {@code update} cannot be converted from a Map, bean, or
-     *         array of String name/value pairs, or if the resulting document has a null field name, mixes operator and ordinary field names,
-     *         or has no fields left after removing {@code _id}
+     * @throws IllegalArgumentException if {@code update} is null, or if a non-Bson {@code update} cannot be converted from a Map, bean, or array of
+     *         String name/value pairs, or if the resulting document has a null field name, mixes operator and ordinary field names, or has no fields left
+     *         after removing {@code _id}
+     * @throws RuntimeException if a bean property getter cannot be accessed or throws while constructing a document
      */
-    private static Bson toBson(final Object update) {
+    private static Bson toBson(final Object update) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(update, cs.update);
 
         // Note: the isForUpdate flag on MongoDBBase.toDocument(Object, boolean) is dead, so the
@@ -3458,7 +3775,7 @@ public final class MongoCollectionExecutor {
      *
      * @throws IllegalArgumentException if {@code keys} contains a null field name, or mixes operator keys with ordinary field names
      */
-    private static boolean isOperatorUpdate(final Collection<String> keys) {
+    private static boolean isOperatorUpdate(final Collection<String> keys) throws IllegalArgumentException {
         if (keys.isEmpty()) {
             return false;
         }
@@ -3492,11 +3809,16 @@ public final class MongoCollectionExecutor {
      *
      * @param objList the collection of update objects
      * @return a List of BSON updates
-     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null element, or if any element is rejected by
-     *         {@link #toBson(Object)}
+     * @throws IllegalArgumentException if {@code objList} is null or empty or contains a null element, or if any element is rejected by {@link
+     *         #toBson(Object)}
+     * @throws RuntimeException if a bean property getter cannot be accessed or throws while constructing a document
      */
-    private List<Bson> toBson(final Collection<?> objList) {
+    private List<Bson> toBson(final Collection<?> objList) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotEmpty(objList, cs.objList);
+
+        for (final Object update : objList) {
+            N.checkArgNotNull(update, cs.update);
+        }
 
         final List<Bson> docs = new ArrayList<>(objList.size());
 
@@ -3536,8 +3858,10 @@ public final class MongoCollectionExecutor {
      * @param update the update operations to apply; can be Bson/Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3546,7 +3870,8 @@ public final class MongoCollectionExecutor {
      * @see UpdateResult
      * @see #async()
      */
-    public UpdateResult updateMany(final Bson filter, final Object update) {
+    public UpdateResult updateMany(final Bson filter, final Object update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return updateMany(filter, update, null);
@@ -3579,8 +3904,10 @@ public final class MongoCollectionExecutor {
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3588,7 +3915,8 @@ public final class MongoCollectionExecutor {
      * @see UpdateOptions
      * @see UpdateResult
      */
-    public UpdateResult updateMany(final Bson filter, final Object update, final UpdateOptions options) {
+    public UpdateResult updateMany(final Bson filter, final Object update, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
@@ -3626,15 +3954,18 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations; each can be Bson/Document/Map or entity objects
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateMany(Bson, Collection, UpdateOptions)
      * @see #updateMany(Bson, Object)
      */
-    public UpdateResult updateMany(final Bson filter, final Collection<?> objList) {
+    public UpdateResult updateMany(final Bson filter, final Collection<?> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return updateMany(filter, objList, null);
@@ -3669,15 +4000,18 @@ public final class MongoCollectionExecutor {
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateMany(Bson, Collection)
      * @see UpdateOptions
      */
-    public UpdateResult updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
+    public UpdateResult updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
 
@@ -3713,11 +4047,14 @@ public final class MongoCollectionExecutor {
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
      *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public UpdateResult replaceOne(final String objectId, final Object replacement) {
+    public UpdateResult replaceOne(final String objectId, final Object replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         return replaceOne(createObjectId(objectId), replacement);
     }
 
@@ -3739,13 +4076,16 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId of the document to replace
      * @param replacement can be Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing replace operation details
-     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public UpdateResult replaceOne(final ObjectId objectId, final Object replacement) {
+    public UpdateResult replaceOne(final ObjectId objectId, final Object replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         return replaceOne(MongoDBBase.objectIdToFilter(objectId), replacement);
     }
 
@@ -3768,11 +4108,14 @@ public final class MongoCollectionExecutor {
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public UpdateResult replaceOne(final Bson filter, final Object replacement) {
+    public UpdateResult replaceOne(final Bson filter, final Object replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         return replaceOne(filter, replacement, null);
     }
 
@@ -3795,11 +4138,14 @@ public final class MongoCollectionExecutor {
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public UpdateResult replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
+    public UpdateResult replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -3825,12 +4171,14 @@ public final class MongoCollectionExecutor {
      * @param objectId string representation of the ObjectId
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the delete with a write error
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #async()
      */
-    public DeleteResult deleteOne(final String objectId) {
+    public DeleteResult deleteOne(final String objectId)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         return deleteOne(createObjectId(objectId));
     }
 
@@ -3846,11 +4194,13 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId of the document to delete
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the delete with a write error
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public DeleteResult deleteOne(final ObjectId objectId) {
+    public DeleteResult deleteOne(final ObjectId objectId)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         return deleteOne(MongoDBBase.objectIdToFilter(objectId));
     }
 
@@ -3866,11 +4216,13 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to identify the document
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the delete with a write error
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public DeleteResult deleteOne(final Bson filter) {
+    public DeleteResult deleteOne(final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return coll.deleteOne(filter);
@@ -3889,11 +4241,13 @@ public final class MongoCollectionExecutor {
      * @param options additional delete options (null uses defaults)
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the delete with a write error
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public DeleteResult deleteOne(final Bson filter, final DeleteOptions options) {
+    public DeleteResult deleteOne(final Bson filter, final DeleteOptions options)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return options == null ? coll.deleteOne(filter) : coll.deleteOne(filter, options);
@@ -3914,11 +4268,13 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to identify documents to delete
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the delete with a write error
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public DeleteResult deleteMany(final Bson filter) {
+    public DeleteResult deleteMany(final Bson filter)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return coll.deleteMany(filter);
@@ -3937,11 +4293,13 @@ public final class MongoCollectionExecutor {
      * @param options additional delete options (null uses defaults)
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoWriteException if the server rejects the delete with a write error
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public DeleteResult deleteMany(final Bson filter, final DeleteOptions options) {
+    public DeleteResult deleteMany(final Bson filter, final DeleteOptions options)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoWriteException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         return options == null ? coll.deleteMany(filter) : coll.deleteMany(filter, options);
@@ -3969,13 +4327,16 @@ public final class MongoCollectionExecutor {
      *
      * @param entities collection of entities to insert
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public BulkWriteResult bulkInsert(final Collection<?> entities) {
+    public BulkWriteResult bulkInsert(final Collection<?> entities)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoBulkWriteException, MongoException {
         return bulkInsert(entities, null);
     }
 
@@ -3995,14 +4356,21 @@ public final class MongoCollectionExecutor {
      * @param entities collection of entities to insert
      * @param options additional bulk write options (null uses defaults)
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws IllegalArgumentException if {@code entities} is null or empty or contains a null document, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public BulkWriteResult bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
+    public BulkWriteResult bulkInsert(final Collection<?> entities, final BulkWriteOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoBulkWriteException, MongoException {
         N.checkArgNotEmpty(entities, cs.entities);
+
+        for (final Object entity : entities) {
+            N.checkArgNotNull(entity, cs.entity);
+        }
 
         final List<InsertOneModel<Document>> list = new ArrayList<>(entities.size());
 
@@ -4044,11 +4412,14 @@ public final class MongoCollectionExecutor {
      * @param requests list of write operations to execute
      * @return BulkWriteResult containing operation details
      * @throws IllegalArgumentException if {@code requests} is null or empty, or contains a null write model
+     * @throws UnsupportedOperationException if {@code requests} contains a WriteModel subtype that the MongoDB driver does not support
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
+    public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests) throws IllegalArgumentException,
+            UnsupportedOperationException, CodecConfigurationException, IllegalStateException, MongoBulkWriteException, MongoException {
         return bulkWrite(requests, null);
     }
 
@@ -4073,12 +4444,20 @@ public final class MongoCollectionExecutor {
      * @param options additional bulk write options (null uses defaults)
      * @return BulkWriteResult containing operation details
      * @throws IllegalArgumentException if {@code requests} is null or empty, or contains a null write model
+     * @throws UnsupportedOperationException if {@code requests} contains a WriteModel subtype that the MongoDB driver does not support
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
+    public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options)
+            throws IllegalArgumentException, UnsupportedOperationException, CodecConfigurationException, IllegalStateException, MongoBulkWriteException,
+            MongoException {
         N.checkArgNotEmpty(requests, cs.requests);
+
+        for (final WriteModel<? extends Document> request : requests) {
+            N.checkArgNotNull(request, cs.requests);
+        }
 
         if (options == null) {
             return coll.bulkWrite(requests);
@@ -4110,13 +4489,16 @@ public final class MongoCollectionExecutor {
      * @param update update operations to apply
      * @return the matched document (pre-update by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(String, Object)
      */
-    public Document findOneAndUpdate(final Bson filter, final Object update) {
+    public Document findOneAndUpdate(final Bson filter, final Object update)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException {
         return findOneAndUpdate(filter, update, (FindOneAndUpdateOptions) null);
     }
 
@@ -4136,13 +4518,18 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null, or if an update
-     *         document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or
-     *         if an update value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be
-     *         converted to {@code rowType}
+     *         document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an
+     *         update value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to
+     *         {@code rowType}
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
      */
-    public <T> T findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
+    public <T> T findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException {
         return findOneAndUpdate(filter, update, null, rowType);
     }
 
@@ -4165,12 +4552,15 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the document (original or updated based on options), or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
-     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
-     *         converted from a Map, bean, or array of String name/value pairs
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Document findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
+    public Document findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
@@ -4199,13 +4589,18 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null, or if an update
-     *         document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or
-     *         if an update value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be
-     *         converted to {@code rowType}
+     *         document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an
+     *         update value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to
+     *         {@code rowType}
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
      */
-    public <T> T findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
+    public <T> T findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(update, cs.update);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4241,12 +4636,15 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations
      * @return the original document before update, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Document findOneAndUpdate(final Bson filter, final Collection<?> objList) {
+    public Document findOneAndUpdate(final Bson filter, final Collection<?> objList)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException {
         return findOneAndUpdate(filter, objList, (FindOneAndUpdateOptions) null);
     }
 
@@ -4269,13 +4667,18 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null, or if
-     *         {@code objList} contains a null element, or if an update document has a null field name, mixes operator and ordinary field names,
-     *         or has no updatable fields after removing {@code _id}, or if an update value cannot be converted from a Map, bean, or array of
-     *         String name/value pairs, or if the returned document cannot be converted to {@code rowType}
+     *         {@code objList} contains a null element, or if an update document has a null field name, mixes operator and ordinary field names, or has no
+     *         updatable fields after removing {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs,
+     *         or if the returned document cannot be converted to {@code rowType}
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
      */
-    public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
+    public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException {
         return findOneAndUpdate(filter, objList, null, rowType);
     }
 
@@ -4299,12 +4702,15 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the document (original or updated based on options), or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
-     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
-     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
+     *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Document findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
+    public Document findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         final List<Bson> updateToUse = toBson(objList);
@@ -4338,13 +4744,18 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null, or if
-     *         {@code objList} contains a null element, or if an update document has a null field name, mixes operator and ordinary field names,
-     *         or has no updatable fields after removing {@code _id}, or if an update value cannot be converted from a Map, bean, or array of
-     *         String name/value pairs, or if the returned document cannot be converted to {@code rowType}
+     *         {@code objList} contains a null element, or if an update document has a null field name, mixes operator and ordinary field names, or has no
+     *         updatable fields after removing {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs,
+     *         or if the returned document cannot be converted to {@code rowType}
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
      */
-    public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
+    public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, cs.objList);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4381,10 +4792,13 @@ public final class MongoCollectionExecutor {
      * @return the matched document (pre-replacement by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Document findOneAndReplace(final Bson filter, final Object replacement) {
+    public Document findOneAndReplace(final Bson filter, final Object replacement)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException {
         return findOneAndReplace(filter, replacement, (FindOneAndReplaceOptions) null);
     }
 
@@ -4404,12 +4818,17 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
-     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be
-     *         converted to {@code rowType}
+     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to
+     *         {@code rowType}
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
      */
-    public <T> T findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
+    public <T> T findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException {
         return findOneAndReplace(filter, replacement, null, rowType);
     }
 
@@ -4433,10 +4852,13 @@ public final class MongoCollectionExecutor {
      * @return the document (original or new based on options), or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Document findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
+    public Document findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
 
@@ -4466,12 +4888,17 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
-     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be
-     *         converted to {@code rowType}
+     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to
+     *         {@code rowType}
+     * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
      */
-    public <T> T findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
+    public <T> T findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType)
+            throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(replacement, cs.replacement);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4497,10 +4924,11 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to identify the document
      * @return the deleted document, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Document findOneAndDelete(final Bson filter) {
+    public Document findOneAndDelete(final Bson filter) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return findOneAndDelete(filter, (FindOneAndDeleteOptions) null);
     }
 
@@ -4518,12 +4946,18 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to identify the document
      * @param rowType class to convert the result to
      * @return the deleted document as the specified type, or null if not found
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if the returned document cannot be converted
-     *         to {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if the returned document cannot be converted to
+     *         {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      */
-    public <T> T findOneAndDelete(final Bson filter, final Class<T> rowType) {
+    public <T> T findOneAndDelete(final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         return findOneAndDelete(filter, null, rowType);
     }
 
@@ -4544,10 +4978,12 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the deleted document, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Document findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
+    public Document findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
@@ -4574,12 +5010,18 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @param rowType class to convert the result to
      * @return the deleted document as the specified type, or null if not found
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if the returned document cannot be converted
-     *         to {@code rowType}
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if the returned document cannot be converted to
+     *         {@code rowType}
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ArrayStoreException if the result type is a reference-array type and a returned document value is incompatible with its component
+     *         type
+     * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
+     *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      */
-    public <T> T findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
+    public <T> T findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ArrayStoreException, RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4609,10 +5051,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the class of the field values
      * @return a Stream of distinct values
      * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> distinct(final String fieldName, final Class<T> rowType) {
+    public <T> Stream<T> distinct(final String fieldName, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4642,10 +5086,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the class of the field values
      * @return a Stream of distinct values from filtered documents
      * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code filter} is null, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
+    public <T> Stream<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
@@ -4676,10 +5122,12 @@ public final class MongoCollectionExecutor {
      * @param pipeline the aggregation pipeline stages
      * @return a Stream of aggregation results as Documents
      * @throws IllegalArgumentException if {@code pipeline} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public Stream<Document> aggregate(final List<? extends Bson> pipeline) {
+    public Stream<Document> aggregate(final List<? extends Bson> pipeline)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return aggregate(pipeline, Document.class);
     }
 
@@ -4706,10 +5154,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed aggregation results
      * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
-    public <T> Stream<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
+    public <T> Stream<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4736,11 +5186,13 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field to group by
      * @return a Stream of grouped documents
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public Stream<Document> groupBy(final String fieldName) {
+    public Stream<Document> groupBy(final String fieldName)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return groupBy(fieldName, Document.class);
     }
 
@@ -4763,11 +5215,13 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed grouped documents
      * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public <T> Stream<T> groupBy(final String fieldName, final Class<T> rowType) {
+    public <T> Stream<T> groupBy(final String fieldName, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4792,11 +5246,13 @@ public final class MongoCollectionExecutor {
      * @param fieldNames collection of fields to group by
      * @return a Stream of grouped documents
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public Stream<Document> groupBy(final Collection<String> fieldNames) {
+    public Stream<Document> groupBy(final Collection<String> fieldNames)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return groupBy(fieldNames, Document.class);
     }
 
@@ -4820,11 +5276,13 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed grouped documents
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public <T> Stream<T> groupBy(final Collection<String> fieldNames, final Class<T> rowType) {
+    public <T> Stream<T> groupBy(final Collection<String> fieldNames, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4849,11 +5307,13 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field to group by
      * @return a Stream of documents with group id and count
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public Stream<Document> groupByAndCount(final String fieldName) {
+    public Stream<Document> groupByAndCount(final String fieldName)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return groupByAndCount(fieldName, Document.class);
     }
 
@@ -4876,11 +5336,13 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed documents with counts
      * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public <T> Stream<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
+    public <T> Stream<T> groupByAndCount(final String fieldName, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4905,11 +5367,13 @@ public final class MongoCollectionExecutor {
      * @param fieldNames collection of fields to group by
      * @return a Stream of documents with group ids and counts
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public Stream<Document> groupByAndCount(final Collection<String> fieldNames) {
+    public Stream<Document> groupByAndCount(final Collection<String> fieldNames)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return groupByAndCount(fieldNames, Document.class);
     }
 
@@ -4933,11 +5397,13 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed documents with counts
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      */
     @Beta
-    public <T> Stream<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) {
+    public <T> Stream<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4964,7 +5430,17 @@ public final class MongoCollectionExecutor {
         return N.asList(new Document(_$GROUP, group), new Document("$project", project));
     }
 
-    private static List<Document> groupByPipeline(final Collection<String> fieldNames, final boolean count, final Class<?> rowType) {
+    /**
+     * Builds the grouping pipeline and its optional count projection.
+     *
+     * @param fieldNames the fields to group by
+     * @param count whether to include the group count
+     * @param rowType the requested result type
+     * @return the aggregation stages
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     */
+    private static List<Document> groupByPipeline(final Collection<String> fieldNames, final boolean count, final Class<?> rowType)
+            throws IllegalArgumentException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
         final Document groupFields = new Document();
@@ -5017,12 +5493,14 @@ public final class MongoCollectionExecutor {
      * @param reduceFunction JavaScript reduce function as string
      * @return a Stream of map-reduce results
      * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregate() instead.
      */
     @Deprecated
-    public Stream<Document> mapReduce(final String mapFunction, final String reduceFunction) {
+    public Stream<Document> mapReduce(final String mapFunction, final String reduceFunction)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         return mapReduce(mapFunction, reduceFunction, Document.class);
     }
 
@@ -5048,12 +5526,14 @@ public final class MongoCollectionExecutor {
      * @return a Stream of typed map-reduce results
      * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty, or if {@code
      *         rowType} is null
+     * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregate() instead.
      */
     @Deprecated
-    public <T> Stream<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
+    public <T> Stream<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(mapFunction, cs.mapFunction);
         N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
         N.checkArgNotNull(rowType, cs.rowType);

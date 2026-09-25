@@ -112,7 +112,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param mutation the HBase {@link Mutation} to wrap; must not be {@code null}
      * @throws IllegalArgumentException if {@code mutation} is {@code null}
      */
-    protected AnyMutation(final Mutation mutation) {
+    protected AnyMutation(final Mutation mutation) throws IllegalArgumentException {
         super(mutation);
         this.mutation = mutation;
     }
@@ -182,7 +182,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #getDurability()
      * @see Durability
      */
-    public AM setDurability(final Durability durability) {
+    public AM setDurability(final Durability durability) throws IllegalArgumentException {
         N.checkArgNotNull(durability, cs.durability);
 
         mutation.setDurability(durability);
@@ -208,8 +208,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the timestamp set on this mutation. The timestamp becomes the version of every
-     * cell written by the mutation. When no timestamp has been set explicitly, HBase returns
+     * Returns the default timestamp set on this mutation. Cells added with explicit timestamps
+     * retain those timestamps, and changing the default does not re-stamp existing cells.
+     * When no timestamp has been set explicitly, HBase returns
      * {@code HConstants.LATEST_TIMESTAMP} and assigns the current server time when the mutation
      * is applied.
      *
@@ -232,7 +233,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #getTimestamp()
      * @see System#currentTimeMillis()
      */
-    public AM setTimestamp(final long timestamp) {
+    public AM setTimestamp(final long timestamp) throws IllegalArgumentException {
         mutation.setTimestamp(timestamp);
 
         return (AM) this;
@@ -248,7 +249,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #setClusterIds(List)
      * @see UUID
      */
-    public List<UUID> getClusterIds() {
+    public List<UUID> getClusterIds() throws IllegalStateException {
         return mutation.getClusterIds();
     }
 
@@ -264,7 +265,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #getClusterIds()
      * @see UUID
      */
-    public AM setClusterIds(final List<UUID> clusterIds) {
+    public AM setClusterIds(final List<UUID> clusterIds) throws IllegalArgumentException, NullPointerException {
         N.checkArgNotNull(clusterIds, cs.clusterIds);
 
         mutation.setClusterIds(clusterIds);
@@ -311,7 +312,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #getCellVisibility()
      * @see CellVisibility
      */
-    public AM setCellVisibility(final CellVisibility expression) {
+    public AM setCellVisibility(final CellVisibility expression) throws IllegalArgumentException {
         N.checkArgNotNull(expression, cs.expression);
 
         mutation.setCellVisibility(expression);
@@ -345,7 +346,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #setACL(Map)
      * @see Permission
      */
-    public AM setACL(final String user, final Permission perms) {
+    public AM setACL(final String user, final Permission perms) throws IllegalArgumentException {
         N.checkArgNotNull(user, cs.user);
         N.checkArgNotNull(perms, cs.perms);
 
@@ -381,7 +382,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #setACL(String, Permission)
      * @see Permission
      */
-    public AM setACL(final Map<String, Permission> perms) {
+    public AM setACL(final Map<String, Permission> perms) throws IllegalArgumentException, NullPointerException {
         N.checkArgNotNull(perms, cs.perms);
 
         mutation.setACL(perms);
@@ -398,7 +399,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @throws IllegalArgumentException if the stored TTL attribute is shorter than eight bytes
      * @see #setTTL(long)
      */
-    public long getTTL() {
+    public long getTTL() throws IllegalArgumentException {
         return mutation.getTTL();
     }
 
@@ -423,7 +424,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *         support per-mutation TTLs
      * @see #getTTL()
      */
-    public AM setTTL(final long ttl) {
+    public AM setTTL(final long ttl) throws UnsupportedOperationException {
         mutation.setTTL(ttl);
 
         return (AM) this;
@@ -449,11 +450,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param family the column-family name
      * @param qualifier the column-qualifier name
      * @return a (possibly empty) list of matching {@link Cell}s; never {@code null}
+     * @throws NullPointerException if traversal of the requested family reaches a null cell in the mutable family-cell map
      * @see #get(byte[], byte[])
      * @see #has(String, String)
      * @see Cell
      */
-    public List<Cell> get(final String family, final String qualifier) {
+    public List<Cell> get(final String family, final String qualifier) throws NullPointerException {
         final byte[] familyBytes = toFamilyQualifierBytes(family);
 
         return containsFamily(familyBytes) ? mutation.get(familyBytes, toFamilyQualifierBytes(qualifier)) : new ArrayList<>();
@@ -465,11 +467,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param family the column-family name as a byte array
      * @param qualifier the column-qualifier name as a byte array
      * @return a (possibly empty) list of matching {@link Cell}s; never {@code null}
+     * @throws NullPointerException if traversal of the requested family reaches a null cell in the mutable family-cell map
      * @see #get(String, String)
      * @see #has(byte[], byte[])
      * @see Cell
      */
-    public List<Cell> get(final byte[] family, final byte[] qualifier) {
+    public List<Cell> get(final byte[] family, final byte[] qualifier) throws NullPointerException {
         return containsFamily(family) ? mutation.get(family, qualifier) : new ArrayList<>();
     }
 
@@ -491,11 +494,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param family the column-family name
      * @param qualifier the column-qualifier name
      * @return {@code true} if at least one matching cell is present; {@code false} otherwise
+     * @throws NullPointerException if traversal of the requested family reaches a null cell in the mutable family-cell map
      * @see #has(String, String, long)
      * @see #has(String, String, Object)
      * @see #get(String, String)
      */
-    public boolean has(final String family, final String qualifier) {
+    public boolean has(final String family, final String qualifier) throws NullPointerException {
         final byte[] familyBytes = toFamilyQualifierBytes(family);
 
         return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier));
@@ -521,10 +525,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param qualifier the column-qualifier name
      * @param ts the cell timestamp, in milliseconds since the epoch
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
+     * @throws NullPointerException if traversal of the requested family reaches a null cell in the mutable family-cell map
      * @see #has(String, String)
      * @see #has(String, String, long, Object)
      */
-    public boolean has(final String family, final String qualifier, final long ts) {
+    public boolean has(final String family, final String qualifier, final long ts) throws NullPointerException {
         final byte[] familyBytes = toFamilyQualifierBytes(family);
 
         return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier), ts);
@@ -554,11 +559,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
-     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values)
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values), or traversal of the requested family reaches a null cell
+     * @throws RuntimeException if the family is present and converting {@code value} to bytes invokes a failing string conversion
      * @see #has(String, String)
      * @see #has(String, String, long, Object)
      */
-    public boolean has(final String family, final String qualifier, final Object value) {
+    public boolean has(final String family, final String qualifier, final Object value) throws NullPointerException, RuntimeException {
         final byte[] familyBytes = toFamilyQualifierBytes(family);
 
         return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier), HBaseExecutor.toValueBytes(value));
@@ -589,12 +595,13 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
-     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values)
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values), or traversal of the requested family reaches a null cell
+     * @throws RuntimeException if the family is present and converting {@code value} to bytes invokes a failing string conversion
      * @see #has(String, String)
      * @see #has(String, String, long)
      * @see #has(String, String, Object)
      */
-    public boolean has(final String family, final String qualifier, final long ts, final Object value) {
+    public boolean has(final String family, final String qualifier, final long ts, final Object value) throws NullPointerException, RuntimeException {
         final byte[] familyBytes = toFamilyQualifierBytes(family);
 
         return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier), ts, HBaseExecutor.toValueBytes(value));
@@ -606,10 +613,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param family the column-family name as a byte array
      * @param qualifier the column-qualifier name as a byte array
      * @return {@code true} if at least one matching cell is queued; {@code false} otherwise
+     * @throws NullPointerException if traversal of the requested family reaches a null cell in the mutable family-cell map
      * @see #has(String, String)
      * @see #has(byte[], byte[], long)
      */
-    public boolean has(final byte[] family, final byte[] qualifier) {
+    public boolean has(final byte[] family, final byte[] qualifier) throws NullPointerException {
         return containsFamily(family) && mutation.has(family, qualifier);
     }
 
@@ -620,10 +628,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param qualifier the column-qualifier name as a byte array
      * @param ts the cell timestamp, in milliseconds since the epoch
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
+     * @throws NullPointerException if traversal of the requested family reaches a null cell in the mutable family-cell map
      * @see #has(String, String, long)
      * @see #has(byte[], byte[], long, byte[])
      */
-    public boolean has(final byte[] family, final byte[] qualifier, final long ts) {
+    public boolean has(final byte[] family, final byte[] qualifier, final long ts) throws NullPointerException {
         return containsFamily(family) && mutation.has(family, qualifier, ts);
     }
 
@@ -635,11 +644,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param value the value to look for as a byte array
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
-     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values)
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values), or traversal of the requested family reaches a null cell
      * @see #has(String, String, Object)
      * @see #has(byte[], byte[], long, byte[])
      */
-    public boolean has(final byte[] family, final byte[] qualifier, final byte[] value) {
+    public boolean has(final byte[] family, final byte[] qualifier, final byte[] value) throws NullPointerException {
         return containsFamily(family) && mutation.has(family, qualifier, value);
     }
 
@@ -652,11 +661,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param value the value to look for as a byte array
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
-     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values)
+     *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values), or traversal of the requested family reaches a null cell
      * @see #has(String, String, long, Object)
      * @see #has(byte[], byte[])
      */
-    public boolean has(final byte[] family, final byte[] qualifier, final long ts, final byte[] value) {
+    public boolean has(final byte[] family, final byte[] qualifier, final long ts, final byte[] value) throws NullPointerException {
         return containsFamily(family) && mutation.has(family, qualifier, ts, value);
     }
 
@@ -680,10 +689,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns {@code true} when this mutation has no queued cells (and therefore would be a no-op
-     * if executed).
+     * Returns whether this mutation's family-to-cell map has no entries. This does not indicate
+     * that executing the mutation is a no-op: a {@link AnyDelete} with no column selections deletes
+     * the row, while HBase rejects empty puts, appends, and increments.
      *
-     * @return {@code true} if this mutation contains no cells; {@code false} otherwise
+     * @return {@code true} if the family-to-cell map is empty; {@code false} otherwise
      * @see #size()
      */
     public boolean isEmpty() {
@@ -700,14 +710,14 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #isEmpty()
      * @see #numFamilies()
      */
-    public int size() {
+    public int size() throws NullPointerException {
         return mutation.size();
     }
 
     /**
-     * Returns the number of distinct column families that contain at least one queued cell. For
-     * example, queueing cells in {@code "cf1"} and {@code "cf2"} yields {@code 2}, regardless of
-     * how many cells are in each.
+     * Returns the number of entries in the family-to-cell map. For example, queueing cells in
+     * {@code "cf1"} and {@code "cf2"} yields {@code 2}, regardless of how many cells are in each.
+     * An entry whose list was emptied through the live map still contributes to this count.
      *
      * @return the number of column families in this mutation
      * @see #size()
@@ -724,7 +734,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @throws NullPointerException if the family-cell map contains a null family or cell list, a cell list contains a null cell, or an attribute
      *         has a null name
      */
-    public long heapSize() {
+    public long heapSize() throws NullPointerException {
         return mutation.heapSize();
     }
 
@@ -741,7 +751,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      */
     @Override
     @Deprecated
-    public int compareTo(final Row other) {
+    public int compareTo(final Row other) throws NullPointerException {
         return mutation.compareTo(other);
     }
 }

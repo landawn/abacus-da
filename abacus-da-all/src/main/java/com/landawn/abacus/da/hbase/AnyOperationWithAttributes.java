@@ -84,7 +84,7 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * @param owa the HBase {@link OperationWithAttributes} to wrap; must not be {@code null}
      * @throws IllegalArgumentException if {@code owa} is {@code null}
      */
-    protected AnyOperationWithAttributes(final OperationWithAttributes owa) {
+    protected AnyOperationWithAttributes(final OperationWithAttributes owa) throws IllegalArgumentException {
         super(owa);
         this.owa = owa;
     }
@@ -144,10 +144,11 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      *              {@link OperationWithAttributes#setAttribute(String, byte[])} contract removes
      *              any attribute previously stored under {@code name}.
      * @return this instance, to allow fluent method chaining
+     * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
      * @see #getAttribute(String)
      * @see HBaseExecutor#toValueBytes(Object)
      */
-    public AOWA setAttribute(final String name, final Object value) {
+    public AOWA setAttribute(final String name, final Object value) throws RuntimeException {
         owa.setAttribute(name, HBaseExecutor.toValueBytes(value));
 
         return (AOWA) this;
@@ -195,7 +196,7 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * @throws IllegalArgumentException if {@code id} is {@code null}
      * @see #getId()
      */
-    public AOWA setId(final String id) {
+    public AOWA setId(final String id) throws IllegalArgumentException {
         N.checkArgNotNull(id, cs.id);
 
         owa.setId(id);
