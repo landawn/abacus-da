@@ -2307,6 +2307,46 @@ public class MongoCollectionExecutorTest extends TestBase {
         }
     }
 
+    // ========= sliceE (2026-09-27): groupBy on a dotted field into a scalar row type =========
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testGroupByDottedFieldIntoScalarTypeEmitsGroupKeys_sliceE() {
+        // Regression: groupBy("a.b", String.class) re-projected the key as {"a.b": "$_id"}, which MongoDB
+        // materializes as {a: {b: key}}; the scalar conversion then received the embedded document
+        // ({"b": "v1"} as JSON text, or NumberFormatException for Integer) instead of the key.
+        final List<List<? extends Bson>> pipelines = new java.util.ArrayList<>();
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            final List<? extends Bson> pipeline = invocation.getArgument(0);
+            pipelines.add(pipeline);
+
+            // Emit what MongoDB returns for the pipeline (live-verified): $group alone yields {_id: key},
+            // while a trailing $project {"a.b": "$_id", _id: 0} yields {a: {b: key}}.
+            final boolean groupsByNM = "$n.m".equals(((Document) pipeline.get(0)).get("$group", Document.class).get("_id"));
+            final Object key = groupsByNM ? (Object) 7 : "v1";
+            final Document row = pipeline.size() == 1 ? new Document("_id", key)
+                    : groupsByNM ? new Document("n", new Document("m", key)) : new Document("a", new Document("b", key));
+
+            final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+            final MongoCursor<Document> cursor = mock(MongoCursor.class);
+            when(aggregateIterable.iterator()).thenReturn(cursor);
+            when(cursor.hasNext()).thenReturn(true, false);
+            when(cursor.next()).thenReturn(row);
+            return aggregateIterable;
+        });
+
+        Assertions.assertEquals(Arrays.asList("v1"), executor.groupBy("a.b", String.class).toList());
+        Assertions.assertEquals(1, pipelines.get(pipelines.size() - 1).size());
+
+        Assertions.assertEquals(Arrays.asList(7), executor.groupBy("n.m", Integer.class).toList());
+        Assertions.assertEquals(1, pipelines.get(pipelines.size() - 1).size());
+
+        // Map/bean/Object results keep the named-field projection.
+        Assertions.assertEquals(Arrays.asList(new Document("a", new Document("b", "v1"))), executor.groupBy("a.b", java.util.Map.class).toList());
+        Assertions.assertEquals(2, pipelines.get(pipelines.size() - 1).size());
+    }
+
     public static class GroupRow {
         private String department;
         private int count;

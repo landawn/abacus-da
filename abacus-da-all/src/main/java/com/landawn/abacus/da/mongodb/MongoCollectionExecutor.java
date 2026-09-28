@@ -229,9 +229,10 @@ public final class MongoCollectionExecutor {
     /**
      * Returns an asynchronous version of this executor for non-blocking operations.
      *
-     * <p>The async executor provides the same functionality as this synchronous executor but
-     * returns {@code ContinuableFuture} instances for all operations, enabling non-blocking
-     * execution and reactive programming patterns.</p>
+     * <p>The async executor mirrors this synchronous executor's operations but returns
+     * {@code ContinuableFuture} instances, enabling non-blocking execution and reactive programming
+     * patterns. A few sync-only conveniences (the whole-collection {@code stream()}/{@code stream(Class)}
+     * and the typed {@code groupBy}/{@code groupByAndCount} overloads) have no async counterpart.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -314,7 +315,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * boolean hasActiveUsers = executor.exists(Filters.eq("status", "active"));                  // true if at least one match
-     * boolean hasRecentUsers = executor.exists(Filters.gte("createdAt", Dates.parseDate("2023-01-01"))); // true if any match
+     * boolean hasRecentUsers = executor.exists(Filters.gte("createdAt", Dates.parseToJUDate("2023-01-01"))); // true if any match
      * executor.exists((Bson) null);                                                              // throws IllegalArgumentException (filter must not be null)
      * }</pre>
      *
@@ -1797,7 +1798,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<String> email = executor.queryForString("email", Filters.eq("userId", "u1")); // present (value may be null) if a doc matched; Nullable.empty() if none
-     * String userEmail = email.orElse("");
+     * String userEmail = email.orElseIfNull(""); // "" if no doc matched OR the matched doc's email is missing/null (orElse("") would return null for the latter)
      * }</pre>
      *
      * @param propName the name of the field to retrieve the string value from
@@ -4054,7 +4055,8 @@ public final class MongoCollectionExecutor {
      * @param replacement can be Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
-     *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the converted
+     *         replacement has a top-level field name starting with {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -4085,7 +4087,8 @@ public final class MongoCollectionExecutor {
      * @param replacement can be Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting
+     *         with {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -4115,7 +4118,8 @@ public final class MongoCollectionExecutor {
      * @param replacement can be Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting
+     *         with {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -4145,7 +4149,8 @@ public final class MongoCollectionExecutor {
      * @param options additional replace options (null uses defaults)
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting
+     *         with {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -4799,7 +4804,8 @@ public final class MongoCollectionExecutor {
      * @param replacement the replacement document
      * @return the matched document (pre-replacement by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting
+     *         with {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -4826,8 +4832,9 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
-     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to
-     *         {@code rowType}
+     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the converted replacement has a
+     *         top-level field name starting with {@code $} (rejected by the driver before the command is sent), or if the returned document cannot
+     *         be converted to {@code rowType}
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -4859,7 +4866,8 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the document (original or new based on options), or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting
+     *         with {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -4896,8 +4904,9 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
-     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to
-     *         {@code rowType}
+     *         document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the converted replacement has a
+     *         top-level field name starting with {@code $} (rejected by the driver before the command is sent), or if the returned document cannot
+     *         be converted to {@code rowType}
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -5427,7 +5436,10 @@ public final class MongoCollectionExecutor {
             group.append(_COUNT, new Document(_$SUM, 1));
         }
 
-        if (Document.class.equals(rowType)) {
+        // A scalar rowType reads the key straight from the {_id: key} rows (readRow uses an _id-only row's id).
+        // Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName ("a.b" -> {a: {b: key}}), and the
+        // scalar conversion would then receive the embedded document instead of the key.
+        if (Document.class.equals(rowType) || (!count && !rowType.isAssignableFrom(Document.class) && isSingleValueType(rowType))) {
             return N.asList(new Document(_$GROUP, group));
         }
 

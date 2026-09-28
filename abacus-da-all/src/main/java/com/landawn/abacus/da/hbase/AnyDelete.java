@@ -108,9 +108,9 @@ import com.landawn.abacus.util.N;
  * <h3>Deletion Strategies:</h3>
  * <ul>
  * <li><strong>{@link #addColumn(String, String)}</strong>: deletes a single version of a column.
- *     When no explicit timestamp is supplied, the server uses {@code LATEST_TIMESTAMP}, which
- *     triggers a server-side get to resolve the latest version's stamp before writing the
- *     tombstone (expensive).</li>
+ *     When no explicit timestamp is supplied (neither to this call nor to the factory), the
+ *     delete uses {@code LATEST_TIMESTAMP}, which triggers a server-side get to resolve the latest
+ *     version's stamp before writing the tombstone (expensive).</li>
  * <li><strong>{@link #addColumns(String, String)}</strong>: deletes all versions of a column up
  *     to {@code LATEST_TIMESTAMP} (or the supplied timestamp). No server-side get is required.</li>
  * <li><strong>{@link #addFamily(String)}</strong>: deletes all versions of all columns in the
@@ -251,7 +251,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param deleteToCopy the HBase Delete object to copy
      * @throws IllegalArgumentException if {@code deleteToCopy} is {@code null}
-     * @throws NullPointerException if {@code deleteToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code deleteToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      */
     AnyDelete(final Delete deleteToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Delete(N.checkArgNotNull(deleteToCopy, cs.deleteToCopy)));
@@ -492,7 +493,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param deleteToCopy the HBase Delete object to copy; must not be null
      * @return a new AnyDelete instance backed by a fresh Delete copied from {@code deleteToCopy}
      * @throws IllegalArgumentException if {@code deleteToCopy} is {@code null}
-     * @throws NullPointerException if {@code deleteToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code deleteToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      * @see Delete
      * @see #val()
      */

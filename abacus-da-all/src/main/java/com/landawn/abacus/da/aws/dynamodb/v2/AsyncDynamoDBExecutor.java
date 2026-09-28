@@ -1865,9 +1865,10 @@ public final class AsyncDynamoDBExecutor {
      * Dataset ds = future.get();   // ds.size() == number of matching rows; empty Dataset when none match
      *
      * future.thenAccept(dataset -> {
-     *         // Group sales by product and sum amounts
+     *         // Group sales by product and sum amounts. Map rows hold numeric (N) attributes as their
+     *         // raw number String, so parse them (a (Number) cast would throw ClassCastException)
      *         Dataset grouped = dataset.groupBy("productId", "amount", "totalAmount",
-     *             Collectors.summingDouble(v -> ((Number) v).doubleValue()));
+     *             Collectors.summingDouble(v -> Double.parseDouble((String) v)));
      *
      *         System.out.println("Sales by product:");
      *         grouped.println();
@@ -2841,7 +2842,7 @@ public final class AsyncDynamoDBExecutor {
          * <p><b>Batch Limits and Performance:</b></p>
          * <ul>
          * <li>Maximum 100 items per batch request</li>
-         * <li>Maximum 16 MB total request size</li>
+         * <li>Maximum 16 MB total response size</li>
          * <li>Single network round-trip for multiple items</li>
          * <li>Eventually consistent reads by default</li>
          * </ul>
@@ -3463,6 +3464,7 @@ public final class AsyncDynamoDBExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
+         *     .indexName("status-index")   // a key condition may only use key attributes, so query a GSI keyed on status
          *     .keyConditionExpression("#status = :status")
          *     .expressionAttributeNames(Map.of("#status", "status"))
          *     .expressionAttributeValues(Map.of(
@@ -3610,7 +3612,7 @@ public final class AsyncDynamoDBExecutor {
         }
 
         /**
-         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         * Builds the primary-key attribute map of {@code entity}, validating every key value.
          *
          * @throws IllegalArgumentException if {@code entity} is null or one of its primary-key values is missing or is not a supported nonempty
          *         scalar value
@@ -3650,7 +3652,7 @@ public final class AsyncDynamoDBExecutor {
         }
 
         /**
-         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         * Builds the batch-get request items (this mapper's table mapped to the keys of {@code entities}).
          *
          * @throws IllegalArgumentException if {@code entities} is null, contains a null entity, or a primary-key value is missing or is not a
          *         supported nonempty scalar value
@@ -3669,10 +3671,10 @@ public final class AsyncDynamoDBExecutor {
         }
 
         /**
-         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         * Builds the batch-write request items holding one put request per entity, validating each entity's key first.
          *
-         * @throws IllegalArgumentException if {@code entities} is null, contains a null entity, or a primary-key value is missing or is not a
-         *         supported nonempty scalar value
+         * @throws IllegalArgumentException if {@code entities} is null, contains a null entity, a primary-key value is missing or is not a
+         *         supported nonempty scalar value, or a property value is {@code Float.NaN}, {@code Double.NaN}, or a floating-point infinity
          * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
          */
         private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities)
@@ -3690,7 +3692,7 @@ public final class AsyncDynamoDBExecutor {
         }
 
         /**
-         * Builds the mapped DynamoDB request attributes after checking the supplied entities.
+         * Builds the batch-write request items holding one delete request (by primary key) per entity.
          *
          * @throws IllegalArgumentException if {@code entities} is null, contains a null entity, or a primary-key value is missing or is not a
          *         supported nonempty scalar value

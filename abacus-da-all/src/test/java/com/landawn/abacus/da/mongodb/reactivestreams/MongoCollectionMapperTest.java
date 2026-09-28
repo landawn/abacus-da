@@ -1182,6 +1182,37 @@ public class MongoCollectionMapperTest extends TestBase {
         verify(mockExecutor).mapReduce(mapFunction, reduceFunction, TestEntity.class);
     }
 
+    // ---- 2026-09-27 review (slice I) ----
+
+    @Test
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public void testDistinctDottedFieldIntoScalarRowTypeSendsGroupOnlyPipelineAndEmitsValues() {
+        // A single-value mapper type must read each distinct value from the {_id: value} group rows. A trailing
+        // {$project: {"address.city": "$_id"}} makes the server nest the value ({address: {city: v}}), which a
+        // String mapper then emitted as '{"city": "Paris"}' and an Integer mapper failed with NumberFormatException.
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> collection = mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+        final com.mongodb.reactivestreams.client.AggregatePublisher<Document> publisher = mock(com.mongodb.reactivestreams.client.AggregatePublisher.class,
+                org.mockito.Mockito.RETURNS_SELF);
+        when(collection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenReturn(publisher);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            Flux.just(new Document("_id", "Paris"), new Document("_id", "Rome")).subscribe(invocation.<org.reactivestreams.Subscriber<? super Document>> getArgument(0));
+            return null;
+        }).when(publisher).subscribe(org.mockito.ArgumentMatchers.any());
+
+        final MongoCollectionMapper<String> stringMapper = new MongoCollectionMapper<>(new MongoCollectionExecutor(collection), String.class);
+        final Bson filter = new Document("active", true);
+
+        StepVerifier.create(stringMapper.distinct("address.city")).expectNext("Paris", "Rome").verifyComplete();
+        StepVerifier.create(stringMapper.distinct("address.city", filter)).expectNext("Paris", "Rome").verifyComplete();
+
+        final org.mockito.ArgumentCaptor<List> pipelineCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(collection, org.mockito.Mockito.times(2)).aggregate(pipelineCaptor.capture(), org.mockito.ArgumentMatchers.eq(Document.class));
+        assertEquals(Arrays.asList(new Document("$group", new Document("_id", "$address.city"))), pipelineCaptor.getAllValues().get(0));
+        final List<?> filtered = pipelineCaptor.getAllValues().get(1);
+        assertEquals(2, filtered.size());
+        assertEquals(new Document("$group", new Document("_id", "$address.city")), filtered.get(1));
+    }
+
     // Helper class for testing
     static class TestEntity {
         private String id;

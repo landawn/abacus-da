@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -766,6 +767,9 @@ public final class CqlMapper {
      *
      * @param file the target file where the XML will be written
      * @throws IllegalArgumentException if {@code file} is null
+     * @throws IllegalStateException if a stored id, CQL statement or attribute value contains a character that is not
+     *         allowed in XML 1.0 (such as most control characters below U+0020); this is checked before the file is
+     *         opened, so an existing file is left unchanged
      * @throws UncheckedIOException if the parent directory cannot be created, the file cannot be opened for writing,
      *         or flushing or closing the file fails
      * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
@@ -774,8 +778,11 @@ public final class CqlMapper {
      * @see #saveTo(OutputStream)
      * @see #loadFrom(String)
      */
-    public void saveTo(final File file) throws IllegalArgumentException, UncheckedIOException, RuntimeException, DOMException {
+    public void saveTo(final File file) throws IllegalArgumentException, IllegalStateException, UncheckedIOException, RuntimeException, DOMException {
         N.checkArgNotNull(file, cs.file);
+        // Validate before the FileOutputStream truncates an existing file: the serializer only fails on an invalid
+        // XML character midway through writing, which would leave the previous file destroyed.
+        checkXmlContent();
 
         final File parentFile = file.getParentFile();
 
@@ -812,6 +819,8 @@ public final class CqlMapper {
      *
      * @param os the output stream to write to (not closed by this method)
      * @throws IllegalArgumentException if {@code os} is null
+     * @throws IllegalStateException if a stored id, CQL statement or attribute value contains a character that is not
+     *         allowed in XML 1.0 (such as most control characters below U+0020); this is checked before anything is written
      * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
      *         and written to the stream
      * @throws DOMException if a stored attribute name is not a valid XML name
@@ -819,8 +828,9 @@ public final class CqlMapper {
      * @see #saveTo(File)
      * @see #loadFrom(String)
      */
-    public void saveTo(final OutputStream os) throws IllegalArgumentException, RuntimeException, DOMException, UncheckedIOException {
+    public void saveTo(final OutputStream os) throws IllegalArgumentException, IllegalStateException, RuntimeException, DOMException, UncheckedIOException {
         N.checkArgNotNull(os, cs.os);
+        checkXmlContent();
 
         try {
             final Document doc = XmlUtil.createDOMParser(true, true).newDocument();
@@ -860,6 +870,49 @@ public final class CqlMapper {
             os.flush();
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Verifies that every id, CQL body and emitted attribute value consists only of characters allowed in XML 1.0,
+     * mirroring {@code SqlMapper.saveTo}. Such text could not be written (the serializer fails midway) nor read back.
+     *
+     * @throws IllegalStateException if a stored id, CQL statement or attribute value contains a character that is not
+     *         allowed in XML 1.0
+     */
+    private void checkXmlContent() throws IllegalStateException {
+        for (final Map.Entry<String, ParsedCql> entry : cqlMap.entrySet()) {
+            final String id = entry.getKey();
+            checkXmlCharacters(id, "CQL identifier");
+            checkXmlCharacters(entry.getValue().originalCql(), "CQL body for '" + id + "'");
+
+            final Map<String, String> attrs = attrsMap.get(id);
+
+            if (attrs != null) {
+                for (final Map.Entry<String, String> attr : attrs.entrySet()) {
+                    if (!ID.equals(attr.getKey())) {
+                        checkXmlCharacters(attr.getValue(), "Attribute '" + attr.getKey() + "' for '" + id + "'");
+                    }
+                }
+            }
+        }
+    }
+
+    private static void checkXmlCharacters(final String value, final String description) throws IllegalStateException {
+        if (value == null) {
+            return;
+        }
+
+        for (int index = 0, len = value.length(); index < len;) {
+            final int codePoint = value.codePointAt(index);
+
+            if (!(codePoint == '\t' || codePoint == '\n' || codePoint == '\r' || (codePoint >= 0x20 && codePoint <= 0xD7FF)
+                    || (codePoint >= 0xE000 && codePoint <= 0xFFFD) || codePoint >= 0x10000)) {
+                throw new IllegalStateException(description + " contains an invalid XML 1.0 character at index " + index + ": U+"
+                        + Integer.toHexString(codePoint).toUpperCase(Locale.ROOT));
+            }
+
+            index += Character.charCount(codePoint);
         }
     }
 

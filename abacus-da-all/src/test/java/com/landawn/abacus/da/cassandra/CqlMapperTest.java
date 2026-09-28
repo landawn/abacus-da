@@ -383,4 +383,43 @@ public class CqlMapperTest extends TestBase {
         assertEquals("cql", CqlMapper.CQL);
         assertEquals("id", CqlMapper.ID);
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // saveTo: invalid XML 1.0 characters are rejected before anything is written.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testSaveToFile_InvalidXmlCharacter_throwsAndKeepsExistingFile() throws Exception {
+        // Regression: the FileOutputStream truncated the existing file first and the XML serializer only failed on
+        // the U+0001 midway through, leaving a 0-byte file behind an opaque UncheckedException(TransformerException).
+        final File file = File.createTempFile("cql-mapper-", ".xml");
+        file.deleteOnExit();
+        final byte[] original = "<cqlMapper><cql id=\"good\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8);
+        java.nio.file.Files.write(file.toPath(), original);
+
+        final CqlMapper m = new CqlMapper();
+        m.add("bad", "SELECT * FROM t WHERE a = 'x\u0001y'");
+
+        final IllegalStateException ex = assertThrows(IllegalStateException.class, () -> m.saveTo(file));
+        assertTrue(ex.getMessage().contains("U+1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("'bad'"), ex.getMessage());
+        assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void testSaveToStream_InvalidXmlCharacterInIdOrAttribute_throwsBeforeWriting() {
+        final java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
+
+        final CqlMapper badId = new CqlMapper();
+        badId.add("q\u0003", "SELECT * FROM t");
+        assertThrows(IllegalStateException.class, () -> badId.saveTo(os));
+
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("note", "bad\u0002");
+        final CqlMapper badAttr = new CqlMapper();
+        badAttr.add("q", "SELECT * FROM t", attrs);
+        assertThrows(IllegalStateException.class, () -> badAttr.saveTo(os));
+
+        assertEquals(0, os.size());
+    }
 }

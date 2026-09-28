@@ -844,6 +844,28 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
+     * Emits the leading statement keyword on first use, as the parent builder does, but rejects a column DELETE
+     * (started by {@code delete(...)}) whose {@code from(...)} has not been called yet.
+     *
+     * @param setForUpdate see the parent builder
+     * @throws IllegalStateException if this builder is closed, a DELETE statement has no table yet, or the parent
+     *         builder rejects the incomplete statement
+     */
+    @Override
+    protected void init(final boolean setForUpdate) throws IllegalStateException {
+        assertNotClosed();
+
+        // The parent renders a not-yet-started DELETE as "DELETE FROM " + table. A delete(columns) builder has no
+        // table until from(...) renders "DELETE <columns> FROM <table>", so where()/build() before from() would
+        // otherwise silently drop the columns and emit "DELETE FROM null ...".
+        if (_op == OperationType.DELETE && _sb.isEmpty() && Strings.isEmpty(_tableName)) {
+            throw new IllegalStateException("from() must be called to specify the table before completing a DELETE statement");
+        }
+
+        super.init(setForUpdate);
+    }
+
+    /**
      * Inlines {@code propValue} as a CQL literal. A {@code String} is quoted with CQL's doubled-quote escaping, a
      * {@link UUID} is rendered as a bare (unquoted) {@code uuid}/{@code timeuuid} literal; every other value is
      * rendered by the parent builder.
@@ -1028,7 +1050,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalStateException if this builder is closed, this builder is not an UPDATE or DELETE statement, or if
      *         the table or required {@code where(...)} clause has not yet been supplied, an IF clause already exists,
      *         or USING TIMESTAMP was specified
-     * @throws IllegalArgumentException if {@code expr} is {@code null}, empty, or blank
+     * @throws IllegalArgumentException if {@code expr} is {@code null}, empty, or blank, or contains nothing but comments
+     *         (the builder is then left unchanged)
      * @see #onlyIf(Condition)
      */
     public CqlBuilder onlyIf(final String expr) throws IllegalStateException, IllegalArgumentException {
@@ -1043,14 +1066,16 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkIfClauseNotSpecified();
         N.checkArgument(Strings.isNotBlank(expr), "'expr' can't be null or blank");
 
-        init(true);
+        // Atomic like onlyIf(Condition): appendStringExpr can still reject the expression (e.g. a comment-only one,
+        // since abacus-query 4.9.4) after " IF " was emitted, which left a dangling "... IF " behind.
+        return mutateAtomically(() -> {
+            init(true);
 
-        _sb.append(_SPACE_IF_SPACE);
+            _sb.append(_SPACE_IF_SPACE);
 
-        appendStringExpr(expr, false);
-        _ifClauseSpecified = true;
-
-        return this;
+            appendStringExpr(expr, false);
+            _ifClauseSpecified = true;
+        });
     }
 
     /**
@@ -1316,8 +1341,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param excludedPropNames properties to exclude from the update (may be {@code null})
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed or is not an UPDATE statement
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, a Collection or array, a blank String, or a
-     *         bean with no updatable (non-key) property left after the exclusions are applied
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, a Collection or array, a blank String, any
+     *         other object that is neither a Map nor an entity bean, or a bean with no updatable (non-key) property left
+     *         after the exclusions are applied
      */
     @Override
     public CqlBuilder set(final Object entity, final Set<String> excludedPropNames) throws IllegalStateException, IllegalArgumentException {
@@ -1390,7 +1416,47 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     public CqlBuilder from(final String expr) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
         checkCqlTableReference(expr, cs.expr);
+
+        if (_op == OperationType.DELETE) {
+            // Since abacus-query 4.9.4 every parent from(...) overload rejects a non-SELECT operation (via a private
+            // check this class cannot relax), so the CQL column DELETE ("DELETE c1, c2 FROM t") is rendered here.
+            // It must not be routed through the parent as a QUERY: that would render SELECT-style "AS" aliases.
+            final String tableName = expr.trim();
+
+            return mutateAtomically(() -> appendDeleteColumnsAndFromClause(tableName));
+        }
+
         return super.from(expr);
+    }
+
+    /**
+     * Renders {@code DELETE <columns> FROM <table>} for a column DELETE, mirroring the parent builder's SELECT-list
+     * rendering but without SELECT aliases. Must run inside {@code mutateAtomically} so a rejected column name leaves
+     * no partial statement behind.
+     *
+     * @param tableName the single, already validated and trimmed table reference
+     * @throws IllegalArgumentException if a column name staged by {@code delete(...)} is blank or contains a CQL comment token
+     */
+    private void appendDeleteColumnsAndFromClause(final String tableName) throws IllegalArgumentException {
+        appendOperationBeforeFrom(tableName);
+
+        if (N.notEmpty(_propOrColumnNames)) {
+            int i = 0;
+
+            for (final String columnName : _propOrColumnNames) {
+                if (i++ > 0) {
+                    _sb.append(_COMMA_SPACE);
+                }
+
+                // isForSelect = false: DELETE columns must not carry the SELECT-style "AS" aliases.
+                appendColumnName(_entityClass, _entityInfo, _propColumnNameMap, _tableAlias, columnName, null, false, null, false, true);
+            }
+        }
+
+        _sb.append(_SPACE_FROM_SPACE);
+        _sb.append(tableName);
+
+        _hasFromBeenSet = true;
     }
 
     /**
@@ -1491,9 +1557,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             throw new IllegalArgumentException("Cassandra CQL does not support table aliases: " + alias);
         }
 
-        setEntityClass(entityClass);
-
-        return from(getTableName(entityClass, _namingPolicy));
+        // Atomic so that a rejected FROM (e.g. an invalid staged column) does not leave the entity mapping installed.
+        return mutateAtomically(() -> {
+            setEntityClass(entityClass);
+            from(getTableName(entityClass, _namingPolicy));
+        });
     }
 
     /**
@@ -1517,11 +1585,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkCanAppendCqlFrom();
         checkCqlTableReference(expr, cs.expr);
 
-        if (entityClass != null) {
-            setEntityClass(entityClass);
-        }
+        // Atomic so that a rejected FROM (e.g. an invalid staged column) does not leave the entity mapping installed.
+        return mutateAtomically(() -> {
+            if (entityClass != null) {
+                setEntityClass(entityClass);
+            }
 
-        return from(expr);
+            from(expr);
+        });
     }
 
     /**
@@ -1544,9 +1615,38 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
+     * Compatibility override of the parent SQL builder's protected entity-class-plus-tables hook. Cassandra CQL
+     * permits exactly one table in a FROM clause, so {@code tableNames} must contain one element; installing the
+     * entity mapping and rendering the FROM clause are atomic.
+     *
+     * <p>Overridden because the parent version accepts only SELECT statements, while CQL also supports a column list
+     * on DELETE ({@code DELETE col1, col2 FROM tbl}).</p>
+     *
+     * @param entityClass the entity class for property mapping
+     * @param tableNames a collection containing exactly one table name
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
+     *         been set for a SELECT, or if {@code from(...)} was already called
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null}, the collection does not contain exactly one
+     *         CQL table reference, or a column name staged by {@code select(...)} or {@code delete(...)} is blank or
+     *         contains a CQL comment token
+     */
+    @Override
+    protected CqlBuilder from(final Class<?> entityClass, final Collection<String> tableNames) throws IllegalStateException, IllegalArgumentException {
+        checkCanAppendCqlFrom();
+        N.checkArgNotNull(entityClass, cs.entityClass);
+
+        return mutateAtomically(() -> {
+            setEntityClass(entityClass);
+            from(tableNames);
+        });
+    }
+
+    /**
      * Validates the separate primary-table and complete-FROM arguments of the parent SQL builder's
      * deprecated two-string compatibility hook. The parent's public {@code from(...)} overloads no longer
-     * route through this hook; the check covers direct calls made by subclasses.
+     * route through this hook; the check covers direct calls made by subclasses. Because both arguments must name
+     * the same table, the call is then rendered exactly like {@link #from(String) from(tableName)}.
      *
      * @param tableName the primary table used for column resolution
      * @param fromClause the complete text to emit after FROM
@@ -1555,7 +1655,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException if either argument is not the same single CQL table reference, or a column name
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
-    @SuppressWarnings("deprecation")
     @Override
     protected CqlBuilder from(final String tableName, final String fromClause) throws IllegalStateException, IllegalArgumentException {
         checkCanAppendCqlFrom();
@@ -1566,7 +1665,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             throw new IllegalArgumentException("Cassandra CQL FROM requires the primary table and complete FROM clause to identify the same single table");
         }
 
-        return super.from(tableName, fromClause);
+        // Both arguments name the same table, so this is exactly from(tableName); routed there (not to the parent
+        // hook, which rejects DELETE since abacus-query 4.9.4) so that a column DELETE is supported here too.
+        return from(tableName);
     }
 
     /**
@@ -2471,15 +2572,16 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * <p>This method creates an UPDATE statement excluding specified properties in addition to
          * those automatically excluded by annotations (@ReadOnly, @NonUpdatable) and the primary-key
          * properties (via {@code @Id} / registered keys), because Cassandra rejects SET on partition/clustering
-         * key columns. This is useful for partial updates or when certain fields should never be updated.</p>
+         * key columns. This is useful for partial updates or when certain fields should never be updated.
+         * The exclusions shape the implicit SET list only; an explicit {@code set(...)} call replaces that list.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * Set<String> excluded = N.asSet("createdDate", "createdBy");
+         * Set<String> excluded = N.asSet("createdDate");
          * String cql = PSC.update(Account.class, excluded)
-         *                 .set(account)
-         *                 .where(Filters.eq("id", account.getId()))
+         *                 .where(Filters.eq("id", 1))
          *                 .build().query();
+         * // Output: UPDATE account SET first_name = ?, last_name = ?, email = ? WHERE id = ?
          * }</pre>
          *
          * @param entityClass the entity class

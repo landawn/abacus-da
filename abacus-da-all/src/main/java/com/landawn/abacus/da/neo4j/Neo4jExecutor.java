@@ -2358,7 +2358,8 @@ public final class Neo4jExecutor {
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
      *               entities to delete; must not be {@code null}
-     * @throws IllegalArgumentException if {@code object} is {@code null}
+     * @throws IllegalArgumentException if {@code object} is {@code null}; also thrown by Neo4j-OGM if {@code object} (or one of its
+     *         elements) is not an instance of a mapped entity class
      * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #deleteAll(Class)
      */
@@ -2381,6 +2382,8 @@ public final class Neo4jExecutor {
      * <p>
      * Delegates to {@link Session#deleteAll(Class)}. <strong>WARNING:</strong> this is a destructive
      * bulk operation that cannot be undone; verify the target class before invoking it.
+     * If {@code targetClass} is not a mapped entity class (or no label can be determined for it),
+     * Neo4j-OGM logs a warning and deletes nothing; no exception is thrown.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2757,6 +2760,10 @@ public final class Neo4jExecutor {
      * field that OGM has already populated (either because it was loaded from the database or
      * because a previous {@code save} assigned it). Transient objects that have never been saved
      * or that are not mapped at all return {@code null}.
+     * <p>
+     * Side effect: for a mapped entity whose native-ID field is still {@code null}, Neo4j-OGM writes a
+     * temporary negative placeholder ID into that field (as {@code save} does for new entities) and this
+     * method returns {@code null}; a later {@code save} still creates a new node and replaces the placeholder.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2764,7 +2771,7 @@ public final class Neo4jExecutor {
      * Long graphId = executor.getGraphId(person); // native graph ID; may differ from a primary-index lookup value
      *
      * Person newPerson = new Person("John Doe");
-     * executor.getGraphId(newPerson);                // null - not yet saved
+     * executor.getGraphId(newPerson);                // null - not yet saved (newPerson.getId() is now a negative placeholder)
      * executor.save(newPerson);                      // post-state: newPerson now has a generated id
      * Long savedId = executor.getGraphId(newPerson); // assigned by Neo4j
      * }</pre>

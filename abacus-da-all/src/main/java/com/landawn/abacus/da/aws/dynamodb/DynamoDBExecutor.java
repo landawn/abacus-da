@@ -222,7 +222,8 @@ public final class DynamoDBExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AmazonDynamoDBClient dynamoClient = AmazonDynamoDBClientBuilder.standard()
+     * // build() is declared to return the AmazonDynamoDB interface; the instance it creates is an AmazonDynamoDBClient
+     * AmazonDynamoDBClient dynamoClient = (AmazonDynamoDBClient) AmazonDynamoDBClientBuilder.standard()
      *     .withCredentials(credentialsProvider)
      *     .withRegion(Regions.US_EAST_1)
      *     .build();
@@ -993,7 +994,10 @@ public final class DynamoDBExecutor {
      * {@code NS}, {@code BS}, {@code L}, or {@code M} (set / list / map) AttributeValues — instead
      * collections and maps are serialised to their string form via {@code S}. If you need typed
      * list/map AttributeValues, build them manually using {@code new AttributeValue().withL(...)} or
-     * {@code .withM(...)}.</p>
+     * {@code .withM(...)}. In that string form a nested {@link ByteBuffer} (a collection element, map value,
+     * or bean property) is written as an empty string, so its bytes are lost; build a {@code BS}/{@code L}
+     * value instead. A {@code byte[]} is likewise not binary here: it is written as {@code S} text such as
+     * {@code "[1, 2, 3]"}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1513,9 +1517,10 @@ public final class DynamoDBExecutor {
      * scalars ({@code S}, {@code N}, {@code BOOL}, {@code B}, {@code NULL}), the typed sets
      * ({@code SS}, {@code NS}, {@code BS}), and nested {@code L}/{@code M} structures. Note that
      * DynamoDB {@code N} values arrive as Strings and are coerced to the property's declared type via
-     * {@link N#convert(Object, Class)}; a {@code B} (binary) value is copied into a {@code byte[]} property.
-     * Native binary collection elements, array elements, and map values are converted directly when
-     * declared as {@code byte[]} or {@link ByteBuffer}, without consuming source buffers. Containers
+     * {@link N#convert(Object, Class)}; a {@code B} (binary) value is copied into a {@code byte[]} property; and the JSON
+     * text that {@link #toItem(Object)} writes (as an {@code S} value) for a collection, map, or object-array property is
+     * parsed back into that property's declared type. Native binary collection elements, array elements, and map
+     * values are converted directly when declared as {@code byte[]} or {@link ByteBuffer}, without consuming source buffers. Containers
      * with {@code Object}-typed elements or values retain their natural Java representations.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1612,7 +1617,25 @@ public final class DynamoDBExecutor {
             return bytes;
         }
 
+        // toAttributeValue writes an object array as its JSON text (an S attribute), but N.convert(String, X[].class) wraps the
+        // whole text as ONE element whenever String is assignable to the component type (String[], CharSequence[], Object[]):
+        // ["a", "b"] came back as {"[\"a\", \"b\"]"}. Parse JSON-array text with the array Type's codec (the inverse of stringOf);
+        // any other string keeps the N.convert behavior.
+        if (value instanceof String && targetClass.isArray() && targetClass.getComponentType().isAssignableFrom(String.class)
+                && isJsonArrayText((String) value)) {
+            return N.typeOf(targetClass).valueOf((String) value);
+        }
+
         return N.convert(value, targetClass);
+    }
+
+    /**
+     * Returns whether {@code text}, ignoring surrounding whitespace, is bracketed like a JSON array.
+     */
+    private static boolean isJsonArrayText(final String text) {
+        final String trimmed = text.strip();
+
+        return trimmed.length() >= 2 && trimmed.charAt(0) == '[' && trimmed.charAt(trimmed.length() - 1) == ']';
     }
 
     /**
@@ -3323,8 +3346,9 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param queryRequest the query parameters. Must not be {@code null}.
-     * @param targetClass the class to convert retrieved items to; if {@code null} or a {@link Map} type,
-     *                    results are extracted as raw attribute maps
+     * @param targetClass the class to convert retrieved items to; if {@code null} or a {@link Map} type, each
+     *                    attribute becomes a column whose values are converted as by {@link #toMap(Map)}
+     *                    (for example, numbers are materialized as Strings)
      * @return a {@link Dataset} containing query results in tabular format; all pages are
      *         materialized only when the request has no exclusive start key
      * @throws IllegalArgumentException if queryRequest is null
@@ -3605,7 +3629,8 @@ public final class DynamoDBExecutor {
             throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
 
-        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).withScanFilter(scanFilter));
+        return scan(
+                new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).withScanFilter(scanFilter));
     }
 
     /**
@@ -3764,7 +3789,9 @@ public final class DynamoDBExecutor {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).withScanFilter(scanFilter), targetClass);
+        return scan(
+                new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).withScanFilter(scanFilter),
+                targetClass);
     }
 
     /**

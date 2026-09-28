@@ -758,8 +758,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <ul>
      *   <li>{@link Row} — rows are returned unchanged (the existing list from
      *       {@link ResultSet#all()} is returned)</li>
-     *   <li>An array class — each row becomes an array of column values, recursively
-     *       flattening nested {@link Row}s</li>
+     *   <li>An array class — each row becomes an array of column values, each converted to the
+     *       array's component type (e.g. {@code String[]}), recursively flattening nested {@link Row}s</li>
      *   <li>A {@link Collection} class — each row becomes a new collection of column values</li>
      *   <li>A {@link Map} class — each row becomes a new map keyed by column name</li>
      *   <li>A JavaBean class — each row is mapped via {@link #toEntity(Row, Class)}</li>
@@ -1027,6 +1027,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
+     * Converts a column value for storage in an array row whose component type is {@code componentType}. A typed array
+     * (e.g. {@code String[]}) otherwise rejects a driver value of another type with {@link ArrayStoreException}.
+     * @throws RuntimeException if {@code value} cannot be converted to {@code componentType}
+     */
+    private static Object toArrayElement(final Object value, final Class<?> componentType) throws RuntimeException {
+        return value == null || componentType.isInstance(value) ? value : convertValue(value, componentType);
+    }
+
+    /**
      * Reads a single {@link Row} and converts it to {@code rowClass}.
      *
      * <p>Internal dispatcher used by the public conversion helpers. Behavior by
@@ -1071,7 +1080,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 if (value instanceof Row) {
                     a[i] = readRow((Row) value, Object[].class);
                 } else {
-                    a[i] = value;
+                    a[i] = toArrayElement(value, a.getClass().getComponentType());
                 }
             }
 
@@ -1143,7 +1152,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     if (value instanceof Row) {
                         a[i] = readRow((Row) value, Object[].class);
                     } else {
-                        a[i] = value;
+                        a[i] = toArrayElement(value, a.getClass().getComponentType());
                     }
                 }
 
@@ -1534,8 +1543,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Executes a CQL query without parameters and returns the raw ResultSet.
      *
      * <p>This method prepares and executes a CQL statement, applying any configured
-     * statement settings. The query is prepared on each path; for CQL text no longer than
-     * {@code POOLABLE_LENGTH} characters the {@code PreparedStatement} is cached and reused.
+     * statement settings. CQL text no longer than {@code POOLABLE_LENGTH} characters is prepared
+     * once and its {@code PreparedStatement} is cached and reused; longer text is prepared on every call.
      * A fresh {@code BoundStatement} is created for every execution.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1714,8 +1723,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * BatchStatement batch = new BatchStatement(BatchStatement.Type.LOGGED);
      * batch.add(new SimpleStatement("INSERT INTO users (id, name) VALUES (?, ?)", uuid1, "Alice"));
      * batch.add(new SimpleStatement("INSERT INTO users (id, name) VALUES (?, ?)", uuid2, "Bob"));
-     * batch.add(new SimpleStatement("UPDATE user_count SET total = total + 2"));
-     * executor.execute(batch);
+     * batch.add(new SimpleStatement("UPDATE users SET email = ? WHERE id = ?", "alice@example.com", uuid1));
+     * executor.execute(batch);   // counter updates cannot share a batch with these writes: use BatchStatement.Type.COUNTER
      *
      * // Execute with retry policy
      * Statement stmtWithRetry = new SimpleStatement("SELECT * FROM critical_data WHERE id = ?", dataId)
@@ -2075,7 +2084,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             throw new IllegalArgumentException("Null or empty parameters for parameterized query: " + query);
         }
 
-        if (parameterCount == 1 && parameters.length == 1) {
+        final Map<Integer, String> namedParameters = parseCql.namedParameters();
+
+        // A Map keyed by the name of the query's single named marker (":name"/"#{name}") is the named-parameter container,
+        // not the value: skip the single-value shortcut, which would otherwise bind the whole Map when the marker's column
+        // is a map type, because a Map is then assignable to that column's Java type.
+        if (parameterCount == 1 && parameters.length == 1
+                && !(parameters[0] instanceof final Map<?, ?> m && N.notEmpty(namedParameters) && m.containsKey(namedParameters.get(0)))) {
             colType = columnDefinitions.getType(0);
             javaClazz = namedDataType.get(colType.getName().name());
 
@@ -2096,7 +2111,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
             values = new Object[parameterCount];
             final Object parameter_0 = parameters[0];
-            final Map<Integer, String> namedParameters = parseCql.namedParameters();
             final boolean isCassandraNamedParameters = N.isEmpty(namedParameters);
             String parameterName = null;
             if (parameter_0 instanceof Map) {
@@ -2967,9 +2981,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Register a codec for storing complex objects as JSON
-     * StringCodec<UserPreferences> prefsCodec = new StringCodec<>(UserPreferences.class);
-     * cluster.getConfiguration().getCodecRegistry().register(prefsCodec);
+     * // Register a codec for storing complex objects as JSON (StringCodec itself is package-private;
+     * // registerTypeCodec is the public way to create and register one)
+     * executor.registerTypeCodec(UserPreferences.class);
      *
      * // Now UserPreferences objects can be stored in VARCHAR columns
      * UserPreferences prefs = new UserPreferences();

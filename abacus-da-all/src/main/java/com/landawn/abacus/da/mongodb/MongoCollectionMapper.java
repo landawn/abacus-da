@@ -26,6 +26,7 @@ import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
+import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.u.Nullable;
@@ -70,9 +71,11 @@ import com.mongodb.client.result.UpdateResult;
  *
  * <h2>{@code @Id} Mapping</h2>
  * <ul>
- *   <li>An entity property annotated with {@code @Id} (or named {@code id} when no annotation is
- *       present) is mapped to MongoDB's {@code _id} field on writes and back to the same property
- *       on reads.</li>
+ *   <li>A {@link String}- or {@link ObjectId}-typed entity property annotated with {@code @Id} (or
+ *       named {@code id} when no annotation is present) is mapped to MongoDB's {@code _id} field on
+ *       writes and back to the same property on reads. An id property of any other type (e.g.
+ *       {@code long}) is stored as an ordinary field under its own name, and MongoDB assigns a
+ *       separate {@code _id}.</li>
  *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId} during insert; the
  *       generated value is <strong>not</strong> written back into the entity — the entity's id property
  *       remains {@code null} after the insert returns, and the generated {@code _id} exists only in the
@@ -3741,8 +3744,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method streams all unique values for the specified field name across the entire
      * collection. Each distinct value is surfaced under {@code fieldName} on an entity of the mapped
-     * type, and is only readable if the entity declares a matching property. This is useful for getting
-     * distinct field values for analysis or dropdown populations.</p>
+     * type, and is only readable if the entity declares a matching property. A single-value {@code T} (such as
+     * {@code String}) gets no {@code $project} stage and receives each value directly, converted to {@code T}.
+     * This is useful for getting distinct field values for analysis or dropdown populations.</p>
      *
      * <p>The values are computed with a {@code $group} aggregation rather than the driver's native
      * {@code distinct} command, so an array-valued field is <i>not</i> unwound: each distinct whole array
@@ -3774,14 +3778,14 @@ public final class MongoCollectionMapper<T> {
     public Stream<T> distinct(final String fieldName) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
 
-        return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, null, rowType), rowType);
     }
 
     // Routes distinct through a $group/$project pipeline (like groupBy) so each distinct scalar value
     // comes back as a {fieldName: value} document decodable into the mapped entity type, as documented.
     // The driver's native distinct(fieldName, entityClass) decodes each raw VALUE with the entity codec
     // and throws BsonInvalidOperationException for any scalar field.
-    private static List<Bson> distinctPipeline(final String fieldName, final Bson filter) {
+    private static List<Bson> distinctPipeline(final String fieldName, final Bson filter, final Class<?> rowType) {
         final List<Bson> pipeline = new ArrayList<>(3);
 
         if (filter != null) {
@@ -3789,9 +3793,25 @@ public final class MongoCollectionMapper<T> {
         }
 
         pipeline.add(new Document("$group", new Document("_id", "$" + fieldName)));
-        pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+
+        // A single-value rowType (e.g. String) reads the value straight from the {_id: value} group rows (readRow
+        // uses an _id-only row's id). Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName
+        // ("a.b" -> {a: {b: value}}), and the scalar conversion would then receive the embedded document.
+        if (!isSingleValueRowType(rowType)) {
+            pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+        }
 
         return pipeline;
+    }
+
+    private static boolean isSingleValueRowType(final Class<?> rowType) {
+        if (rowType.isAssignableFrom(Document.class)) {
+            return false;
+        }
+
+        final Type<?> type = N.typeOf(rowType);
+
+        return !(type.isObjectArray() || type.isCollection() || type.isMap() || type.isBean());
     }
 
     /**
@@ -3799,7 +3819,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method streams unique values for the specified field from entities that match
      * the filter criteria. Each distinct value is surfaced under {@code fieldName} on an entity of the
-     * mapped type, and is only readable if the entity declares a matching property. This is useful for
+     * mapped type, and is only readable if the entity declares a matching property (a single-value {@code T}
+     * such as {@code String} gets no {@code $project} stage and receives each value directly, as in
+     * {@link #distinct(String)}). This is useful for
      * getting distinct values from a subset of the collection based on specific conditions. As with
      * {@link #distinct(String)}, an array-valued field is not unwound: each distinct whole array is one result.</p>
      *
@@ -3831,7 +3853,7 @@ public final class MongoCollectionMapper<T> {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(filter, cs.filter);
 
-        return collectionExecutor.aggregate(distinctPipeline(fieldName, filter), rowType);
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, filter, rowType), rowType);
     }
 
     /**
@@ -3881,7 +3903,9 @@ public final class MongoCollectionMapper<T> {
      * <p><strong>Beta Feature:</strong> This method is experimental and may change in future versions.</p>
      *
      * <p>This method groups entities by a single field value, useful for basic grouping operations.
-     * The grouped results are returned as a stream of entities representing each group.</p>
+     * The grouped results are returned as a stream of entities representing each group, with the group
+     * key surfaced under {@code fieldName}. A single-value {@code T} (such as {@code String}) gets no
+     * {@code $project} stage and receives each group key directly, converted to {@code T}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

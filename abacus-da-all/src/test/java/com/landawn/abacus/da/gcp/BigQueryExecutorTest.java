@@ -2591,6 +2591,29 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals(" ", captor.getValue().getPositionalParameters().get(1).getValue());
     }
 
+    // ===== 2026-09-27 deep review (slice S) =====
+    // A STRUCT cell is a FieldValueList, which IS a List. Since abacus-common 8.1, N.convert returns a source that is
+    // already an instance of the target unchanged (skipping the registered readRow converter), so
+    // queryForSingleValue/queryForSingleNonNull handed List/Collection targets the raw FieldValue wrappers.
+    @Test
+    public void testSingleValueStructCellIntoCollectionTargetIsDecoded() throws Exception {
+        final FieldList sub = FieldList.of(Field.of("a", StandardSQLTypeName.INT64), Field.of("b", StandardSQLTypeName.STRING));
+        final FieldValueList struct = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), sub);
+        final FieldList fields = FieldList.of(Field.newBuilder("s", StandardSQLTypeName.STRUCT, sub).build());
+        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, struct)), fields);
+        final TableResult result = mock(TableResult.class);
+        when(result.getSchema()).thenReturn(Schema.of(fields));
+        when(result.getTotalRows()).thenReturn(1L);
+        when(result.getValues()).thenReturn(Arrays.asList(row));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(result);
+
+        assertEquals(Arrays.asList("1", "x"), executor.queryForSingleValue(List.class, "SELECT s").get());
+        assertEquals(Arrays.asList("1", "x"), executor.queryForSingleNonNull(Collection.class, "SELECT s").get());
+        // Map targets were never affected: the converter still runs for a non-List target.
+        assertEquals("x", ((Map<?, ?>) executor.queryForSingleValue(Map.class, "SELECT s").get()).get("b"));
+    }
+
     public static class RepeatedBinaryTimestampEntity {
         private List<byte[]> data;
         private List<java.nio.ByteBuffer> buffers;

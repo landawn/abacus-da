@@ -207,7 +207,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * @param appendToCopy the existing {@link Append} to copy
      * @throws IllegalArgumentException if {@code appendToCopy} is {@code null}
-     * @throws NullPointerException if {@code appendToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code appendToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      */
     AnyAppend(final Append appendToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Append(N.checkArgNotNull(appendToCopy, cs.appendToCopy)));
@@ -393,7 +394,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param appendToCopy the existing HBase {@link Append} to copy; must not be {@code null}
      * @return a new AnyAppend instance backed by a fresh Append copied from {@code appendToCopy}
      * @throws IllegalArgumentException if {@code appendToCopy} is {@code null}
-     * @throws NullPointerException if {@code appendToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code appendToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      * @see org.apache.hadoop.hbase.client.Append
      */
     public static AnyAppend of(final Append appendToCopy) throws IllegalArgumentException, NullPointerException {

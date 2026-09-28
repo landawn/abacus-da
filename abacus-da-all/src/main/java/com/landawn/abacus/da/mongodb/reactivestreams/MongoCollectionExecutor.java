@@ -2506,9 +2506,9 @@ public final class MongoCollectionExecutor {
      * executor.insertOne(new Document("name", "Jane")).block();   // emits one InsertOneResult
      *
      * // Edge: cold publisher — re-subscribing re-issues the SAME insert. The Document to write is built
-     * // once, at call time, and the driver stamps a generated _id onto it when the first subscription
-     * // executes the insert, so the retry carries that same _id and fails on the mandatory unique _id
-     * // index rather than writing a second document.
+     * // once, at call time, and the driver builds the write operation eagerly, stamping a generated _id
+     * // onto that Document before insertOne returns (i.e. before any subscription). The retry therefore
+     * // carries the same _id and fails on the mandatory unique _id index rather than writing a second document.
      * Mono<InsertOneResult> twice = executor.insertOne(new Document("name", "Dup"));
      * twice.block();                                              // insert #1
      * twice.block();                                              // MongoWriteException: E11000 duplicate key
@@ -4721,11 +4721,15 @@ public final class MongoCollectionExecutor {
      * Groups documents by a single field returning results as a specific type.
      *
      * <p>Groups documents by the specified field and maps results to the specified type.
-     * This convenience method simplifies common grouping operations with typed results.</p>
+     * This convenience method simplifies common grouping operations with typed results.
+     * {@link Document} results are the raw {@code {_id: <key>}} group documents; other Map, bean, and
+     * {@code Object} results receive {@code {<fieldName>: <key>}} rows; a single-value {@code rowType}
+     * (such as {@code String.class}) emits each group key converted to that type.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Flux<CategoryGroup> groups = executor.groupBy("category", CategoryGroup.class);
+     * Flux<String> cities = executor.groupBy("address.city", String.class); // e.g. "Paris", "Rome"
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
@@ -4921,7 +4925,10 @@ public final class MongoCollectionExecutor {
             group.append(_COUNT, new Document(_$SUM, 1));
         }
 
-        if (Document.class.equals(rowType)) {
+        // A scalar rowType reads the key straight from the {_id: key} rows (readRow uses an _id-only row's id).
+        // Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName ("a.b" -> {a: {b: key}}), and the
+        // scalar conversion would then receive the embedded document instead of the key.
+        if (Document.class.equals(rowType) || (!count && !rowType.isAssignableFrom(Document.class) && isSingleValueType(rowType))) {
             return N.asList(new Document(_$GROUP, group));
         }
 

@@ -509,7 +509,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
 
     /**
      * Wraps {@code func} so that it is applied at most once: every later call returns the outcome of
-     * the first call (the same result, or the same exception rethrown).
+     * the first call (the same result, or the same exception or error rethrown).
      *
      * <p>{@link ContinuableFuture#map} re-applies its function inside <i>every</i> {@code get()} call on the
      * returned future. The row-mapper {@code stream(...)} functions of this class consume the one-shot driver
@@ -526,25 +526,30 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
         return new Throwables.Function<>() {
             private boolean applied = false;
             private R result = null;
-            private Exception failure = null;
+            private Throwable failure = null;
 
             /**
-             * @throws Exception if the wrapped function throws on its first invocation; later invocations rethrow the same cached exception
+             * @throws Exception if the wrapped function throws on its first invocation; later invocations rethrow the same cached
+             *         exception (a cached {@link Error} is rethrown the same way)
              */
             @Override
             public synchronized R apply(final T t) throws Exception {
                 if (!applied) {
                     try {
                         result = func.apply(t);
-                    } catch (final Exception e) {
+                    } catch (final Exception | Error e) {
+                        // Errors are cached too: ContinuableFuture.map reports any Throwable through get(), and re-running
+                        // func after an Error would re-read the partially drained cursor and report a different outcome.
                         failure = e;
                     }
 
                     applied = true;
                 }
 
-                if (failure != null) {
-                    throw failure;
+                if (failure instanceof final Error error) {
+                    throw error;
+                } else if (failure != null) {
+                    throw (Exception) failure;
                 }
 
                 return result;

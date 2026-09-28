@@ -1415,8 +1415,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     }
 
     /**
-     * Asynchronously executes a CQL query whose first row's first {@code Long}-typed column is
-     * taken as a count.
+     * Asynchronously executes a CQL query and takes the first column of its first row, converted to
+     * {@code Long}, as a count.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3172,7 +3172,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * AsyncCassandraExecutor async = executor.async();
      *
      * // Typical: run a parameterless statement and block for the result set.
-     * RS rs = async.execute("SELECT * FROM users").get();
+     * ResultSet rs = async.execute("SELECT * FROM users").get();
      *
      * // Typical: run a DDL/maintenance statement asynchronously.
      * async.execute("TRUNCATE users").thenRunAsync(() -> log.info("truncated")); // runs after the statement completes
@@ -3202,7 +3202,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * AsyncCassandraExecutor async = executor.async();
      *
      * // Typical: bind positional parameters and block for the result set.
-     * RS rs = async.execute("SELECT * FROM users WHERE id = ?", 1L).get();
+     * ResultSet rs = async.execute("SELECT * FROM users WHERE id = ?", 1L).get();
      *
      * // Typical: run a parameterized write.
      * async.execute("UPDATE users SET name = ? WHERE id = ?", "Alice", 1L).get();
@@ -3235,7 +3235,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: bind named parameters from a Map.
      * Map<String, Object> params = new HashMap<>();
      * params.put("id", 1L);
-     * RS rs = async.execute("SELECT * FROM users WHERE id = :id", params).get();
+     * ResultSet rs = async.execute("SELECT * FROM users WHERE id = :id", params).get();
      *
      * // Edge: even an empty parameter map counts as one argument for a parameterless
      * // statement and is rejected during the synchronous preparation.
@@ -3268,7 +3268,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * // Typical: run a fully-built driver statement.
      * Statement<?> stmt = SimpleStatement.newInstance("SELECT * FROM users WHERE id = ?", 1L);
-     * RS rs = async.execute(stmt).get();
+     * ResultSet rs = async.execute(stmt).get();
      *
      * // Typical: apply per-statement options (e.g. page size) before executing.
      * Statement<?> paged = SimpleStatement.newInstance("SELECT * FROM users").setPageSize(500);
@@ -3311,7 +3311,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
 
     /**
      * Wraps {@code func} so that it is applied at most once: every later call returns the outcome of
-     * the first call (the same result, or the same exception rethrown).
+     * the first call (the same result, or the same exception or error rethrown).
      *
      * <p>{@link ContinuableFuture#map} re-applies its function inside <i>every</i> {@code get()} call on the
      * returned future. The functions passed to it by this class and {@link AsyncCassandraExecutor} consume a one-shot driver
@@ -3328,25 +3328,30 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
         return new Throwables.Function<>() {
             private boolean applied = false;
             private R result = null;
-            private Exception failure = null;
+            private Throwable failure = null;
 
             /**
              * @throws Exception if the wrapped function throws on its first invocation; later invocations rethrow the same cached exception
+             * @throws Error if the wrapped function throws an error on its first invocation; later invocations rethrow the same cached error
              */
             @Override
             public synchronized R apply(final T t) throws Exception {
                 if (!applied) {
                     try {
                         result = func.apply(t);
-                    } catch (final Exception e) {
+                    } catch (final Exception | Error e) {
+                        // Errors are cached too: ContinuableFuture.map reports any Throwable through get(), and re-running
+                        // func after an Error would re-read the partially drained cursor and report a different outcome.
                         failure = e;
                     }
 
                     applied = true;
                 }
 
-                if (failure != null) {
-                    throw failure;
+                if (failure instanceof final Error error) {
+                    throw error;
+                } else if (failure != null) {
+                    throw (Exception) failure;
                 }
 
                 return result;

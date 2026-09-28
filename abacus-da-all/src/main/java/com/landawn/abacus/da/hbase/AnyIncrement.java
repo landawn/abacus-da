@@ -143,7 +143,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param incrementToCopy the existing {@link Increment} to copy
      * @throws IllegalArgumentException if {@code incrementToCopy} is {@code null}
-     * @throws NullPointerException if {@code incrementToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code incrementToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      */
     AnyIncrement(final Increment incrementToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Increment(N.checkArgNotNull(incrementToCopy, cs.incrementToCopy)));
@@ -360,7 +361,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param incrementToCopy the HBase Increment object to copy; must not be {@code null}
      * @return a new AnyIncrement instance backed by a fresh Increment copied from {@code incrementToCopy}
      * @throws IllegalArgumentException if {@code incrementToCopy} is {@code null}
-     * @throws NullPointerException if {@code incrementToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code incrementToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      * @see Increment
      */
     public static AnyIncrement of(final Increment incrementToCopy) throws IllegalArgumentException, NullPointerException {

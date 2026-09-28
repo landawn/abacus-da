@@ -955,6 +955,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
+     * Converts a column value for storage in an array row whose component type is {@code componentType}. A typed array
+     * (e.g. {@code String[]}) otherwise rejects a driver value of another type with {@link ArrayStoreException}.
+     * @throws RuntimeException if {@code value} cannot be converted to {@code componentType}
+     */
+    private static Object toArrayElement(final Object value, final Class<?> componentType) throws RuntimeException {
+        return value == null || componentType.isInstance(value) ? value : convertValue(value, componentType);
+    }
+
+    /**
      * @throws IllegalArgumentException if {@code rowClass} is a single-value type and the row does not have exactly one column
      * @throws RuntimeException if reading or converting a column, creating the target object, or assigning a bean property fails
      */
@@ -979,7 +988,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 if (value instanceof Row) {
                     a[i] = readRow(Object[].class, (Row) value);
                 } else {
-                    a[i] = value;
+                    a[i] = toArrayElement(value, a.getClass().getComponentType());
                 }
             }
 
@@ -1040,7 +1049,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     if (value instanceof Row) {
                         a[i] = readRow(Object[].class, (Row) value);
                     } else {
-                        a[i] = value;
+                        a[i] = toArrayElement(value, a.getClass().getComponentType());
                     }
                 }
 
@@ -1897,8 +1906,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>A codec registered for a scalar or bean value takes precedence over expanding bean properties or
      * coercing it to the column's default Java type. Positional collections and named maps retain their
-     * usual parameter-container behavior. A bean's properties are matched to parameter names by property
-     * name (naming-policy variants included) or by the column name declared with {@code @Column}.</p>
+     * usual parameter-container behavior; in particular, a Map keyed by the name of a query's single named
+     * marker is always read as the named-parameter container, even when that marker's column is itself a map
+     * type. A bean's properties are matched to parameter names by property name (naming-policy variants
+     * included) or by the column name declared with {@code @Column}.</p>
      *
      * @param query the CQL text or mapper identifier
      * @param parameters positional values, a single positional array/collection, or a named map/bean
@@ -1932,7 +1943,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             throw new IllegalArgumentException("Null or empty parameters for parameterized query: " + query);
         }
 
-        if (parameterCount == 1 && parameters.length == 1) {
+        final Map<Integer, String> namedParameters = parseCql.namedParameters();
+
+        // A Map keyed by the name of the query's single named marker (":name"/"#{name}") is the named-parameter container,
+        // not the value: skip the single-value shortcut, which would otherwise bind the whole Map when the marker's column
+        // is a map type (or has no mapped Java type) because a Map is then assignable to / accepted for that column.
+        if (parameterCount == 1 && parameters.length == 1
+                && !(parameters[0] instanceof final Map<?, ?> m && N.notEmpty(namedParameters) && m.containsKey(namedParameters.get(0)))) {
             colType = columnDefinitions.get(0).getType();
             javaClass = protocolCodeDataType.get(colType.getProtocolCode());
 
@@ -1953,7 +1970,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
             values = new Object[parameterCount];
             final Object parameter_0 = parameters[0];
-            final Map<Integer, String> namedParameters = parseCql.namedParameters();
             final boolean isCassandraNamedParameters = N.isEmpty(namedParameters);
             String parameterName = null;
             if (parameter_0 instanceof Map) {

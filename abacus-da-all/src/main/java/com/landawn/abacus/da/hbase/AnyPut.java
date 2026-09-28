@@ -144,8 +144,13 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *
  * <h3>Entity Mapping Rules:</h3>
  * <ul>
- * <li><strong>Row Key</strong>: The single {@code @Id}-annotated property (or the property registered via the deprecated
+ * <li><strong>Row Key</strong>: The single {@code @Id}/{@code @ReadOnlyId}-annotated property (or, when no property is annotated,
+ *     a property named {@code id} of type {@code int}/{@code Integer}, {@code long}/{@code Long}, {@code String},
+ *     {@code java.sql.Timestamp} or {@code UUID}; or the property registered via the deprecated
  *     {@link HBaseExecutor#registerRowKeyProperty(Class, String)}) becomes the row key; it is not written as a column.</li>
+ * <li><strong>Written properties</strong>: every other property in the bean's property list is written, including getter-only
+ *     (read-only) properties and properties marked {@code @Transient} or {@code @NonColumn} — these markers are not consulted
+ *     here. Use {@link #create(Object, Collection)} to restrict the written properties.</li>
  * <li><strong>Column Families</strong>: Resolved from {@link ColumnFamily} annotations on the
  *     individual property or the class; otherwise the property name, converted by the naming policy, is used.</li>
  * <li><strong>Column Qualifiers</strong>: A {@code @Column} name, or the naming-policy-converted property
@@ -655,7 +660,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>Performs automatic object-to-HBase mapping by introspecting the entity's properties and
      * converting them to HBase column families and qualifiers. The entity class must have a row-key
-     * property — either annotated with {@code @Id} or registered via
+     * property — annotated with {@code @Id}/{@code @ReadOnlyId}, a conventionally typed property named
+     * {@code id} when nothing is annotated, or registered via
      * {@link HBaseExecutor#registerRowKeyProperty(Class, String)} — whose value becomes the HBase
      * row key. Properties whose value is {@code null} are skipped. See the class-level "Entity
      * Mapping Rules" section for full details, including how nested beans, {@link HBaseColumn}

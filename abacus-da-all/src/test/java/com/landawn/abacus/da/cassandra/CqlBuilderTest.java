@@ -4566,4 +4566,123 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set(account));
         assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set(Account.class));
     }
+
+    // ---- slice Q (2026-09-27): abacus-query 4.9.4 column-DELETE regression and FROM atomicity ----
+
+    private static Object entityClassOf(final CqlBuilder builder) throws Exception {
+        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("_entityClass");
+        field.setAccessible(true);
+        return field.get(builder);
+    }
+
+    /**
+     * abacus-query 4.9.4 made every parent {@code from(...)} overload reject a non-SELECT operation, so each
+     * {@code delete(columns).from(...)} threw "Invalid operation for from(): DELETE. Expected QUERY". Every FROM
+     * overload must render the CQL column DELETE, with naming-policy conversion and no SELECT aliases.
+     */
+    @Test
+    @SuppressWarnings("deprecation")
+    public void test_deleteColumns_everyFromOverload_rendersCqlColumnDelete() {
+        final String expected = "DELETE first_name, last_name FROM account WHERE id = ?";
+
+        assertEquals(expected, PSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from("  account ").where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from(new String[] { "account" }).where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from(N.asList("account")).where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from(Account.class).where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from(Account.class, (String) null).where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from("account", Account.class).where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from("account", "account").where(Filters.eq("id", 1)).build().query());
+        assertEquals(expected, PSC.delete("firstName", "lastName").from(Account.class, N.asList("account")).where(Filters.eq("id", 1)).build().query());
+        assertThrows(IllegalArgumentException.class, () -> PSC.delete("firstName").from(Account.class, N.asList("account", "other")));
+        assertEquals("DELETE first_name, last_name FROM ks.account WHERE id = ?",
+                PSC.delete(N.asList("firstName", "lastName")).from("ks.account").where(Filters.eq("id", 1)).build().query());
+
+        assertEquals("DELETE FIRST_NAME, LAST_NAME FROM ACCOUNT WHERE ID = ?",
+                PAC.delete("firstName", "lastName").from(Account.class).where(Filters.eq("id", 1)).build().query());
+        assertEquals("DELETE firstName FROM account WHERE id = :id", NLC.delete("firstName").from(Account.class).where(Filters.eq("id", 1)).build().query());
+        assertEquals("DELETE first_name FROM account WHERE id = 1", SCCB.delete("firstName").from("account").where(Filters.eq("id", 1)).build().query());
+
+        // Entity-derived column list: key columns excluded, and no SELECT-style "AS" aliases.
+        final String byClass = NSC.delete(Account.class).from(Account.class).where(Filters.eq("id", 1)).build().query();
+        assertTrue(byClass.startsWith("DELETE gui, email_address, first_name, "), byClass);
+        assertTrue(byClass.endsWith(" FROM account WHERE id = :id"), byClass);
+        assertFalse(byClass.contains(" AS "), byClass);
+
+        // Trailing clauses keep their CQL positions.
+        assertEquals("DELETE first_name FROM account USING TIMESTAMP 5000 WHERE id = ?",
+                PSC.delete("firstName").from("account").where(Filters.eq("id", 1)).usingTimestamp(5L).build().query());
+        assertEquals("DELETE first_name FROM account WHERE id = ? IF status = ?",
+                PSC.delete("firstName").from("account").where(Filters.eq("id", 1)).onlyIf(Filters.eq("status", 1)).build().query());
+
+        // State validation is unchanged.
+        assertThrows(IllegalStateException.class, () -> PSC.delete("firstName").from("account").from("account"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.delete("firstName").from("account a"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.delete("firstName").from("account", "other"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.delete("firstName").from(Account.class, "a"));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").from("account"));
+
+        // SELECT rendering through the same overloads is unchanged.
+        assertEquals("SELECT first_name AS \"firstName\" FROM account WHERE id = ?",
+                PSC.select("firstName").from("account", "account").where(Filters.eq("id", 1)).build().query());
+        assertEquals("SELECT first_name AS \"firstName\" FROM account WHERE id = ?",
+                PSC.select("firstName").from(Account.class).where(Filters.eq("id", 1)).build().query());
+    }
+
+    /**
+     * A FROM rejected while rendering the staged columns must leave the builder as it was: no partial
+     * "DELETE ..." text, no FROM flag, and no entity mapping installed by {@code from(Class)} /
+     * {@code from(String, Class)} (they used to call {@code setEntityClass} before the rendering that failed).
+     */
+    @Test
+    public void test_from_rejectedColumn_leavesBuilderUnchanged() throws Exception {
+        final CqlBuilder deleteBuilder = PSC.delete("first--name");
+
+        assertThrows(IllegalArgumentException.class, () -> deleteBuilder.from(Account.class));
+        assertNull(entityClassOf(deleteBuilder));
+        assertThrows(IllegalArgumentException.class, () -> deleteBuilder.from("account", Account.class));
+        assertNull(entityClassOf(deleteBuilder));
+        // Still no FROM: a retry fails on the column again (not on "from() has already been called"), and build()
+        // reports the missing FROM instead of returning a truncated statement.
+        assertThrows(IllegalArgumentException.class, () -> deleteBuilder.from("account"));
+        assertThrows(IllegalStateException.class, deleteBuilder::build);
+
+        final CqlBuilder selectBuilder = PSC.select("first--name");
+
+        assertThrows(IllegalArgumentException.class, () -> selectBuilder.from(Account.class));
+        assertNull(entityClassOf(selectBuilder));
+        assertThrows(IllegalArgumentException.class, () -> selectBuilder.from("account", Account.class));
+        assertNull(entityClassOf(selectBuilder));
+    }
+
+    /**
+     * A column DELETE whose {@code from(...)} was never called used to build as "DELETE FROM null ...", silently
+     * dropping the columns; it is now rejected like a SELECT without FROM. Whole-row {@code deleteFrom(...)} is unaffected.
+     */
+    @Test
+    public void test_deleteColumns_withoutFrom_isRejectedInsteadOfDeleteFromNull() {
+        assertThrows(IllegalStateException.class, () -> PSC.delete("firstName").where(Filters.eq("id", 1)));
+        assertThrows(IllegalStateException.class, () -> PSC.delete("firstName").build());
+        assertThrows(IllegalStateException.class, () -> PSC.delete(Account.class).where(Filters.eq("id", 1)));
+
+        assertEquals("DELETE FROM account WHERE id = ?", PSC.deleteFrom("account").where(Filters.eq("id", 1)).build().query());
+        assertEquals("DELETE FROM account WHERE id = ?", PSC.deleteFrom(Account.class).where(Filters.eq("id", 1)).build().query());
+        assertEquals("DELETE FROM account", PSC.deleteFrom("account").build().query());
+    }
+
+    /**
+     * abacus-query 4.9.4 rejects a comment-only raw expression, but {@code onlyIf(String)} had already emitted
+     * " IF ": build() returned "... IF " and a retry produced "IF  IF ...". The call is now atomic.
+     */
+    @Test
+    public void test_onlyIfString_rejectedExpression_leavesBuilderUnchanged() {
+        final CqlBuilder builder = PSC.update("account").set("firstName").where(Filters.eq("id", 1));
+
+        assertThrows(IllegalArgumentException.class, () -> builder.onlyIf("/* c */"));
+        assertEquals("UPDATE account SET first_name = ? WHERE id = ? IF status = 1", builder.onlyIf("status = 1").build().query());
+
+        final CqlBuilder unchanged = PSC.deleteFrom("account").where(Filters.eq("id", 1));
+        assertThrows(IllegalArgumentException.class, () -> unchanged.onlyIf("-- c"));
+        assertEquals("DELETE FROM account WHERE id = ?", unchanged.build().query());
+    }
 }

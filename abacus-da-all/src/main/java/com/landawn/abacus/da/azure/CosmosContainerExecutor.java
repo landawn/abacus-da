@@ -1890,8 +1890,10 @@ public class CosmosContainerExecutor {
      * Use only condition operators supported by the Cosmos DB for NoSQL query language.</p>
      *
      * <p>Property references are qualified with the {@code c} alias, and SQL forms that Cosmos DB lacks are rewritten:
-     * {@code x IS NULL} becomes {@code IS_NULL(c.x)}, {@code x IS NOT NULL} becomes {@code NOT IS_NULL(c.x)}, and
-     * {@code x IS TRUE}/{@code IS FALSE} (for example from {@code Filters.isTrue}) become {@code c.x = true}/{@code c.x = false}.
+     * {@code x IS NULL} becomes {@code IS_NULL(c.x)}, {@code x IS NOT NULL} becomes {@code NOT IS_NULL(c.x)},
+     * {@code x IS TRUE}/{@code IS FALSE} (for example from {@code Filters.isTrue}) become {@code c.x = true}/{@code c.x = false}, and
+     * {@code x IS NOT TRUE}/{@code IS NOT FALSE} (for example from {@code Filters.isNot("x", true)}) become {@code c.x != true}/
+     * {@code c.x != false}; unlike SQL {@code IS NOT TRUE}, such a Cosmos comparison never matches an item that lacks {@code x}.
      * Cosmos DB distinguishes an explicit JSON {@code null} from an absent property, and {@code IS_NULL} is false for an
      * absent property: {@code Filters.isNull("x")} does not match items that lack {@code x}, while
      * {@code Filters.isNotNull("x")} does.</p>
@@ -1932,11 +1934,11 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected before any query is built or sent) or is not a
      *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
      *         names from it), if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
-     *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank {@code SqlExpression} (rejected by
+     *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank or comment-only {@code SqlExpression} (rejected by
      *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
      *         parameter values when the parameter list is nonempty
      * @see Condition for condition construction
@@ -1982,11 +1984,11 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected before any query is built or sent) or is not a
      *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
      *         names from it), if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
-     *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank {@code SqlExpression} (rejected by
+     *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank or comment-only {@code SqlExpression} (rejected by
      *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
      *         parameter values when the parameter list is nonempty
      */
@@ -2037,13 +2039,13 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected before any query is built or sent) or is not a
      *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
      *         names from it), if
      *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
      *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
-     *         or blank {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a different
-     *         number of positional placeholders and parameter values when the parameter list is nonempty
+     *         or blank or comment-only {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a
+     *         different number of positional placeholders and parameter values when the parameter list is nonempty
      * @throws IllegalStateException if the generated selected-property expressions cannot be converted to a Cosmos projection
      */
     @Beta
@@ -2106,13 +2108,13 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
-     * @throws IllegalArgumentException if {@code targetClass} is null (rejected by the query builder before any request is sent) or is not a
+     * @throws IllegalArgumentException if {@code targetClass} is null (rejected before any query is built or sent) or is not a
      *         bean class with properties, such as {@code Map} or {@code JsonNode} (the query builder derives the FROM source and property
      *         names from it), if
      *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
      *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
-     *         or blank {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a different
-     *         number of positional placeholders and parameter values when the parameter list is nonempty
+     *         or blank or comment-only {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a
+     *         different number of positional placeholders and parameter values when the parameter list is nonempty
      * @throws IllegalStateException if the generated selected-property expressions cannot be converted to a Cosmos projection
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations
@@ -2126,7 +2128,7 @@ public class CosmosContainerExecutor {
     }
 
     /**
-     * Converts positional SQL placeholders to Cosmos parameter names.
+     * Converts the generated query and its positional parameter values to a {@link SqlQuerySpec} with parameters named {@code @p0}, {@code @p1}, ...
      *
      * @throws IllegalArgumentException if the parameter list is nonempty and its size differs from the number of unquoted positional placeholders
      */

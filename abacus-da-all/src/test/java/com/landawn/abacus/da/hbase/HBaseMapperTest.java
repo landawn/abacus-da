@@ -504,4 +504,37 @@ public class HBaseMapperTest extends TestBase {
         Profile readByCamel = m.executor.mapper(Profile.class).get("p1");
         assertEquals("Bob", readByCamel.getDisplayName(), "a SNAKE_CASE-named cell must be readable through the default CAMEL_CASE mapper");
     }
+
+    // Regression (2026-09-27 deep review): the non-bean message printed Class.toString(),
+    // i.e. "class java.lang.String is not an entity class ...".
+    @Test
+    public void testMapper_nonBeanClass_messageNamesClassWithoutClassPrefix() throws Exception {
+        Mocks m = new Mocks();
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> m.executor.mapper(String.class, "t", null));
+
+        assertTrue(ex.getMessage().startsWith("java.lang.String is not an entity class"), ex.getMessage());
+    }
+
+    // A class with no @Id annotation still gets a row key from a conventionally named and typed "id" property.
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ConventionalIdUser {
+        private String id;
+        private String name;
+    }
+
+    @Test
+    public void testMapper_conventionalIdPropertyWithoutIdAnnotationIsTheRowKey() throws Exception {
+        Mocks m = new Mocks();
+
+        final HBaseMapper<ConventionalIdUser, String> mapper = m.executor.mapper(ConventionalIdUser.class, "t", null);
+        mapper.delete(new ConventionalIdUser("u1", "Ann"));
+
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Delete> captor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Delete.class);
+        verify(m.table).delete(captor.capture());
+        assertEquals("u1", Bytes.toString(captor.getValue().getRow()));
+    }
 }

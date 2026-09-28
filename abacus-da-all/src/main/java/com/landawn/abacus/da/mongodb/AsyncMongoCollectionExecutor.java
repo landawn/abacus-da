@@ -1802,8 +1802,9 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForString("username", Filters.eq("userId", "user123"))
-     *      .thenRunAsync((Nullable<String> name) -> System.out.println("Username: " + name.orElse("Unknown")));
-     * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null
+     *      .thenRunAsync((Nullable<String> name) -> System.out.println("Username: " + name.orElseIfNull("Unknown")));
+     * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null.
+     * // orElseIfNull covers both cases; orElse("Unknown") would return the present null for a matched doc.
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code queryForString} operation fails while converting documents or
@@ -3656,7 +3657,7 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * Bson filter = Filters.and(Filters.eq("status", "inactive"), Filters.lt("lastLogin", oldDate));
      * async.deleteOne(filter)
-     *      .thenRunAsync(result -> System.out.println("Deleted inactive user: " + result.wasAcknowledged()));
+     *      .thenRunAsync(result -> System.out.println("Deleted inactive users: " + result.getDeletedCount())); // 0 or 1
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code deleteOne} operation fails while converting documents or executing

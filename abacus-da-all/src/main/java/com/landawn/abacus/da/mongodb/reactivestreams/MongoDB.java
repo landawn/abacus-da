@@ -102,8 +102,9 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  *     .flatMap(batch -> processBatch(batch));
  * }</pre>
  *
- * <p><strong>Important:</strong> Define an "id" property in Java entities to map to MongoDB's "_id" 
- * field for optimal integration.</p>
+ * <p><strong>Important:</strong> Define a {@code String}- or {@code ObjectId}-typed "id" property (or one
+ * annotated with {@code @Id}) in Java entities to map to MongoDB's "_id" field; an id property of any
+ * other type is stored as an ordinary field.</p>
  *
  * @see com.landawn.abacus.da.mongodb.MongoDB
  * @see MongoDBBase
@@ -128,7 +129,10 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p>This constructor initializes the reactive MongoDB wrapper with the MongoDB reactive streams
      * database. The database is configured with the framework's custom codec registry to support
-     * automatic POJO mapping and reactive BSON type conversions.</p>
+     * automatic POJO mapping and reactive BSON type conversions. That registry (the driver's default
+     * codecs plus the framework's general bean codec) <i>replaces</i> the registry the supplied database
+     * was configured with, so custom codecs registered on the client or database are not used by
+     * collections obtained through this instance.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -284,7 +288,7 @@ public final class MongoDB extends MongoDBBase {
      * boolean shared = (executor == reactiveMongoDB.collectionExecutor("users"));      // returns false
      *
      * // Edge case - null name is rejected eagerly:
-     * reactiveMongoDB.collectionExecutor((String) null);                               // throws IllegalArgumentException: 'collectionName' cannot be null
+     * reactiveMongoDB.collectionExecutor((String) null);                               // throws IllegalArgumentException: 'collectionName' cannot be null or empty
      * }</pre>
      *
      * @param collectionName the name of the MongoDB collection
@@ -400,7 +404,7 @@ public final class MongoDB extends MongoDBBase {
      *     .subscribe(batch -> processBatch(batch));
      *
      * // Edge case - null collection name is rejected eagerly:
-     * reactiveMongoDB.collectionMapper((String) null, User.class);                        // throws IllegalArgumentException: 'collectionName' cannot be null
+     * reactiveMongoDB.collectionMapper((String) null, User.class);                        // throws IllegalArgumentException: 'collectionName' cannot be null or empty
      *
      * // Edge case - null rowType is rejected eagerly:
      * reactiveMongoDB.collectionMapper("users", (Class<User>) null);                      // throws IllegalArgumentException: 'rowType' cannot be null

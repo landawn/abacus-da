@@ -1228,6 +1228,49 @@ public class MongoCollectionMapperTest extends TestBase {
         verify(mockCollExecutor).findOneAndDelete(filter, opts, TestEntity.class);
     }
 
+    // -- 2026-09-27 review (slice H) regressions --
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testDistinctDottedFieldIntoScalarRowTypeSendsGroupOnlyPipelineAndReturnsValues() {
+        // Regression: a single-value mapper type must read each distinct value from the {_id: value} group rows. A trailing
+        // {$project: {"address.city": "$_id"}} makes the server nest the value ({address: {city: v}}), which a String
+        // mapper then returned as '{"city": "Paris"}' and an Integer mapper failed with NumberFormatException (live-probed).
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+        final com.mongodb.client.AggregateIterable<Document> iterable = mock(com.mongodb.client.AggregateIterable.class);
+        when(collection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenReturn(iterable);
+        when(iterable.iterator()).thenAnswer(invocation -> {
+            final java.util.Iterator<Document> it = Arrays.asList(new Document("_id", "Paris"), new Document("_id", "Rome")).iterator();
+            final com.mongodb.client.MongoCursor<Document> cursor = mock(com.mongodb.client.MongoCursor.class);
+            when(cursor.hasNext()).thenAnswer(i -> it.hasNext());
+            when(cursor.next()).thenAnswer(i -> it.next());
+            return cursor;
+        });
+
+        final MongoCollectionExecutor collExecutor = new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class));
+        final MongoCollectionMapper<String> stringMapper = new MongoCollectionMapper<>(collExecutor, String.class);
+        final Document filter = new Document("active", true);
+
+        Assertions.assertEquals(Arrays.asList("Paris", "Rome"), stringMapper.distinct("address.city").toList());
+        Assertions.assertEquals(Arrays.asList("Paris", "Rome"), stringMapper.distinct("address.city", filter).toList());
+
+        final org.mockito.ArgumentCaptor<List> pipelineCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(collection, org.mockito.Mockito.times(2)).aggregate(pipelineCaptor.capture(), org.mockito.ArgumentMatchers.eq(Document.class));
+        Assertions.assertEquals(Arrays.asList(new Document("$group", new Document("_id", "$address.city"))), pipelineCaptor.getAllValues().get(0));
+        final List<?> filtered = pipelineCaptor.getAllValues().get(1);
+        Assertions.assertEquals(2, filtered.size());
+        Assertions.assertEquals(new Document("$group", new Document("_id", "$address.city")), filtered.get(1));
+
+        // A bean mapper still gets the $project stage that surfaces the value under the field name.
+        final MongoCollectionMapper<TestEntity> beanMapper = new MongoCollectionMapper<>(collExecutor, TestEntity.class);
+        beanMapper.distinct("name").toList();
+
+        verify(collection, org.mockito.Mockito.times(3)).aggregate(pipelineCaptor.capture(), org.mockito.ArgumentMatchers.eq(Document.class));
+        final List<?> beanPipeline = pipelineCaptor.getAllValues().get(pipelineCaptor.getAllValues().size() - 1);
+        Assertions.assertEquals(2, beanPipeline.size());
+        Assertions.assertEquals(new Document("$project", new Document("_id", 0).append("name", "$_id")), beanPipeline.get(1));
+    }
+
     // Test entity class
     private static class TestEntity {
         private String id;

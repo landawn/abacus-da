@@ -898,6 +898,91 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertTrue(ex.getCause() instanceof NullPointerException, String.valueOf(ex.getCause()));
     }
 
+    // ---- sliceP 2026-09-27 regression tests ----
+
+    @Test
+    public void testNamedMapParameterForSingleMapColumnMarkerBindsTheNamedValue() {
+        // execute(String, Map) documents the Map as NAME -> VALUE. For a query with one named marker whose column is itself a
+        // map type, the whole Map used to be bound as the column value (a Map is assignable to the map column's Java type).
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        final String namedQuery = "UPDATE t SET m = :m WHERE id = 1";
+        final String positionalQuery = "UPDATE t SET m = ? WHERE id = 1";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        when(session.prepare(positionalQuery)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(1);
+        when(variables.getType(0)).thenReturn(com.datastax.driver.core.DataType.map(com.datastax.driver.core.DataType.text(),
+                com.datastax.driver.core.DataType.cint()));
+        when(variables.getName(0)).thenReturn("m");
+        final Object[][] bound = new Object[1][];
+        when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mock(BoundStatement.class);
+        });
+        final Map<String, Integer> columnValue = Map.of("a", 1);
+
+        executor.prepareStatement(namedQuery, Map.of("m", columnValue));
+        assertEquals(1, bound[0].length);
+        assertEquals(columnValue, bound[0][0]);
+
+        // A Map that is not keyed by the marker name, or a Map for a positional marker, is still bound as the column value.
+        executor.prepareStatement(namedQuery, columnValue);
+        assertSame(columnValue, bound[0][0]);
+        final Map<String, Integer> positionalValue = Map.of("m", 5);
+        executor.prepareStatement(positionalQuery, positionalValue);
+        assertSame(positionalValue, bound[0][0]);
+    }
+
+    @Test
+    public void testTypedArrayRowTargetConvertsColumnValuesToComponentType() {
+        // Typed array row targets (documented alongside Object[]) used to store the raw driver value, so an int column
+        // read into String[]/Long[] threw ArrayStoreException.
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        when(cols.size()).thenReturn(2);
+        final Row row = mock(Row.class);
+        when(row.getColumnDefinitions()).thenReturn(cols);
+        when(row.getObject(0)).thenReturn(1);
+        when(row.getObject(1)).thenReturn(null);
+        final ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.getColumnDefinitions()).thenReturn(cols);
+        when(resultSet.all()).thenReturn(List.of(row));
+
+        final List<String[]> strings = CassandraExecutor.toList(resultSet, String[].class);
+        assertEquals(1, strings.size());
+        assertEquals(Arrays.asList("1", null), Arrays.asList(strings.get(0)));
+        assertEquals(Arrays.asList(1, null), Arrays.asList(CassandraExecutor.toList(resultSet, Object[].class).get(0)));
+
+        // Single-row path (findFirst/gett) goes through readRow.
+        when(resultSet.one()).thenReturn(row);
+        when(resultSet.isExhausted()).thenReturn(true);
+        final Long[] longs = newSlicePExecutor(mock(Session.class)).fetchOnlyOne(Long[].class, resultSet);
+        assertEquals(Arrays.asList(1L, null), Arrays.asList(longs));
+    }
+
+    @Test
+    public void testStream_RowMapperError_RepeatedGetReplaysErrorWithoutReReadingResultSet() throws Exception {
+        // ContinuableFuture.map reports an Error from its function through get() as well; the memoized function must replay it
+        // instead of re-running and re-reading the one-shot cursor (which would make the second get() "succeed").
+        final Row row = mock(Row.class);
+        final ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.iterator()).thenReturn(Arrays.asList(row).iterator());
+        when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
+        final ResultSetFuture f = immediateFuture(resultSet);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(f);
+
+        final BiFunction<ColumnDefinitions, Row, String> rowMapper = (cd, r) -> "X";
+        final AssertionError error = new AssertionError("mapper setup failed");
+        when(mockExecutor.createRowMapper(eq(rowMapper))).thenThrow(error).thenReturn(r -> "X");
+
+        final ContinuableFuture<Stream<String>> future = async.stream("SELECT * FROM t WHERE id = ?", rowMapper, 1);
+
+        assertSame(error, assertThrows(java.util.concurrent.ExecutionException.class, future::get).getCause());
+        assertSame(error, assertThrows(java.util.concurrent.ExecutionException.class, future::get).getCause());
+        verify(resultSet, org.mockito.Mockito.times(1)).iterator();
+    }
+
     public static class SlicePRenamedColumnEntity {
         private Long id;
         @com.landawn.abacus.annotation.Column("cnt")

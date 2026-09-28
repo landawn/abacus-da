@@ -702,4 +702,68 @@ public class HBaseExecutorToValueTest {
         assertEquals(3L, back.getRawColumn().version());
         assertEquals(N.asMap("k", "v"), back.getTypedMap());
     }
+
+    // ---------------------------------------------------------------------
+    // Read-only (getter-only) properties: AnyPut.create writes their computed value as a cell,
+    // so reading the row back must skip that cell instead of failing the whole conversion.
+    // ---------------------------------------------------------------------
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @com.landawn.abacus.annotation.Entity
+    public static class NestedWithComputedProperty {
+        private String firstName;
+
+        public String getInitial() {
+            return firstName == null ? null : firstName.substring(0, 1);
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @com.landawn.abacus.annotation.Entity
+    public static class EntityWithComputedProperty {
+        @Id
+        private String id;
+        private String name;
+        private NestedWithComputedProperty nested;
+
+        public String getDisplay() {
+            return "display-" + name;
+        }
+    }
+
+    public static class SubclassOfEntityWithComputedProperty extends EntityWithComputedProperty {
+    }
+
+    @Test
+    public void test_toEntity_readOnlyPropertyCellsAreSkipped() {
+        final EntityWithComputedProperty entity = new EntityWithComputedProperty("r1", "n", new NestedWithComputedProperty("Ann"));
+        final org.apache.hadoop.hbase.client.Put put = AnyPut.create(entity).val();
+        assertTrue(put.has(Bytes.toBytes("display"), Bytes.toBytes("")), "precondition: the computed getter is written as a cell");
+        assertTrue(put.has(Bytes.toBytes("nested"), Bytes.toBytes("initial")), "precondition: the nested computed getter is written as a cell");
+
+        // Before the fix: UnsupportedOperationException "Property 'display' ... is read-only".
+        final EntityWithComputedProperty back = HBaseExecutor.toEntity(toResult(put), EntityWithComputedProperty.class);
+
+        assertEquals("r1", back.getId());
+        assertEquals("n", back.getName());
+        assertEquals("Ann", back.getNested().getFirstName());
+    }
+
+    @Test
+    public void test_toEntity_readOnlyPropertyInheritedFromEntitySuperclassIsSkipped() {
+        // abacus-common 8.1.0 also exposes getter-only properties declared on an @Entity superclass of a plain subclass.
+        final SubclassOfEntityWithComputedProperty entity = new SubclassOfEntityWithComputedProperty();
+        entity.setId("r2");
+        entity.setName("m");
+
+        final SubclassOfEntityWithComputedProperty back = HBaseExecutor.toEntity(toResult(AnyPut.create(entity).val()),
+                SubclassOfEntityWithComputedProperty.class);
+
+        assertEquals("r2", back.getId());
+        assertEquals("m", back.getName());
+    }
 }

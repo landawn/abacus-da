@@ -141,8 +141,8 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code TIMESTAMP} cells (epoch seconds or microseconds) are decoded for date/time targets. Microsecond precision
  * is retained where the target supports it; {@code java.util.Date} and {@code Calendar} retain milliseconds.
  * The same decoding applies to elements of typed collection and array bean properties for {@code REPEATED}
- * columns. Other cells go through the standard abacus type conversion. {@code Map} and {@code Object[]} rows
- * keep the raw cell values.</p>
+ * columns. Other cells go through the standard abacus type conversion. {@code Map}, {@code Collection}, and
+ * {@code Object[]} rows keep the raw cell values.</p>
  *
  * <h2>Result Set Pagination</h2>
  * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
@@ -378,8 +378,9 @@ public class BigQueryExecutor {
      * {@code targetClass}, mapping field names to bean properties via the supplied
      * {@link FieldList}.
      * <p>
-     * Column-to-property resolution proceeds in this order: an exact match on the bean's property
-     * name, then a column-to-property name map derived from the bean's annotations
+     * Column-to-property resolution proceeds in this order: the bean's property-name lookup (which
+     * also accepts case- and underscore-insensitive spellings, e.g. {@code first_name} &rarr;
+     * {@code firstName}), then a column-to-property name map derived from the bean's annotations
      * ({@code @Column}, etc.). Columns whose names contain a period are written via
      * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
      * no top-level property matches. Nested {@link FieldValueList} values are converted recursively
@@ -473,11 +474,10 @@ public class BigQueryExecutor {
         return entityInfo.finishBeanResult(entity);
     }
 
-    // Unwraps a REPEATED column's value — a List of FieldValue wrappers — into a List of plain values,
-    // converting nested RECORD elements via the field's sub-fields. This is the entity/array/Dataset
-    // sibling of the map path's toMapValue.
     /**
-     * Converts BigQuery field values to their requested Java representation.
+     * Unwraps a REPEATED column's value (a List of FieldValue wrappers) into a List of plain values,
+     * converting nested RECORD elements via the field's sub-fields. This is the entity/array/Dataset
+     * sibling of the map path's toMapValue.
      *
      * @throws RuntimeException if a nested record has no readable schema or its schema does not describe every field value
      */
@@ -550,7 +550,7 @@ public class BigQueryExecutor {
     // typed accessors when the target is a binary or date/time type; every other value (including the raw
     // String for String/Object targets) is returned unchanged for the caller's normal conversion path.
     /**
-     * Converts BigQuery field values to their requested Java representation.
+     * Decodes a BYTES or TIMESTAMP cell for a binary or date/time target; returns any other cell value unchanged.
      *
      * @throws RuntimeException if a BYTES value is not valid Base64, a TIMESTAMP value cannot be parsed, or its timestamp cannot be converted to the
      *         requested date/time type
@@ -884,7 +884,8 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts BigQuery field values to their requested Java representation.
+     * Converts a row (or nested STRUCT value) to {@code rowClass}, reading its schema from the row itself. Also registered as the
+     * {@code N.convert} converter for {@link FieldValueList}.
      *
      * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      */
@@ -1155,7 +1156,7 @@ public class BigQueryExecutor {
      * customers.get(0).getId();                          // returns 1
      *
      * // Map rows: each row becomes a column-to-value map
-     * List<Map<String, Object>> maps = BigQueryExecutor.toList(tableResult, com.landawn.abacus.util.Clazz.PROPS_MAP);
+     * List<LinkedHashMap<String, Object>> maps = BigQueryExecutor.toList(tableResult, com.landawn.abacus.util.Clazz.PROPS_MAP);
      *
      * // Edge: an empty result (getTotalRows() == 0) yields an empty list
      * BigQueryExecutor.toList(emptyResult, Customer.class).isEmpty();        // returns true
@@ -1219,7 +1220,8 @@ public class BigQueryExecutor {
      * <ul>
      *   <li>If {@code targetClass} is an entity bean, each output column is converted to the
      *       declared type of the matching bean property (resolved via the column-to-property name
-     *       map). Columns without a matching property are left unconverted.</li>
+     *       map). Columns without a matching property are left unconverted, except that nested
+     *       {@code STRUCT} values become {@code Object[]}.</li>
      *   <li>If {@code targetClass} is assignable to {@link Map}, nested BigQuery {@code STRUCT}
      *       values are converted to {@link Map}s; primitive values are left as-is.</li>
      *   <li>For any other non-{@code null} {@code targetClass} (and for {@code null}), nested
@@ -1468,8 +1470,8 @@ public class BigQueryExecutor {
      * Updates a BigQuery table record using an entity's primary key fields.
      * <p>
      * This method performs an UPDATE operation using the entity's primary key fields (identified
-     * by @Id annotations or naming conventions) as the WHERE clause criteria. All non-key
-     * properties of the entity are included in the SET clause.
+     * by @Id annotations or naming conventions) as the WHERE clause criteria. All non-null
+     * non-key properties of the entity are included in the SET clause.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1514,7 +1516,7 @@ public class BigQueryExecutor {
      * Updates a BigQuery table record using specified primary key fields.
      * <p>
      * This method performs an UPDATE operation using the specified primary key field names
-     * as the WHERE clause criteria. All properties except the primary keys are included
+     * as the WHERE clause criteria. All non-null properties except the primary keys are included
      * in the SET clause with values from the entity.
      *
      * <p><b>Usage Examples:</b></p>
@@ -1726,7 +1728,8 @@ public class BigQueryExecutor {
      *
      * @param entity the entity instance containing primary key values for deletion
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, if no primary key fields are defined, or if no key value is set on the entity
+     * @throws IllegalArgumentException if entity is null, if no primary key fields are defined, or if any key property value is null or an
+     *         empty {@code CharSequence}
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #delete(Class, Object...)
@@ -1961,8 +1964,9 @@ public class BigQueryExecutor {
      *
      * <p>This utility method extracts primary key values from an entity and creates appropriate
      * conditions for database operations. For single primary key entities, it creates a simple
-     * equality condition. For composite primary keys, it creates an AND condition with
-     * equality checks for each non-null/non-empty key field.</p>
+     * equality condition. For composite primary keys, it creates an AND condition with an
+     * equality check for every key field. A key field whose value is {@code null} or an empty
+     * {@code CharSequence} is rejected rather than skipped.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1972,7 +1976,8 @@ public class BigQueryExecutor {
      *
      * @param entity the entity instance containing primary key values, must not be {@code null}
      * @return a Condition suitable for WHERE clauses based on the entity's key values
-     * @throws IllegalArgumentException if entity is null or no valid primary key values are found
+     * @throws IllegalArgumentException if entity is null, its class declares no key property, or any key property value is null or an
+     *         empty {@code CharSequence}
      * @throws RuntimeException if reading an entity's primary-key property fails
      * @see #idsToCondition(Class, Object...)
      */
@@ -2181,7 +2186,7 @@ public class BigQueryExecutor {
         }
 
         final FieldValueList row = iter.next();
-        return Nullable.of(N.convert(decodeTypedValue(firstField(tableResult), row.get(0), valueClass), valueClass));
+        return Nullable.of(readSingleValue(firstField(tableResult), row.get(0), valueClass));
     }
 
     /**
@@ -2310,7 +2315,20 @@ public class BigQueryExecutor {
         }
 
         final FieldValueList row = iter.next();
-        return Optional.of(N.convert(decodeTypedValue(firstField(tableResult), row.get(0), valueClass), valueClass));
+        return Optional.of(readSingleValue(firstField(tableResult), row.get(0), valueClass));
+    }
+
+    // Converts the first cell of a single-value query to valueClass. A STRUCT cell is a FieldValueList, which
+    // IS a List: since abacus-common 8.1, N.convert returns a source that is already an instance of the target
+    // unchanged instead of calling the registered readRow converter, so a List/Collection target would receive
+    // the raw FieldValue wrappers. Collection targets are therefore routed through readRow directly.
+    private static <V> V readSingleValue(final Field field, final FieldValue fieldValue, final Class<V> valueClass) {
+        if (fieldValue.getValue() instanceof final FieldValueList struct && valueClass != null && Collection.class.isAssignableFrom(valueClass)
+                && !FieldValueList.class.isAssignableFrom(valueClass)) {
+            return readRow(struct, valueClass);
+        }
+
+        return N.convert(decodeTypedValue(field, fieldValue, valueClass), valueClass);
     }
 
     // The result's first column definition (drives BYTES/TIMESTAMP decoding), or null when no schema is available.
@@ -2506,7 +2524,7 @@ public class BigQueryExecutor {
      *
      * // Map and scalar targets require the raw-SQL overload because this overload derives the
      * // table from targetClass.
-     * List<Map<String, Object>> results = executor.list(com.landawn.abacus.util.Clazz.PROPS_MAP,
+     * List<LinkedHashMap<String, Object>> results = executor.list(com.landawn.abacus.util.Clazz.PROPS_MAP,
      *     "SELECT customer_id, name FROM customers WHERE status = ?", "active");
      * List<String> customerIds = executor.list(String.class,
      *     "SELECT customer_id FROM customers WHERE status = ?", "active");
@@ -2552,7 +2570,7 @@ public class BigQueryExecutor {
      * String joinSql = "SELECT c.customer_id, c.name, COUNT(o.order_id) as order_count " +
      *                  "FROM customers c LEFT JOIN orders o ON c.customer_id = o.customer_id " +
      *                  "WHERE c.status = ? GROUP BY c.customer_id, c.name";
-     * List<Map<String, Object>> results = executor.list(
+     * List<LinkedHashMap<String, Object>> results = executor.list(
      *     com.landawn.abacus.util.Clazz.PROPS_MAP, joinSql, "active");   // returns one Map per row
      *
      * // Query returning single values (single-column result -> scalar conversion)
@@ -3102,7 +3120,7 @@ public class BigQueryExecutor {
      * library-private {@code FieldValueList.schema} field.
      *
      * <p>The reflective accessor is resolved once in a static initialiser; if the BigQuery client
-     * library hides or removes the field, that initialiser silently disables the optimisation and
+     * library hides or removes the field, that initialiser silently disables the accessor and
      * <i>this method then fails</i> with {@link IllegalArgumentException} when it validates the
      * captured accessor.</p>
      *

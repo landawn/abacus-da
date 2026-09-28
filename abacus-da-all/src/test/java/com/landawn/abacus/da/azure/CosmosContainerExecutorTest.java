@@ -1021,6 +1021,18 @@ public class CosmosContainerExecutorTest extends TestBase {
         assertEquals("1", specs.get(3).getParameters().get(0).getValue(String.class));
     }
 
+    /**
+     * Pins the documented {@code @throws IllegalArgumentException} for a blank or comment-only raw expression (abacus-query 4.9.4 rejects
+     * comment-only expressions as blank predicates): the call fails eagerly, before any Cosmos request is issued.
+     */
+    @Test
+    public void testBlankOrCommentOnlyExpressionConditionIsRejectedBeforeQuerying() {
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems(Filters.expr("  "), TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems(Filters.expr("/* only a comment */"), TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems(List.of("id"), Filters.expr("/* only a comment */"), TestItem.class));
+        verifyNoInteractions(mockCosmosContainer);
+    }
+
     // Test data class
     public static class TestItem {
         public String id;

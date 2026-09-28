@@ -52,6 +52,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.google.protobuf.Service;
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
 import com.landawn.abacus.exception.UncheckedIOException;
@@ -442,8 +443,9 @@ public final class HBaseExecutor {
 
     /**
      * Resolves and caches the row-key property setter for {@code targetType}: either a property
-     * explicitly registered via {@link #registerRowKeyProperty(Class, String)} or the single
-     * {@code @Id}-annotated property discovered on the class.
+     * explicitly registered via {@link #registerRowKeyProperty(Class, String)} or the single ID
+     * property discovered on the class ({@code @Id}/{@code @ReadOnlyId}-annotated or, when no property
+     * is annotated, a conventionally typed property named {@code id}; see {@link QueryUtil#idPropNames(Class)}).
      *
      * @param targetType the entity class whose row-key setter is requested
      * @return the setter {@link Method} of the row-key property, or {@code null} if
@@ -794,9 +796,10 @@ public final class HBaseExecutor {
      * populates the row-key property, and each subsequent cell is matched to a bean
      * property using the entity's column-family/qualifier mapping. Cells whose family,
      * qualifier, or field name cannot be resolved are silently ignored without creating nested
-     * bean instances. An empty qualifier maps a scalar property stored directly in its family;
-     * it does not select a property inside a flattened nested bean. Bean properties
-     * declared as {@link HBaseColumn}, {@code Collection<HBaseColumn>}, or
+     * bean instances, and so are cells of read-only (getter-only) properties, whose computed values
+     * {@link AnyPut#create(Object)} writes but which cannot be assigned. An empty qualifier maps a
+     * scalar property stored directly in its family; it does not select a property inside a
+     * flattened nested bean. Bean properties declared as {@link HBaseColumn}, {@code Collection<HBaseColumn>}, or
      * {@code Map<?, HBaseColumn>} are populated cell-by-cell with versioned values.</p>
      *
      * <p>For single-value target types the {@link Result} must contain exactly one cell,
@@ -1103,8 +1106,8 @@ public final class HBaseExecutor {
                 fieldName = familyTP._1;
                 familyPropInfo = entityInfo.getPropInfo(fieldName);
 
-                // ignore the unknown field/property:
-                if (familyPropInfo == null) {
+                // ignore the unknown field/property, and a read-only one (see isReadOnlyProperty):
+                if (familyPropInfo == null || isReadOnlyProperty(familyPropInfo)) {
                     continue;
                 }
 
@@ -1120,8 +1123,8 @@ public final class HBaseExecutor {
                     final BeanInfo propBeanInfo = ParserUtil.getBeanInfo(propEntityClass);
                     columnPropInfo = propBeanInfo.getPropInfo(propEntityColumnFieldNameMap.getOrDefault(qualifier, qualifier));
 
-                    // ignore the unknown property.
-                    if (columnPropInfo == null) {
+                    // ignore the unknown property, and a read-only one.
+                    if (columnPropInfo == null || isReadOnlyProperty(columnPropInfo)) {
                         continue;
                     }
 
@@ -1418,6 +1421,14 @@ public final class HBaseExecutor {
         }
     }
 
+    // A getter-only (computed) property, e.g. on an @Entity class or, since abacus-common 8.1.0, inherited from an
+    // @Entity superclass, is in propInfoList, so AnyPut.create writes its value as a cell; but PropInfo.setPropValue
+    // throws UnsupportedOperationException for it. Its cells are skipped on read, as the JSON parser does. PropInfo's
+    // isReadOnlyProperty flag is package-private; a property without a field is SERIALIZE_ONLY exactly when it is read-only.
+    private static boolean isReadOnlyProperty(final PropInfo propInfo) {
+        return propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY;
+    }
+
     private static byte[] copyOf(final byte[] bytes, final int offset, final int len) {
         final byte[] result = new byte[len];
         System.arraycopy(bytes, offset, result, 0, len);
@@ -1497,7 +1508,8 @@ public final class HBaseExecutor {
      *   <li>Annotated with {@code @Table} (from
      *       {@code com.landawn.abacus.annotation}, {@code javax.persistence}, or
      *       {@code jakarta.persistence}) to supply the HBase table name</li>
-     *   <li>Exactly one property marked with {@code @Id} (used as the row key)</li>
+     *   <li>Exactly one ID property (used as the row key): marked with {@code @Id}, or, when no
+     *       property is annotated, a conventionally typed property named {@code id}</li>
      *   <li>JavaBean conventions (getters/setters)</li>
      * </ul>
      *
@@ -1524,7 +1536,7 @@ public final class HBaseExecutor {
      * @param targetEntityClass an entity class carrying a {@code @Table} annotation; must not be {@code null}
      * @return a cached typed mapper for the specified entity class
      * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, is not a bean class, lacks a nonempty {@code @Table} name, or
-     *         declares zero or multiple {@code @Id} properties
+     *         declares zero or multiple ID properties
      * @see HBaseMapper
      * @see #mapper(Class, String, NamingPolicy)
      */
@@ -1576,12 +1588,13 @@ public final class HBaseExecutor {
      *
      * @param <T> the entity type
      * @param <K> the row key type
-     * @param targetEntityClass the entity class to map (must be a JavaBean class with one {@code @Id} property); must not be {@code null}
+     * @param targetEntityClass the entity class to map (must be a JavaBean class with exactly one ID property: an {@code @Id} property or,
+     *        when no property is annotated, a conventionally typed property named {@code id}); must not be {@code null}
      * @param tableName the HBase table name to bind the mapper to; must not be {@code null} or empty
      * @param namingPolicy the naming policy for column name conversion; {@code null} maps to {@link NamingPolicy#CAMEL_CASE}
      * @return a configured (non-cached) typed mapper for the specified entity class and table
      * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null} or is not a bean
-     *         class, has no {@code @Id} property, or has more than one {@code @Id} property; or if
+     *         class, has no ID property, or has more than one ID property; or if
      *         {@code tableName} is {@code null} or empty
      * @see NamingPolicy
      * @see HBaseMapper
@@ -1997,7 +2010,10 @@ public final class HBaseExecutor {
      * <pre>{@code
      * Get get = new Get(Bytes.toBytes("user123"));
      * User user = executor.get("users", get, User.class);
-     * String userName = executor.get("users", get, String.class);   // single cell value
+     *
+     * // A single-value target needs a Result with at most one cell, so select exactly one column
+     * Get nameGet = new Get(Bytes.toBytes("user123")).addColumn(Bytes.toBytes("info"), Bytes.toBytes("name"));
+     * String userName = executor.get("users", nameGet, String.class);   // the info:name cell value
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -2293,8 +2309,9 @@ public final class HBaseExecutor {
      *
      * <p>The returned stream is deferred: the underlying {@link Table} and
      * {@link ResultScanner} are opened only when iteration begins, and both are closed
-     * when the stream is closed (whether by reaching the end of iteration, calling
-     * {@link Stream#close()}, or exiting a try-with-resources block).</p>
+     * when the stream is closed (automatically once a terminal operation such as {@code toList()}
+     * or {@code forEach(...)} completes, or by calling {@link Stream#close()} / exiting a
+     * try-with-resources block; exhausting the stream's {@code iterator()} does not close it).</p>
      *
      * <p><strong>Resource ownership:</strong> the stream owns the table and scanner it
      * opens. Always consume scan streams inside a try-with-resources block, or call
@@ -3833,20 +3850,22 @@ public final class HBaseExecutor {
          *
          * <p>Instances are normally obtained via {@link HBaseExecutor#mapper(Class)} or
          * {@link HBaseExecutor#mapper(Class, String, NamingPolicy)} rather than constructed
-         * directly. The entity class must be a JavaBean class with exactly one
-         * {@code @Id}-annotated property, which is used as the row key.</p>
+         * directly. The entity class must be a JavaBean class with exactly one ID property
+         * ({@code @Id}-annotated or, when no property is annotated, a conventionally typed
+         * property named {@code id}), which is used as the row key.</p>
          *
          * @param targetEntityClass the entity class this mapper handles
          * @param hbaseExecutor the executor that performs the underlying HBase operations
          * @param tableName the HBase table name to bind this mapper to; must not be {@code null} or empty
          * @param namingPolicy the naming policy for column name conversion; {@code null} maps to {@link NamingPolicy#CAMEL_CASE}
          * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, is not a bean class, or has no or more than one
-         *         {@code @Id} property; if {@code hbaseExecutor} is {@code null}; or if {@code tableName} is {@code null} or empty
+         *         ID property; if {@code hbaseExecutor} is {@code null}; or if {@code tableName} is {@code null} or empty
          */
         HBaseMapper(final Class<T> targetEntityClass, final HBaseExecutor hbaseExecutor, final String tableName, final NamingPolicy namingPolicy)
                 throws IllegalArgumentException {
             N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
-            N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
+            N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method",
+                    ClassUtil.getCanonicalClassName(targetEntityClass));
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 

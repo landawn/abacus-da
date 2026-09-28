@@ -635,4 +635,56 @@ public class AsyncCassandraExecutorTest extends TestBase {
             assertTrue(ex.getCause() instanceof com.landawn.abacus.exception.DuplicateResultException);
         }
     }
+
+    // ---------------------------------------------------------------------------------------------
+    //  Review 2026-09-27 (slice O)
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * An Error thrown by the result mapping (e.g. an entity class whose static initializer fails) must be
+     * replayed by every later get(), like an Exception: memoize() used to cache only Exceptions, so the second
+     * get() re-ran the mapping over the already consumed cursor and reported "no row" (null) instead.
+     */
+    @Test
+    public void testRepeatedGet_gett_mappingErrorIsReplayed() throws Exception {
+        final Row row = mock(Row.class);
+        when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
+        when(mockSession.executeAsync(any(Statement.class))).thenAnswer(inv -> completed(oneShotPage(row)));
+        when(mockExecutor.prepareQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(new com.landawn.abacus.query.AbstractQueryBuilder.SP("SELECT id FROM t", com.landawn.abacus.util.ImmutableList.empty()));
+        final ExceptionInInitializerError mappingError = new ExceptionInInitializerError("static init failed");
+        // Behave like fetchOnlyOne mapping a row into a class whose initialization fails.
+        when(mockExecutor.fetchOnlyOne(eq(String.class), any(ResultSet.class))).thenAnswer(inv -> {
+            final Iterator<Row> it = ((ResultSet) inv.getArgument(1)).iterator();
+
+            if (!it.hasNext()) {
+                return null;
+            }
+
+            it.next();
+
+            throw mappingError;
+        });
+
+        final ContinuableFuture<String> future = async.gett(String.class, com.landawn.abacus.query.Filters.eq("id", 1));
+
+        for (int i = 0; i < 2; i++) { // the second get() previously returned null (the drained cursor looked empty)
+            final java.util.concurrent.ExecutionException ex = assertThrows(java.util.concurrent.ExecutionException.class, future::get);
+            assertSame(mappingError, ex.getCause());
+        }
+    }
+
+    @Test
+    public void testMemoize_cachesErrorAndDoesNotReapply() {
+        final int[] calls = { 0 };
+        final AssertionError error = new AssertionError("boom");
+        final com.landawn.abacus.util.Throwables.Function<String, String, Exception> once = AsyncCassandraExecutorBase.memoize(s -> {
+            calls[0]++;
+            throw error;
+        });
+
+        assertSame(error, assertThrows(AssertionError.class, () -> once.apply("a")));
+        assertSame(error, assertThrows(AssertionError.class, () -> once.apply("a")));
+        assertEquals(1, calls[0]);
+    }
 }

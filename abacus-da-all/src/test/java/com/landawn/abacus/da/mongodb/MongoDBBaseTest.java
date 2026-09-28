@@ -1052,6 +1052,32 @@ public class MongoDBBaseTest extends TestBase {
         assertSame(arrays, typed.getByteArrayArray());
     }
 
+    // -- 2026-09-27 review (slice H) regressions --
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListScalarRowsConvertLaterRowsWhenFirstAlreadyHasRequestedType() {
+        // Regression: when the FIRST scalar row was already a Long, the whole raw list was returned, so a later
+        // Integer row (MongoDB mixes int32/int64 for one field) leaked into the List<Long>. With an Integer first
+        // the same rows were converted, so the result depended on row order.
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        when(iterable.into(any())).thenReturn(Arrays.asList(1L, null, 2));
+
+        final List<Long> result = MongoDBBase.toList(iterable, Long.class);
+
+        assertEquals(3, result.size());
+        assertEquals(Long.valueOf(1L), result.get(0));
+        assertNull(result.get(1));
+        assertEquals(Long.class, ((Object) result.get(2)).getClass());
+        assertEquals(Long.valueOf(2L), result.get(2));
+
+        // Rows that all have the requested type are still returned as-is (no copy).
+        final List<Object> sameType = Arrays.asList(1L, null, 2L);
+        when(iterable.into(any())).thenReturn(sameType);
+
+        assertSame(sameType, MongoDBBase.toList(iterable, Long.class));
+    }
+
     public static class BinaryEntity {
         private ByteBuffer buffer;
         private byte[] bytes;

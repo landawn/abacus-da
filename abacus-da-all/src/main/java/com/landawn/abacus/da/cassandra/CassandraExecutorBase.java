@@ -1112,8 +1112,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Updates records based on a custom WHERE condition.
      *
      * <p>This method generates an UPDATE statement with the specified properties
-     * and WHERE condition, then executes it. This is useful for updating multiple
-     * records that match certain criteria.</p>
+     * and WHERE condition, then executes it. Cassandra only accepts an UPDATE whose WHERE clause
+     * restricts the full primary key (equality, or {@code IN} on the partition key), so several
+     * rows can be updated at once by listing their keys.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1121,7 +1122,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * props.put("status", "inactive");
      * props.put("lastModified", new Date());
      *
-     * Condition where = Filters.lt("lastLogin", thirtyDaysAgo);
+     * Condition where = Filters.in("userId", Arrays.asList("user1", "user2"));
      * ResultSet result = executor.update(User.class, props, where); // returns the driver ResultSet for the UPDATE
      *
      * executor.update(User.class, new HashMap<>(), where);          // throws IllegalArgumentException (props is empty)
@@ -1155,8 +1156,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * String query = "UPDATE users SET status = ? WHERE last_login < ?";
-     * ResultSet result = executor.update(query, "inactive", thirtyDaysAgo); // returns the driver ResultSet for the UPDATE
+     * String query = "UPDATE users SET status = ? WHERE user_id = ?";
+     * ResultSet result = executor.update(query, "inactive", "user123"); // returns the driver ResultSet for the UPDATE
      * }</pre>
      *
      * @param query the UPDATE query to execute
@@ -1467,11 +1468,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Deletes records based on a custom WHERE condition.
      *
      * <p>This method generates a DELETE statement with the specified WHERE condition
-     * and executes it. All matching rows will be deleted.</p>
+     * and executes it. All matching rows will be deleted. Cassandra only accepts a DELETE whose WHERE
+     * clause restricts the primary key (equality, or {@code IN} on the partition key), not arbitrary columns.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Condition where = Filters.eq("status", "deleted");
+     * Condition where = Filters.in("userId", Arrays.asList("user1", "user2"));
      * ResultSet result = executor.delete(User.class, where); // returns the driver ResultSet for the DELETE
      * }</pre>
      *
@@ -1496,7 +1498,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Condition where = Filters.and(Filters.eq("tenant", "tenant1"), Filters.eq("status", "inactive"));
+     * Condition where = Filters.in("userId", Arrays.asList("user1", "user2")); // DELETE must restrict the primary key
      *
      * // Delete specific columns in matching rows
      * ResultSet result = executor.delete(User.class,

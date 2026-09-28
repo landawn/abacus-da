@@ -65,7 +65,10 @@ public final class MongoDB extends MongoDBBase {
      * <p>Equivalent to calling {@link #MongoDB(MongoDatabase, AsyncExecutor)} with the shared
      * default {@code AsyncExecutor}. The database is wrapped with the framework's custom codec
      * registry so that automatic POJO mapping and BSON type conversions are available on every
-     * collection obtained from this instance.</p>
+     * collection obtained from this instance. That registry (the driver's default codecs plus the
+     * framework's general bean codec) <i>replaces</i> the registry the supplied database was
+     * configured with, so custom codecs registered on the client or database are not used by
+     * collections obtained through this instance.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -93,7 +96,9 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p>This constructor allows specification of a custom AsyncExecutor for controlling
      * asynchronous operation characteristics such as thread pool size, timeout behavior,
-     * and execution policies. The database is configured with POJO codec support.</p>
+     * and execution policies. The database is configured with POJO codec support; as with
+     * {@link #MongoDB(MongoDatabase)}, the framework codec registry replaces the supplied database's
+     * own registry.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

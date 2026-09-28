@@ -2197,9 +2197,48 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
         assertNull(executor.getItem(USER_TABLE, DynamoDBExecutor.asKey("user_id", entity.getUserId())));
     }
 
+    // ---- sliceC 2026-09-27: a String[] property is written as JSON text (S) and must read back element-wise ----
+    @Test
+    public void testMapperPutGetRoundTripsStringArrayProperty() {
+        assumeAvailable();
+        final DynamoDBExecutor.Mapper<StringArrayEntity> mapper = executor.mapper(StringArrayEntity.class, TEST_TABLE, NamingPolicy.CAMEL_CASE);
+
+        final StringArrayEntity entity = new StringArrayEntity();
+        entity.setId(id());
+        entity.setTags(new String[] { "red", "green, blue" });
+        mapper.putItem(entity);
+
+        final StringArrayEntity read = mapper.getItem(entity);
+
+        assertNotNull(read);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new String[] { "red", "green, blue" }, read.getTags());
+    }
+
     // ====================================================================================================
     // Entities
     // ====================================================================================================
+
+    public static class StringArrayEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String[] tags;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(String[] tags) {
+            this.tags = tags;
+        }
+    }
 
     public static class V2NoTableEntity {
         @com.landawn.abacus.annotation.Id

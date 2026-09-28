@@ -2922,6 +2922,114 @@ public class DynamoDBExecutor01Test extends TestBase {
         }
     }
 
+    // ===== 2026-09-27 review (slice A): object-array properties round-trip through their JSON S attribute =====
+    // toItem writes a String[]/Object[] property as its JSON text; N.convert(String, String[].class) wraps that whole
+    // text as a single element instead of parsing it, so the array came back as {"[\"a\", \"b\"]"}.
+    @Test
+    public void testToEntity_StringAndObjectArrayPropsRoundTripThroughToItem() {
+        ObjectArrayPropsEntity source = new ObjectArrayPropsEntity();
+        source.setId("id-1");
+        source.setTags(new String[] { "a", "b, c" });
+        source.setValues(new Object[] { "s", 2 });
+        source.setNums(new Integer[] { 1, 2 });
+        source.setEmptyTags(new String[0]);
+
+        Map<String, AttributeValue> item = DynamoDBExecutor.toItem(source);
+        assertEquals("[\"a\", \"b, c\"]", item.get("tags").getS());
+
+        ObjectArrayPropsEntity result = DynamoDBExecutor.toEntity(item, ObjectArrayPropsEntity.class);
+
+        assertArrayEquals(new String[] { "a", "b, c" }, result.getTags());
+        assertArrayEquals(new Object[] { "s", 2 }, result.getValues());
+        assertArrayEquals(new Integer[] { 1, 2 }, result.getNums());
+        assertArrayEquals(new String[0], result.getEmptyTags());
+
+        Map<String, AttributeValue> padded = new LinkedHashMap<>();
+        padded.put("tags", new AttributeValue().withS(" [\"x\", \"y\"] "));
+        assertArrayEquals(new String[] { "x", "y" }, DynamoDBExecutor.toEntity(padded, ObjectArrayPropsEntity.class).getTags());
+    }
+
+    @Test
+    public void testToEntity_StringArrayPropFromPlainOrNativeAttributeUnchanged() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("tags", new AttributeValue().withS("a, b")); // not JSON text: kept as a single element, as before
+        item.put("values", new AttributeValue().withSS("x", "y"));
+
+        ObjectArrayPropsEntity result = DynamoDBExecutor.toEntity(item, ObjectArrayPropsEntity.class);
+
+        assertArrayEquals(new String[] { "a, b" }, result.getTags());
+        assertArrayEquals(new Object[] { "x", "y" }, result.getValues());
+    }
+
+    @Test
+    public void testMapperGetItem_StringArrayPropRoundTripsThroughPutItem() {
+        DynamoDBExecutor.Mapper<ObjectArrayPropsEntity> mapper = executor.mapper(ObjectArrayPropsEntity.class);
+        ObjectArrayPropsEntity entity = new ObjectArrayPropsEntity();
+        entity.setId("id-1");
+        entity.setTags(new String[] { "red", "green" });
+
+        when(mockDynamoDBClient.putItem(eq("TestTable"), any())).thenReturn(new PutItemResult());
+        mapper.putItem(entity);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, AttributeValue>> itemCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).putItem(eq("TestTable"), itemCaptor.capture());
+
+        when(mockDynamoDBClient.getItem(eq("TestTable"), any())).thenReturn(new GetItemResult().withItem(itemCaptor.getValue()));
+
+        assertArrayEquals(new String[] { "red", "green" }, mapper.getItem(entity).getTags());
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    public static class ObjectArrayPropsEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String[] tags;
+        private Object[] values;
+        private Integer[] nums;
+        private String[] emptyTags;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(final String[] tags) {
+            this.tags = tags;
+        }
+
+        public Object[] getValues() {
+            return values;
+        }
+
+        public void setValues(final Object[] values) {
+            this.values = values;
+        }
+
+        public Integer[] getNums() {
+            return nums;
+        }
+
+        public void setNums(final Integer[] nums) {
+            this.nums = nums;
+        }
+
+        public String[] getEmptyTags() {
+            return emptyTags;
+        }
+
+        public void setEmptyTags(final String[] emptyTags) {
+            this.emptyTags = emptyTags;
+        }
+    }
+
 
     public static class BinaryContainerEntity {
         private List<byte[]> bytes;

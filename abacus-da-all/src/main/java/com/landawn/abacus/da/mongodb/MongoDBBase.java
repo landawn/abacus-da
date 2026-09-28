@@ -1319,7 +1319,10 @@ public abstract class MongoDBBase {
         final Optional<Object> firstNonNull = N.firstNonNull(rowList);
 
         if (firstNonNull.isPresent()) {
-            if (rowType.isAssignableFrom(firstNonNull.get().getClass())) {
+            // Return the rows as-is only when every one already has the requested type: a single sample is not
+            // enough, since scalar rows (e.g. from distinct(field, Object.class)) freely mix int32/int64 values,
+            // and a later Integer would otherwise leak into a List<Long>.
+            if (rowType.isAssignableFrom(firstNonNull.get().getClass()) && isEveryRowInstanceOf(rowList, rowType)) {
                 return (List<T>) rowList;
             } else {
                 final List<Object> resultList = new ArrayList<>(rowList.size());
@@ -1500,6 +1503,19 @@ public abstract class MongoDBBase {
         }
 
         return propName;
+    }
+
+    /**
+     * Returns {@code true} when every non-null element of {@code rowList} is an instance of {@code rowType}.
+     */
+    private static boolean isEveryRowInstanceOf(final List<?> rowList, final Class<?> rowType) {
+        for (final Object row : rowList) {
+            if (row != null && !rowType.isInstance(row)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

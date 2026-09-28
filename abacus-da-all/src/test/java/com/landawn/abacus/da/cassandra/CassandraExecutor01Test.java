@@ -496,7 +496,8 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
         when(mockColumnDef.getType()).thenReturn(mockDataType);
         when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
-        when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
+        // lenient: a named Map keyed by the marker name now goes straight to named binding without a codec lookup
+        org.mockito.Mockito.lenient().when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
         when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
 
         // Test execute with query only
@@ -625,7 +626,8 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
         when(mockColumnDef.getType()).thenReturn(mockDataType);
         when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
-        when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
+        // lenient: a named Map keyed by the marker name now goes straight to named binding without a codec lookup
+        org.mockito.Mockito.lenient().when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
 
         // Test asyncExecute with query only
@@ -976,6 +978,68 @@ public class CassandraExecutor01Test extends TestBase {
     }
 
     // ---- slice N regression tests: end ----
+
+    // ---- 2026-09-27 slice N regression tests ----
+
+    @Test
+    public void testNamedMapParameterForSingleMapColumnMarkerBindsTheNamedValue() {
+        // execute(String, Map) documents the Map as NAME -> VALUE. For a query with one named marker whose column is itself a
+        // map type, the Map used to be bound as the column value (a Map is assignable to the map column's Java type), which
+        // the driver then failed to encode (ClassCastException against a live Cassandra).
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("named-map-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String namedQuery = "UPDATE t SET m = :m WHERE id = 1";
+        final String positionalQuery = "UPDATE t SET m = ? WHERE id = 1";
+        when(mockSession.prepare(positionalQuery)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType())
+                .thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.mapOf(com.datastax.oss.driver.api.core.type.DataTypes.TEXT,
+                        com.datastax.oss.driver.api.core.type.DataTypes.INT));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final Map<String, Integer> columnValue = Map.of("a", 1);
+
+        codecExecutor.prepareStatement(namedQuery, Map.of("m", columnValue));
+        assertEquals(1, bound[0].length);
+        assertEquals(columnValue, bound[0][0]);
+
+        // A Map that is not keyed by the marker name, or a Map for a positional marker, is still bound as the column value.
+        codecExecutor.prepareStatement(namedQuery, columnValue);
+        assertSame(columnValue, bound[0][0]);
+        final Map<String, Integer> positionalValue = Map.of("m", 5);
+        codecExecutor.prepareStatement(positionalQuery, positionalValue);
+        assertSame(positionalValue, bound[0][0]);
+    }
+
+    @Test
+    public void testTypedArrayRowTargetConvertsColumnValuesToComponentType() {
+        // Typed array targets (documented alongside Object[]) used to store the raw driver value, so an int column
+        // read into String[]/Long[] threw ArrayStoreException (reproduced against a live Cassandra).
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+        when(mockResultSet.all()).thenReturn(List.of(mockRow));
+        when(mockRow.getObject(0)).thenReturn(1);
+        when(mockRow.getObject(1)).thenReturn(null);
+
+        final List<String[]> strings = CassandraExecutor.toList(mockResultSet, String[].class);
+        assertEquals(1, strings.size());
+        assertEquals(Arrays.asList("1", null), Arrays.asList(strings.get(0)));
+
+        final List<Object[]> objects = CassandraExecutor.toList(mockResultSet, Object[].class);
+        assertEquals(Arrays.asList(1, null), Arrays.asList(objects.get(0)));
+
+        // Single-row path (findFirst/gett) goes through readRow.
+        when(mockResultSet.iterator()).thenReturn(List.of(mockRow).iterator());
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        final Long[] longs = executor.fetchOnlyOne(Long[].class, mockResultSet);
+        assertEquals(Arrays.asList(1L, null), Arrays.asList(longs));
+    }
 
     // Test entity class
     public static class RenamedColumnEntity {

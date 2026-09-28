@@ -913,7 +913,9 @@ public final class DynamoDBExecutor {
      * {@code NS}, {@code BS}, {@code L}, or {@code M} values — collections, maps, arrays (other than
      * {@code byte[]}), and beans are serialised to their JSON string form and stored as {@code S}.
      * If you need typed set/list/map AttributeValues, build them with the AWS SDK v2 factories
-     * ({@code AttributeValue.fromL(...)}, {@code AttributeValue.fromM(...)}, {@code AttributeValue.fromSs(...)}, ...) directly.</p>
+     * ({@code AttributeValue.fromL(...)}, {@code AttributeValue.fromM(...)}, {@code AttributeValue.fromSs(...)}, ...) directly.
+     * In that JSON form a nested {@code ByteBuffer} (a collection or array element, a map value, or a property of a bean value) is
+     * written as an empty string, so its bytes are lost; use {@code byte[]} there, or build a {@code BS}/{@code L} value instead.</p>
      *
      * @param value the Java object to convert, can be null
      * @return an AttributeValue representing the input value with appropriate type mapping, never null
@@ -1940,7 +1942,24 @@ public final class DynamoDBExecutor {
             return (T) ByteBuffer.wrap((byte[]) rawValue);
         }
 
+        // toAttributeValue stores arrays as their JSON text (an S attribute). For an array whose component type
+        // accepts a String (String[], CharSequence[], Object[]), N.convert wraps that whole text as a single
+        // element instead of parsing it, so e.g. a String[] property would not survive a put -> get round trip.
+        if (rawValue instanceof String && targetClass.isArray() && targetClass.getComponentType().isAssignableFrom(String.class)
+                && isJsonArrayText((String) rawValue)) {
+            return N.typeOf(targetClass).valueOf((String) rawValue);
+        }
+
         return N.convert(rawValue, targetClass);
+    }
+
+    /**
+     * Returns whether {@code text}, ignoring surrounding whitespace, is bracketed like a JSON array.
+     */
+    private static boolean isJsonArrayText(final String text) {
+        final String trimmed = text.strip();
+
+        return trimmed.length() >= 2 && trimmed.charAt(0) == '[' && trimmed.charAt(trimmed.length() - 1) == ']';
     }
 
     /**

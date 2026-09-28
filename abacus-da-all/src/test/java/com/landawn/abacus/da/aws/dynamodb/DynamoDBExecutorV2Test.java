@@ -2911,6 +2911,81 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertTrue(entity.getBufferMap().isEmpty());
     }
 
+    // ---- sliceC 2026-09-27: String[]/Object[] properties must survive the executor's own JSON (S) write format ----
+    // toItem stores arrays as JSON text; N.convert(String, String[].class) wrapped that whole text as ONE element.
+
+    @Test
+    public void testToEntity_StringArrayPropertyRoundTripsThroughJsonText() {
+        final StringArrayEntity source = new StringArrayEntity();
+        source.setId("1");
+        source.setTags(new String[] { "a", "b,c" });
+        source.setValues(new Object[] { "x", 1 });
+        source.setNames(new CharSequence[] { "n" });
+
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(source);
+        assertEquals("[\"a\", \"b,c\"]", item.get("tags").s());
+
+        final StringArrayEntity read = DynamoDBExecutor.toEntity(item, StringArrayEntity.class);
+
+        assertArrayEquals(new String[] { "a", "b,c" }, read.getTags());
+        assertArrayEquals(new Object[] { "x", 1 }, read.getValues());
+        assertArrayEquals(new CharSequence[] { "n" }, read.getNames());
+    }
+
+    @Test
+    public void testToEntity_StringArrayPropertyFromEmptyJsonArrayAndPlainText() {
+        assertEquals(0, DynamoDBExecutor.toEntity(Map.of("tags", AttributeValue.fromS("[]")), StringArrayEntity.class).getTags().length);
+
+        // A plain (non-JSON-array) S value keeps the lenient single-element conversion.
+        assertArrayEquals(new String[] { "plain, text" },
+                DynamoDBExecutor.toEntity(Map.of("tags", AttributeValue.fromS("plain, text")), StringArrayEntity.class).getTags());
+    }
+
+    @Test
+    public void testRegisteredAttributeValueConverter_StringArrayTargetParsesJsonText() {
+        assertNotNull(executor); // the executor class (and so its AttributeValue converter) is initialized
+
+        assertArrayEquals(new String[] { "p", "q" }, com.landawn.abacus.util.N.convert(AttributeValue.fromS("[\"p\", \"q\"]"), String[].class));
+    }
+
+    public static class StringArrayEntity {
+        private String id;
+        private String[] tags;
+        private Object[] values;
+        private CharSequence[] names;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(final String[] tags) {
+            this.tags = tags;
+        }
+
+        public Object[] getValues() {
+            return values;
+        }
+
+        public void setValues(final Object[] values) {
+            this.values = values;
+        }
+
+        public CharSequence[] getNames() {
+            return names;
+        }
+
+        public void setNames(final CharSequence[] names) {
+            this.names = names;
+        }
+    }
 
     public static class BinaryContainerEntity {
         private List<byte[]> bytes;

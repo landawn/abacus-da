@@ -1658,6 +1658,26 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
+    // ---- sliceP 2026-09-27: named Map container on a single map-column marker; typed array row targets ----
+
+    @Test
+    public void test_sliceP_namedMapParameterForMapColumnAndTypedArrayRows() {
+        cassandraExecutor.execute("CREATE TABLE IF NOT EXISTS simplex.slice_p_named_map (id int PRIMARY KEY, m map<text, int>)");
+        cassandraExecutor.execute("INSERT INTO simplex.slice_p_named_map (id) VALUES (1)");
+        try {
+            // Used to bind the whole container {m={a=1}} as the column value and fail inside the driver's map codec.
+            cassandraExecutor.execute("UPDATE simplex.slice_p_named_map SET m = :m WHERE id = 1", N.asMap("m", N.asMap("a", 1)));
+            assertEquals(N.asMap("a", 1), cassandraExecutor.queryForSingleValue(Map.class, "SELECT m FROM simplex.slice_p_named_map WHERE id = 1").get());
+
+            // Used to throw ArrayStoreException (an int column stored into String[] / Long[]).
+            final List<String[]> rows = cassandraExecutor.list(String[].class, "SELECT id FROM simplex.slice_p_named_map WHERE id = 1");
+            assertEquals("1", rows.get(0)[0]);
+            assertEquals(1L, cassandraExecutor.findFirst(Long[].class, "SELECT id FROM simplex.slice_p_named_map WHERE id = 1").get()[0]);
+        } finally {
+            cassandraExecutor.execute("DROP TABLE IF EXISTS simplex.slice_p_named_map");
+        }
+    }
+
     private Users createUser() {
         Users user = new Users();
         user.setId(UUID.randomUUID());

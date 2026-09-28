@@ -1699,4 +1699,72 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertNull(asyncExecutor.getItem("TestTable", key).get());
         verify(mockDynamoDbAsyncClient, times(5)).getItem(any(GetItemRequest.class));
     }
+
+    // ===== sliceD (2026-09-27): async conversion paths delegate to the sync v2 helpers =====
+
+    /**
+     * Pins the documented query(QueryRequest) example: Map rows hold N attributes as their raw number
+     * String, so a {@code (Number)} cast fails and the value must be parsed.
+     */
+    @Test
+    public void testQueryMapRowsHoldNumericAttributesAsRawNumberStrings() throws Exception {
+        final QueryResponse response = QueryResponse.builder()
+                .items(List.of(Map.of("productId", AttributeValue.fromS("p1"), "amount", AttributeValue.fromN("12.5")),
+                        Map.of("productId", AttributeValue.fromS("p1"), "amount", AttributeValue.fromN("2.5"))))
+                .build();
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        final Dataset dataset = asyncExecutor.query(QueryRequest.builder().tableName("Sales").build()).get();
+
+        assertEquals("12.5", dataset.moveToRow(0).get("amount"));
+        final Dataset grouped = dataset.groupBy("productId", "amount", "totalAmount",
+                com.landawn.abacus.util.stream.Collectors.summingDouble(v -> Double.parseDouble((String) v)));
+        assertEquals(15.0, ((Number) grouped.moveToRow(0).get("totalAmount")).doubleValue(), 0.0);
+    }
+
+    /**
+     * The async typed read paths (getItem/list/query/stream) convert through the sync v2 helpers, so a
+     * String[] property stored as JSON-array text (an S attribute) is parsed element-wise, not wrapped whole.
+     */
+    @Test
+    public void testTypedReadsParseStringArrayPropertyFromJsonArrayText() throws Exception {
+        final Map<String, AttributeValue> item = Map.of("id", AttributeValue.fromS("1"), "tags", AttributeValue.fromS("[\"a\",\"b\"]"));
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().item(item).build()));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(item)).build()));
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("T").build();
+
+        final List<StringArrayEntity> fromReads = new ArrayList<>();
+        fromReads.add(asyncExecutor.getItem("T", Map.of("id", AttributeValue.fromS("1")), StringArrayEntity.class).get());
+        fromReads.addAll(asyncExecutor.list(queryRequest, StringArrayEntity.class).get());
+        fromReads.addAll(asyncExecutor.stream(queryRequest, StringArrayEntity.class).get().toList());
+        fromReads.addAll(asyncExecutor.query(queryRequest, StringArrayEntity.class).get().toList(StringArrayEntity.class));
+
+        assertEquals(4, fromReads.size());
+        for (final StringArrayEntity e : fromReads) {
+            assertTrue(java.util.Arrays.equals(new String[] { "a", "b" }, e.getTags()), java.util.Arrays.toString(e.getTags()));
+        }
+    }
+
+    public static class StringArrayEntity {
+        private String id;
+        private String[] tags;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(final String[] tags) {
+            this.tags = tags;
+        }
+    }
 }

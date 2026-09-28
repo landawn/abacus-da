@@ -26,6 +26,7 @@ import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
+import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
 import com.mongodb.MongoException;
@@ -69,8 +70,10 @@ import reactor.core.publisher.Mono;
  *       {@code Mono<...>} or {@code Flux<T>} typed against the mapper's entity type, so no per-call
  *       {@code Class<T>} parameter is needed. {@link #collectionExecutor()} is a synchronous accessor.</li>
  *   <li><strong>Automatic conversion:</strong> The framework's MongoDB mapping helpers convert the
- *       outer entity to and from a {@link Document}; ID fields annotated with {@code @Id} (or named
- *       {@code id}) are mapped to MongoDB's {@code _id}. The collection codec registry handles BSON
+ *       outer entity to and from a {@link Document}; a {@link String}- or {@link ObjectId}-typed ID
+ *       property annotated with {@code @Id} (or named {@code id}) is mapped to MongoDB's {@code _id}. An
+ *       ID property of any other type (e.g. {@code long}) is stored as an ordinary field under its own
+ *       name, and MongoDB assigns a separate {@code _id}. The collection codec registry handles BSON
  *       values stored inside the document.</li>
  *   <li><strong>Back-pressure support:</strong> Streaming {@code Flux} operations propagate
  *       Reactive Streams {@code Subscription.request(n)} demand to the driver.</li>
@@ -92,7 +95,8 @@ import reactor.core.publisher.Mono;
  * <ul>
  *   <li>Have a default (no-argument) constructor for instantiation</li>
  *   <li>Use proper getter/setter methods for property access</li>
- *   <li>Mark ID fields with the {@code @Id} annotation or use the {@code "id"} property name</li>
+ *   <li>Mark ID fields with the {@code @Id} annotation or use the {@code "id"} property name, typed as
+ *       {@link String} or {@link ObjectId} so they map to {@code _id}</li>
  *   <li>Use MongoDB-compatible data types for serialization</li>
  *   <li>Be thread-safe if used across stream boundaries</li>
  * </ul>
@@ -2103,10 +2107,12 @@ public final class MongoCollectionMapper<T> {
      * Mono<InsertOneResult> pending = userMapper.insertOne(newUser);   // nothing written yet
      * pending.subscribe();                                             // subscription actually performs the insert
      *
-     * // Edge: subscribing the SAME publisher twice issues the underlying insert twice.
+     * // Edge: subscribing the SAME publisher twice re-issues the SAME insert. The entity is converted to a
+     * // Document once, at call time, and the driver stamps a generated _id onto that Document before
+     * // insertOne returns (it is not written back to the entity), so the retry carries the same _id.
      * Mono<InsertOneResult> ins = userMapper.insertOne(newUser);
-     * ins.subscribe();   // first insert
-     * ins.subscribe();   // second insert (likely a duplicate-key MongoWriteException via onError if _id repeats)
+     * ins.block();   // first insert
+     * ins.block();   // throws MongoWriteException: E11000 duplicate key (no second document is written)
      *
      * // Negative: inserting an entity whose _id already exists -> MongoWriteException on subscription.
      * userMapper.insertOne(existingUser)
@@ -3487,7 +3493,9 @@ public final class MongoCollectionMapper<T> {
      * {@code $group}/{@code $project} aggregation pipeline (the same approach as {@link #groupBy(String)}),
      * so scalar field values decode cleanly into {@code T} — unlike the driver's native
      * {@code distinct(field, T.class)}, which throws {@code BsonInvalidOperationException} when
-     * {@code T} is a POJO and the field is scalar. To obtain raw scalar values instead, use
+     * {@code T} is a POJO and the field is scalar. When {@code T} itself is a single-value type (such as
+     * {@code String}), the {@code $project} stage is omitted and each distinct value is emitted directly,
+     * converted to {@code T}. To obtain raw scalar values instead, use
      * {@link MongoCollectionExecutor#distinct(String, Class)} with an explicit value class.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -3528,15 +3536,15 @@ public final class MongoCollectionMapper<T> {
     public Flux<T> distinct(final String fieldName) throws IllegalArgumentException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
 
-        return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, null, rowType), rowType);
     }
 
     // Routes distinct through a $group/$project pipeline (like groupBy) so each distinct scalar value
     // comes back as a {fieldName: value} document decodable into the mapped entity type, as documented.
     // The driver's native distinct(fieldName, entityClass) decodes each raw VALUE with the entity codec
     // and throws BsonInvalidOperationException for any scalar field. Mirrors the blocking
-    // MongoCollectionMapper.distinct(...) so both layers behave identically.
-    private static List<Bson> distinctPipeline(final String fieldName, final Bson filter) {
+    // MongoCollectionMapper.distinct(...).
+    private static List<Bson> distinctPipeline(final String fieldName, final Bson filter, final Class<?> rowType) {
         final List<Bson> pipeline = new ArrayList<>(3);
 
         if (filter != null) {
@@ -3544,9 +3552,25 @@ public final class MongoCollectionMapper<T> {
         }
 
         pipeline.add(new Document("$group", new Document("_id", "$" + fieldName)));
-        pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+
+        // A single-value rowType (e.g. String) reads the value straight from the {_id: value} group rows (readRow
+        // uses an _id-only row's id). Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName
+        // ("a.b" -> {a: {b: value}}), and the scalar conversion would then receive the embedded document.
+        if (!isSingleValueRowType(rowType)) {
+            pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+        }
 
         return pipeline;
+    }
+
+    private static boolean isSingleValueRowType(final Class<?> rowType) {
+        if (rowType.isAssignableFrom(Document.class)) {
+            return false;
+        }
+
+        final Type<?> type = N.typeOf(rowType);
+
+        return !(type.isObjectArray() || type.isCollection() || type.isMap() || type.isBean());
     }
 
     /**
@@ -3555,7 +3579,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Like {@link #distinct(String)} but only considers documents matching {@code filter}. Each
      * distinct value is surfaced under {@code fieldName} on an entity of the mapped type via a
-     * {@code $group}/{@code $project} pipeline, so scalar values decode cleanly into {@code T}. To
+     * {@code $group}/{@code $project} pipeline, so scalar values decode cleanly into {@code T} (a single-value
+     * {@code T} such as {@code String} receives each value directly, as in {@link #distinct(String)}). To
      * obtain raw scalar values instead, use {@link MongoCollectionExecutor#distinct(String, Bson, Class)}
      * with an explicit value class.</p>
      *
@@ -3589,7 +3614,7 @@ public final class MongoCollectionMapper<T> {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(filter, cs.filter);
 
-        return collectionExecutor.aggregate(distinctPipeline(fieldName, filter), rowType);
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, filter, rowType), rowType);
     }
 
     /**
@@ -3640,7 +3665,9 @@ public final class MongoCollectionMapper<T> {
      * <p>Issues an aggregation pipeline with a {@code $group} stage keyed on {@code fieldName} and
      * decodes each resulting group document to the mapper's row type {@code T}. Unless {@code T} is
      * {@link Document}, a {@code $project} stage follows that drops {@code _id} and surfaces the group
-     * key under {@code fieldName}, so it is readable through the entity's matching property.</p>
+     * key under {@code fieldName}, so it is readable through the entity's matching property. A
+     * single-value {@code T} (such as {@code String}) skips that stage and receives each group key
+     * directly, converted to {@code T}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

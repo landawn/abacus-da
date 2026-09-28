@@ -7,6 +7,13 @@
   * MongoCollectionExecutor (sync and reactive): typed `aggregate`/`mapReduce`/`findOneAndXxx` return the raw document for `Object`/`Bson` result types.
   * DynamoDBExecutor (v1): `scan` with an empty `attributesToGet` list retrieves all attributes instead of sending an invalid request.
   * Javadoc corrections across HBase, Cassandra, MongoDB, DynamoDB, BigQuery and Neo4j executors.
+  * abacus-query 4.9.4: CqlBuilder renders column deletes (`delete(cols).from(...)`) itself, because the parent `from(...)` now rejects `DELETE`; `delete(cols)` without `from(...)` is rejected instead of rendering `DELETE FROM null`; `from(Class, alias)`/`from(String, Class)`/`onlyIf(String)` are atomic on failure.
+  * ParsedCql: bind markers inside list literals and subscripts (`[?, ?]`, `l[?]`, `m[:k]`) are counted/rewritten, a `]` inside a string in a list no longer swallows the rest of the statement, and `?-` no longer hides a marker. `CqlMapper.saveTo` validates XML characters before truncating the target file.
+  * CassandraExecutor (v3/v4): a named single map-column marker bound from a `Map` keyed by its name binds the named value; typed-array row targets (`String[]`, `Long[]`) convert column values; async `memoize` also caches `Error`s.
+  * DynamoDBExecutor (v1/v2): `String[]`/`Object[]` properties round-trip through their JSON-array `S` attribute.
+  * MongoDB: `groupBy`/`distinct` on a dotted field into a single-value type return the values (sync + reactive executors and mappers); `MongoDBBase.toList` converts every scalar row, not only when the first row differs.
+  * HBaseExecutor: cells mapped to read-only (getter-only) properties are skipped on read instead of failing the whole entity.
+  * BigQueryExecutor: `queryForSingleValue`/`queryForSingleNonNull` decode a STRUCT cell into a `List`/`Collection` target again (abacus-common 8.1.0 `N.convert` no longer applies the registered converter there).
 
 ## 2.8.8
 * Naming convention improvements

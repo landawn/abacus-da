@@ -478,4 +478,173 @@ public class ParsedCqlTest extends TestBase {
         assertEquals("SELECT \"path\\\" FROM files WHERE id = ?", identifier.parameterizedCql());
         assertEquals(1, identifier.parameterCount());
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Bind markers inside CQL list literals and subscripts ([...]).
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testParse_PositionalMarkersInsideListLiteralsAndSubscripts_areCounted() {
+        // Regression: SqlParser keeps a whole [...] group as one token, so every '?' inside it was left out of
+        // parameterCount (these returned 1, 2, 1, 1 and 1).
+        assertEquals(3, ParsedCql.parse("UPDATE t SET l = l + [?, ?] WHERE id = ?").parameterCount());
+        assertEquals(3, ParsedCql.parse("UPDATE t SET l[?] = ? WHERE id = ?").parameterCount());
+        assertEquals(3, ParsedCql.parse("INSERT INTO t (id, l) VALUES (?, [?, ?])").parameterCount());
+        assertEquals(4, ParsedCql.parse("UPDATE t SET l = [[?, ?], [?]] WHERE id = ?").parameterCount());
+        assertEquals(3, ParsedCql.parse("UPDATE t SET m = {'k': [?, ?]} WHERE id = ?").parameterCount());
+
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM t WHERE m[?]>=? AND l[?]<>? ALLOW FILTERING");
+        assertEquals(4, parsed.parameterCount());
+        assertEquals("SELECT * FROM t WHERE m[?]>=? AND l[?]<>? ALLOW FILTERING", parsed.parameterizedCql());
+        assertTrue(parsed.namedParameters().isEmpty());
+    }
+
+    @Test
+    public void testParse_CloseBracketInsideStringOfListLiteral_doesNotSwallowRestOfStatement() {
+        // Regression: the bracket group ended at the ']' inside 'b]', and the following "'] WHERE id = ?" was then
+        // read as an unterminated string literal, so even the top-level marker was lost (parameterCount 0).
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET l = ['a?', ?, 'b]'] WHERE id = ?");
+
+        assertEquals(2, parsed.parameterCount());
+        assertEquals("UPDATE t SET l = ['a?', ?, 'b]'] WHERE id = ?", parsed.parameterizedCql());
+    }
+
+    @Test
+    public void testParse_NamedAndMyBatisMarkersInsideBrackets_areRewritten() {
+        final ParsedCql named = ParsedCql.parse("UPDATE t SET l = l + [:x, :y] WHERE id = :id");
+        assertEquals("UPDATE t SET l = l + [?, ?] WHERE id = ?", named.parameterizedCql());
+        assertEquals(3, named.parameterCount());
+        assertEquals("x", named.namedParameters().get(0));
+        assertEquals("y", named.namedParameters().get(1));
+        assertEquals("id", named.namedParameters().get(2));
+
+        final ParsedCql subscript = ParsedCql.parse("UPDATE t SET m[:k] = :v WHERE id = :id");
+        assertEquals("UPDATE t SET m[?] = ? WHERE id = ?", subscript.parameterizedCql());
+        assertEquals("k", subscript.namedParameters().get(0));
+        assertEquals("v", subscript.namedParameters().get(1));
+
+        // A ':' directly inside [...] cannot be a map separator, even when the list is a map value.
+        final ParsedCql inMap = ParsedCql.parse("UPDATE t SET m = {'k': [:a, :b]} WHERE id = :id");
+        assertEquals("UPDATE t SET m = {'k': [?, ?]} WHERE id = ?", inMap.parameterizedCql());
+        assertEquals(3, inMap.parameterCount());
+
+        final ParsedCql myBatis = ParsedCql.parse("UPDATE t SET l = [#{a}, #{b}] WHERE id = #{id}");
+        assertEquals("UPDATE t SET l = [?, ?] WHERE id = ?", myBatis.parameterizedCql());
+        assertEquals("a", myBatis.namedParameters().get(0));
+        assertEquals("id", myBatis.namedParameters().get(2));
+    }
+
+    @Test
+    public void testParse_UdtLiteralInsideListLiteral_isNotCorrupted() {
+        // Regression: "[{street::street}]" was one token, so the embedded-marker rewrite took "street}]" as the
+        // parameter name and dropped the closing "}]" from the CQL ("... [{street:? WHERE id = ?").
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET l = [{street::street}] WHERE id = :id");
+
+        assertEquals("UPDATE t SET l = [{street:?}] WHERE id = ?", parsed.parameterizedCql());
+        assertEquals("street", parsed.namedParameters().get(0));
+        assertEquals("id", parsed.namedParameters().get(1));
+    }
+
+    @Test
+    public void testParse_BracketsInsideQuotesAndComments_areLeftAlone() {
+        final ParsedCql quoted = ParsedCql.parse("SELECT \"col[1]\" FROM t WHERE a = 'x[y' AND b = :b");
+        assertEquals("SELECT \"col[1]\" FROM t WHERE a = 'x[y' AND b = ?", quoted.parameterizedCql());
+        assertEquals(1, quoted.parameterCount());
+
+        final ParsedCql commented = ParsedCql.parse("UPDATE t SET l = [? /* ? ] */, ?] WHERE id = ? -- [?]");
+        assertEquals("UPDATE t SET l = [? , ?] WHERE id = ?", commented.parameterizedCql());
+        assertEquals(3, commented.parameterCount());
+    }
+
+    @Test
+    public void testParse_PositionalMarkerFollowedByMinus_isCounted() {
+        // Regression: SqlParser's PostgreSQL JSON operator "?-" (which CQL does not have) glued the marker to the
+        // minus sign, so the '?' in "?-1" was not counted (these returned 1 and 0).
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM t WHERE a = ?-1 AND id = ?");
+        assertEquals(2, parsed.parameterCount());
+        assertEquals("SELECT * FROM t WHERE a = ?-1 AND id = ?", parsed.parameterizedCql());
+
+        assertEquals(1, ParsedCql.parse("SELECT * FROM t WHERE a = ?- 1").parameterCount());
+    }
+
+    @Test
+    public void testParse_PositionalMarkerInsideBracketsMixedWithNamed_throws() {
+        // The '?' inside [...] is a positional marker like any other, so mixing it with ':name' is rejected.
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET l = [?] WHERE id = :id"));
+    }
+
+    @Test
+    public void testParse_PrivateUseMaskCharactersInLiteral_doNotDisableBracketMarkers() {
+        // Regression: a U+E000/U+E001 anywhere in the statement used to switch bracket masking off, so the marker
+        // inside [...] was neither rewritten nor counted (parameterCount 1). The characters must also survive verbatim.
+        for (final char ch : new char[] { '', '' }) {
+            final ParsedCql parsed = ParsedCql.parse("UPDATE t SET l = [:a] WHERE id = :id AND n = 'x" + ch + "y'");
+            assertEquals("UPDATE t SET l = [?] WHERE id = ? AND n = 'x" + ch + "y'", parsed.parameterizedCql());
+            assertEquals(2, parsed.parameterCount());
+            assertEquals("a", parsed.namedParameters().get(0));
+            assertEquals("id", parsed.namedParameters().get(1));
+        }
+    }
+
+    @Test
+    public void testParse_PrivateUseMaskCharactersInComment_doNotDisableBracketMarkers() {
+        for (final char ch : new char[] { '', '' }) {
+            final ParsedCql lineComment = ParsedCql.parse("UPDATE t SET l = [:a] WHERE id = :id -- " + ch);
+            assertEquals("UPDATE t SET l = [?] WHERE id = ?", lineComment.parameterizedCql());
+            assertEquals(2, lineComment.parameterCount());
+
+            final ParsedCql blockComment = ParsedCql.parse("UPDATE t SET l = l + [?, ?] /* " + ch + " */ WHERE id = ?");
+            assertEquals(3, blockComment.parameterCount());
+            assertEquals("UPDATE t SET l = l + [?, ?] WHERE id = ?", blockComment.parameterizedCql());
+        }
+    }
+
+    @Test
+    public void testParse_AllLowPrivateUseCharactersPresent_usesAnotherFreePairForMasking() {
+        // Both default mask characters and the next candidates are taken, so a later free pair must be used.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET l = [?, ?] WHERE id = ? AND n = ''");
+        assertEquals("UPDATE t SET l = [?, ?] WHERE id = ? AND n = ''", parsed.parameterizedCql());
+        assertEquals(3, parsed.parameterCount());
+    }
+
+    @Test
+    public void testParse_EveryPrivateUseCharacterPresent_stillParsesBracketMarkers() {
+        // Regression: with all of U+E000-U+F8FF in a comment, no private-use mask pair was left and bracket handling
+        // was silently disabled again ("[:a]" kept, parameterCount 1).
+        final StringBuilder sb = new StringBuilder();
+
+        for (char ch = ''; ch <= ''; ch++) {
+            sb.append(ch);
+        }
+
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET l = [:a] WHERE id = :id /* " + sb + " */");
+        assertEquals("UPDATE t SET l = [?] WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(2, parsed.parameterCount());
+        assertEquals("a", parsed.namedParameters().get(0));
+
+        final ParsedCql literal = ParsedCql.parse("UPDATE t SET l = [?, ?] WHERE id = ? AND n = '" + sb + "'");
+        assertEquals("UPDATE t SET l = [?, ?] WHERE id = ? AND n = '" + sb + "'", literal.parameterizedCql());
+        assertEquals(3, literal.parameterCount());
+    }
+
+    @Test
+    public void testParse_EveryMaskCandidateCharacterPresent_withBrackets_throwsInsteadOfLosingMarkers() {
+        // Every non-ASCII, non-surrogate BMP character: no mask character is left at all. With brackets present the
+        // statement cannot be parsed correctly, so it must be rejected rather than silently mis-parsed.
+        final StringBuilder sb = new StringBuilder();
+
+        for (int ch = 0x80; ch <= Character.MAX_VALUE; ch++) {
+            if (!Character.isSurrogate((char) ch)) {
+                sb.append((char) ch);
+            }
+        }
+
+        final String comment = " /* " + sb + " */";
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET l = [:a] WHERE id = :id" + comment));
+
+        // Without brackets nothing needs masking, so the same statement still parses.
+        final ParsedCql noBrackets = ParsedCql.parse("UPDATE t SET l = :a WHERE id = :id" + comment);
+        assertEquals("UPDATE t SET l = ? WHERE id = ?", noBrackets.parameterizedCql());
+        assertEquals(2, noBrackets.parameterCount());
+    }
 }

@@ -2752,6 +2752,34 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(executor.aggregate(pipeline, Bson.class)).expectNext(wideDoc).verifyComplete();
     }
 
+    // ========= sliceF (2026-09-27) regression tests =========
+
+    // Regression: groupBy on a dotted field into a scalar type used to append $project {"a.b": "$_id"}, which the
+    // server materialises as the NESTED document {a: {b: key}}; the scalar conversion then saw {b: key} and emitted
+    // its JSON text ('{"b": "v1"}') for String (NumberFormatException for Integer). Scalar results must be the keys.
+    @Test
+    public void testGroupByDottedFieldIntoScalarTypeEmitsGroupKeys_sliceF() {
+        final List<List<? extends Bson>> pipelines = new ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            return mockAggregatePublisher;
+        });
+        doAnswer(invocation -> {
+            // Emit what MongoDB returns for the pipeline: $group alone yields {_id: key}, while a trailing
+            // $project {"a.b": "$_id", _id: 0} yields {a: {b: key}} (live-verified against MongoDB).
+            final Document row = pipelines.get(pipelines.size() - 1).size() == 1 ? new Document("_id", "v1")
+                    : new Document("a", new Document("b", "v1"));
+            Flux.just(row).subscribe(invocation.<Subscriber<? super Document>> getArgument(0));
+            return null;
+        }).when(mockAggregatePublisher).subscribe(any());
+
+        StepVerifier.create(executor.groupBy("a.b", String.class)).expectNext("v1").verifyComplete();
+
+        // Map/bean results keep the named-field projection.
+        StepVerifier.create(executor.groupBy("a.b", Map.class)).expectNext(new Document("a", new Document("b", "v1"))).verifyComplete();
+        assertEquals(2, pipelines.get(pipelines.size() - 1).size());
+    }
+
     public static class CountingBean {
         private int readCount;
 

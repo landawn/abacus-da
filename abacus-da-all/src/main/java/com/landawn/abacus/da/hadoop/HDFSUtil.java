@@ -15,11 +15,10 @@
 package com.landawn.abacus.da.hadoop;
 
 /**
- * Placeholder utility class for Hadoop Distributed File System (HDFS) operations.
+ * Package-private placeholder utility class for Hadoop Distributed File System (HDFS) operations.
  *
  * <p>This class is reserved for a future implementation of HDFS helper methods.
- * It currently exposes no public API; the type exists only to anchor the package
- * namespace and prevent accidental subclassing or instantiation.</p>
+ * It currently exposes no API and is not visible outside this package.</p>
  *
  * @see HadoopUtil
  */
