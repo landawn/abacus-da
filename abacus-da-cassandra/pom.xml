@@ -18,12 +18,6 @@
 	<dependencies>
 		<dependency>
 			<groupId>com.landawn.abacus</groupId>
-			<artifactId>abacus-da-all</artifactId>
-			<version>${project.version}</version>
-			<scope>provided</scope>
-		</dependency>
-		<dependency>
-			<groupId>com.landawn.abacus</groupId>
 			<artifactId>abacus-common</artifactId>
 		</dependency>
 		<dependency>
@@ -33,10 +27,6 @@
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-api</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cassandra</groupId>
