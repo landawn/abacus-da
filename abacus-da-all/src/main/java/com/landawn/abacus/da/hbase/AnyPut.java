@@ -299,8 +299,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
     /**
      * Package-private constructor backing {@link #of(Put)}. Copies the given Put's row, timestamp,
-     * attributes, and family-to-cells map structure (new collections; the {@code Cell} instances
-     * themselves are shared with the source).
+     * attributes, priority, and family-to-cells map structure (new collections; the {@code Cell}
+     * instances themselves are shared with the source). The
+     * {@link org.apache.hadoop.hbase.client.Durability Durability} is <em>not</em> copied: HBase's
+     * copy constructor leaves it at {@code Durability.USE_DEFAULT}.
      *
      * @param putToCopy the existing HBase Put to copy
      * @throws IllegalArgumentException if {@code putToCopy} is {@code null}
@@ -608,11 +610,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     /**
      * Creates a new AnyPut instance by copying an existing HBase Put operation.
      *
-     * <p>This factory method copies the provided HBase Put's row, timestamp, attributes, and
-     * family-to-cells map structure (new collections; the {@code Cell} instances themselves are
-     * shared with the source). This is useful when you want to add columns to a copy without
-     * affecting the original put, or when converting existing HBase Put objects to the AnyPut
-     * wrapper for additional functionality.</p>
+     * <p>This factory method copies the provided HBase Put's row, timestamp, attributes (including
+     * the TTL, cluster ids, ACL and cell visibility), priority, and family-to-cells map structure
+     * (new collections; the {@code Cell} instances themselves are shared with the source). The
+     * {@link org.apache.hadoop.hbase.client.Durability Durability} is not copied: HBase's copy
+     * constructor leaves it at {@code Durability.USE_DEFAULT}, so re-apply
+     * {@link #setDurability(org.apache.hadoop.hbase.client.Durability) setDurability} on the copy
+     * when the source used a non-default level. This is useful when you want to add columns to a
+     * copy without affecting the original put, or when converting existing HBase Put objects to the
+     * AnyPut wrapper for additional functionality.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -623,6 +629,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *                          .addColumn("info", "email", "john@example.com");
      * boolean hasEmail = copiedPut.has("info", "email");                                       // true
      * boolean origUnchanged = !existingPut.has(Bytes.toBytes("info"), Bytes.toBytes("email")); // true
+     *
+     * // Edge: durability is not carried over by the copy
+     * existingPut.setDurability(Durability.SKIP_WAL);
+     * Durability d = AnyPut.of(existingPut).getDurability();   // Durability.USE_DEFAULT
      *
      * // Edge: a null Put is rejected.
      * AnyPut.of((Put) null);   // throws IllegalArgumentException

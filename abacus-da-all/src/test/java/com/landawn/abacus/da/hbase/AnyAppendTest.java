@@ -298,4 +298,44 @@ public class AnyAppendTest extends TestBase {
         assertTrue(copy.has("cf", "q2"));
         assertFalse(orig.has(Bytes.toBytes("cf"), Bytes.toBytes("q2")));
     }
+
+    /**
+     * {@code of(Append)} copies the attributes (TTL, return-results flag, custom attributes), the
+     * priority and the time range, but HBase's copy constructor does not carry over the durability
+     * level: the copy starts at {@code USE_DEFAULT} while the source keeps its own setting.
+     */
+    @Test
+    public void testOf_copyExistingAppend_copiesAttributesButResetsDurability() {
+        Append orig = new Append(Bytes.toBytes("k"));
+        orig.setDurability(Durability.SKIP_WAL);
+        orig.setTTL(5L);
+        orig.setTimeRange(1L, 2L);
+        orig.setReturnResults(false);
+        orig.setPriority(7);
+        orig.setAttribute("trace", Bytes.toBytes("t"));
+
+        AnyAppend copy = AnyAppend.of(orig);
+
+        assertEquals(5L, copy.getTTL());
+        assertEquals(1L, copy.getTimeRange().getMin());
+        assertEquals(2L, copy.getTimeRange().getMax());
+        assertFalse(copy.isReturnResults());
+        assertEquals(7, copy.getPriority());
+        assertArrayEquals(Bytes.toBytes("t"), copy.getAttribute("trace"));
+        assertEquals(Durability.USE_DEFAULT, copy.getDurability());
+        assertEquals(Durability.SKIP_WAL, orig.getDurability());
+    }
+
+    /**
+     * A cell whose row matches but whose family is empty is rejected by the wrapped {@code Append}
+     * with an {@code IllegalArgumentException} (not swallowed like the row-mismatch case).
+     */
+    @Test
+    public void testAdd_cellWithEmptyFamily_throwsIae() {
+        Cell cell = new KeyValue(Bytes.toBytes("row"), new byte[0], Bytes.toBytes("q"), Bytes.toBytes("v"));
+        AnyAppend append = AnyAppend.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> append.add(cell));
+        assertEquals(0, append.size());
+    }
 }

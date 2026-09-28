@@ -3259,4 +3259,81 @@ public class DynamoDBExecutorV2Test extends TestBase {
             this.partition_key = partition_key;
         }
     }
+
+    // ===== Documented contract: toAttributeValue() only builds scalar values; containers/beans become an S JSON string =====
+
+    @Test
+    public void testToAttributeValueSerializesContainersAndBeansAsJsonString() {
+        final AttributeValue listAttr = DynamoDBExecutor.toAttributeValue(List.of(1, 2));
+        assertFalse(listAttr.hasL());
+        assertFalse(listAttr.hasNs());
+        assertEquals(List.of(1, 2), com.landawn.abacus.util.N.fromJson(listAttr.s(), List.class));
+
+        final AttributeValue mapAttr = DynamoDBExecutor.toAttributeValue(Map.of("k", 1));
+        assertFalse(mapAttr.hasM());
+        assertEquals(Map.of("k", 1), com.landawn.abacus.util.N.fromJson(mapAttr.s(), Map.class));
+
+        final AttributeValue arrayAttr = DynamoDBExecutor.toAttributeValue(new String[] { "a", "b" });
+        assertFalse(arrayAttr.hasSs());
+        assertEquals(List.of("a", "b"), com.landawn.abacus.util.N.fromJson(arrayAttr.s(), List.class));
+
+        final TestEntity bean = new TestEntity();
+        bean.setId("u1");
+        bean.setName("Alice");
+        final AttributeValue beanAttr = DynamoDBExecutor.toAttributeValue(bean);
+        assertFalse(beanAttr.hasM());
+        final TestEntity parsed = com.landawn.abacus.util.N.fromJson(beanAttr.s(), TestEntity.class);
+        assertEquals("u1", parsed.getId());
+        assertEquals("Alice", parsed.getName());
+
+        // byte[] is the one array type that stays native (B), not an S string
+        final AttributeValue binaryAttr = DynamoDBExecutor.toAttributeValue(new byte[] { 1, 2 });
+        assertNull(binaryAttr.s());
+        assertArrayEquals(new byte[] { 1, 2 }, binaryAttr.b().asByteArray());
+    }
+
+    // ===== Documented contract: getItem(tableName, key[, consistentRead], targetClass) on a missing item =====
+
+    @Test
+    public void testGetItemByKeyMissingItemReturnsDefaultForPrimitiveTargetClass() {
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build());
+        final Map<String, AttributeValue> key = DynamoDBExecutor.asKey("id", "missing");
+
+        assertEquals(0, (int) executor.getItem("TestTable", key, int.class));
+        assertEquals(false, executor.getItem("TestTable", key, true, boolean.class));
+        assertNull(executor.getItem("TestTable", key, Integer.class));
+        assertNull(executor.getItem("TestTable", key, false, TestEntity.class));
+        assertNull(executor.getItem("TestTable", key));
+        verify(mockDynamoDbClient, times(5)).getItem(any(GetItemRequest.class));
+    }
+
+    // ===== Documented contract: N attributes decode as raw Strings without a target type, and convert with one =====
+
+    @Test
+    public void testNumericAttributesDecodeAsRawStringsAndConvertForTypedTargets() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("count", AttributeValue.fromN("30"));
+        item.put("price", AttributeValue.fromN("1.50"));
+        item.put("ids", AttributeValue.fromNs(List.of("7", "8")));
+
+        // Untyped: the raw decimal Strings are preserved exactly (no precision loss / reformatting)
+        final Map<String, Object> map = DynamoDBExecutor.toMap(item);
+        assertEquals("30", map.get("count"));
+        assertEquals("1.50", map.get("price"));
+        assertEquals(List.of("7", "8"), map.get("ids"));
+
+        // Typed single-column rows convert the N String to the requested Java number type
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class)))
+                .thenReturn(GetItemResponse.builder().item(Map.of("count", AttributeValue.fromN("30"))).build());
+        final GetItemRequest request = GetItemRequest.builder().tableName("TestTable").key(DynamoDBExecutor.asKey("id", "1")).build();
+        assertEquals(Long.valueOf(30L), executor.getItem(request, Long.class));
+        assertEquals(new java.math.BigDecimal("30"), executor.getItem(request, java.math.BigDecimal.class));
+        assertEquals("30", executor.getItem(request, String.class));
+
+        // Entity properties convert too, including the elements of a native NS set
+        final TypedCollectionEntity entity = DynamoDBExecutor.toEntity(Map.of("id", AttributeValue.fromS("1"), "tags", AttributeValue.fromNs(List.of("7", "8"))),
+                TypedCollectionEntity.class);
+        assertNotNull(entity.getTags());
+        assertTrue(entity.getTags().containsAll(List.of(7L, 8L)), "expected typed elements, got " + entity.getTags());
+    }
 }

@@ -1897,7 +1897,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>A codec registered for a scalar or bean value takes precedence over expanding bean properties or
      * coercing it to the column's default Java type. Positional collections and named maps retain their
-     * usual parameter-container behavior.</p>
+     * usual parameter-container behavior. A bean's properties are matched to parameter names by property
+     * name (naming-policy variants included) or by the column name declared with {@code @Column}.</p>
      *
      * @param query the CQL text or mapper identifier
      * @param parameters positional values, a single positional array/collection, or a named map/bean
@@ -1976,6 +1977,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 //noinspection UnnecessaryLocalVariable
                 final Object entity = parameter_0;
                 final Class<?> clazz = entity.getClass();
+                Map<String, String> columnToPropNameMap = null;
                 Method propGetMethod = null;
 
                 for (int i = 0; i < parameterCount; i++) {
@@ -1986,6 +1988,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     }
 
                     propGetMethod = Beans.getPropGetter(clazz, parameterName);
+
+                    if (propGetMethod == null) {
+                        if (columnToPropNameMap == null) {
+                            columnToPropNameMap = QueryUtil.columnToPropNameMap(clazz);
+                        }
+
+                        final String propName = columnToPropNameMap.get(parameterName);
+                        propGetMethod = propName == null ? null : Beans.getPropGetter(clazz, propName);
+                    }
 
                     if (propGetMethod == null) {
                         throw new IllegalArgumentException("Missing required parameter: '" + parameterName + "'");

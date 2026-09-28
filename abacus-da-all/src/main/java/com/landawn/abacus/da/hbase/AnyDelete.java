@@ -224,10 +224,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
 
     /**
      * Constructs a new AnyDelete instance with a pre-populated family map.
-     * Used for reconstructing delete operations from existing data structures.
+     * Used for reconstructing delete operations from existing data structures. The map is retained
+     * by reference, and its existing cells keep their own timestamps.
      *
      * @param rowKey the row key object for the delete operation
-     * @param timestamp the timestamp to apply to the delete operation
+     * @param timestamp the default timestamp for subsequently added columns/families; unlike the
+     *                  other constructors, a negative value is not rejected here
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -240,10 +242,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     /**
      * Constructs a new AnyDelete instance by copying an existing Delete object.
      *
-     * <p>Delegates to {@link Delete#Delete(Delete)}, which copies the row, timestamp, and the
-     * family-to-cells map structure (the map and per-family {@code List<Cell>} are new collections,
-     * but the {@link Cell} instances themselves are shared with the source). Subsequent
-     * {@code addColumn}/{@code addFamily} calls on the wrapper do not affect the source delete.</p>
+     * <p>Delegates to {@link Delete#Delete(Delete)}, which copies the row, timestamp, attributes,
+     * priority, and the family-to-cells map structure (the map and per-family {@code List<Cell>}
+     * are new collections, but the {@link Cell} instances themselves are shared with the source).
+     * Subsequent {@code addColumn}/{@code addFamily} calls on the wrapper do not affect the source
+     * delete. The {@link org.apache.hadoop.hbase.client.Durability Durability} is <em>not</em>
+     * copied: HBase's copy constructor leaves it at {@code Durability.USE_DEFAULT}.</p>
      *
      * @param deleteToCopy the HBase Delete object to copy
      * @throws IllegalArgumentException if {@code deleteToCopy} is {@code null}
@@ -415,7 +419,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <p>This advanced factory method is designed for scenarios where you need to reconstruct delete
      * operations from existing data structures or when implementing custom deletion logic that requires
      * precise control over the delete markers. The family map contains the specific cells to be deleted,
-     * organized by column families, with the timestamp providing version control.</p>
+     * organized by column families, with the timestamp providing version control. The map is retained
+     * by reference (not copied), and its existing cells keep their own timestamps.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -433,8 +438,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param rowKey the row key object for the delete operation, automatically converted to bytes
-     * @param timestamp the timestamp to apply to the delete operation
-     * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
+     * @param timestamp the default timestamp for subsequently added columns/families; unlike the
+     *                  other factories, a negative value is not rejected here
+     * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists;
+     *                  retained by reference
      * @return a new AnyDelete instance with the specified configuration
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -455,7 +462,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * provided HBase Delete operation. The copy holds the same row, timestamp, and the same set
      * of {@link Cell} instances in new collections, so further {@code addColumn}/{@code addFamily}
      * calls on the returned wrapper do not mutate the source. (Note: the {@code Cell} instances
-     * themselves are shared by reference.) This is useful when you want to extend an existing
+     * themselves are shared by reference.) Attributes (including the TTL, cluster ids, ACL and
+     * cell visibility) and the priority are copied as well, but the
+     * {@link org.apache.hadoop.hbase.client.Durability Durability} is not: HBase's copy
+     * constructor leaves it at {@code Durability.USE_DEFAULT}, so re-apply
+     * {@link #setDurability(org.apache.hadoop.hbase.client.Durability) setDurability} on the copy
+     * when the source used a non-default level. This is useful when you want to extend an existing
      * delete operation while preserving the original.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -468,6 +480,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * // The copy is backed by a fresh Delete; mutating it does not affect the source
      * boolean different = extendedDelete.val() != existingDelete;   // different == true
      * int srcFamilies = existingDelete.getFamilyCellMap().size();   // srcFamilies == 1 (unchanged)
+     *
+     * // Edge: durability is not carried over by the copy
+     * existingDelete.setDurability(Durability.SKIP_WAL);
+     * Durability d = AnyDelete.of(existingDelete).getDurability();  // Durability.USE_DEFAULT
      *
      * // Edge: a null source Delete throws IllegalArgumentException
      * AnyDelete.of((Delete) null);                                  // throws IllegalArgumentException

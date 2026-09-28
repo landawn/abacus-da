@@ -13,6 +13,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -31,6 +32,7 @@ import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
 import org.junit.jupiter.api.Test;
 
@@ -549,5 +551,133 @@ public class AsyncHBaseExecutorTest extends TestBase {
 
         // nothing was ever dispatched to the synchronous executor
         verifyNoInteractions(sync);
+    }
+
+    // ---------------------------------------------------------------------
+    // Exact argument forwarding: every async overload must hand the very same argument
+    // instances, in the same positions, to the matching synchronous overload (the dispatch
+    // tests above stub with matchers, which would not catch a dropped or swapped argument).
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testTypedReadOverloads_forwardExactArguments() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+        Get get = new Get("k".getBytes());
+        List<Get> gets = Arrays.asList(get);
+        AnyGet anyGet = AnyGet.of("k");
+        Collection<AnyGet> anyGets = Arrays.asList(anyGet);
+
+        async.get("tbl", get, Integer.class).get();
+        async.get("tbl", gets, Integer.class).get();
+        async.get("tbl", anyGet, Integer.class).get();
+        async.get("tbl", anyGets, Integer.class).get();
+
+        verify(sync).get(eq("tbl"), same(get), same(Integer.class));
+        verify(sync).get(eq("tbl"), same(gets), same(Integer.class));
+        verify(sync).get(eq("tbl"), same(anyGet), same(Integer.class));
+        verify(sync).get(eq("tbl"), same(anyGets), same(Integer.class));
+    }
+
+    @Test
+    public void testTypedScanOverloads_forwardExactArguments() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+        byte[] fam = "cf".getBytes();
+        byte[] q = "q".getBytes();
+        AnyScan anyScan = AnyScan.create();
+        Scan scan = new Scan();
+
+        async.scan("tbl", "cf", Integer.class).get();
+        async.scan("tbl", "cf", "q", Integer.class).get();
+        async.scan("tbl", fam, Integer.class).get();
+        async.scan("tbl", fam, q, Integer.class).get();
+        async.scan("tbl", anyScan, Integer.class).get();
+        async.scan("tbl", scan, Integer.class).get();
+
+        verify(sync).scan(eq("tbl"), eq("cf"), same(Integer.class));
+        verify(sync).scan(eq("tbl"), eq("cf"), eq("q"), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(fam), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(fam), same(q), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(anyScan), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(scan), same(Integer.class));
+    }
+
+    @Test
+    public void testIncrementColumnValueOverloads_forwardExactArguments() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+        Object rowKey = new Object();
+        byte[] fam = "cf".getBytes();
+        byte[] q = "q".getBytes();
+
+        async.incrementColumnValue("tbl", rowKey, "cf", "q", 7L).get();
+        async.incrementColumnValue("tbl", rowKey, "cf", "q", -3L, Durability.SKIP_WAL).get();
+        async.incrementColumnValue("tbl", rowKey, fam, q, 11L).get();
+        async.incrementColumnValue("tbl", rowKey, fam, q, -5L, Durability.FSYNC_WAL).get();
+
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), eq("cf"), eq("q"), eq(7L));
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), eq("cf"), eq("q"), eq(-3L), same(Durability.SKIP_WAL));
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), same(fam), same(q), eq(11L));
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), same(fam), same(q), eq(-5L), same(Durability.FSYNC_WAL));
+    }
+
+    @Test
+    public void testCoprocessorOverloads_forwardExactArguments() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+        Object start = new Object();
+        Object end = new Object();
+        Batch.Call<Service, Long> call = instance -> 1L;
+        Batch.Callback<Long> callback = (region, row, value) -> {
+        };
+        Descriptors.MethodDescriptor methodDescriptor = mock(Descriptors.MethodDescriptor.class);
+        Message request = mock(Message.class);
+        Message responsePrototype = mock(Message.class);
+        Batch.Callback<Message> messageCallback = (region, row, value) -> {
+        };
+
+        async.coprocessorService("tbl", Service.class, start, end, call).get();
+        async.coprocessorService("tbl", Service.class, start, end, call, callback).get();
+        async.batchCoprocessorService("tbl", methodDescriptor, request, start, end, responsePrototype).get();
+        async.batchCoprocessorService("tbl", methodDescriptor, request, start, end, responsePrototype, messageCallback).get();
+
+        verify(sync).coprocessorService(eq("tbl"), same(Service.class), same(start), same(end), same(call));
+        verify(sync).coprocessorService(eq("tbl"), same(Service.class), same(start), same(end), same(call), same(callback));
+        verify(sync).batchCoprocessorService(eq("tbl"), same(methodDescriptor), same(request), same(start), same(end), same(responsePrototype));
+        verify(sync).batchCoprocessorService(eq("tbl"), same(methodDescriptor), same(request), same(start), same(end), same(responsePrototype),
+                same(messageCallback));
+    }
+
+    @Test
+    public void testWriteOverloads_forwardExactArguments() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+        Put put = new Put("k".getBytes());
+        List<Put> puts = Arrays.asList(put);
+        AnyPut anyPut = AnyPut.of("k");
+        Collection<AnyPut> anyPuts = Arrays.asList(anyPut);
+        Delete delete = new Delete("k".getBytes());
+        List<Delete> deletes = new java.util.ArrayList<>(Arrays.asList(delete));
+        AnyDelete anyDelete = AnyDelete.of("k");
+        Collection<AnyDelete> anyDeletes = Arrays.asList(anyDelete);
+
+        async.put("tbl", put).get();
+        async.put("tbl", puts).get();
+        async.put("tbl", anyPut).get();
+        async.put("tbl", anyPuts).get();
+        async.delete("tbl", delete).get();
+        async.delete("tbl", deletes).get();
+        async.delete("tbl", anyDelete).get();
+        async.delete("tbl", anyDeletes).get();
+
+        verify(sync).put(eq("tbl"), same(put));
+        verify(sync).put(eq("tbl"), same(puts));
+        verify(sync).put(eq("tbl"), same(anyPut));
+        verify(sync).put(eq("tbl"), same(anyPuts));
+        verify(sync).delete(eq("tbl"), same(delete));
+        verify(sync).delete(eq("tbl"), same(deletes));
+        verify(sync).delete(eq("tbl"), same(anyDelete));
+        verify(sync).delete(eq("tbl"), same(anyDeletes));
     }
 }

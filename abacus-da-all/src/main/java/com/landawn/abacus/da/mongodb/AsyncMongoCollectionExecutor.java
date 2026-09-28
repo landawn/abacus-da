@@ -165,9 +165,12 @@ public final class AsyncMongoCollectionExecutor {
      * to be created directly by user code. Obtain one via {@link MongoCollectionExecutor#async()}.
      *
      * @param collectionExecutor the synchronous executor to delegate each MongoDB call to
-     * @param asyncExecutor the {@link AsyncExecutor} on which the underlying blocking operations are run
+     * @param asyncExecutor the {@link AsyncExecutor} on which the underlying blocking operations are run; must not be null
+     * @throws IllegalArgumentException if {@code asyncExecutor} is null
      */
-    AsyncMongoCollectionExecutor(final MongoCollectionExecutor collectionExecutor, final AsyncExecutor asyncExecutor) {
+    AsyncMongoCollectionExecutor(final MongoCollectionExecutor collectionExecutor, final AsyncExecutor asyncExecutor) throws IllegalArgumentException {
+        N.checkArgNotNull(asyncExecutor, cs.asyncExecutor);
+
         this.collectionExecutor = collectionExecutor;
         this.asyncExecutor = asyncExecutor;
     }

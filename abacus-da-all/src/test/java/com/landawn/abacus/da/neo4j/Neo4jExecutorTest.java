@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -765,6 +766,55 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
+    public void testFindOnly_EmptyWhenNoRow() {
+        when(mockSession.queryForObject(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenReturn(null);
+
+        Optional<Person> actual = executor.findOnly(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap());
+        assertNotNull(actual);
+        assertTrue(actual.isEmpty());
+        verify(mockSession).clear();
+    }
+
+    @Test
+    public void testFindOnly_PropagatesFailureAndReleasesSession() {
+        // OGM raises a plain RuntimeException when the query returns more than one row; the
+        // executor must propagate it unchanged and still return the session to the pool.
+        final RuntimeException tooMany = new RuntimeException("Result not of expected size");
+        when(mockSession.queryForObject(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenThrow(tooMany);
+
+        final RuntimeException thrown = assertThrows(RuntimeException.class,
+                () -> executor.findOnly(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap()));
+        assertSame(tooMany, thrown);
+        verify(mockSession).clear();
+
+        executor.run(s -> {
+        });
+        verify(mockSessionFactory, times(1)).openSession();
+    }
+
+    @Test
+    public void testQueryParametersAreForwardedByIdentity() {
+        // The executor forwards the (possibly immutable) parameter map verbatim; it must not copy or mutate it.
+        final Map<String, Object> params = Map.of("name", "John");
+        final Result mockResult = mock(Result.class);
+        when(mockResult.iterator()).thenReturn(Collections.<Map<String, Object>> emptyList().iterator());
+        when(mockSession.query(eq("MATCH (n) RETURN n"), same(params))).thenReturn(mockResult);
+        when(mockSession.query(eq("MATCH (n) RETURN n"), same(params), eq(true))).thenReturn(mockResult);
+        when(mockSession.query(eq(Person.class), eq("MATCH (n) RETURN n"), same(params))).thenReturn(Collections.<Person> emptyList());
+
+        assertEquals(0L, executor.stream("MATCH (n) RETURN n", params).count());
+        assertEquals(0L, executor.stream("MATCH (n) RETURN n", params, true).count());
+        assertEquals(0L, executor.stream(Person.class, "MATCH (n) RETURN n", params).count());
+        executor.findOnly(Person.class, "MATCH (n) RETURN n", params);
+
+        verify(mockSession).query(eq("MATCH (n) RETURN n"), same(params));
+        verify(mockSession).query(eq("MATCH (n) RETURN n"), same(params), eq(true));
+        verify(mockSession).query(eq(Person.class), eq("MATCH (n) RETURN n"), same(params));
+        verify(mockSession).queryForObject(eq(Person.class), eq("MATCH (n) RETURN n"), same(params));
+        assertEquals(1, params.size());
+    }
+
+    @Test
     public void testStream() {
         // Build a Result that returns a single-row iterator.
         Result mockResult = mock(Result.class);
@@ -847,6 +897,33 @@ public class Neo4jExecutorTest extends TestBase {
         Object obj = new Object();
         when(mockSession.resolveGraphIdFor(obj)).thenReturn(null);
         assertNull(executor.getGraphId(obj));
+    }
+
+    @Test
+    public void testWriteAndCountOperationsReleaseSessionOnException() {
+        final Person p = new Person();
+        doThrow(new RuntimeException("save failed")).when(mockSession).save(p);
+        doThrow(new RuntimeException("save failed")).when(mockSession).save(p, 0);
+        doThrow(new RuntimeException("delete failed")).when(mockSession).delete(p);
+        doThrow(new RuntimeException("deleteAll failed")).when(mockSession).deleteAll(Person.class);
+        when(mockSession.countEntitiesOfType(Person.class)).thenThrow(new RuntimeException("count failed"));
+        when(mockSession.count(eq(Person.class), eq(Collections.emptyList()))).thenThrow(new RuntimeException("count failed"));
+        when(mockSession.resolveGraphIdFor(p)).thenThrow(new RuntimeException("resolve failed"));
+        when(mockSession.load(Person.class, 1L)).thenThrow(new RuntimeException("load failed"));
+
+        assertThrows(RuntimeException.class, () -> executor.save(p));
+        assertThrows(RuntimeException.class, () -> executor.save(p, 0));
+        assertThrows(RuntimeException.class, () -> executor.delete(p));
+        assertThrows(RuntimeException.class, () -> executor.deleteAll(Person.class));
+        assertThrows(RuntimeException.class, () -> executor.count(Person.class));
+        assertThrows(RuntimeException.class, () -> executor.count(Person.class, Collections.emptyList()));
+        assertThrows(RuntimeException.class, () -> executor.getGraphId(p));
+        assertThrows(RuntimeException.class, () -> executor.load(Person.class, 1L));
+
+        // Every failed operation cleared its session and returned it to the pool, so the single
+        // pooled session was reused throughout and no second session was ever opened.
+        verify(mockSession, times(8)).clear();
+        verify(mockSessionFactory, times(1)).openSession();
     }
 
     // ---------- Session pool behaviour ----------

@@ -2565,6 +2565,32 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals(List.of("AQID", "BAU="), entity.getLabels());
     }
 
+    // update(entity, keys) rejects a null or empty key value (the same "null or empty" rule as entityToCondition
+    // and the sibling executors); a whitespace-only key value is not blank-checked and is bound as a parameter.
+    @Test
+    public void testUpdateEntityWithKeys_EmptyKeyValueRejectedButWhitespaceKeyValueBound() throws Exception {
+        TestEntityWithStringKey emptyKey = new TestEntityWithStringKey();
+        emptyKey.setId("");
+        emptyKey.setValue("v");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.update(emptyKey, N.asSet("id")));
+        assertTrue(ex.getMessage().contains("No property value specified in entity for key names"));
+        verify(mockBigQuery, times(0)).query(any(QueryJobConfiguration.class));
+
+        TestEntityWithStringKey whitespaceKey = new TestEntityWithStringKey();
+        whitespaceKey.setId(" ");
+        whitespaceKey.setValue("v");
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.update(whitespaceKey, N.asSet("id"));
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery).query(captor.capture());
+        assertEquals("UPDATE test_entity_with_string_key SET value = ? WHERE id = ?", captor.getValue().getQuery());
+        assertEquals(2, captor.getValue().getPositionalParameters().size());
+        assertEquals(" ", captor.getValue().getPositionalParameters().get(1).getValue());
+    }
+
     public static class RepeatedBinaryTimestampEntity {
         private List<byte[]> data;
         private List<java.nio.ByteBuffer> buffers;

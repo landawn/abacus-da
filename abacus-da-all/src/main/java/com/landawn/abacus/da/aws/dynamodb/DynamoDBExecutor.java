@@ -3526,14 +3526,14 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
-     * @param attributesToGet the list of attributes to retrieve; may be {@code null} to retrieve all attributes
+     * @param attributesToGet the list of attributes to retrieve; may be {@code null} or empty to retrieve all attributes
      * @return a {@link Stream} of maps representing scan results with automatic pagination; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet) throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
 
-        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(attributesToGet));
+        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet));
     }
 
     /**
@@ -3596,7 +3596,7 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
-     * @param attributesToGet the list of attributes to retrieve; may be {@code null} to retrieve all attributes
+     * @param attributesToGet the list of attributes to retrieve; may be {@code null} or empty to retrieve all attributes
      * @param scanFilter the filter conditions for the scan; may be {@code null} to apply no filter
      * @return a {@link Stream} of maps representing scan results with automatic pagination; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName is null
@@ -3605,7 +3605,7 @@ public final class DynamoDBExecutor {
             throws IllegalArgumentException {
         N.checkArgNotNull(tableName, cs.tableName);
 
-        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(attributesToGet).withScanFilter(scanFilter));
+        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).withScanFilter(scanFilter));
     }
 
     /**
@@ -3671,7 +3671,7 @@ public final class DynamoDBExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
-     * @param attributesToGet the list of attributes to retrieve; may be {@code null} to retrieve all attributes
+     * @param attributesToGet the list of attributes to retrieve; may be {@code null} or empty to retrieve all attributes
      * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
      * @return a {@link Stream} of converted objects with automatic pagination; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName or targetClass is null
@@ -3680,7 +3680,7 @@ public final class DynamoDBExecutor {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(attributesToGet), targetClass);
+        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet), targetClass);
     }
 
     /**
@@ -3753,7 +3753,7 @@ public final class DynamoDBExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
-     * @param attributesToGet the list of attributes to retrieve; may be {@code null} to retrieve all attributes
+     * @param attributesToGet the list of attributes to retrieve; may be {@code null} or empty to retrieve all attributes
      * @param scanFilter the filter conditions for the scan; may be {@code null} to apply no filter
      * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
      * @return a {@link Stream} of converted objects with automatic pagination; fetching or converting items can fail during stream traversal
@@ -3764,7 +3764,7 @@ public final class DynamoDBExecutor {
         N.checkArgNotNull(tableName, cs.tableName);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(attributesToGet).withScanFilter(scanFilter), targetClass);
+        return scan(new ScanRequest().withTableName(tableName).withAttributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).withScanFilter(scanFilter), targetClass);
     }
 
     /**
@@ -4733,7 +4733,7 @@ public final class DynamoDBExecutor {
          * }
          * }</pre>
          *
-         * @param attributesToGet list of attribute names to retrieve; {@code null} retrieves all attributes
+         * @param attributesToGet list of attribute names to retrieve; {@code null} or empty retrieves all attributes
          * @return Stream of all entities in the table with specified attributes, providing lazy evaluation; fetching or converting items can fail during stream traversal
          * @see #scan(ScanRequest)
          */
@@ -4798,7 +4798,7 @@ public final class DynamoDBExecutor {
          * }
          * }</pre>
          *
-         * @param attributesToGet list of attribute names to retrieve; {@code null} retrieves all attributes
+         * @param attributesToGet list of attribute names to retrieve; {@code null} or empty retrieves all attributes
          * @param scanFilter map of attribute names to {@link Condition} objects for filtering results,
          *                  or {@code null} to apply no filter (scans all items)
          * @return Stream of entities with specified attributes matching the filter conditions; fetching or converting items can fail during stream traversal

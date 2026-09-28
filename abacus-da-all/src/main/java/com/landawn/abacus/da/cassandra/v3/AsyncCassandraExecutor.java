@@ -247,7 +247,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <T> the result type
-     * @param targetClass the class to map the first row to
+     * @param targetClass the class to map the first row to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the first mapped row, or empty
@@ -293,7 +293,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <V> the value type
-     * @param valueClass the class to convert the single value to
+     * @param valueClass the class to convert the single value to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with a {@code Nullable} holding the value (possibly
@@ -313,8 +313,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Asynchronously executes the given CQL query and returns a future that completes with a
      * non-{@code null} value from the first column of the first row converted to
      * {@code valueClass}, or an empty {@link Optional} if no row is returned. If a row is returned
-     * but the value is {@code null}, {@code get()} throws a {@link NullPointerException} (an
-     * {@link Optional} cannot hold {@code null}).
+     * but the value is {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a
+     * {@link NullPointerException} (an {@link Optional} cannot hold {@code null}).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -340,7 +340,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <V> the value type
-     * @param valueClass the class to convert the single value to
+     * @param valueClass the class to convert the single value to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the non-null value, or empty

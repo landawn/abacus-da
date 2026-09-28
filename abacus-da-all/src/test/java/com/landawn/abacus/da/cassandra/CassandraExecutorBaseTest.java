@@ -1704,6 +1704,304 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     // ---- slice N regression tests: end ----
 
+    // ---- cassbase review (2026-09-28) regression tests: begin ----
+
+    // registerKeys documents IllegalArgumentException for a key name that does not resolve to a readable property;
+    // the failure used to surface as the unrelated "'getSetMethod' cannot be null" from Beans.getPropNameByMethod(null).
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testRegisterKeys_unknownPropertyName_throwsIAENamingTheKey() {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", "noSuchProp")));
+
+        assertTrue(e.getMessage().contains("noSuchProp"), e.getMessage());
+        assertTrue(e.getMessage().contains(TestEntity.class.getCanonicalName()), e.getMessage());
+        // nothing was registered for the class
+        assertTrue(!CassandraExecutorBase.entityKeyNamesMap.containsKey(TestEntity.class));
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testRegisterKeys_nullOrBlankKeyName_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", null)));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("")));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(String.class, Arrays.asList("length")));
+    }
+
+    // The shared single-value mappers collapse a present-but-null payload to the primitive default, so the
+    // async count/queryForXxx façades agree with their synchronous counterparts.
+    @Test
+    public void testSharedMappers_presentNullCollapsesToPrimitiveDefault() {
+        assertEquals(0L, CassandraExecutorBase.long_secondMapper.apply(Nullable.of((Long) null)).longValue());
+        assertEquals(0L, CassandraExecutorBase.long_secondMapper.apply(Nullable.<Long> empty()).longValue());
+        assertEquals(7L, CassandraExecutorBase.long_secondMapper.apply(Nullable.of(7L)).longValue());
+
+        final OptionalBoolean presentNull = CassandraExecutorBase.boolean_mapper.apply(Nullable.of((Boolean) null));
+        assertTrue(presentNull.isPresent());
+        assertEquals(false, presentNull.get());
+        assertTrue(CassandraExecutorBase.boolean_mapper.apply(Nullable.<Boolean> empty()).isEmpty());
+
+        final OptionalLong presentNullLong = CassandraExecutorBase.long_mapper.apply(Nullable.of((Long) null));
+        assertTrue(presentNullLong.isPresent());
+        assertEquals(0L, presentNullLong.get());
+        assertTrue(CassandraExecutorBase.long_mapper.apply(Nullable.<Long> empty()).isEmpty());
+        assertTrue(CassandraExecutorBase.exists_mapper.apply(Arrays.asList(new Object())));
+        assertTrue(!CassandraExecutorBase.exists_mapper.apply(new ArrayList<>()));
+    }
+
+    // Every Condition/entity-based async façade must issue exactly the CQL and bound parameters its synchronous
+    // counterpart issues (guards against a wrong overload, dropped argument or wrong limit in the async copy).
+    @Test
+    public void testAsyncFacadesIssueSameCqlAsSyncCounterparts() throws Exception {
+        final RecordingExecutor sync = new RecordingExecutor();
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = sync.recordingAsync();
+
+        final TestEntity entity = new TestEntity();
+        entity.setId(5L);
+        entity.setName("n");
+        final TestEntity other = new TestEntity();
+        other.setId(6L);
+        final List<TestEntity> entities = Arrays.asList(entity, other);
+        final Condition cond = Filters.and(Filters.eq("id", 5L), Filters.gt("name", "a"));
+        final Map<String, Object> props = new LinkedHashMap<>();
+        props.put("name", "x");
+
+        final Map<String, java.util.function.Consumer<Boolean>> ops = new LinkedHashMap<>();
+        ops.put("count(cond)", a -> { if (a) async.count(TestEntity.class, cond); else sync.count(TestEntity.class, cond); });
+        ops.put("count(null cond)", a -> { if (a) async.count(TestEntity.class, null); else sync.count(TestEntity.class, null); });
+        ops.put("count(query)", a -> { if (a) async.count("SELECT count(*) FROM t WHERE id = ?", 1L); else sync.count("SELECT count(*) FROM t WHERE id = ?", 1L); });
+        ops.put("exists(ids)", a -> { if (a) async.exists(TestEntity.class, 5L); else sync.exists(TestEntity.class, 5L); });
+        ops.put("exists(cond)", a -> { if (a) async.exists(TestEntity.class, cond); else sync.exists(TestEntity.class, cond); });
+        ops.put("exists(null cond)", a -> { if (a) async.exists(TestEntity.class, (Condition) null); else sync.exists(TestEntity.class, (Condition) null); });
+        ops.put("findFirst(cond)", a -> { if (a) async.findFirst(TestEntity.class, cond); else sync.findFirst(TestEntity.class, cond); });
+        ops.put("findFirst(props, cond)", a -> { if (a) async.findFirst(TestEntity.class, Arrays.asList("name"), cond); else sync.findFirst(TestEntity.class, Arrays.asList("name"), cond); });
+        ops.put("list(cond)", a -> { if (a) async.list(TestEntity.class, cond); else sync.list(TestEntity.class, cond); });
+        ops.put("list(props, cond)", a -> { if (a) async.list(TestEntity.class, Arrays.asList("name"), cond); else sync.list(TestEntity.class, Arrays.asList("name"), cond); });
+        ops.put("query(cond)", a -> { if (a) async.query(TestEntity.class, cond); else sync.query(TestEntity.class, cond); });
+        ops.put("query(props, cond)", a -> { if (a) async.query(TestEntity.class, Arrays.asList("name"), cond); else sync.query(TestEntity.class, Arrays.asList("name"), cond); });
+        ops.put("stream(cond)", a -> { if (a) async.stream(TestEntity.class, cond); else sync.stream(TestEntity.class, cond); });
+        ops.put("stream(props, cond)", a -> { if (a) async.stream(TestEntity.class, Arrays.asList("name"), cond); else sync.stream(TestEntity.class, Arrays.asList("name"), cond); });
+        ops.put("queryForBoolean", a -> { if (a) async.queryForBoolean(TestEntity.class, "name", cond); else sync.queryForBoolean(TestEntity.class, "name", cond); });
+        ops.put("queryForChar", a -> { if (a) async.queryForChar(TestEntity.class, "name", cond); else sync.queryForChar(TestEntity.class, "name", cond); });
+        ops.put("queryForByte", a -> { if (a) async.queryForByte(TestEntity.class, "name", cond); else sync.queryForByte(TestEntity.class, "name", cond); });
+        ops.put("queryForShort", a -> { if (a) async.queryForShort(TestEntity.class, "name", cond); else sync.queryForShort(TestEntity.class, "name", cond); });
+        ops.put("queryForInt", a -> { if (a) async.queryForInt(TestEntity.class, "name", cond); else sync.queryForInt(TestEntity.class, "name", cond); });
+        ops.put("queryForLong", a -> { if (a) async.queryForLong(TestEntity.class, "name", cond); else sync.queryForLong(TestEntity.class, "name", cond); });
+        ops.put("queryForFloat", a -> { if (a) async.queryForFloat(TestEntity.class, "name", cond); else sync.queryForFloat(TestEntity.class, "name", cond); });
+        ops.put("queryForDouble", a -> { if (a) async.queryForDouble(TestEntity.class, "name", cond); else sync.queryForDouble(TestEntity.class, "name", cond); });
+        ops.put("queryForString", a -> { if (a) async.queryForString(TestEntity.class, "name", cond); else sync.queryForString(TestEntity.class, "name", cond); });
+        ops.put("queryForDate", a -> { if (a) async.queryForDate(TestEntity.class, "name", cond); else sync.queryForDate(TestEntity.class, "name", cond); });
+        ops.put("queryForDate(valueClass)", a -> { if (a) async.queryForDate(TestEntity.class, java.sql.Timestamp.class, "name", cond); else sync.queryForDate(TestEntity.class, java.sql.Timestamp.class, "name", cond); });
+        ops.put("queryForSingleValue", a -> { if (a) async.queryForSingleValue(TestEntity.class, String.class, "name", cond); else sync.queryForSingleValue(TestEntity.class, String.class, "name", cond); });
+        ops.put("queryForSingleNonNull", a -> { if (a) async.queryForSingleNonNull(TestEntity.class, String.class, "name", cond); else sync.queryForSingleNonNull(TestEntity.class, String.class, "name", cond); });
+        ops.put("insert(entity)", a -> { if (a) async.insert(entity); else sync.insert(entity); });
+        ops.put("insert(class, props)", a -> { if (a) async.insert(TestEntity.class, props); else sync.insert(TestEntity.class, props); });
+        ops.put("update(entity)", a -> { if (a) async.update(entity); else sync.update(entity); });
+        ops.put("update(entity, props)", a -> { if (a) async.update(entity, Arrays.asList("name")); else sync.update(entity, Arrays.asList("name")); });
+        ops.put("update(class, props, cond)", a -> { if (a) async.update(TestEntity.class, props, cond); else sync.update(TestEntity.class, props, cond); });
+        ops.put("update(query)", a -> { if (a) async.update("UPDATE t SET name = ? WHERE id = ?", "x", 1L); else sync.update("UPDATE t SET name = ? WHERE id = ?", "x", 1L); });
+        ops.put("delete(entity)", a -> { if (a) async.delete(entity); else sync.delete(entity); });
+        ops.put("delete(entity, props)", a -> { if (a) async.delete(entity, Arrays.asList("name")); else sync.delete(entity, Arrays.asList("name")); });
+        ops.put("delete(class, ids)", a -> { if (a) async.delete(TestEntity.class, 5L); else sync.delete(TestEntity.class, 5L); });
+        ops.put("delete(class, props, ids)", a -> { if (a) async.delete(TestEntity.class, Arrays.asList("name"), 5L); else sync.delete(TestEntity.class, Arrays.asList("name"), 5L); });
+        ops.put("delete(class, cond)", a -> { if (a) async.delete(TestEntity.class, cond); else sync.delete(TestEntity.class, cond); });
+        ops.put("delete(class, props, cond)", a -> { if (a) async.delete(TestEntity.class, Arrays.asList("name"), cond); else sync.delete(TestEntity.class, Arrays.asList("name"), cond); });
+        ops.put("batchDelete(entities)", a -> { if (a) async.batchDelete(entities); else sync.batchDelete(entities); });
+        ops.put("batchDelete(entities, props)", a -> { if (a) async.batchDelete(entities, Arrays.asList("name")); else sync.batchDelete(entities, Arrays.asList("name")); });
+        ops.put("exists(query)", a -> { if (a) async.exists("SELECT id FROM t WHERE id = ? LIMIT 1", 1L); else sync.exists("SELECT id FROM t WHERE id = ? LIMIT 1", 1L); });
+        ops.put("list(query)", a -> { if (a) async.list("SELECT * FROM t WHERE id = ?", 1L); else sync.list("SELECT * FROM t WHERE id = ?", 1L); });
+        ops.put("query(query)", a -> { if (a) async.query("SELECT * FROM t WHERE id = ?", 1L); else sync.query("SELECT * FROM t WHERE id = ?", 1L); });
+        ops.put("stream(query)", a -> { if (a) async.stream("SELECT * FROM t WHERE id = ?", 1L); else sync.stream("SELECT * FROM t WHERE id = ?", 1L); });
+        ops.put("findFirst(query)", a -> { if (a) async.findFirst("SELECT * FROM t WHERE id = ?", 1L); else sync.findFirst("SELECT * FROM t WHERE id = ?", 1L); });
+
+        for (final Map.Entry<String, java.util.function.Consumer<Boolean>> op : ops.entrySet()) {
+            sync.recorded.clear();
+            op.getValue().accept(false);
+            final List<String> fromSync = new ArrayList<>(sync.recorded);
+
+            sync.recorded.clear();
+            op.getValue().accept(true);
+            final List<String> fromAsync = new ArrayList<>(sync.recorded);
+
+            assertEquals(1, fromSync.size(), op.getKey() + " (sync) -> " + fromSync);
+            assertEquals(fromSync, fromAsync, op.getKey());
+        }
+    }
+
+    // get/gett must both fetch with LIMIT 2 so that a second matching row is detected as a duplicate,
+    // and the whole-row lookup must project the same columns as the synchronous prepareQuery.
+    @Test
+    public void testAsyncGetAndGettUseDuplicateDetectingLimit() throws Exception {
+        final RecordingExecutor sync = new RecordingExecutor();
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = sync.recordingAsync();
+        final Condition cond = Filters.eq("id", 5L);
+        final SP expected = sync.exposedPrepareQuery(TestEntity.class, Arrays.asList("name"), cond, 2);
+        final String expectedRecord = expected.query() + " " + expected.parameters();
+
+        for (final Runnable op : new Runnable[] { () -> async.get(TestEntity.class, Arrays.asList("name"), cond),
+                () -> async.gett(TestEntity.class, Arrays.asList("name"), cond), () -> async.get(TestEntity.class, Arrays.asList("name"), 5L),
+                () -> async.gett(TestEntity.class, Arrays.asList("name"), 5L) }) {
+            sync.recorded.clear();
+            op.run();
+            assertEquals(Arrays.asList(expectedRecord), sync.recorded);
+        }
+
+        assertTrue(expected.query().endsWith("LIMIT 2"), expected.query());
+
+        // count never carries a LIMIT (it would cap the aggregate itself)
+        sync.recorded.clear();
+        async.count(TestEntity.class, cond);
+        assertTrue(!sync.recorded.get(0).contains("LIMIT"), sync.recorded.get(0));
+        assertTrue(sync.recorded.get(0).startsWith("SELECT count(*) FROM"), sync.recorded.get(0));
+    }
+
+    @Test
+    public void testAsyncGetReportsDuplicateRowsThroughTheFuture() {
+        final TestCassandraExecutor twoRows = new TestCassandraExecutor() {
+            @Override
+            protected <T> T fetchOnlyOne(Class<T> targetClass, TestResultSet resultSet) {
+                throw new DuplicateResultException();
+            }
+        };
+
+        final ExecutionException e1 = assertThrows(ExecutionException.class, () -> twoRows.async().get(TestEntity.class, Filters.eq("id", 1L)).get());
+        assertTrue(e1.getCause() instanceof DuplicateResultException, String.valueOf(e1.getCause()));
+
+        final ExecutionException e2 = assertThrows(ExecutionException.class, () -> twoRows.async().gett(TestEntity.class, 1L).get());
+        assertTrue(e2.getCause() instanceof DuplicateResultException, String.valueOf(e2.getCause()));
+    }
+
+    @Test
+    public void testAsyncSingleValueFacadesEmptyAndPresentNullSemantics() throws Exception {
+        // no row -> empty flavors
+        final TestCassandraExecutor noRows = new TestCassandraExecutor() {
+            @Override
+            public TestResultSet execute(String query, Object... parameters) {
+                return new TestResultSet() {
+                    @Override
+                    public Iterator<TestRow> iterator() {
+                        return new ArrayList<TestRow>().iterator();
+                    }
+                };
+            }
+        };
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> asyncNoRows = new AsyncCassandraExecutorBase<>(
+                noRows) {
+            @Override
+            public ContinuableFuture<TestResultSet> execute(String query) {
+                return ContinuableFuture.completed(noRows.execute(query));
+            }
+
+            @Override
+            public ContinuableFuture<TestResultSet> execute(String query, Object... parameters) {
+                return ContinuableFuture.completed(noRows.execute(query, parameters));
+            }
+
+            @Override
+            public ContinuableFuture<TestResultSet> execute(String query, Map<String, Object> parameters) {
+                return ContinuableFuture.completed(noRows.execute(query, parameters));
+            }
+
+            @Override
+            public ContinuableFuture<TestResultSet> execute(TestStatement statement) {
+                return ContinuableFuture.completed(noRows.execute(statement));
+            }
+        };
+
+        assertTrue(asyncNoRows.queryForBoolean("SELECT v FROM t").get().isEmpty());
+        assertTrue(asyncNoRows.queryForLong("SELECT v FROM t").get().isEmpty());
+        assertTrue(asyncNoRows.queryForString("SELECT v FROM t").get().isEmpty());
+        assertTrue(asyncNoRows.queryForSingleValue(String.class, "SELECT v FROM t").get().isEmpty());
+        assertTrue(asyncNoRows.queryForSingleNonNull(String.class, "SELECT v FROM t").get().isEmpty());
+        assertTrue(asyncNoRows.findFirst("SELECT v FROM t").get().isEmpty());
+        assertEquals(0L, asyncNoRows.count("SELECT count(*) FROM t").get().longValue());
+        assertEquals(0L, asyncNoRows.count(TestEntity.class, Filters.eq("id", 1L)).get().longValue());
+        assertEquals(false, asyncNoRows.exists("SELECT v FROM t").get());
+        assertEquals(false, asyncNoRows.exists(TestEntity.class, 1L).get());
+
+        // one row whose first column is NULL (the stub readFirstColumn returns null) -> present flavors
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> asyncNullRow = executor.async();
+        final OptionalBoolean b = asyncNullRow.queryForBoolean("SELECT v FROM t").get();
+        assertTrue(b.isPresent());
+        assertEquals(false, b.get());
+        final OptionalLong l = asyncNullRow.queryForLong("SELECT v FROM t").get();
+        assertTrue(l.isPresent());
+        assertEquals(0L, l.get());
+        final Nullable<String> s = asyncNullRow.queryForString("SELECT v FROM t").get();
+        assertTrue(s.isPresent());
+        assertTrue(s.isNull());
+        assertEquals(0L, asyncNullRow.count("SELECT count(*) FROM t").get().longValue());
+        assertEquals(true, asyncNullRow.exists("SELECT v FROM t").get());
+
+        final ExecutionException e = assertThrows(ExecutionException.class, () -> asyncNullRow.queryForSingleNonNull(String.class, "SELECT v FROM t").get());
+        assertTrue(e.getCause() instanceof NullPointerException, String.valueOf(e.getCause()));
+    }
+
+    /** Records every CQL/parameter pair handed to the driver-level execute, for both the sync and the async façade. */
+    private static class RecordingExecutor extends TestCassandraExecutor {
+        final List<String> recorded = new ArrayList<>();
+
+        private String record(final String query, final Object... parameters) {
+            final String rec = query + " " + Arrays.asList(parameters == null ? new Object[0] : parameters);
+            recorded.add(rec);
+            return rec;
+        }
+
+        @Override
+        public TestResultSet execute(String query, Object... parameters) {
+            record(query, parameters);
+            return new TestResultSet();
+        }
+
+        @Override
+        public <E> Nullable<E> queryForSingleValue(Class<E> valueClass, String query, Object... parameters) {
+            record(query, parameters);
+            return Nullable.empty();
+        }
+
+        @Override
+        public <E> Optional<E> queryForSingleNonNull(Class<E> valueClass, String query, Object... parameters) {
+            record(query, parameters);
+            return Optional.empty();
+        }
+
+        @Override
+        public <T> Optional<T> findFirst(Class<T> targetClass, String query, Object... parameters) {
+            record(query, parameters);
+            return Optional.empty();
+        }
+
+        AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> recordingAsync() {
+            return new AsyncCassandraExecutorBase<>(this) {
+                @Override
+                public ContinuableFuture<TestResultSet> execute(String query) {
+                    record(query);
+                    return ContinuableFuture.completed(new TestResultSet());
+                }
+
+                @Override
+                public ContinuableFuture<TestResultSet> execute(String query, Object... parameters) {
+                    record(query, parameters);
+                    return ContinuableFuture.completed(new TestResultSet());
+                }
+
+                @Override
+                public ContinuableFuture<TestResultSet> execute(String query, Map<String, Object> parameters) {
+                    record(query, parameters);
+                    return ContinuableFuture.completed(new TestResultSet());
+                }
+
+                @Override
+                public ContinuableFuture<TestResultSet> execute(TestStatement statement) {
+                    recorded.add("statement");
+                    return ContinuableFuture.completed(new TestResultSet());
+                }
+            };
+        }
+    }
+
+    // ---- cassbase review regression tests: end ----
+
     // Test classes
     public static class TestEntity {
         private Long id;

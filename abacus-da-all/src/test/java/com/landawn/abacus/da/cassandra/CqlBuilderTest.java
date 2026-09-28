@@ -4414,4 +4414,156 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalStateException.class, () -> closed.from(PSC.select("id"), "u"));
         assertThrows(IllegalStateException.class, () -> PSC.update("account").from(PSC.select("id"), "u"));
     }
+
+    // ---- 2026-09-28 review: clause ordering, raw uuid literals, update(Class) key columns ----
+
+    /**
+     * CQL grammar: {@code SELECT ... [WHERE] [GROUP BY] [ORDER BY] [LIMIT] [ALLOW FILTERING]} — ALLOW FILTERING must
+     * be the final clause. Previously {@code allowFiltering()} appended the clause immediately, so a later
+     * {@code limit(...)}, {@code orderBy(...)}, {@code where(...)} or {@code append(...)} landed after it and produced
+     * CQL that Cassandra rejects (e.g. {@code ... ALLOW FILTERING LIMIT 5}).
+     */
+    @Test
+    public void test_allowFiltering_isRenderedLast_regardlessOfCallOrder() {
+        final String expected = "SELECT id FROM account WHERE first_name = ? ORDER BY id ASC LIMIT 5 ALLOW FILTERING";
+
+        final SP afFirst = PSC.select("id").from("account").allowFiltering().where(Filters.eq("firstName", "x")).orderByAsc("id").limit(5).build();
+        N.println(afFirst.query());
+        assertEquals(expected, afFirst.query());
+        assertEquals(N.asList("x"), afFirst.parameters());
+
+        final String afMiddle = PSC.select("id").from("account").where(Filters.eq("firstName", "x")).allowFiltering().orderByAsc("id").limit(5).build().query();
+        assertEquals(expected, afMiddle);
+
+        final String afLast = PSC.select("id").from("account").where(Filters.eq("firstName", "x")).orderByAsc("id").limit(5).allowFiltering().build().query();
+        assertEquals(expected, afLast);
+
+        // append(Condition)/appendIf(...) after allowFiltering() are ordered the same way.
+        assertEquals("SELECT id FROM account WHERE id = ? ALLOW FILTERING",
+                PSC.select("id").from("account").allowFiltering().appendIf(true, Filters.eq("id", 1)).build().query());
+        assertEquals("SELECT id FROM account WHERE id = :id ALLOW FILTERING",
+                NSC.select("id").from("account").allowFiltering().append(Filters.eq("id", 1)).build().query());
+
+        // The clause is still emitted exactly once, and without any preceding clause it directly follows FROM.
+        final String bare = PSC.select("id").from("account").allowFiltering().build().query();
+        assertEquals("SELECT id FROM account ALLOW FILTERING", bare);
+        assertEquals(1, Strings.countMatches(afFirst.query(), "ALLOW FILTERING"));
+
+        // apply()/accept() go through build() as well.
+        assertEquals(bare, PSC.select("id").from("account").allowFiltering().apply(sp -> sp.query()));
+    }
+
+    /**
+     * Raw (deprecated) builders inline values as CQL literals. A CQL {@code uuid}/{@code timeuuid} literal is bare hex;
+     * the parent builder's fallback rendered a {@link java.util.UUID} as a quoted string, which Cassandra rejects for
+     * uuid columns ("Invalid STRING constant ... for type uuid").
+     */
+    @Test
+    public void test_rawBuilder_rendersUuidAsBareLiteral() {
+        final java.util.UUID uuid = java.util.UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
+
+        final String select = SCCB.select("firstName").from("account").where(Filters.eq("id", uuid)).build().query();
+        N.println(select);
+        assertEquals("SELECT first_name AS \"firstName\" FROM account WHERE id = 123e4567-e89b-12d3-a456-426614174000", select);
+
+        final String insert = SCCB.insert(N.asMap("id", uuid)).into("account").build().query();
+        assertEquals("INSERT INTO account (id) VALUES (123e4567-e89b-12d3-a456-426614174000)", insert);
+
+        final String update = LCCB.update("account").set(N.asMap("ownerId", uuid)).where(Filters.eq("id", 1)).build().query();
+        assertEquals("UPDATE account SET ownerId = 123e4567-e89b-12d3-a456-426614174000 WHERE id = 1", update);
+
+        // Strings are still quoted (CQL doubled-quote escaping), so a uuid-shaped String is not affected.
+        assertEquals("SELECT first_name AS \"firstName\" FROM account WHERE id = '123e4567-e89b-12d3-a456-426614174000'",
+                SCCB.select("firstName").from("account").where(Filters.eq("id", uuid.toString())).build().query());
+    }
+
+    /**
+     * {@code update(Class)} / {@code update(Class, Set)} expand an implicit SET list. Cassandra rejects SET on
+     * primary-key columns ("PRIMARY KEY part id found in SET part"), so — like {@code delete(Class)} — the id props
+     * must be left out of the SET list (they belong in the WHERE clause). Previously the list contained {@code id}.
+     */
+    @Test
+    public void test_update_entityClass_excludesIdPropsFromSetClause() {
+        final SP sp = PSC.update(Account.class).where(Filters.eq("id", 1)).build();
+        final String cql = sp.query();
+        N.println(cql);
+
+        assertTrue(cql.startsWith("UPDATE account SET "), cql);
+        final String setClause = cql.substring(cql.indexOf(" SET ") + " SET ".length(), cql.indexOf(" WHERE "));
+        assertFalse(setClause.contains("id = ?"), cql);
+        assertTrue(setClause.startsWith("gui = ?, "), cql);
+        assertTrue(setClause.contains("first_name = ?"), cql);
+        assertTrue(cql.endsWith(" WHERE id = ?"), cql);
+        assertEquals(N.asList(1), sp.parameters());
+
+        // Same list when USING is appended before where() (implicit SET expansion path) and for named parameters.
+        final String ttlCql = NSC.update(Account.class).usingTTL(60).where(Filters.eq("id", 1)).build().query();
+        assertTrue(ttlCql.startsWith("UPDATE account USING TTL 60 SET gui = :gui, "), ttlCql);
+        assertFalse(ttlCql.contains("id = :id,"), ttlCql);
+        assertTrue(ttlCql.endsWith(" WHERE id = :id"), ttlCql);
+
+        // Explicit exclusions are applied on top of the id exclusion.
+        final String excluded = PSC.update(Account.class, N.asSet("gui", "createTime")).where(Filters.eq("id", 1)).build().query();
+        assertFalse(excluded.contains("gui = ?"), excluded);
+        assertFalse(excluded.contains("create_time = ?"), excluded);
+        assertFalse(excluded.contains("SET id = ?"), excluded);
+        assertTrue(excluded.contains("first_name = ?"), excluded);
+
+        // An @Id-annotated key is excluded as well.
+        final String users = PSC.update(Users.class).where(Filters.eq("id", 1)).build().query();
+        assertTrue(users.startsWith("UPDATE simplex.users SET name = ?, "), users);
+        assertFalse(users.contains("SET id = ?"), users);
+
+        // An explicit set(...) after update(Class) is unaffected.
+        assertEquals("UPDATE account SET first_name = ? WHERE id = ?",
+                PSC.update(Account.class).set("firstName").where(Filters.eq("id", 1)).build().query());
+    }
+
+    /**
+     * Same rule for the entity-based {@code set(...)} overloads: {@code set(entity)} / {@code set(Class)} previously
+     * put the id property into the SET list, which Cassandra rejects ("PRIMARY KEY part id found in SET part").
+     */
+    @Test
+    public void test_set_entityAndEntityClass_excludeIdPropsFromSetClause() {
+        final Account account = new Account();
+        account.setId(7);
+        account.setFirstName("f");
+
+        final SP entitySp = NSC.update("account").set(account).where(Filters.eq("id", account.getId())).build();
+        N.println(entitySp.query());
+        assertTrue(entitySp.query().startsWith("UPDATE account SET gui = :gui, "), entitySp.query());
+        assertFalse(entitySp.query().contains("SET id = :id"), entitySp.query());
+        assertTrue(entitySp.query().contains("first_name = :firstName"), entitySp.query());
+        assertTrue(entitySp.query().endsWith(" WHERE id = :id"), entitySp.query());
+        assertFalse(entitySp.parameters().contains(7L) && entitySp.parameters().indexOf(7L) < entitySp.parameters().size() - 1, entitySp.parameters().toString());
+        assertEquals(7L, entitySp.parameters().get(entitySp.parameters().size() - 1));
+
+        final String excluded = PSC.update("account").set(account, N.asSet("gui", "createTime")).where(Filters.eq("id", 7)).build().query();
+        assertFalse(excluded.contains("gui = ?"), excluded);
+        assertFalse(excluded.contains("create_time = ?"), excluded);
+        assertFalse(excluded.contains("SET id = ?"), excluded);
+        assertTrue(excluded.contains("first_name = ?"), excluded);
+
+        final String byClass = PSC.update("account").set(Account.class).where(Filters.eq("id", 7)).build().query();
+        assertTrue(byClass.startsWith("UPDATE account SET gui = ?, "), byClass);
+        assertFalse(byClass.contains("SET id = ?"), byClass);
+
+        final String byClassExcluded = PSC.update("account").set(Account.class, N.asSet("gui")).where(Filters.eq("id", 7)).build().query();
+        assertTrue(byClassExcluded.startsWith("UPDATE account SET email_address = ?, "), byClassExcluded);
+
+        final String users = PSC.update("simplex.users").set(Users.class).where(Filters.eq("id", 1)).build().query();
+        assertTrue(users.startsWith("UPDATE simplex.users SET name = ?, "), users);
+        assertFalse(users.contains("SET id = ?"), users);
+
+        // String / Map entities are handed to the parent unchanged; the parent's argument contract is preserved.
+        assertEquals("UPDATE account SET first_name = ? WHERE id = ?",
+                PSC.update("account").set((Object) "firstName").where(Filters.eq("id", 7)).build().query());
+        assertEquals("UPDATE account SET id = ? WHERE id = ?",
+                PSC.update("account").set(N.asMap("id", 1)).where(Filters.eq("id", 7)).build().query());
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Object) N.asList("firstName")));
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set(account));
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set(Account.class));
+    }
 }

@@ -990,6 +990,37 @@ public class CosmosContainerExecutorTest extends TestBase {
         assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.udf.x)", queries.get(1));
     }
 
+    @Test
+    public void testStreamItemsWithSetRangeAndPatternConditionsUseNumberedCosmosParameters() {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.or(Filters.in("name", Arrays.asList("a", "b")), Filters.between("id", "1", "5")), TestItem.class).toList();
+        executor.streamItems(Filters.and(Filters.notIn("name", Arrays.asList("a", "b")), Filters.notLike("id", "x%")), TestItem.class).toList();
+        executor.streamItems(Filters.not(Filters.like("name", "a%")), TestItem.class).toList();
+        executor.streamItems(Arrays.asList("id"), Filters.and(Filters.isNull("name"), Filters.ne("id", "1")), TestItem.class).toList();
+
+        final List<SqlQuerySpec> specs = specCaptor.getAllValues();
+        assertEquals(4, specs.size());
+
+        // Every positional placeholder is renamed to @p<index> in order, including those inside IN (...) and BETWEEN ... AND ...
+        assertEquals("SELECT * FROM test_item c WHERE (c.name IN (@p0, @p1)) OR (c.id BETWEEN @p2 AND @p3)", specs.get(0).getQueryText());
+        assertEquals(Arrays.asList("@p0", "@p1", "@p2", "@p3"), specs.get(0).getParameters().stream().map(p -> p.getName()).toList());
+        assertEquals(Arrays.asList("a", "b", "1", "5"), specs.get(0).getParameters().stream().map(p -> p.getValue(String.class)).toList());
+
+        assertEquals("SELECT * FROM test_item c WHERE (c.name NOT IN (@p0, @p1)) AND (c.id NOT LIKE @p2)", specs.get(1).getQueryText());
+        assertEquals(Arrays.asList("a", "b", "x%"), specs.get(1).getParameters().stream().map(p -> p.getValue(String.class)).toList());
+
+        assertEquals("SELECT * FROM test_item c WHERE NOT (c.name LIKE @p0)", specs.get(2).getQueryText());
+        assertEquals("a%", specs.get(2).getParameters().get(0).getValue(String.class));
+
+        // A projection keeps the Cosmos VALUE form while the WHERE clause is still rewritten and parameterised.
+        assertEquals("SELECT VALUE { \"id\": c.id } FROM test_item c WHERE (IS_NULL(c.name)) AND (c.id != @p0)", specs.get(3).getQueryText());
+        assertEquals(1, specs.get(3).getParameters().size());
+        assertEquals("1", specs.get(3).getParameters().get(0).getValue(String.class));
+    }
+
     // Test data class
     public static class TestItem {
         public String id;

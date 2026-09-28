@@ -911,6 +911,46 @@ public class CassandraExecutor01Test extends TestBase {
     }
 
     @Test
+    public void testEntityParameterBindingResolvesColumnAnnotatedProperty() {
+        // A bean bound as the parameter source resolves a driver variable named by @Column ("cnt") through the
+        // column-to-property mapping, as toEntity/extractData already do, instead of failing as a missing parameter.
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("column-annotation-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "INSERT INTO renamed_columns (id, cnt) VALUES (?, ?)";
+        final ColumnDefinition idDef = mock(ColumnDefinition.class);
+        final ColumnDefinition cntDef = mock(ColumnDefinition.class);
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+        when(mockColumnDefinitions.get(0)).thenReturn(idDef);
+        when(mockColumnDefinitions.get(1)).thenReturn(cntDef);
+        when(idDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.BIGINT);
+        when(idDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(cntDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.INT);
+        when(cntDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("cnt"));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final RenamedColumnEntity entity = new RenamedColumnEntity();
+        entity.setId(7L);
+        entity.setOrderCount(3);
+
+        codecExecutor.prepareStatement(query, entity);
+
+        assertEquals(2, bound[0].length);
+        assertEquals(7L, bound[0][0]);
+        assertEquals(3, bound[0][1]);
+
+        // A variable that matches neither a property nor a @Column name is still reported as missing.
+        when(cntDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("no_such_column"));
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> codecExecutor.prepareStatement(query, entity));
+        assertTrue(ex.getMessage().contains("no_such_column"), ex.getMessage());
+    }
+
+    @Test
     public void testToMapPropagatesColumnDecodingFailure() {
         when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockColumnDefinitions.size()).thenReturn(1);
@@ -938,6 +978,28 @@ public class CassandraExecutor01Test extends TestBase {
     // ---- slice N regression tests: end ----
 
     // Test entity class
+    public static class RenamedColumnEntity {
+        private Long id;
+        @Column("cnt")
+        private Integer orderCount;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public Integer getOrderCount() {
+            return orderCount;
+        }
+
+        public void setOrderCount(Integer orderCount) {
+            this.orderCount = orderCount;
+        }
+    }
+
     public static class TestEntity {
         private Long id;
         private String name;

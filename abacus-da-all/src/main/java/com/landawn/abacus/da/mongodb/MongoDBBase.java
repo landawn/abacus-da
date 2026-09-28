@@ -1292,9 +1292,14 @@ public abstract class MongoDBBase {
      * @param rowType the target class - can be an entity class with getter/setter methods, Map.class, or basic single value type (Primitive/String/Date...)
      * @return a List containing all results converted to the specified type (empty list if no results).
      *         When a result is a non-{@link Document} {@link Map} and a different concrete map type is
-     *         requested, its entries are copied directly rather than being interpreted as bean properties.
+     *         requested, its entries are copied directly rather than being interpreted as bean properties;
+     *         for an entity {@code rowType} such a row is mapped like a {@link Document} (including the
+     *         {@code _id} handling of {@link #toEntity(Document, Class)}). Scalar results whose Java type
+     *         differs from a scalar {@code rowType} (e.g. {@code Integer} values requested as {@code Long})
+     *         are converted individually.
      * @throws IllegalArgumentException if {@code findIterable} or {@code rowType} is null, or a result document has multiple non-{@code _id} fields
-     *         for a scalar target, inconsistent scalar projection fields, or cannot be converted to {@code rowType}
+     *         for a scalar target, inconsistent scalar projection fields, or cannot be converted to {@code rowType} (for example a bean,
+     *         collection or array result requested as a scalar type)
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @throws ClassCastException if a result list beginning with a Document contains a later non-Document row in the document conversion branch
@@ -1343,7 +1348,17 @@ public abstract class MongoDBBase {
                         }
                     } else {
                         for (final Object row : rowList) {
-                            resultList.add(Beans.copyAs(row, rowType));
+                            // A non-Document Map row (e.g. BasicDBObject) is still a document: map it like one, including
+                            // the _id handling, since Beans.copyAs can only copy bean-to-bean and rejects a Map.
+                            // A null row stays null, as in the Document and Map branches (Beans.copyAs(null, ...) would
+                            // fabricate an empty entity instead).
+                            if (row == null) {
+                                resultList.add(null);
+                            } else if (row instanceof Map) {
+                                resultList.add(toEntity(new Document((Map<String, Object>) row), rowType));
+                            } else {
+                                resultList.add(Beans.copyAs(row, rowType));
+                            }
                         }
                     }
                 } else if (firstNonNull.get() instanceof Map) {
@@ -1385,9 +1400,15 @@ public abstract class MongoDBBase {
                             resultList.add(value != null && rowType.isInstance(value) ? value : convertBsonValue(value, rowType));
                         }
                     }
-                } else {
+                } else if (targetType.isObjectArray() || targetType.isCollection() || !isScalarRow(firstNonNull.get())) {
                     throw new IllegalArgumentException(
                             "Cannot convert document: " + firstNonNull.get() + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                } else {
+                    // Scalar rows (e.g. from a typed distinct/aggregate iterable) whose Java type differs from the requested
+                    // one: convert each row on its own, as MongoDB freely mixes BSON types (int32/int64) for the same field.
+                    for (final Object row : rowList) {
+                        resultList.add(row == null ? null : convertBsonValue(row, rowType));
+                    }
                 }
 
                 return (List<T>) resultList;
@@ -1479,6 +1500,21 @@ public abstract class MongoDBBase {
         }
 
         return propName;
+    }
+
+    /**
+     * Returns {@code true} when {@code row} is a single value (not a bean, map, collection or object array)
+     * that can be converted to a scalar target type as a whole.
+     */
+    private static boolean isScalarRow(final Object row) {
+        if (row instanceof Binary) {
+            // Binary has bean-like accessors but is a BSON scalar that convertBsonValue handles explicitly.
+            return true;
+        }
+
+        final Type<?> rowType = N.typeOf(row.getClass());
+
+        return !(rowType.isBean() || rowType.isMap() || rowType.isCollection() || rowType.isObjectArray());
     }
 
     /**

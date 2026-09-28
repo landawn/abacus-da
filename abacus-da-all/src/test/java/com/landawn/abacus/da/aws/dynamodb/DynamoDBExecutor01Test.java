@@ -2865,6 +2865,63 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertTrue(entity.getBufferMap().isEmpty());
     }
 
+    // ===== scan(String, List, ...) overloads: an empty attributesToGet list is omitted from the request =====
+    // AWS SDK v1 marshals an explicitly set empty AttributesToGet list as "[]", which DynamoDB rejects with a
+    // ValidationException (the member must have at least one element). Mirrors the v2 executor: null and empty both
+    // mean "retrieve all attributes".
+    @Test
+    public void testScan_EmptyAttributesToGetOmitsLegacyProjection() {
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(new ScanResult().withItems(new ArrayList<>()));
+
+        assertEquals(0, executor.scan("TestTable", List.of()).count());
+        assertEquals(0, executor.scan("TestTable", new ArrayList<>(), Filters.eq("status", "active")).count());
+        assertEquals(0, executor.scan("TestTable", List.of(), TestEntity.class).count());
+        assertEquals(0, executor.scan("TestTable", new ArrayList<>(), Filters.eq("status", "active"), TestEntity.class).count());
+
+        ArgumentCaptor<ScanRequest> captor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(mockDynamoDBClient, times(4)).scan(captor.capture());
+
+        for (ScanRequest sent : captor.getAllValues()) {
+            assertEquals("TestTable", sent.getTableName());
+            assertNull(sent.getAttributesToGet(), "empty attributesToGet must not be sent as an empty AttributesToGet list");
+        }
+
+        assertNull(captor.getAllValues().get(0).getScanFilter());
+        assertNotNull(captor.getAllValues().get(1).getScanFilter());
+        assertEquals(ComparisonOperator.EQ.toString(), captor.getAllValues().get(1).getScanFilter().get("status").getComparisonOperator());
+    }
+
+    @Test
+    public void testScan_NullAndNonEmptyAttributesToGetPreserved() {
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(new ScanResult().withItems(new ArrayList<>()));
+
+        assertEquals(0, executor.scan("TestTable", (List<String>) null).count());
+        assertEquals(0, executor.scan("TestTable", List.of("id", "name"), TestEntity.class).count());
+
+        ArgumentCaptor<ScanRequest> captor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(mockDynamoDBClient, times(2)).scan(captor.capture());
+
+        assertNull(captor.getAllValues().get(0).getAttributesToGet());
+        assertEquals(List.of("id", "name"), captor.getAllValues().get(1).getAttributesToGet());
+    }
+
+    @Test
+    public void testMapperScan_EmptyAttributesToGetOmitsLegacyProjection() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(new ScanResult().withItems(new ArrayList<>()));
+
+        assertEquals(0, mapper.scan(List.of()).count());
+        assertEquals(0, mapper.scan(List.of(), Filters.notNull("id")).count());
+
+        ArgumentCaptor<ScanRequest> captor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(mockDynamoDBClient, times(2)).scan(captor.capture());
+
+        for (ScanRequest sent : captor.getAllValues()) {
+            assertEquals("TestTable", sent.getTableName());
+            assertNull(sent.getAttributesToGet());
+        }
+    }
+
 
     public static class BinaryContainerEntity {
         private List<byte[]> bytes;

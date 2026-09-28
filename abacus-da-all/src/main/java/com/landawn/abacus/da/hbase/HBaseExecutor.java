@@ -805,6 +805,10 @@ public final class HBaseExecutor {
      * bytes; a result with more cells triggers {@link IllegalArgumentException}. Map target types
      * are explicitly rejected.</p>
      *
+     * <p>Conversion reads the cells through {@code result.cellScanner()}, which resets and then
+     * advances the {@link Result}'s single internal cell cursor; the same {@code Result} instance
+     * can be converted repeatedly, but not concurrently from several threads.</p>
+     *
      * <p>Entity-class requirements:</p>
      * <ul>
      *   <li>JavaBean conventions (getters/setters)</li>
@@ -1556,7 +1560,10 @@ public final class HBaseExecutor {
      * <p>The naming policy controls how Java property names map to HBase column-family /
      * qualifier strings (e.g. {@link NamingPolicy#CAMEL_CASE} preserves names,
      * {@link NamingPolicy#SNAKE_CASE} converts {@code fieldName} to {@code field_name}).
-     * A {@code null} {@code namingPolicy} is treated as {@link NamingPolicy#CAMEL_CASE}.</p>
+     * A {@code null} {@code namingPolicy} is treated as {@link NamingPolicy#CAMEL_CASE}.
+     * The policy is applied when entities are written ({@link HBaseMapper#put(Object)} and
+     * {@link HBaseMapper#put(Collection)}); when reading, cells named under any supported
+     * naming policy are recognized, so a mapper can read rows written with a different policy.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

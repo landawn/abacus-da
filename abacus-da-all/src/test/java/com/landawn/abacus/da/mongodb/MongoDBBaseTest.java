@@ -813,6 +813,70 @@ public class MongoDBBaseTest extends TestBase {
         assertNull(result.get(2));
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListMapsNonDocumentMapRowsToEntityWithIdHandling() {
+        // Regression: a non-Document Map row (e.g. BasicDBObject) requested as an entity was passed to
+        // Beans.copyAs(...), which can only copy bean-to-bean and rejected the HashMap outright.
+        final MongoIterable<Map<String, Object>> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        final Map<String, Object> row = new LinkedHashMap<>();
+        row.put("_id", new ObjectId("507f1f77bcf86cd799439011"));
+        row.put("name", "alice");
+        when(iterable.into(any())).thenReturn(Arrays.asList(row, null, new BasicDBObject("name", "bob")));
+
+        final List<TestEntity> result = MongoDBBase.toList(iterable, TestEntity.class);
+
+        assertEquals(3, result.size());
+        assertEquals("507f1f77bcf86cd799439011", result.get(0).getId());
+        assertEquals("alice", result.get(0).getName());
+        assertNull(result.get(1));
+        assertEquals("bob", result.get(2).getName());
+        assertNull(result.get(2).getId());
+        // The source row is left untouched (its _id is not removed while mapping).
+        assertTrue(row.containsKey("_id"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListConvertsScalarRowsToRequestedScalarType() {
+        // Regression: scalar rows (e.g. from a typed distinct/aggregate iterable) whose Java type differed from the
+        // requested one were rejected as "Cannot convert document: 1 to class: java.lang.Long".
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        when(iterable.into(any())).thenReturn(Arrays.asList(1, null, 2L, "3"));
+
+        final List<Long> result = MongoDBBase.toList(iterable, Long.class);
+
+        assertEquals(Arrays.asList(1L, null, 2L, 3L), result);
+
+        // Binary rows are BSON scalars too and follow the same conversion rules as document field values.
+        when(iterable.into(any())).thenReturn(Arrays.asList(new Binary(new byte[] { 1, 2 })));
+
+        final List<ByteBuffer> buffers = MongoDBBase.toList(iterable, ByteBuffer.class);
+
+        assertEquals(1, buffers.size());
+        assertArrayEquals(new byte[] { 1, 2 }, buffers.get(0).array());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListStillRejectsNonScalarRowsForScalarTarget() {
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        final TestEntity bean = new TestEntity();
+        bean.setName("x");
+        when(iterable.into(any())).thenReturn(Arrays.asList(bean));
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Long.class));
+
+        when(iterable.into(any())).thenReturn(Arrays.asList(Arrays.asList(1, 2)));
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Long.class));
+
+        // A scalar row cannot become an array/collection target either.
+        when(iterable.into(any())).thenReturn(Arrays.asList(1));
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Object[].class));
+    }
+
     // -- Entities used by tests --
 
     @Test

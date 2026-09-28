@@ -1,3 +1,13 @@
+## 2.8.9
+* Improvements and bug fixes
+  * CqlBuilder: `ALLOW FILTERING` is rendered last regardless of call order; `UUID` values are inlined as bare literals by the raw builders; primary-key properties are excluded from the implicit `SET` list of `update(Class)`/`set(entity)`.
+  * CassandraExecutor (v3/v4): bean parameters bound to `@Column`-named variables; v3 `UDTCodec` reads UDT fields by position so case-sensitive field names work.
+  * CassandraExecutorBase: `registerKeys` reports an unknown key property with a clear `IllegalArgumentException`.
+  * MongoDBBase.toList: non-`Document` map rows map to entities; scalar rows of a different Java type are converted per row.
+  * MongoCollectionExecutor (sync and reactive): typed `aggregate`/`mapReduce`/`findOneAndXxx` return the raw document for `Object`/`Bson` result types.
+  * DynamoDBExecutor (v1): `scan` with an empty `attributesToGet` list retrieves all attributes instead of sending an invalid request.
+  * Javadoc corrections across HBase, Cassandra, MongoDB, DynamoDB, BigQuery and Neo4j executors.
+
 ## 2.8.8
 * Naming convention improvements
 * Improvements and bug fixes

@@ -909,8 +909,11 @@ public final class DynamoDBExecutor {
      * AttributeValue binaryAttr = toAttributeValue("data".getBytes());   // B: binary data
      * }</pre>
      *
-     * <p><b>Important:</b> This method does NOT handle complex types like Lists, Maps, or Sets.
-     * For complex AttributeValue creation, use AWS SDK v2's AttributeValue builder methods directly.</p>
+     * <p><b>Scope:</b> this helper produces only scalar AttributeValues. It does not build {@code SS},
+     * {@code NS}, {@code BS}, {@code L}, or {@code M} values — collections, maps, arrays (other than
+     * {@code byte[]}), and beans are serialised to their JSON string form and stored as {@code S}.
+     * If you need typed set/list/map AttributeValues, build them with the AWS SDK v2 factories
+     * ({@code AttributeValue.fromL(...)}, {@code AttributeValue.fromM(...)}, {@code AttributeValue.fromSs(...)}, ...) directly.</p>
      *
      * @param value the Java object to convert, can be null
      * @return an AttributeValue representing the input value with appropriate type mapping, never null
@@ -1825,7 +1828,9 @@ public final class DynamoDBExecutor {
      * Converts an {@link AttributeValue} to its natural Java value.
      *
      * <p>This method extracts the value from the {@code AttributeValue} based on its underlying DynamoDB type
-     * (S, N, BOOL, B, SS, NS, BS, L, or M) without applying any explicit target type conversion.
+     * (S, N, BOOL, B, SS, NS, BS, L, or M) without applying any explicit target type conversion: an {@code N}
+     * value is returned as its raw decimal String (as are the elements of an {@code NS} set), a {@code B} value as a
+     * {@code byte[]}, and {@code L}/{@code M} values as a {@code List}/{@code Map} of recursively converted values.
      * If the {@code AttributeValue} is {@code null} or represents a NULL value, it returns {@code null}.</p>
      *
      * @param x the {@code AttributeValue} to convert, can be {@code null}
@@ -1840,7 +1845,8 @@ public final class DynamoDBExecutor {
      * Converts an {@link AttributeValue} to a Java value of the specified type.
      *
      * <p>This method extracts the value from the {@code AttributeValue} based on its underlying DynamoDB type
-     * and, if {@code targetClass} is provided and not already assignable, converts it to that class.
+     * and, if {@code targetClass} is provided and not already assignable, converts it to that class (so an
+     * {@code N} value, decoded as its raw decimal String, becomes e.g. an {@code Integer} or {@code BigDecimal}).
      * If the {@code AttributeValue} is {@code null} or represents a NULL value, it returns {@code null} when
      * {@code targetClass} is {@code null}, otherwise the default value for {@code targetClass}.</p>
      *
@@ -2559,7 +2565,8 @@ public final class DynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to retrieve from. Must not be null or empty.
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param targetClass the class of the entity to convert to. Must not be null.
-     * @return an instance of the target class representing the item, or null if the item doesn't exist
+     * @return an instance of the target class representing the item, or {@code null} for reference types when the item doesn't exist
+     *         (a primitive {@code targetClass} yields its default value such as {@code 0} or {@code false})
      * @throws IllegalArgumentException if {@code targetClass} is null, or a returned item cannot be converted to {@code targetClass}
      * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
      *         validation)
@@ -2603,7 +2610,8 @@ public final class DynamoDBExecutor {
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @param targetClass the class of the entity to convert to. Must not be null.
-     * @return an instance of the target class representing the item, or null if the item doesn't exist
+     * @return an instance of the target class representing the item, or {@code null} for reference types when the item doesn't exist
+     *         (a primitive {@code targetClass} yields its default value such as {@code 0} or {@code false})
      * @throws IllegalArgumentException if {@code targetClass} is null, or a returned item cannot be converted to {@code targetClass}
      * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
      *         validation)
@@ -2964,7 +2972,7 @@ public final class DynamoDBExecutor {
      * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
      *         or service limits
      * @see #putItem(String, Map, String)
-     * @see #updateItem
+     * @see #updateItem(String, Map, Map)
      */
     public PutItemResponse putItem(final String tableName, final Map<String, AttributeValue> item) throws DynamoDbException, SdkException {
         if (logger.isDebugEnabled()) {
@@ -4132,8 +4140,8 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
-     *            and one field annotated with {@code @Id} for a simple key, or two for a composite
-     *            partition-and-sort key.
+     *            and one field annotated with {@code @Id} for a simple key (or, with no {@code @Id} field, a
+     *            property named {@code id}), or two {@code @Id} fields for a composite partition-and-sort key.
      * @author haiyangli
      * @since 1.0
      */
@@ -5051,9 +5059,10 @@ public final class DynamoDBExecutor {
         }
 
         /**
-         * Checks the request and applies this mapper's table name when none is specified.
+         * Checks that the request is non-null and that every table it names is this mapper's table. Unlike the
+         * single-item requests, a batch request keys its items by table name, so no table name is substituted.
          *
-         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         * @throws IllegalArgumentException if the request is null or names a table different from this mapper's table
          */
         private BatchGetItemRequest checkItem(final BatchGetItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.batchGetItemRequest);
@@ -5069,9 +5078,10 @@ public final class DynamoDBExecutor {
         }
 
         /**
-         * Checks the request and applies this mapper's table name when none is specified.
+         * Checks that the request is non-null and that every table it names is this mapper's table. Unlike the
+         * single-item requests, a batch request keys its items by table name, so no table name is substituted.
          *
-         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         * @throws IllegalArgumentException if the request is null or names a table different from this mapper's table
          */
         private BatchWriteItemRequest checkItem(final BatchWriteItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.batchWriteItemRequest);

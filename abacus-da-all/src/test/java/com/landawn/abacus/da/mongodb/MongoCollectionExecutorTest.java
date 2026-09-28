@@ -825,9 +825,9 @@ public class MongoCollectionExecutorTest extends TestBase {
     @SuppressWarnings("unchecked")
     @Test
     public void testAggregateDefaultDocumentRowTypePreservesRowContent() {
-        // The default aggregate(pipeline) decodes to Document and maps each row through
-        // toEntity/readRow (no raw-Document short-circuit like stream()); this pins the
-        // content-preserving pass-through of multi-field aggregate rows for the default rowType.
+        // The default aggregate(pipeline) decodes to Document and maps each row through toEntity,
+        // which hands Document-assignable row types the raw row; this pins the content-preserving
+        // pass-through of multi-field aggregate rows for the default rowType.
         final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
         final MongoCursor<Document> cursor = mock(MongoCursor.class);
 
@@ -2222,6 +2222,88 @@ public class MongoCollectionExecutorTest extends TestBase {
             try (Stream<ByteBuffer> stream = executor.stream(Arrays.asList("value"), filter, ByteBuffer.class)) {
                 Assertions.assertEquals(Arrays.asList(expected), stream.toList());
             }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testAggregateWithDocumentAssignableRowTypeReturnsRawDocuments() {
+        // Regression: aggregate(pipeline, Object.class) sent every row through readRow's scalar fallback,
+        // which throws for a multi-field row and silently dropped _id for a single-field row. Result types
+        // that can hold a Document (Object, Bson, Map, Document) must receive the raw row, matching
+        // list/stream/findFirst.
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+        final Document row = new Document("_id", "sales").append("count", 2).append("region", "east");
+        final List<Document> pipeline = Arrays.asList(new Document("$group", new Document("_id", "$department")));
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
+        when(aggregateIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(row);
+
+        final List<Object> objects = executor.aggregate(pipeline, Object.class).toList();
+
+        Assertions.assertEquals(1, objects.size());
+        Assertions.assertSame(row, objects.get(0));
+
+        when(cursor.hasNext()).thenReturn(true, false);
+        final List<Bson> bsons = executor.aggregate(pipeline, Bson.class).toList();
+        Assertions.assertSame(row, bsons.get(0));
+
+        when(cursor.hasNext()).thenReturn(true, false);
+        final List<Document> documents = executor.aggregate(pipeline, Document.class).toList();
+        Assertions.assertSame(row, documents.get(0));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMapReduceWithDocumentAssignableRowTypeReturnsRawDocuments() {
+        final com.mongodb.client.MapReduceIterable<Document> mapReduceIterable = mock(com.mongodb.client.MapReduceIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+        final Document row = new Document("_id", "sales").append("value", 2).append("extra", "x");
+
+        when(mockCollection.mapReduce(any(String.class), any(String.class), eq(Document.class))).thenReturn(mapReduceIterable);
+        when(mapReduceIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(row);
+
+        final List<java.util.Map> rows = executor.mapReduce("function() { emit(this.name, 1); }", "function(k, v) { return Array.sum(v); }", java.util.Map.class)
+                .toList();
+
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertSame(row, rows.get(0));
+    }
+
+    @Test
+    public void testTypedFindAndModifyWithDocumentAssignableRowTypeReturnsRawDocument() {
+        // Regression: findOneAndUpdate/findOneAndReplace/findOneAndDelete(..., Object.class) threw
+        // IllegalArgumentException for a multi-field document via readRow's scalar fallback.
+        final Document filter = new Document("id", 1);
+        final Document update = new Document("$set", new Document("a", 1));
+        final Document returnedDoc = new Document("_id", new ObjectId()).append("a", 1).append("b", 2);
+
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(returnedDoc);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(returnedDoc);
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class))).thenReturn(returnedDoc);
+        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(returnedDoc);
+
+        Assertions.assertSame(returnedDoc, executor.findOneAndUpdate(filter, update, Object.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndUpdate(filter, Arrays.asList(update), Object.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndReplace(filter, new Document("a", 1), Bson.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndDelete(filter, java.util.Map.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndDelete(filter, Document.class));
+    }
+
+    @Test
+    public void testStreamWithObjectRowTypeReturnsRawDocuments() {
+        final Document row = new Document("_id", new ObjectId()).append("a", 1).append("b", 2);
+        when(mockCollection.find()).thenReturn(mockFindIterable);
+        when(mockCursor.hasNext()).thenReturn(true, false);
+        when(mockCursor.next()).thenReturn(row);
+
+        try (Stream<Object> stream = executor.stream(Object.class)) {
+            Assertions.assertSame(row, stream.first().get());
         }
     }
 
