@@ -372,6 +372,37 @@ public class AnyDeleteTest extends TestBase {
         assertEquals(1, orig.getFamilyCellMap().size());
     }
 
+    @Test
+    public void testOf_copyExistingDelete_copiesAttributesAndPriorityButNotDurability() {
+        Delete orig = new Delete(Bytes.toBytes("k"));
+        orig.setAttribute("trace", Bytes.toBytes("t1"));
+        orig.setPriority(7);
+        orig.setDurability(Durability.SKIP_WAL);
+
+        AnyDelete copy = AnyDelete.of(orig);
+
+        assertArrayEquals(Bytes.toBytes("t1"), copy.getAttribute("trace"));
+        assertEquals(7, copy.getPriority());
+        // Documented: HBase's Delete(Delete) copy constructor resets durability to USE_DEFAULT.
+        assertEquals(Durability.USE_DEFAULT, copy.getDurability());
+
+        // The copied attribute map is independent of the source.
+        copy.setAttribute("trace", (byte[]) null);
+        assertArrayEquals(Bytes.toBytes("t1"), orig.getAttribute("trace"));
+    }
+
+    @Test
+    public void testOf_withTimestampAndFamilyMap_retainsMapByReferenceAndAcceptsNegativeTimestamp() {
+        NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+        AnyDelete delete = AnyDelete.of("row", -1L, familyMap);
+
+        assertSame(familyMap, delete.getFamilyCellMap());
+        // Documented: this overload does not validate the timestamp, unlike the sibling factories.
+        assertEquals(-1L, delete.getTimestamp());
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of("row", -1L));
+        assertThrows(IllegalArgumentException.class, () -> AnyDelete.of("row", 0, 3, -1L));
+    }
+
     // ---------------------------------------------------------------------
     // add(Cell) -- exercise the residual uncovered method.
     // ---------------------------------------------------------------------

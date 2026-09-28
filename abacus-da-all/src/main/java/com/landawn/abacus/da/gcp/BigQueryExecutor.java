@@ -1499,7 +1499,7 @@ public class BigQueryExecutor {
      *               {@code QueryParameterValue}
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null, if no primary key fields are found for the entity class, if a primary-key property of
-     *         the entity has a null or blank value, or if every non-key property of the entity is null (nothing to update)
+     *         the entity has a null or empty value, or if every non-key property of the entity is null (nothing to update)
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #update(Object, Set)
@@ -1549,7 +1549,7 @@ public class BigQueryExecutor {
      * @param primaryKeyNames the set of property names to use as primary key fields in the WHERE clause
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, if a named primary-key property of the entity has
-     *         a null or blank value, or if every non-key property of the entity is null (nothing to update)
+     *         a null or empty value, or if every non-key property of the entity is null (nothing to update)
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #update(Class, Map, Condition)
@@ -1579,7 +1579,7 @@ public class BigQueryExecutor {
         for (final String keyName : primaryKeyNames) {
             final Object propVal = entityInfo.getPropValue(entity, keyName);
 
-            // Fail fast with a clear message (mirroring entityToCondition): a null/blank key value
+            // Fail fast with a clear message (mirroring entityToCondition): a null/empty key value
             // would otherwise surface as a generic error from buildQueryParameterValue.
             if (propVal == null || (propVal instanceof CharSequence) && Strings.isEmpty(((CharSequence) propVal))) {
                 throw new IllegalArgumentException("No property value specified in entity for key names: " + primaryKeyNames);
@@ -1719,7 +1719,7 @@ public class BigQueryExecutor {
      * // Edge: a null entity is rejected before any query is built
      * executor.delete((Object) null);                    // throws IllegalArgumentException
      *
-     * // Edge: an entity whose only key is blank/null has no usable WHERE value
+     * // Edge: an entity whose only key is empty/null has no usable WHERE value
      * Customer blank = new Customer();                   // customerId left null
      * executor.delete(blank);                            // throws IllegalArgumentException
      * }</pre>

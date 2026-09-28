@@ -2930,7 +2930,9 @@ public final class MongoCollectionExecutor {
      * Converts a Document to an entity of the specified type.
      *
      * <p>Internal helper method for converting a single Document to the target type.
-     * Returns null if the document is null, or if it is empty and the requested type is scalar.</p>
+     * Returns null if the document is null, or if it is empty and the requested type is scalar.
+     * Result types that can directly hold a {@link Document} (such as {@code Object}, {@link Bson},
+     * {@code Map} or {@code Document}) receive the document itself, matching {@code list}/{@code stream}.</p>
      *
      * @param <T> the target type
      * @param doc the document to convert
@@ -2944,6 +2946,12 @@ public final class MongoCollectionExecutor {
      *         or constructing or populating the requested map, collection, or bean, or invoking a bean accessor, fails
      */
     private static <T> T toEntity(final Document doc, final Class<T> rowType) throws IllegalArgumentException, ArrayStoreException, RuntimeException {
+        // Same short-circuit as list/stream/findFirst: without it, readRow's scalar fallback rejects a
+        // multi-field document requested as Object/Bson (and converts the sole value of a single-field one).
+        if (rowType != null && rowType.isAssignableFrom(Document.class)) {
+            return (T) doc;
+        }
+
         return shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDBBase.readRow(doc, rowType);
     }
 
@@ -2958,7 +2966,7 @@ public final class MongoCollectionExecutor {
      * @return a Function that converts Documents to entities
      */
     private static <T> Function<Document, T> toEntity(final Class<T> rowType) {
-        return doc -> shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDBBase.readRow(doc, rowType);
+        return doc -> toEntity(doc, rowType);
     }
 
     private static <T> Function<Document, T> toEntity(final Class<T> rowType, final Collection<String> selectPropNames) {
@@ -5039,7 +5047,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.distinct("category", String.class) // returns a lazy Stream of the unique "category" values (null included if documents store the field as null/missing)
+     * executor.distinct("category", String.class) // returns a lazy Stream of the unique "category" values (null included if a document stores the field as null)
      *     .forEach(category -> System.out.println("Category: " + category));
      * }</pre>
      *
@@ -5134,7 +5142,9 @@ public final class MongoCollectionExecutor {
     /**
      * Executes an aggregation pipeline with type conversion.
      *
-     * <p>Processes documents through an aggregation pipeline and converts results to the specified type.</p>
+     * <p>Processes documents through an aggregation pipeline and converts results to the specified type.
+     * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive
+     * the raw output documents, matching {@code list}/{@code stream}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

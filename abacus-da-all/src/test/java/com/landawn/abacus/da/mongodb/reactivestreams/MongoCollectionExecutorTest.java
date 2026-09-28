@@ -2689,6 +2689,82 @@ public class MongoCollectionExecutorTest extends TestBase {
         }
     }
 
+    // Pins the documented cold-publisher contract of insertOne: building the Mono creates the driver
+    // publisher once (no insert yet), and every subscription re-issues that same insert with the SAME
+    // Document instance rather than building a fresh write.
+    @Test
+    public void testInsertOneResubscriptionReissuesInsertWithSameDocument() {
+        final Document doc = new Document("name", "dup");
+        final InsertOneResult insertResult = mock(InsertOneResult.class);
+        final java.util.concurrent.atomic.AtomicInteger executions = new java.util.concurrent.atomic.AtomicInteger();
+        final Publisher<InsertOneResult> publisher = Mono.fromSupplier(() -> {
+            executions.incrementAndGet();
+            return insertResult;
+        });
+        when(mockCollection.insertOne(doc)).thenReturn(publisher);
+
+        final Mono<InsertOneResult> result = executor.insertOne(doc);
+
+        verify(mockCollection).insertOne(org.mockito.ArgumentMatchers.same(doc));
+        assertEquals(0, executions.get());
+
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+
+        assertEquals(2, executions.get());
+        verify(mockCollection, org.mockito.Mockito.times(1)).insertOne(any(Document.class));
+    }
+
+    // Pins the documented "write-value conversion happens while the publisher is built" contract:
+    // an entity is converted to a Document exactly once, at call time, and that Document is what
+    // every subscription re-submits.
+    @Test
+    public void testInsertOneConvertsEntityOnceAtCallTimeNotPerSubscription() {
+        final CountingBean bean = new CountingBean();
+        final InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollection.insertOne(any(Document.class))).thenReturn(Mono.just(insertResult));
+
+        final Mono<InsertOneResult> result = executor.insertOne(bean);
+
+        assertTrue(bean.readCount > 0);
+        final int readsAfterBuild = bean.readCount;
+
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+
+        assertEquals(readsAfterBuild, bean.readCount);
+        final org.mockito.ArgumentCaptor<Document> captor = org.mockito.ArgumentCaptor.forClass(Document.class);
+        verify(mockCollection).insertOne(captor.capture());
+        assertEquals("counted", captor.getValue().getString("name"));
+    }
+
+    // Regression: a multi-field aggregation output requested as Object.class must be emitted as the raw
+    // Document (same short-circuit as list/findFirst), not rejected by readRow's scalar fallback.
+    @Test
+    public void testAggregateWithObjectRowTypeReturnsRawMultiFieldDocument() {
+        final List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
+        final Document wideDoc = new Document("_id", new ObjectId()).append("name", "John").append("age", 30);
+
+        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mockAggregatePublisher);
+        stubEmits(mockAggregatePublisher, wideDoc);
+
+        StepVerifier.create(executor.aggregate(pipeline, Object.class)).expectNext(wideDoc).verifyComplete();
+        StepVerifier.create(executor.aggregate(pipeline, Bson.class)).expectNext(wideDoc).verifyComplete();
+    }
+
+    public static class CountingBean {
+        private int readCount;
+
+        public String getName() {
+            readCount++;
+            return "counted";
+        }
+
+        public void setName(final String name) {
+            // setter required for the bean conversion path
+        }
+    }
+
     public static class GroupRow {
         private String department;
         private int count;

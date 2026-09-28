@@ -744,6 +744,27 @@ public class AnyPutTest extends TestBase {
     }
 
     @Test
+    public void testOf_copyExistingPut_copiesAttributesAndPriorityButNotDurability() {
+        Put orig = new Put(Bytes.toBytes("k"));
+        orig.setAttribute("trace", Bytes.toBytes("t1"));
+        orig.setTTL(1234L);
+        orig.setPriority(7);
+        orig.setDurability(Durability.SKIP_WAL);
+
+        AnyPut copy = AnyPut.of(orig);
+
+        assertArrayEquals(Bytes.toBytes("t1"), copy.getAttribute("trace"));
+        assertEquals(1234L, copy.getTTL());
+        assertEquals(7, copy.getPriority());
+        // Documented: HBase's Put(Put) copy constructor resets durability to USE_DEFAULT.
+        assertEquals(Durability.USE_DEFAULT, copy.getDurability());
+
+        // The copied attribute map is independent of the source.
+        copy.setAttribute("trace", (byte[]) null);
+        assertArrayEquals(Bytes.toBytes("t1"), orig.getAttribute("trace"));
+    }
+
+    @Test
     public void testGetACL_initiallyNull() {
         AnyPut put = AnyPut.of("row");
         assertNull(put.getACL());

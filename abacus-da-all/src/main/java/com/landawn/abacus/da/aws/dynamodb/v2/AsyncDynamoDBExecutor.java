@@ -612,7 +612,8 @@ public final class AsyncDynamoDBExecutor {
      * @param key the primary key of the item to retrieve. Must not be null or empty.
      * @param targetClass the class to convert the result to. Must not be null.
      * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
-     *         when the item does not exist; completes exceptionally with a
+     *         for reference types when the item does not exist (a primitive {@code targetClass} yields
+     *         its default value such as {@code 0} or {@code false}); completes exceptionally with a
      *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK or result-conversion exception
      *         on failure
      * @throws IllegalArgumentException if {@code targetClass} is null
@@ -663,7 +664,8 @@ public final class AsyncDynamoDBExecutor {
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @param targetClass the class to convert the result to. Must not be null.
      * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
-     *         when the item does not exist; completes exceptionally with a
+     *         for reference types when the item does not exist (a primitive {@code targetClass} yields
+     *         its default value such as {@code 0} or {@code false}); completes exceptionally with a
      *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK or result-conversion exception
      *         on failure
      * @throws IllegalArgumentException if {@code targetClass} is null
@@ -3725,9 +3727,10 @@ public final class AsyncDynamoDBExecutor {
         }
 
         /**
-         * Checks the request and applies this mapper's table name when none is specified.
+         * Checks that the request is non-null and that every table it names is this mapper's table. Unlike the
+         * single-item requests, a batch request keys its items by table name, so no table name is substituted.
          *
-         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         * @throws IllegalArgumentException if the request is null or names a table different from this mapper's table
          */
         private BatchGetItemRequest checkItem(final BatchGetItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.batchGetItemRequest);
@@ -3743,9 +3746,10 @@ public final class AsyncDynamoDBExecutor {
         }
 
         /**
-         * Checks the request and applies this mapper's table name when none is specified.
+         * Checks that the request is non-null and that every table it names is this mapper's table. Unlike the
+         * single-item requests, a batch request keys its items by table name, so no table name is substituted.
          *
-         * @throws IllegalArgumentException if the request is null or specifies a table name different from this mapper's table
+         * @throws IllegalArgumentException if the request is null or names a table different from this mapper's table
          */
         private BatchWriteItemRequest checkItem(final BatchWriteItemRequest item) throws IllegalArgumentException {
             N.checkArgNotNull(item, cs.batchWriteItemRequest);

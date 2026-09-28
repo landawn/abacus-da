@@ -18,6 +18,7 @@ import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NAC;
 import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NLC;
 import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NSC;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -193,7 +194,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * The single-element select list {@code [count(*)]} used to build the {@code SELECT} issued by
      * the {@code count(...)} family, so a count never materializes entity columns.
      *
-     * @see CqlBuilder#COUNT_ALL
+     * @see SK#COUNT_ALL
      */
     protected static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(SK.COUNT_ALL);
 
@@ -206,8 +207,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Adapts a single-value {@code Nullable<Boolean>} result to {@link OptionalBoolean}, unboxing a
-     * present value and mapping an absent one to {@link OptionalBoolean#empty()}. Used by the
-     * {@code queryForBoolean} family.
+     * present value (a present {@code null} unboxes to {@code false}) and mapping an absent one to
+     * {@link OptionalBoolean#empty()}. Used by the {@code queryForBoolean} family.
      */
     protected static final Throwables.Function<Nullable<Boolean>, OptionalBoolean, RuntimeException> boolean_mapper = t -> t
             .mapToBoolean(ToBooleanFunction.UNBOX);
@@ -229,9 +230,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Maps a single-value {@code Nullable<Long>} result to a plain {@code Long}, substituting
-     * {@code 0} when the value is absent. Used by the {@code count(...)} family, where "no row"
-     * and "zero rows counted" are the same answer — unlike {@link #long_mapper}, which preserves
-     * absence.
+     * {@code 0} when the value is absent or {@code null}. Used by the {@code count(...)} family, where
+     * "no row" and "zero rows counted" are the same answer — unlike {@link #long_mapper}, which
+     * preserves absence.
      */
     protected static final Throwables.Function<Nullable<Long>, Long, RuntimeException> long_secondMapper = t -> t.mapToLong(ToLongFunction.UNBOX).orElse(0);
 
@@ -348,7 +349,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         final Set<String> keyNameSet = N.newLinkedHashSet(keyNames.size());
 
         for (final String keyName : keyNames) {
-            keyNameSet.add(Beans.getPropNameByMethod(Beans.getPropGetter(entityClass, keyName)));
+            final Method getter = Beans.getPropGetter(entityClass, keyName);
+
+            if (getter == null) {
+                throw new IllegalArgumentException(
+                        "No readable property found for key name: " + keyName + " in class: " + ClassUtil.getCanonicalClassName(entityClass));
+            }
+
+            keyNameSet.add(Beans.getPropNameByMethod(getter));
         }
 
         entityKeyNamesMap.put(entityClass, Tuple.of(ImmutableList.copyOf(keyNameSet), ImmutableSet.wrap(keyNameSet)));
@@ -3811,7 +3819,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
      * @param whereClause the WHERE condition
-     * @param count the maximum number of results to return (0 for no limit)
+     * @param count the maximum number of results to return ({@code 0} or a negative value for no limit)
      * @return an SP (Statement/Parameters) pair ready for execution
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, selected properties cannot be mapped, or the condition
      *         uses a relation unsupported by CQL

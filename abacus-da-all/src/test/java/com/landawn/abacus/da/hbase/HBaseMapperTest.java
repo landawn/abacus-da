@@ -35,6 +35,7 @@ import com.landawn.abacus.annotation.Table;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.hbase.HBaseExecutor.HBaseMapper;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
+import com.landawn.abacus.util.NamingPolicy;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -457,5 +458,50 @@ public class HBaseMapperTest extends TestBase {
 
         assertTrue(ex.getMessage().startsWith("Entity class com.landawn.abacus.da.hbase.HBaseMapperTest.UserWithoutTable must be annotated with @Table"),
                 ex.getMessage());
+    }
+
+    // ---------------------------------------------------------------------
+    // Naming policy: applied on the write side only; reads recognize cells named under any
+    // supported policy, so a SNAKE_CASE mapper still reads rows written with CAMEL_CASE names.
+    // ---------------------------------------------------------------------
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Table("profiles")
+    @ColumnFamily("p")
+    public static class Profile {
+        @Id
+        private String profileId;
+        private String displayName;
+    }
+
+    @Test
+    public void testMapper_namingPolicy_appliesToWritesAndReadsAcceptAnyPolicy() throws Exception {
+        Mocks m = new Mocks();
+        HBaseMapper<Profile, String> snake = m.executor.mapper(Profile.class, "profiles", NamingPolicy.SNAKE_CASE);
+
+        snake.put(new Profile("p1", "Ann"));
+
+        org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Put> captor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Put.class);
+        verify(m.table).put(captor.capture());
+        org.apache.hadoop.hbase.client.Put written = captor.getValue();
+        assertTrue(written.has(Bytes.toBytes("p"), Bytes.toBytes("display_name")), "the write side must apply SNAKE_CASE to the qualifier");
+        assertTrue(!written.has(Bytes.toBytes("p"), Bytes.toBytes("displayName")));
+
+        Cell camel = new KeyValue(Bytes.toBytes("p1"), Bytes.toBytes("p"), Bytes.toBytes("displayName"), Bytes.toBytes("Ann"));
+        when(m.table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(Result.create(Arrays.<Cell> asList(camel)));
+
+        Profile readBySnake = snake.get("p1");
+        assertNotNull(readBySnake);
+        assertEquals("p1", readBySnake.getProfileId());
+        assertEquals("Ann", readBySnake.getDisplayName(), "a CAMEL_CASE-named cell must be readable through a SNAKE_CASE mapper");
+
+        Cell snakeCell = new KeyValue(Bytes.toBytes("p1"), Bytes.toBytes("p"), Bytes.toBytes("display_name"), Bytes.toBytes("Bob"));
+        when(m.table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(Result.create(Arrays.<Cell> asList(snakeCell)));
+
+        Profile readByCamel = m.executor.mapper(Profile.class).get("p1");
+        assertEquals("Bob", readByCamel.getDisplayName(), "a SNAKE_CASE-named cell must be readable through the default CAMEL_CASE mapper");
     }
 }

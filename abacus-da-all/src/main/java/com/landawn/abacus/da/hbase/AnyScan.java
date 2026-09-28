@@ -810,8 +810,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Returns the time range for this scan operation.
      * <p>
-     * The time range specifies which versions of cells to include based on their timestamps.
-     * By default, all versions within the configured time range will be considered.
+     * The time range specifies which versions of cells to include based on their timestamps:
+     * only cells whose timestamp lies in {@code [minStamp, maxStamp)} are returned. By default no
+     * time-range filter is applied &mdash; the underlying {@link Scan} returns
+     * {@link TimeRange#allTime()}, which covers every timestamp.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>

@@ -370,7 +370,12 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * range, and the family-to-cells map structure (the map and per-family {@code List<Cell>}
      * are new collections, but the {@link Cell} instances themselves are shared with the source).
      * Subsequent {@code addColumn} calls on the returned wrapper therefore do not mutate the
-     * source append.</p>
+     * source append. Attributes (including the TTL, cluster ids, ACL, cell visibility and the
+     * return-results flag) and the priority are copied as well, but the
+     * {@link org.apache.hadoop.hbase.client.Durability Durability} is not: HBase's copy
+     * constructor leaves it at {@code Durability.USE_DEFAULT}, so re-apply
+     * {@link #setDurability(org.apache.hadoop.hbase.client.Durability) setDurability} on the copy
+     * when the source used a non-default level.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

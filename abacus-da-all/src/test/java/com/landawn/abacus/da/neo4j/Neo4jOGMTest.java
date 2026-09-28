@@ -22,7 +22,7 @@ import com.landawn.abacus.util.Strings;
 
 // http://neo4j.com/docs/ogm/java/stable/
 public class Neo4jOGMTest {
-    private static final SessionFactory sessionFactory = new SessionFactory("com.landawn.abacus.util.neo4j.model");
+    private static final SessionFactory sessionFactory = new SessionFactory("com.landawn.abacus.da.neo4j.model");
 
     /**
      * 

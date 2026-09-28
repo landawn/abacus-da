@@ -2030,7 +2030,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *   <li>A single {@code Object[]} or {@link Collection} containing all positional values</li>
      *   <li>A single {@link Map} (named parameters: keys match {@code :name} placeholders or
      *       the column names of the prepared statement variables)</li>
-     *   <li>A single bean instance (named parameters resolved via bean property getters)</li>
+     *   <li>A single bean instance (named parameters resolved via bean property getters, matched by property
+     *       name or by the column name declared with {@code @Column})</li>
      * </ul>
      * <p>A codec registered for a scalar or bean value takes precedence over expanding bean properties or
      * coercing it to the column's default Java type. Positional collections and named maps retain their
@@ -2119,6 +2120,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 //noinspection UnnecessaryLocalVariable
                 final Object entity = parameter_0;
                 final Class<?> clazz = entity.getClass();
+                Map<String, String> columnToPropNameMap = null;
                 Method propGetMethod = null;
 
                 for (int i = 0; i < parameterCount; i++) {
@@ -2129,6 +2131,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     }
 
                     propGetMethod = Beans.getPropGetter(clazz, parameterName);
+
+                    if (propGetMethod == null) {
+                        if (columnToPropNameMap == null) {
+                            columnToPropNameMap = QueryUtil.columnToPropNameMap(clazz);
+                        }
+
+                        final String propName = columnToPropNameMap.get(parameterName);
+                        propGetMethod = propName == null ? null : Beans.getPropGetter(clazz, propName);
+                    }
 
                     if (propGetMethod == null) {
                         throw new IllegalArgumentException("Missing required parameter: '" + parameterName + "'");
@@ -2597,6 +2608,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *   <li>JavaBean classes: encoded and decoded by reading/writing the bean property
          *       whose name matches each UDT field name</li>
          * </ul>
+         * <p>UDT field values are read and written by field position, so case-sensitive (quoted) field
+         * names such as {@code "firstName"} are supported.</p>
          * <p>The {@link IllegalArgumentException} for unsupported types is thrown lazily at
          * encode/decode time, not by this factory.</p>
          *
@@ -2651,9 +2664,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     } else if (Map.class.isAssignableFrom(javaClazz)) {
                         final Map<String, Object> map = N.newMap((Class<Map<String, Object>>) javaClazz);
                         final Collection<String> fieldNames = userType.getFieldNames();
+                        // Read fields by position (as serialize() writes them): driver 3 resolves a String field name as a CQL
+                        // identifier and lower-cases it unless quoted, so a case-sensitive field such as "firstName" is not
+                        // found by its internal name.
+                        int idx = 0;
 
                         for (final String fieldName : fieldNames) {
-                            map.put(fieldName, udtValue.getObject(fieldName));
+                            map.put(fieldName, udtValue.getObject(idx++));
                         }
 
                         return (T) map;
@@ -2663,6 +2680,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         final Map<String, String> columnToPropNameMap = QueryUtil.columnToPropNameMap(javaClazz);
                         Object targetBean = beanInfo.createBeanResult();
                         PropInfo propInfo = null;
+                        int idx = 0;
 
                         for (final String fieldName : fieldNames) {
                             propInfo = beanInfo.getPropInfo(fieldName);
@@ -2673,13 +2691,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             }
 
                             if (propInfo != null) {
-                                final Object fieldValue = udtValue.getObject(fieldName);
+                                final Object fieldValue = udtValue.getObject(idx);
 
                                 // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
                                 propInfo.setPropValue(targetBean,
                                         byte[].class.equals(propInfo.clazz) && fieldValue instanceof ByteBuffer ? convertValue(fieldValue, byte[].class)
                                                 : fieldValue);
                             }
+
+                            idx++;
                         }
 
                         targetBean = beanInfo.finishBeanResult(targetBean);

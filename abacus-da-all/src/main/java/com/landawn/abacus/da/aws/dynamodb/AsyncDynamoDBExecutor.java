@@ -2037,7 +2037,7 @@ public final class AsyncDynamoDBExecutor {
      *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
      *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
-     * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes.
+     * @param attributesToGet list of attribute names to retrieve, or {@code null} or empty to retrieve all attributes.
      *                       Projecting specific attributes reduces data transfer costs
      * @return a {@link ContinuableFuture} containing a {@link Stream} of all items in the table,
      *         with automatic pagination and lazy evaluation
@@ -2156,7 +2156,7 @@ public final class AsyncDynamoDBExecutor {
      *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
      *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
-     * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes.
+     * @param attributesToGet list of attribute names to retrieve, or {@code null} or empty to retrieve all attributes.
      *                       Projecting reduces network transfer but not read cost
      * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
      *                  may be {@code null} to apply no filter. Multiple conditions are combined with AND logic.
@@ -2283,7 +2283,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type to convert the scan results to
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
-     * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes
+     * @param attributesToGet list of attribute names to retrieve, or {@code null} or empty to retrieve all attributes
      * @param targetClass the class to convert each result item to, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items from the scan,
      *         each converted to type {@code T}
@@ -2380,7 +2380,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type to convert the scan results to
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
-     * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes
+     * @param attributesToGet list of attribute names to retrieve, or {@code null} or empty to retrieve all attributes
      * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
      *                  may be {@code null} to apply no filter
      * @param targetClass the class to convert each result item to, must not be {@code null}

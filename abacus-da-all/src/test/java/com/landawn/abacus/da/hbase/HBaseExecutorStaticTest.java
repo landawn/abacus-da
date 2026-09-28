@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,6 +28,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.KeyValue;
@@ -50,6 +56,7 @@ import com.landawn.abacus.annotation.Table;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.hbase.HBaseExecutor.HBaseMapper;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
+import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.util.NamingPolicy;
 
 import lombok.AllArgsConstructor;
@@ -1538,5 +1545,180 @@ public class HBaseExecutorStaticTest extends TestBase {
         } finally {
             executor.close();
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // toList(ResultScanner, ...): the scanner is closed on every exit path.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testToList_resultScanner_nextFailure_wrapsIOExceptionAndClosesScanner() throws Exception {
+        ResultScanner scanner = mock(ResultScanner.class);
+        IOException failure = new IOException("region unavailable");
+        when(scanner.next()).thenThrow(failure);
+
+        UncheckedIOException ex = assertThrows(UncheckedIOException.class, () -> HBaseExecutor.toList(scanner, Bean.class));
+
+        assertSame(failure, ex.getCause());
+        verify(scanner).close();
+    }
+
+    @Test
+    public void testToList_resultScanner_conversionFailure_closesScanner() throws Exception {
+        Cell c1 = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("a"), Bytes.toBytes("A"));
+        Cell c2 = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("b"), Bytes.toBytes("B"));
+        ResultScanner scanner = mock(ResultScanner.class);
+        when(scanner.next()).thenReturn(Result.create(Arrays.<Cell> asList(c1, c2)), (Result) null);
+
+        // A two-cell row cannot be converted to a single value.
+        assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toList(scanner, String.class));
+
+        verify(scanner).close();
+    }
+
+    @Test
+    public void testToList_resultScanner_offsetBeyondAvailableRows_returnsEmptyAndClosesScanner() throws Exception {
+        Cell c1 = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        ResultScanner scanner = mock(ResultScanner.class);
+        when(scanner.next()).thenReturn(Result.create(Arrays.<Cell> asList(c1)), (Result) null);
+
+        List<Bean> beans = HBaseExecutor.toList(scanner, 5, 10, Bean.class);
+
+        assertTrue(beans.isEmpty());
+        verify(scanner).close();
+    }
+
+    // ---------------------------------------------------------------------
+    // Batch reads: raw overloads keep a (present-but-empty) Result for a missing row,
+    // typed overloads skip it - for both the Get and the AnyGet variants.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testBatchGet_missingRows_keptAsEmptyResultsByRawOverloadsButSkippedByTypedOverloads() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c1 = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Cell c3 = new KeyValue(Bytes.toBytes("r3"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("C"));
+        Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c1)), Result.EMPTY_RESULT, Result.create(Arrays.<Cell> asList(c3)) };
+        when(table.get(org.mockito.ArgumentMatchers.<List<Get>> any())).thenReturn(results);
+
+        List<Get> gets = Arrays.asList(new Get(Bytes.toBytes("r1")), new Get(Bytes.toBytes("r2")), new Get(Bytes.toBytes("r3")));
+        List<AnyGet> anyGets = Arrays.asList(AnyGet.of("r1"), AnyGet.of("r2"), AnyGet.of("r3"));
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
+            List<Result> raw = executor.get("tbl", gets);
+            assertEquals(3, raw.size());
+            assertFalse(raw.get(0).isEmpty());
+            assertTrue(raw.get(1).isEmpty(), "a missing row stays in place as an empty Result");
+            assertFalse(raw.get(2).isEmpty());
+
+            assertEquals(3, executor.get("tbl", anyGets).size());
+
+            List<Bean> typed = executor.get("tbl", gets, Bean.class);
+            assertEquals(Arrays.asList("r1", "r3"), Arrays.asList(typed.get(0).getId(), typed.get(1).getId()), "missing rows are skipped, not null");
+            assertEquals(2, typed.size());
+
+            List<Bean> typedAny = executor.get("tbl", anyGets, Bean.class);
+            assertEquals(2, typedAny.size());
+            assertEquals("r1", typedAny.get(0).getId());
+            assertEquals("r3", typedAny.get(1).getId());
+
+            verify(table, times(4)).close();
+        } finally {
+            executor.close();
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // scan(...) streams are lazy: closing an unconsumed stream must not touch the connection.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testScan_streamClosedWithoutConsumption_doesNotAcquireTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
+            try (var raw = executor.scan("tbl", new org.apache.hadoop.hbase.client.Scan())) {
+                assertNotNull(raw);
+            }
+            try (var typed = executor.scan("tbl", AnyScan.create(), Bean.class)) {
+                assertNotNull(typed);
+            }
+
+            verify(conn, never()).getTable(any(TableName.class));
+        } finally {
+            executor.close();
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Static mapping caches (row-key setter, family/column maps) are populated lazily on first
+    // use; concurrent first use from many threads must yield identical, fully populated entities.
+    // ---------------------------------------------------------------------
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ConcurrencyNested {
+        private String street;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @ColumnFamily("cf")
+    public static class ConcurrencyBean {
+        @Id
+        private String id;
+        @Column("n")
+        private String name;
+        private ConcurrencyNested address;
+    }
+
+    @Test
+    public void testMappingCaches_concurrentFirstUse_convertConsistently() throws Exception {
+        final byte[] row = Bytes.toBytes("row-1");
+        // Result carries a single internal cell cursor and is not thread-safe, so every thread gets its own instance.
+        final java.util.function.Supplier<Result> newResult = () -> Result
+                .create(Arrays.<Cell> asList(new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("n"), Bytes.toBytes("Ann")),
+                        new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("street"), Bytes.toBytes("Main St"))));
+        final ConcurrencyBean expected = new ConcurrencyBean("row-1", "Ann", new ConcurrencyNested("Main St"));
+
+        final int threads = 8;
+        final ExecutorService pool = Executors.newFixedThreadPool(threads);
+        final CountDownLatch start = new CountDownLatch(1);
+        final List<Future<ConcurrencyBean>> futures = new java.util.ArrayList<>();
+
+        try {
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    final Result result = newResult.get();
+                    start.await(10, TimeUnit.SECONDS);
+                    ConcurrencyBean last = null;
+                    for (int j = 0; j < 50; j++) {
+                        last = HBaseExecutor.toEntity(result, ConcurrencyBean.class);
+                    }
+                    return last;
+                }));
+            }
+
+            start.countDown();
+
+            for (Future<ConcurrencyBean> f : futures) {
+                assertEquals(expected, f.get(30, TimeUnit.SECONDS));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertNotNull(HBaseExecutor.getRowKeySetMethod(ConcurrencyBean.class));
     }
 }

@@ -48,7 +48,7 @@ import com.landawn.abacus.util.u.Optional;
  * <h2>Session and Transaction Semantics</h2>
  * <ul>
  *   <li><b>Pool:</b> Sessions are held in a bounded {@link LinkedBlockingQueue} (capacity 8192).
- *       {@link #getSession()} polls the queue without blocking and opens a fresh OGM session via
+ *       Each operation polls the queue without blocking and opens a fresh OGM session via
  *       {@link SessionFactory#openSession()} (a cheap in-memory operation) when the queue is
  *       empty.</li>
  *   <li><b>Release:</b> Any transaction left open on the session is rolled back, then

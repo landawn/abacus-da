@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.landawn.abacus.annotation.Beta;
@@ -843,8 +844,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
-     * Inlines {@code propValue} as a CQL literal. A {@code String} is quoted with CQL's doubled-quote escaping; every
-     * other value is rendered by the parent builder.
+     * Inlines {@code propValue} as a CQL literal. A {@code String} is quoted with CQL's doubled-quote escaping, a
+     * {@link UUID} is rendered as a bare (unquoted) {@code uuid}/{@code timeuuid} literal; every other value is
+     * rendered by the parent builder.
      *
      * @param propValue the value to render into the CQL string
      * @throws IllegalStateException if this builder is closed
@@ -860,6 +862,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // (dialect-oriented) string-literal escaping.
         if (propValue instanceof final String str) {
             _sb.append('\'').append(Strings.replaceAll(str, "'", "''")).append('\'');
+        } else if (propValue instanceof UUID) {
+            // A CQL uuid/timeuuid literal is bare hex; the parent's fallback renders unknown types as a quoted
+            // string, which Cassandra rejects for uuid columns ("Invalid STRING constant ... for type uuid").
+            _sb.append(propValue.toString());
         } else {
             super.setParameterForRawSql(propValue);
         }
@@ -1249,6 +1255,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p><b>Performance Warning:</b> Use this clause sparingly as it can cause full table scans
      * and significantly impact query performance.</p>
      *
+     * <p>CQL requires {@code ALLOW FILTERING} to be the final clause of a SELECT statement, so it is rendered by
+     * {@link #build()} after every other clause, regardless of whether {@code where(...)}, {@code orderBy(...)} or
+     * {@code limit(...)} is called before or after this method.</p>
+     *
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, this builder is not a SELECT statement, or if
      *         {@code from(...)} has not yet supplied the table, or ALLOW FILTERING was already specified
@@ -1267,10 +1277,93 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         init(true);
-        _sb.append(_SPACE_ALLOW_FILTERING);
+        // Not appended here: a later where()/orderBy()/limit() would land after it and produce CQL that
+        // Cassandra rejects. build() emits the clause once every other clause has been rendered.
         _allowFilteringSpecified = true;
 
         return this;
+    }
+
+    /**
+     * Finalizes the CQL statement, releases the builder's internal resources and returns the CQL text together with
+     * its parameters. A requested {@link #allowFiltering() ALLOW FILTERING} clause is appended here, after every
+     * other clause, because CQL requires it to be the last clause of a SELECT statement.
+     *
+     * @return the built CQL and its parameters
+     * @throws IllegalStateException if this builder is closed, or the statement is incomplete (for example an UPDATE
+     *         without {@code set(...)} columns)
+     */
+    @Override
+    public SP build() throws IllegalStateException {
+        assertNotClosed();
+
+        if (_allowFilteringSpecified) {
+            _sb.append(_SPACE_ALLOW_FILTERING);
+        }
+
+        return super.build();
+    }
+
+    /**
+     * Sets the columns to update from the property values of {@code entity}, excluding {@code excludedPropNames}.
+     *
+     * <p>Overridden so that, for an entity bean, the primary-key properties (via {@code @Id} / registered keys) are
+     * excluded from the SET list as well: Cassandra rejects SET on partition/clustering key columns, which belong in
+     * the WHERE clause. A {@code String} (column name) or {@code Map} (property values) entity is handed to the
+     * parent builder unchanged.</p>
+     *
+     * @param entity the entity bean whose updatable properties supply the SET values, or a column name / property map
+     * @param excludedPropNames properties to exclude from the update (may be {@code null})
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalStateException if this builder is closed or is not an UPDATE statement
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, a Collection or array, a blank String, or a
+     *         bean with no updatable (non-key) property left after the exclusions are applied
+     */
+    @Override
+    public CqlBuilder set(final Object entity, final Set<String> excludedPropNames) throws IllegalStateException, IllegalArgumentException {
+        if (entity == null || entity instanceof String || entity instanceof Map || entity instanceof Collection || entity.getClass().isArray()) {
+            return super.set(entity, excludedPropNames);
+        }
+
+        return super.set(entity, withIdPropNames(entity.getClass(), excludedPropNames));
+    }
+
+    /**
+     * Sets the columns to update to the updatable properties of {@code entityClass}, excluding {@code excludedPropNames}.
+     *
+     * <p>Overridden so that the primary-key properties (via {@code @Id} / registered keys) are excluded from the SET
+     * list as well: Cassandra rejects SET on partition/clustering key columns, which belong in the WHERE clause.</p>
+     *
+     * @param entityClass the entity class whose updatable properties become the SET columns
+     * @param excludedPropNames properties to exclude from the update (may be {@code null})
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalStateException if this builder is closed or is not an UPDATE statement
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not an entity bean class, or no
+     *         updatable (non-key) property is left after the exclusions are applied
+     */
+    @Override
+    public CqlBuilder set(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalStateException, IllegalArgumentException {
+        N.checkArgNotNull(entityClass, cs.entityClass);
+
+        return super.set(entityClass, withIdPropNames(entityClass, excludedPropNames));
+    }
+
+    /**
+     * @return {@code excludedPropNames} plus the id property names of {@code entityClass}, or {@code excludedPropNames}
+     *         itself when the class declares no id property
+     * @throws IllegalArgumentException if {@code entityClass} is not an entity bean class
+     */
+    private static Set<String> withIdPropNames(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
+        final List<String> idPropNames = QueryUtil.idPropNames(entityClass);
+
+        if (N.isEmpty(idPropNames)) {
+            return excludedPropNames;
+        }
+
+        final Set<String> result = N.isEmpty(excludedPropNames) ? N.newHashSet(idPropNames.size()) : N.newHashSet(excludedPropNames);
+        result.addAll(idPropNames);
+
+        return result;
     }
 
     /**
@@ -1790,6 +1883,19 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
+     * @throws IllegalArgumentException if {@code entityClass} is null or is not an entity bean class
+     */
+    private static Collection<String> getUpdatePropNamesByClass(final Class<?> entityClass, final Set<String> excludedPropNames)
+            throws IllegalArgumentException {
+        // Id props are removed from the implicit SET list because Cassandra rejects SET on primary-key columns
+        // ("PRIMARY KEY part ... found in SET part"); they belong in the WHERE clause, like delete(Class).
+        final List<String> propNames = new ArrayList<>(QueryUtil.updatePropNames(entityClass, excludedPropNames));
+        propNames.removeAll(QueryUtil.idPropNames(entityClass));
+
+        return propNames;
+    }
+
+    /**
      * Entry point for building CQL statements with a fixed {@link SqlDialect} (naming policy + parameter style).
      *
      * <p>
@@ -2056,7 +2162,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method inspects the entity object and extracts the properties that are
          * suitable for insertion. Properties marked with @Transient, @ReadOnly, or @ReadOnlyId
-         * annotations are automatically excluded. Property names are converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
+         * annotations are automatically excluded, as are properties whose value is {@code null} (and an id property
+         * still holding its default value). Property names are converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2338,7 +2445,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method creates an UPDATE statement where the table name is derived from the entity
          * class name or {@code @Table} annotation. All updatable properties (excluding those marked with
-         * {@code @ReadOnly} or {@code @NonUpdatable}) are included by default.</p>
+         * {@code @ReadOnly} or {@code @NonUpdatable}, and the primary-key properties, which Cassandra does not
+         * allow in a SET clause) are included by default.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2361,8 +2469,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates an UPDATE statement for an entity class with excluded properties.
          *
          * <p>This method creates an UPDATE statement excluding specified properties in addition to
-         * those automatically excluded by annotations (@ReadOnly, @NonUpdatable). This is useful
-         * for partial updates or when certain fields should never be updated.</p>
+         * those automatically excluded by annotations (@ReadOnly, @NonUpdatable) and the primary-key
+         * properties (via {@code @Id} / registered keys), because Cassandra rejects SET on partition/clustering
+         * key columns. This is useful for partial updates or when certain fields should never be updated.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2386,7 +2495,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             instance._op = OperationType.UPDATE;
             instance.setEntityClass(entityClass);
             instance._tableName = getTableName(entityClass, instance._namingPolicy);
-            instance._propOrColumnNames = QueryUtil.updatePropNames(entityClass, excludedPropNames);
+            instance._propOrColumnNames = getUpdatePropNamesByClass(entityClass, excludedPropNames);
 
             return instance;
         }

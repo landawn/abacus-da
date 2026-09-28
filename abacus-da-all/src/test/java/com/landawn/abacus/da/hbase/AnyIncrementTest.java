@@ -13,12 +13,14 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
 import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.io.TimeRange;
@@ -310,5 +312,63 @@ public class AnyIncrementTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null, 1L, familyMap));
         assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(Bytes.toBytes("r"), 1L, null));
         assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((org.apache.hadoop.hbase.client.Increment) null));
+    }
+
+    /**
+     * {@code of(Increment)} copies the attributes (TTL, return-results flag, custom attributes),
+     * the priority and the time range, but HBase's copy constructor does not carry over the
+     * durability level: the copy starts at {@code USE_DEFAULT} while the source keeps its own setting.
+     */
+    @Test
+    public void testOf_copyExistingIncrement_copiesAttributesButResetsDurability() throws IOException {
+        Increment orig = new Increment(Bytes.toBytes("k"));
+        orig.setDurability(Durability.SKIP_WAL);
+        orig.setTTL(5L);
+        orig.setTimeRange(1L, 2L);
+        orig.setReturnResults(false);
+        orig.setPriority(7);
+        orig.setAttribute("trace", Bytes.toBytes("t"));
+
+        AnyIncrement copy = AnyIncrement.of(orig);
+
+        assertEquals(5L, copy.getTTL());
+        assertEquals(1L, copy.getTimeRange().getMin());
+        assertEquals(2L, copy.getTimeRange().getMax());
+        assertFalse(copy.isReturnResults());
+        assertEquals(7, copy.getPriority());
+        assertArrayEquals(Bytes.toBytes("t"), copy.getAttribute("trace"));
+        assertEquals(Durability.USE_DEFAULT, copy.getDurability());
+        assertEquals(Durability.SKIP_WAL, orig.getDurability());
+    }
+
+    @Test
+    public void testAdd_matchingCell_returnsSelfAndQueuesAmount() throws IOException {
+        Cell cell = new KeyValue(Bytes.toBytes("row"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes(3L));
+        AnyIncrement inc = AnyIncrement.of("row");
+
+        assertSame(inc, inc.add(cell));
+        assertEquals(Long.valueOf(3L), inc.getFamilyMapOfLongs().get(Bytes.toBytes("cf")).get(Bytes.toBytes("q")));
+    }
+
+    /**
+     * Unlike {@code AnyAppend.add(Cell)}, the wrapped {@code Increment} reports a row mismatch with
+     * an {@code IOException}; the cell is not queued.
+     */
+    @Test
+    public void testAdd_cellWithDifferentRow_throwsIOException() {
+        Cell cell = new KeyValue(Bytes.toBytes("other-row"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes(1L));
+        AnyIncrement inc = AnyIncrement.of("row");
+
+        assertThrows(IOException.class, () -> inc.add(cell));
+        assertEquals(0, inc.size());
+    }
+
+    @Test
+    public void testAdd_cellWithEmptyFamily_throwsIae() {
+        Cell cell = new KeyValue(Bytes.toBytes("row"), new byte[0], Bytes.toBytes("q"), Bytes.toBytes(1L));
+        AnyIncrement inc = AnyIncrement.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> inc.add(cell));
+        assertEquals(0, inc.size());
     }
 }

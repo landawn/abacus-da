@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.KeyValue;
@@ -34,7 +35,9 @@ import org.junit.jupiter.api.Test;
 import com.landawn.abacus.annotation.Column;
 import com.landawn.abacus.annotation.Id;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
+import com.landawn.abacus.util.HBaseColumn;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.NamingPolicy;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -561,5 +564,142 @@ public class HBaseExecutorToValueTest {
         put.getFamilyCellMap().values().forEach(cells::addAll);
         cells.sort(org.apache.hadoop.hbase.CellComparator.getInstance());
         return Result.create(cells);
+    }
+
+    // ---------------------------------------------------------------------
+    // Versioned columns (HBaseColumn / Collection<HBaseColumn> / Map<Long, HBaseColumn>)
+    // at the top level and inside a flattened nested bean.
+    // ---------------------------------------------------------------------
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class VersionedNested {
+        private String firstName;
+        private HBaseColumn<String> single;
+        private List<HBaseColumn<Double>> history;
+        private Map<Long, HBaseColumn<String>> byVersion;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @ColumnFamily("cf")
+    public static class VersionedEntity {
+        @Id
+        private long id;
+        private String scalar;
+        private HBaseColumn<String> single;
+        private List<HBaseColumn<Double>> history;
+        private Map<Long, HBaseColumn<String>> byVersion;
+        @ColumnFamily("nf")
+        private VersionedNested nested;
+    }
+
+    private static Cell versionedCell(final String row, final String family, final String qualifier, final long ts, final String value) {
+        return new KeyValue(Bytes.toBytes(row), Bytes.toBytes(family), Bytes.toBytes(qualifier), ts, Bytes.toBytes(value));
+    }
+
+    @Test
+    public void test_toEntity_versionedColumns_topLevelAndNested_collectEveryVersion() {
+        // Cells arrive newest-first per column, as HBase returns them.
+        final List<Cell> cells = N.asList(versionedCell("7", "cf", "scalar", 5, "s5"), versionedCell("7", "cf", "scalar", 3, "s3"),
+                versionedCell("7", "cf", "single", 9, "a9"), versionedCell("7", "cf", "single", 8, "a8"), versionedCell("7", "cf", "history", 3, "1.5"),
+                versionedCell("7", "cf", "history", 2, "2.5"), versionedCell("7", "cf", "history", 1, "3.5"), versionedCell("7", "cf", "byVersion", 30, "m30"),
+                versionedCell("7", "cf", "byVersion", 20, "m20"), versionedCell("7", "nf", "firstName", 1, "John"), versionedCell("7", "nf", "single", 2, "x2"),
+                versionedCell("7", "nf", "single", 1, "x1"), versionedCell("7", "nf", "history", 2, "0.5"), versionedCell("7", "nf", "history", 1, "0.25"),
+                versionedCell("7", "nf", "byVersion", 2, "y2"), versionedCell("7", "nf", "byVersion", 1, "y1"));
+
+        final VersionedEntity entity = HBaseExecutor.toEntity(Result.create(cells), VersionedEntity.class);
+
+        assertNotNull(entity);
+        assertEquals(7L, entity.getId(), "primitive row key must be decoded from the row bytes");
+        assertEquals("s5", entity.getScalar(), "a plain scalar keeps only the newest version");
+        assertEquals("a9", entity.getSingle().value(), "a single HBaseColumn keeps only the newest version");
+        assertEquals(9L, entity.getSingle().version());
+        assertEquals(N.asList(3L, 2L, 1L), N.map(entity.getHistory(), HBaseColumn::version), "every version of a Collection<HBaseColumn> is kept in cell order");
+        assertEquals(N.asList(1.5d, 2.5d, 3.5d), N.map(entity.getHistory(), HBaseColumn::value));
+        assertEquals(2, entity.getByVersion().size());
+        assertEquals("m30", entity.getByVersion().get(30L).value());
+        assertEquals("m20", entity.getByVersion().get(20L).value());
+
+        final VersionedNested nested = entity.getNested();
+        assertNotNull(nested, "versioned columns of a nested bean must populate the nested bean");
+        assertEquals("John", nested.getFirstName());
+        assertEquals("x2", nested.getSingle().value());
+        assertEquals(2L, nested.getSingle().version());
+        assertEquals(N.asList(0.5d, 0.25d), N.map(nested.getHistory(), HBaseColumn::value));
+        assertEquals(2, nested.getByVersion().size());
+        assertEquals("y1", nested.getByVersion().get(1L).value());
+        assertEquals("y2", nested.getByVersion().get(2L).value());
+    }
+
+    // ---------------------------------------------------------------------
+    // Reads are naming-policy agnostic: cells written by AnyPut under SNAKE_CASE or
+    // SCREAMING_SNAKE_CASE names (families and nested qualifiers) map back to the same entity.
+    // ---------------------------------------------------------------------
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class UnannotatedCustomer {
+        @Id
+        private String id;
+        private String emailAddress;
+        private VersionedNested nestedBean;
+    }
+
+    @Test
+    public void test_toEntity_readsCellsWrittenUnderAnyNamingPolicy() {
+        final UnannotatedCustomer customer = new UnannotatedCustomer("r1", "a@b.c",
+                new VersionedNested("Jo", HBaseColumn.valueOf("hv", 5L), N.asList(HBaseColumn.valueOf(1.5d, 2L)), null));
+
+        for (final NamingPolicy policy : N.asList(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final org.apache.hadoop.hbase.client.Put put = AnyPut.create(customer, policy).val();
+            final String expectedFamily = policy == NamingPolicy.CAMEL_CASE ? "emailAddress" : policy.convert("emailAddress");
+            assertTrue(put.has(Bytes.toBytes(expectedFamily), Bytes.toBytes("")), "write side must apply " + policy);
+
+            final UnannotatedCustomer back = HBaseExecutor.toEntity(toResult(put), UnannotatedCustomer.class);
+
+            assertEquals("r1", back.getId(), policy.name());
+            assertEquals("a@b.c", back.getEmailAddress(), policy.name());
+            assertNotNull(back.getNestedBean(), policy.name());
+            assertEquals("Jo", back.getNestedBean().getFirstName(), policy.name());
+            assertEquals(HBaseColumn.valueOf("hv", 5L), back.getNestedBean().getSingle(), policy.name());
+            assertEquals(N.asList(HBaseColumn.valueOf(1.5d, 2L)), back.getNestedBean().getHistory(), policy.name());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Raw (non-parameterized) Map / List / HBaseColumn properties must not break the
+    // versioned-column type inspection: they are stored and read back as plain values.
+    // ---------------------------------------------------------------------
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @SuppressWarnings("rawtypes")
+    public static class RawGenericEntity {
+        @Id
+        private String id;
+        private Map rawMap;
+        private List rawList;
+        private HBaseColumn rawColumn;
+        private Map<String, String> typedMap;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void test_toEntity_rawGenericProperties_roundTrip() {
+        final RawGenericEntity entity = new RawGenericEntity("r", N.asMap("a", 1), N.asList("z"), HBaseColumn.valueOf("hv", 3L), N.asMap("k", "v"));
+
+        final RawGenericEntity back = HBaseExecutor.toEntity(toResult(AnyPut.create(entity).val()), RawGenericEntity.class);
+
+        assertEquals("r", back.getId());
+        assertEquals(N.asMap("a", 1), back.getRawMap());
+        assertEquals(N.asList("z"), back.getRawList());
+        assertEquals("hv", back.getRawColumn().value());
+        assertEquals(3L, back.getRawColumn().version());
+        assertEquals(N.asMap("k", "v"), back.getTypedMap());
     }
 }

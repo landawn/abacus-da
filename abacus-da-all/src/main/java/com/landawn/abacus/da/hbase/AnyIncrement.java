@@ -333,7 +333,12 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * time range, and the family-to-cells map structure (the map and per-family
      * {@code List<Cell>} are new collections, but the {@link Cell} instances themselves are
      * shared with the source). Subsequent {@code addColumn} calls on the returned wrapper
-     * therefore do not mutate the source increment.
+     * therefore do not mutate the source increment. Attributes (including the TTL, cluster ids,
+     * ACL, cell visibility and the return-results flag) and the priority are copied as well, but
+     * the {@link org.apache.hadoop.hbase.client.Durability Durability} is not: HBase's copy
+     * constructor leaves it at {@code Durability.USE_DEFAULT}, so re-apply
+     * {@link #setDurability(org.apache.hadoop.hbase.client.Durability) setDurability} on the copy
+     * when the source used a non-default level.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -412,7 +417,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param cell the {@link Cell} to add; must not be {@code null}
      * @return this AnyIncrement instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code cell} is {@code null}, or the matching cell has a null or empty column family
+     * @throws IllegalArgumentException if {@code cell} is {@code null}, or {@code cell} has a null or empty column family
      * @throws IOException if the cell's row key does not match this mutation's row key
      * @see Cell
      * @see #addColumn(String, String, long)

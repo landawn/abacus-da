@@ -2237,7 +2237,15 @@ public final class MongoCollectionExecutor {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private static <T> Function<Document, T> toEntity(final Class<T> rowType) {
+        // Same short-circuit as list/findFirst (and the sync executor's toEntity): without it, readRow's scalar
+        // fallback rejects a multi-field document requested as Object/Bson (and converts the sole value of a
+        // single-field one) in typed aggregate/mapReduce/findOneAndXxx.
+        if (rowType != null && rowType.isAssignableFrom(Document.class)) {
+            return doc -> (T) doc;
+        }
+
         return doc -> shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDB.readRow(doc, rowType);
     }
 
@@ -2497,9 +2505,10 @@ public final class MongoCollectionExecutor {
      * // Typical: a raw Document is inserted as-is (no conversion).
      * executor.insertOne(new Document("name", "Jane")).block();   // emits one InsertOneResult
      *
-     * // Edge: cold publisher — re-subscribing re-issues the SAME insert. The driver builds the write
-     * // operation eagerly and stamps a generated _id onto the supplied Document, so the retry carries
-     * // that same _id and fails on the mandatory unique _id index rather than writing a second document.
+     * // Edge: cold publisher — re-subscribing re-issues the SAME insert. The Document to write is built
+     * // once, at call time, and the driver stamps a generated _id onto it when the first subscription
+     * // executes the insert, so the retry carries that same _id and fails on the mandatory unique _id
+     * // index rather than writing a second document.
      * Mono<InsertOneResult> twice = executor.insertOne(new Document("name", "Dup"));
      * twice.block();                                              // insert #1
      * twice.block();                                              // MongoWriteException: E11000 duplicate key
@@ -4642,9 +4651,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>The pipeline is always executed against {@link Document}, and each output document is
      * converted to {@code rowType} via {@code toEntity}/{@link MongoDB#readRow(Document, Class)}.
-     * Unlike {@code list(...)}/{@code findFirst(...)}, there is no short-circuit that returns the
-     * raw document when {@code rowType} is assignable from {@link Document}; conversion still runs
-     * through {@code toEntity}.</p>
+     * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
+     * receive the raw output documents, matching {@code list(...)}/{@code findFirst(...)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

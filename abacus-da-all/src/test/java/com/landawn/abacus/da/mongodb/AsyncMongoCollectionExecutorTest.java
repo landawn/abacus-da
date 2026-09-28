@@ -2405,6 +2405,41 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         org.mockito.Mockito.verifyNoInteractions(mockCollExecutor);
     }
 
+    @Test
+    public void testConstructorRejectsNullAsyncExecutorEagerly() {
+        final IllegalArgumentException e = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new AsyncMongoCollectionExecutor(mockCollExecutor, null));
+        Assertions.assertTrue(e.getMessage().contains("asyncExecutor"), e.getMessage());
+
+        // MongoCollectionExecutor builds its async view eagerly, so the guard also fires there.
+        final MongoCollection<Document> mockColl = mock(MongoCollection.class);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> new MongoCollectionExecutor(mockColl, null));
+
+        org.mockito.Mockito.verifyNoInteractions(mockCollExecutor);
+        org.mockito.Mockito.verifyNoInteractions(mockColl);
+    }
+
+    @Test
+    public void testSyncFailureSurfacesAsFutureCompletionException() throws Exception {
+        final AsyncExecutor realExecutor = new AsyncExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.SECONDS);
+
+        try {
+            final AsyncMongoCollectionExecutor async = new AsyncMongoCollectionExecutor(mockCollExecutor, realExecutor);
+            final com.mongodb.MongoException failure = new com.mongodb.MongoException("boom");
+            final Document filter = new Document("k", "v");
+            when(mockCollExecutor.count(filter)).thenThrow(failure);
+
+            final ContinuableFuture<Long> future = async.count(filter);
+
+            // The call site returned normally; the failure is delivered through the future only.
+            final java.util.concurrent.ExecutionException e = Assertions.assertThrows(java.util.concurrent.ExecutionException.class, future::get);
+            Assertions.assertSame(failure, e.getCause());
+            verify(mockCollExecutor).count(filter);
+        } finally {
+            realExecutor.shutdown();
+        }
+    }
+
     // Test entity class for testing
     private static class TestEntity {
         private String id;

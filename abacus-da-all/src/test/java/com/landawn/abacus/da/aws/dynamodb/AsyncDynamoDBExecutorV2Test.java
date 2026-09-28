@@ -3,6 +3,7 @@ package com.landawn.abacus.da.aws.dynamodb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -1682,5 +1683,20 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         public void setPartition_key(final String partition_key) {
             this.partition_key = partition_key;
         }
+    }
+
+    // ===== Documented contract: getItem(tableName, key[, consistentRead], targetClass) on a missing item =====
+
+    @Test
+    public void testGetItemByKeyMissingItemReturnsDefaultForPrimitiveTargetClass() throws Exception {
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
+        final Map<String, AttributeValue> key = Map.of("id", AttributeValue.fromS("missing"));
+
+        assertEquals(0, (int) asyncExecutor.getItem("TestTable", key, int.class).get());
+        assertEquals(false, asyncExecutor.getItem("TestTable", key, true, boolean.class).get());
+        assertNull(asyncExecutor.getItem("TestTable", key, Integer.class).get());
+        assertNull(asyncExecutor.getItem("TestTable", key, false, TestEntity.class).get());
+        assertNull(asyncExecutor.getItem("TestTable", key).get());
+        verify(mockDynamoDbAsyncClient, times(5)).getItem(any(GetItemRequest.class));
     }
 }

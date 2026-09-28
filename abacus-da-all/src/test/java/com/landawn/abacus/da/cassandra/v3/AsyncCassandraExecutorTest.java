@@ -643,7 +643,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(userType.getFieldNames()).thenReturn(Arrays.asList("data"));
         when(userType.size()).thenReturn(1);
         final com.datastax.driver.core.UDTValue udtValue = mock(com.datastax.driver.core.UDTValue.class);
-        when(udtValue.getObject("data")).thenAnswer(invocation -> java.nio.ByteBuffer.wrap(new byte[] { 6, 7 }));
+        when(udtValue.getObject(0)).thenAnswer(invocation -> java.nio.ByteBuffer.wrap(new byte[] { 6, 7 }));
 
         final CassandraExecutor.UDTCodec<SlicePBlobEntity> codec = CassandraExecutor.UDTCodec.create(userType, SlicePBlobEntity.class);
 
@@ -812,6 +812,133 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
         assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(row)));
         assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(row, HashMap::new)));
+    }
+
+    @Test
+    public void testEntityParameterBindingResolvesColumnAnnotatedProperty() {
+        // A bean bound as the parameter source resolves a driver variable named by @Column ("cnt") through the
+        // column-to-property mapping, as toEntity/extractData already do, instead of failing as a missing parameter.
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        final String query = "INSERT INTO renamed_columns (id, cnt) VALUES (?, ?)";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final Object[][] bound = new Object[1][];
+        when(session.prepare(query)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(2);
+        when(variables.getType(0)).thenReturn(com.datastax.driver.core.DataType.bigint());
+        when(variables.getName(0)).thenReturn("id");
+        when(variables.getType(1)).thenReturn(com.datastax.driver.core.DataType.cint());
+        when(variables.getName(1)).thenReturn("cnt");
+        when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mock(BoundStatement.class);
+        });
+        final SlicePRenamedColumnEntity entity = new SlicePRenamedColumnEntity();
+        entity.setId(7L);
+        entity.setOrderCount(3);
+
+        executor.prepareStatement(query, entity);
+
+        assertEquals(2, bound[0].length);
+        assertEquals(7L, bound[0][0]);
+        assertEquals(3, bound[0][1]);
+
+        // A variable that matches neither a property nor a @Column name is still reported as missing.
+        when(variables.getName(1)).thenReturn("no_such_column");
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, entity));
+        assertTrue(ex.getMessage().contains("no_such_column"), ex.getMessage());
+    }
+
+    @Test
+    public void testUdtCodecDeserializeReadsCaseSensitiveFieldsByPosition() throws ReflectiveOperationException {
+        // Driver 3 resolves String field names as CQL identifiers (unquoted names are lower-cased), so a quoted
+        // mixed-case UDT field such as "firstName" cannot be read by its internal name; fields are read by position.
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class, com.datastax.driver.core.DataType.class);
+        fieldConstructor.setAccessible(true);
+        final var firstName = fieldConstructor.newInstance("firstName", com.datastax.driver.core.DataType.text());
+        final var lastName = fieldConstructor.newInstance("lastName", com.datastax.driver.core.DataType.text());
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, ProtocolVersion.class, CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        final var userType = typeConstructor.newInstance("ks", "full_name", false, List.of(firstName, lastName), ProtocolVersion.V4, new CodecRegistry());
+        final CassandraExecutor.UDTCodec<SlicePNameEntity> beanCodec = CassandraExecutor.UDTCodec.create(userType, SlicePNameEntity.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+
+        final SlicePNameEntity bean = new SlicePNameEntity();
+        bean.setFirstName("Ada");
+        bean.setLastName("Lovelace");
+
+        final SlicePNameEntity decodedBean = beanCodec.deserialize(beanCodec.serialize(bean, ProtocolVersion.V4), ProtocolVersion.V4);
+        assertEquals("Ada", decodedBean.getFirstName());
+        assertEquals("Lovelace", decodedBean.getLastName());
+
+        final Map<String, Object> source = new HashMap<>();
+        source.put("firstName", "Grace");
+        source.put("lastName", "Hopper");
+        final Map<?, ?> decodedMap = mapCodec.deserialize(mapCodec.serialize(source, ProtocolVersion.V4), ProtocolVersion.V4);
+        assertEquals("Grace", decodedMap.get("firstName"));
+        assertEquals("Hopper", decodedMap.get("lastName"));
+        assertEquals(2, decodedMap.size());
+    }
+
+    @Test
+    public void testQueryForSingleNonNull_NullValue_GetThrowsExecutionExceptionCausedByNPE() throws Exception {
+        final Row row = mock(Row.class);
+        when(mockResultSet.iterator()).thenReturn(Arrays.asList(row).iterator());
+        when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
+        final ResultSetFuture _f = immediateFuture(mockResultSet);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
+        when(mockExecutor.readFirstColumn(row, Integer.class)).thenReturn(null);
+
+        final ContinuableFuture<Optional<Integer>> future = async.queryForSingleNonNull(Integer.class, "SELECT v FROM t WHERE id = ?", 1);
+
+        final java.util.concurrent.ExecutionException ex = assertThrows(java.util.concurrent.ExecutionException.class, future::get);
+        assertTrue(ex.getCause() instanceof NullPointerException, String.valueOf(ex.getCause()));
+    }
+
+    public static class SlicePRenamedColumnEntity {
+        private Long id;
+        @com.landawn.abacus.annotation.Column("cnt")
+        private Integer orderCount;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+
+        public Integer getOrderCount() {
+            return orderCount;
+        }
+
+        public void setOrderCount(final Integer orderCount) {
+            this.orderCount = orderCount;
+        }
+    }
+
+    public static class SlicePNameEntity {
+        private String firstName;
+        private String lastName;
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(final String firstName) {
+            this.firstName = firstName;
+        }
+
+        public String getLastName() {
+            return lastName;
+        }
+
+        public void setLastName(final String lastName) {
+            this.lastName = lastName;
+        }
     }
 
     public static class SlicePBlobEntity {
