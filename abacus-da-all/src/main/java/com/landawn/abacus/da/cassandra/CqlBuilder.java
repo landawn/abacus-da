@@ -1347,7 +1347,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Override
     public CqlBuilder set(final Object entity, final Set<String> excludedPropNames) throws IllegalStateException, IllegalArgumentException {
-        if (entity == null || entity instanceof String || entity instanceof Map || entity instanceof Collection || entity.getClass().isArray()) {
+        // Anything but an entity bean goes to the parent unchanged, so that its state checks (closed / not UPDATE)
+        // precede the argument error; withIdPropNames would otherwise reject a non-bean first.
+        if (entity == null || entity instanceof String || entity instanceof Map || entity instanceof Collection || entity.getClass().isArray()
+                || !Beans.isBeanClass(entity.getClass())) {
             return super.set(entity, excludedPropNames);
         }
 
@@ -1369,7 +1372,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Override
     public CqlBuilder set(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalStateException, IllegalArgumentException {
-        N.checkArgNotNull(entityClass, cs.entityClass);
+        // A null or non-bean class goes to the parent unchanged, so that its state checks (closed / not UPDATE) precede
+        // the argument error.
+        if (entityClass == null || !Beans.isBeanClass(entityClass)) {
+            return super.set(entityClass, excludedPropNames);
+        }
 
         return super.set(entityClass, withIdPropNames(entityClass, excludedPropNames));
     }
@@ -1408,7 +1415,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param expr one table name, optionally keyspace-qualified
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
-     *         been set for a SELECT, or if {@code from(...)} was already called
+     *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException if {@code expr} is not exactly one CQL table reference, or a column name
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
@@ -1466,7 +1473,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param tableNames an array containing exactly one table name
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
-     *         been set for a SELECT, or if {@code from(...)} was already called
+     *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException if the array does not contain exactly one CQL table reference, or a column name
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
@@ -1489,7 +1496,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param tableNames a collection containing exactly one table name
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
-     *         been set for a SELECT, or if {@code from(...)} was already called
+     *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException if the collection does not contain exactly one CQL table reference, or a column
      *         name staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
@@ -1522,7 +1529,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param entityClass the entity class representing the table
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
-     *         been set for a SELECT, or if {@code from(...)} was already called
+     *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not an entity bean class, or a
      *         column name staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
@@ -1543,7 +1550,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param alias must be {@code null} or empty
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
-     *         been set for a SELECT, or if {@code from(...)} was already called
+     *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException if {@code entityClass} is {@code null}, {@code alias} is non-empty,
      *         {@code entityClass} is not an entity bean class, or a column name staged by {@code select(...)} or
      *         {@code delete(...)} is blank or contains a CQL comment token
@@ -1576,7 +1583,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *        entity-class association is performed)
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
-     *         been set for a SELECT, or if {@code from(...)} was already called
+     *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException if {@code expr} is not exactly one CQL table reference, or a column name
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
@@ -1604,7 +1611,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param alias the derived-table alias
      * @return never returns normally
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no
-     *         columns have been set for a SELECT, or if {@code from(...)} was already called
+     *         columns have been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException otherwise, because CQL does not support a sub-query in the FROM clause
      */
     @Override
@@ -1626,7 +1633,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param tableNames a collection containing exactly one table name
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
-     *         been set for a SELECT, or if {@code from(...)} was already called
+     *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
      * @throws IllegalArgumentException if {@code entityClass} is {@code null}, the collection does not contain exactly one
      *         CQL table reference, or a column name staged by {@code select(...)} or {@code delete(...)} is blank or
      *         contains a CQL comment token
@@ -1651,7 +1658,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param tableName the primary table used for column resolution
      * @param fromClause the complete text to emit after FROM
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalStateException if this builder is closed, the operation is not SELECT or DELETE, FROM was already specified, or a SELECT has no columns
+     * @throws IllegalStateException if this builder is closed, the operation is not SELECT or DELETE, FROM was already specified (for a
+     *         DELETE, also by {@code deleteFrom(...)}), or a SELECT has no columns
      * @throws IllegalArgumentException if either argument is not the same single CQL table reference, or a column name
      *         staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
@@ -1748,8 +1756,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * Validates the structural preconditions for the overridden {@code from(...)} entry points.
      * Mirrors the parent builder's checks except that DELETE is also accepted: CQL supports
      * {@code DELETE col1, col2 FROM tbl}, while the parent treats {@code from(...)} as SELECT-only.
-     * @throws IllegalStateException if this builder is closed, its operation is neither SELECT nor DELETE, FROM was already specified, or a
-     *         SELECT has no staged columns
+     * @throws IllegalStateException if this builder is closed, its operation is neither SELECT nor DELETE, FROM was already specified
+     *         (for a DELETE, also by {@code deleteFrom(...)}), or a SELECT has no staged columns
      */
     private void checkCanAppendCqlFrom() throws IllegalStateException {
         assertNotClosed();
@@ -1760,6 +1768,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
         if (_hasFromBeenSet) {
             throw new IllegalStateException("from() has already been called for the current query segment");
+        }
+
+        // deleteFrom(...) names the table without setting _hasFromBeenSet; a later from(...) would otherwise silently
+        // retarget the statement or, once "DELETE FROM t WHERE ..." is rendered, append a second "DELETE ... FROM ...".
+        if (_op == OperationType.DELETE && Strings.isNotEmpty(_tableName)) {
+            throw new IllegalStateException("The table of this DELETE statement has already been specified by deleteFrom(...)");
         }
 
         if (_op == OperationType.QUERY && N.isEmpty(_propOrColumnNames) && N.isEmpty(_propOrColumnNameAliases) && N.isEmpty(_multiSelects)) {

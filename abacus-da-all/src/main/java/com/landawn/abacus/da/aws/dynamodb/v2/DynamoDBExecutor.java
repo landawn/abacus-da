@@ -29,8 +29,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.IntFunction;
 
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.aws.AnyUtil;
 import com.landawn.abacus.da.cs;
+import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
@@ -1519,7 +1521,8 @@ public final class DynamoDBExecutor {
      * <p>Each attribute is mapped to a property whose name matches the attribute name (or whose
      * {@code @Column} alias matches it). Attribute names containing a {@code '.'} are treated as
      * nested-property paths (e.g. {@code "address.city"}). Attributes that do not correspond to any
-     * declared property are silently ignored.</p>
+     * declared property are silently ignored, as are attributes of read-only (getter-only) properties, whose
+     * computed values {@link #toItem(Object)} writes but which cannot be assigned.</p>
      *
      * <p>Native binary collection elements, array elements, and map values are converted directly when
      * declared as {@code byte[]} or {@link ByteBuffer}. ByteBuffer results are readable from position zero.
@@ -1585,6 +1588,14 @@ public final class DynamoDBExecutor {
                     entityInfo.setPropValue(entity, propName, toValue(propValue), true);
                 }
 
+                continue;
+            }
+
+            // A getter-only (computed) property, e.g. one inherited from an @Entity superclass, is in propInfoList, so
+            // toItem writes its value as an attribute; but PropInfo.setPropValue throws UnsupportedOperationException for
+            // it, which failed the whole item on read. Skip it, as the JSON parser does. PropInfo's isReadOnlyProperty flag
+            // is package-private; a property without a field is SERIALIZE_ONLY exactly when it is read-only. Mirrors v1.
+            if (propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
                 continue;
             }
 
@@ -1945,9 +1956,15 @@ public final class DynamoDBExecutor {
         // toAttributeValue stores arrays as their JSON text (an S attribute). For an array whose component type
         // accepts a String (String[], CharSequence[], Object[]), N.convert wraps that whole text as a single
         // element instead of parsing it, so e.g. a String[] property would not survive a put -> get round trip.
+        // isJsonArrayText only checks the brackets, so plain text such as "[a] and [b]" fails to parse: it falls back
+        // to N.convert instead of failing the whole item.
         if (rawValue instanceof String && targetClass.isArray() && targetClass.getComponentType().isAssignableFrom(String.class)
                 && isJsonArrayText((String) rawValue)) {
-            return N.typeOf(targetClass).valueOf((String) rawValue);
+            try {
+                return N.typeOf(targetClass).valueOf((String) rawValue);
+            } catch (final ParsingException e) {
+                // not JSON-array text after all: fall through to the lenient N.convert below
+            }
         }
 
         return N.convert(rawValue, targetClass);
@@ -2980,12 +2997,13 @@ public final class DynamoDBExecutor {
      * );
      *
      * PutItemResponse result = executor.putItem("Users", item);
-     * System.out.println("Consumed capacity: " + result.consumedCapacity());
+     * // result.consumedCapacity() is null: this overload does not request consumed capacity
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param item the item to put, as a map of attribute names to AttributeValues. Must not be null.
-     * @return a {@link PutItemResponse} containing operation metadata and consumed capacity
+     * @return a {@link PutItemResponse} containing operation metadata (consumed capacity is not requested by this overload;
+     *         use {@link #putItem(PutItemRequest)} with {@code returnConsumedCapacity} to obtain it)
      * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code item} fails service-side
      *         validation)
      * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
@@ -3198,7 +3216,7 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param requestItems map of table names to lists of write requests (puts/deletes). Must not be null.
-     * @return a {@link BatchWriteItemResponse} containing unprocessed items and consumed capacity
+     * @return a {@link BatchWriteItemResponse} containing any unprocessed items (consumed capacity is not requested by this overload)
      * @throws DynamoDbException if DynamoDB rejects the request (a null {@code requestItems} or a batch exceeding DynamoDB's limits fails with a
      *         service {@code ValidationException})
      * @throws SdkException if the SDK cannot send the batchWriteItem request or DynamoDB rejects it because of credentials, table/key data,
@@ -3407,8 +3425,7 @@ public final class DynamoDBExecutor {
      * Map<String, AttributeValue> key = asKey("userId", "user123");
      *
      * DeleteItemResponse result = executor.deleteItem("Users", key);
-     * System.out.println("Item deleted. Consumed capacity: " +
-     *                    result.consumedCapacity());
+     * // result.consumedCapacity() is null: this overload does not request consumed capacity
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table. Must not be null or empty.

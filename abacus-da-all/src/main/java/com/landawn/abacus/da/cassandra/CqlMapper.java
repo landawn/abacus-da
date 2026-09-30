@@ -774,15 +774,17 @@ public final class CqlMapper {
      *         or flushing or closing the file fails
      * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
      *         and written to the file
-     * @throws DOMException if a stored attribute name is not a valid XML name
+     * @throws DOMException if a stored attribute name is not a valid XML name; like the XML-character check, this is
+     *         detected before the file is opened, so an existing file is left unchanged
      * @see #saveTo(OutputStream)
      * @see #loadFrom(String)
      */
     public void saveTo(final File file) throws IllegalArgumentException, IllegalStateException, UncheckedIOException, RuntimeException, DOMException {
         N.checkArgNotNull(file, cs.file);
-        // Validate before the FileOutputStream truncates an existing file: the serializer only fails on an invalid
-        // XML character midway through writing, which would leave the previous file destroyed.
-        checkXmlContent();
+        // Build (and so validate) the whole document before the FileOutputStream truncates an existing file: an
+        // invalid XML character, an invalid attribute name (DOMException) or a missing XML runtime would otherwise
+        // fail only after opening the file, leaving the previous file destroyed.
+        final Document doc = toDocument();
 
         final File parentFile = file.getParentFile();
 
@@ -791,7 +793,7 @@ public final class CqlMapper {
         }
 
         try (OutputStream os = new FileOutputStream(file)) {
-            saveTo(os);
+            write(doc, os);
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -830,43 +832,67 @@ public final class CqlMapper {
      */
     public void saveTo(final OutputStream os) throws IllegalArgumentException, IllegalStateException, RuntimeException, DOMException, UncheckedIOException {
         N.checkArgNotNull(os, cs.os);
+
+        write(toDocument(), os);
+    }
+
+    /**
+     * Builds the XML document for all statements in this mapper, after {@link #checkXmlContent()}.
+     *
+     * @return the {@code <cqlMapper>} document
+     * @throws IllegalStateException if a stored id, CQL statement or attribute value contains a character that is not
+     *         allowed in XML 1.0
+     * @throws RuntimeException if the XML parser cannot be created
+     * @throws DOMException if a stored attribute name is not a valid XML name
+     */
+    private Document toDocument() throws IllegalStateException, RuntimeException, DOMException {
         checkXmlContent();
 
-        try {
-            final Document doc = XmlUtil.createDOMParser(true, true).newDocument();
-            final Element cqlMapperNode = doc.createElement(CqlMapper.CQL_MAPPER);
+        final Document doc = XmlUtil.createDOMParser(true, true).newDocument();
+        final Element cqlMapperNode = doc.createElement(CqlMapper.CQL_MAPPER);
 
-            for (final Map.Entry<String, ParsedCql> cqlEntry : cqlMap.entrySet()) { //NOSONAR
-                final String id = cqlEntry.getKey();
-                final ParsedCql parsedCql = cqlEntry.getValue();
+        for (final Map.Entry<String, ParsedCql> cqlEntry : cqlMap.entrySet()) { //NOSONAR
+            final String id = cqlEntry.getKey();
+            final ParsedCql parsedCql = cqlEntry.getValue();
 
-                final Element cqlNode = doc.createElement(CQL);
+            final Element cqlNode = doc.createElement(CQL);
 
-                final Map<String, String> attrs = attrsMap.get(id);
+            final Map<String, String> attrs = attrsMap.get(id);
 
-                if (!N.isEmpty(attrs)) {
-                    for (final Map.Entry<String, String> attrEntry : attrs.entrySet()) {
-                        // Skip any stray "id" attribute so it cannot overwrite the canonical id set below.
-                        if (ID.equals(attrEntry.getKey())) {
-                            continue;
-                        }
-
-                        cqlNode.setAttribute(attrEntry.getKey(), attrEntry.getValue());
+            if (!N.isEmpty(attrs)) {
+                for (final Map.Entry<String, String> attrEntry : attrs.entrySet()) {
+                    // Skip any stray "id" attribute so it cannot overwrite the canonical id set below.
+                    if (ID.equals(attrEntry.getKey())) {
+                        continue;
                     }
+
+                    cqlNode.setAttribute(attrEntry.getKey(), attrEntry.getValue());
                 }
-
-                // Set the id last to guarantee the entry key wins regardless of the attribute contents.
-                cqlNode.setAttribute(ID, id);
-
-                final Text cqlText = doc.createTextNode(parsedCql.originalCql());
-                cqlNode.appendChild(cqlText);
-                cqlMapperNode.appendChild(cqlNode);
             }
 
-            doc.appendChild(cqlMapperNode);
+            // Set the id last to guarantee the entry key wins regardless of the attribute contents.
+            cqlNode.setAttribute(ID, id);
 
-            XmlUtil.transform(doc, os);
+            final Text cqlText = doc.createTextNode(parsedCql.originalCql());
+            cqlNode.appendChild(cqlText);
+            cqlMapperNode.appendChild(cqlNode);
+        }
 
+        doc.appendChild(cqlMapperNode);
+
+        return doc;
+    }
+
+    /**
+     * Serializes {@code doc} to {@code os} and flushes (but does not close) the stream.
+     *
+     * @throws RuntimeException if the document cannot be transformed into XML and written to the stream
+     * @throws UncheckedIOException if flushing the stream fails
+     */
+    private static void write(final Document doc, final OutputStream os) throws RuntimeException, UncheckedIOException {
+        XmlUtil.transform(doc, os);
+
+        try {
             os.flush();
         } catch (final IOException e) {
             throw new UncheckedIOException(e);

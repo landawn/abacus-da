@@ -40,6 +40,7 @@ import com.google.cloud.bigquery.QueryJobConfiguration;
 import com.google.cloud.bigquery.QueryParameterValue;
 import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.TableResult;
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
@@ -142,7 +143,8 @@ import com.landawn.abacus.util.stream.Stream;
  * is retained where the target supports it; {@code java.util.Date} and {@code Calendar} retain milliseconds.
  * The same decoding applies to elements of typed collection and array bean properties for {@code REPEATED}
  * columns. Other cells go through the standard abacus type conversion. {@code Map}, {@code Collection}, and
- * {@code Object[]} rows keep the raw cell values.</p>
+ * {@code Object[]} rows keep the raw cell values; a typed array row (e.g. {@code Long[]} or {@code byte[][]}) decodes
+ * and converts each cell to the array's component type.</p>
  *
  * <h2>Result Set Pagination</h2>
  * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
@@ -386,6 +388,7 @@ public class BigQueryExecutor {
      * no top-level property matches. Nested {@link FieldValueList} values are converted recursively
      * into the property's declared type. {@code BYTES} and {@code TIMESTAMP} cells are decoded for binary
      * and date/time properties as described under <i>Result Value Conversion</i> in the class documentation.
+     * A column that matches a read-only (getter-only) property is ignored.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -450,6 +453,15 @@ public class BigQueryExecutor {
                     entityInfo.setPropValue(entity, propName, propValue, true);
                 }
 
+                continue;
+            }
+
+            // A getter-only (computed) property, e.g. one inherited from an @Entity superclass, is in propInfoList, so
+            // insert/update write it and the generated SELECT projects it; but PropInfo.setPropValue throws
+            // UnsupportedOperationException for it, which failed the whole row on read. Skip it, as the JSON parser does.
+            // PropInfo's isReadOnlyProperty flag is package-private; a property without a field is SERIALIZE_ONLY exactly
+            // when it is read-only.
+            if (propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
                 continue;
             }
 
@@ -902,18 +914,11 @@ public class BigQueryExecutor {
         Object value = null;
 
         if (rowType == null || rowType.isObjectArray()) {
-            final Object[] a = rowClass == null ? new Object[fieldCount] : N.newArray(rowClass.getComponentType(), fieldCount);
+            final Class<?> componentType = rowClass == null ? Object.class : rowClass.getComponentType();
+            final Object[] a = N.newArray(componentType, fieldCount);
 
             for (int i = 0; i < fieldCount; i++) {
-                value = row.get(i).getValue();
-
-                if (value instanceof FieldValueList) {
-                    a[i] = readRow((FieldValueList) value, Object[].class);
-                } else if (value instanceof List) {
-                    a[i] = unwrapRepeatedValue(fields.get(i), (List<?>) value);
-                } else {
-                    a[i] = value;
-                }
+                a[i] = toArrayElement(fields.get(i), row.get(i), componentType);
             }
 
             res = a;
@@ -954,6 +959,34 @@ public class BigQueryExecutor {
         return (T) res;
     }
 
+    // Element of an array row. Object[] rows keep the raw cell values (nested STRUCT -> Object[], REPEATED -> List). A
+    // typed array (e.g. Long[] or byte[][]) would reject the raw cell text with ArrayStoreException, so for any other
+    // component type each cell is decoded (BYTES/TIMESTAMP) and converted to that type.
+    /**
+     * Converts one cell of an array row to the array's component type.
+     *
+     * @throws RuntimeException if the cell cannot be decoded or converted to {@code componentType}
+     */
+    private static Object toArrayElement(final Field field, final FieldValue fieldValue, final Class<?> componentType) throws RuntimeException {
+        final Object value = fieldValue.getValue();
+
+        if (value instanceof FieldValueList) {
+            final Class<?> nestedRowClass = componentType.isAssignableFrom(Object[].class) ? Object[].class : componentType;
+            return readRow((FieldValueList) value, nestedRowClass);
+        } else if (value instanceof List) {
+            // A REPEATED BYTES/TIMESTAMP cell holds base64 / epoch-seconds text per element: decode the elements by schema
+            // (as for bean properties) so an array component such as Instant[] or byte[][] doesn't get the raw text.
+            // Other component types (including Object) receive the unwrapped List, as before.
+            final Object values = convertRepeatedValue(field, (List<?>) value, Type.of(componentType));
+            return componentType.isInstance(values) ? values : N.convert(values, componentType);
+        } else if (value == null || componentType == Object.class) {
+            return value;
+        }
+
+        final Object decoded = decodeTypedValue(field, fieldValue, componentType);
+        return componentType.isInstance(decoded) ? decoded : N.convert(decoded, componentType);
+    }
+
     private static <T> Function<? super FieldValueList, ? extends T> createRowMapper(final Class<T> rowClass, final FieldList fields) {
         final Type<?> rowType = rowClass == null ? null : Type.of(rowClass);
         Function<? super FieldValueList, ? extends T> mapper = null;
@@ -968,7 +1001,7 @@ public class BigQueryExecutor {
                  *
                  * @param row the query row to convert
                  * @return the converted row
-                 * @throws RuntimeException if the row schema cannot be read or a column value cannot be stored in the target array component
+                 * @throws RuntimeException if the row schema cannot be read or a column value cannot be converted to the target array component
                  *         type
                  */
                 @Override
@@ -978,19 +1011,11 @@ public class BigQueryExecutor {
                         fieldCount = rowFields.size();
                     }
 
-                    final Object[] a = rowClass == null ? new Object[fieldCount] : N.newArray(rowClass.getComponentType(), fieldCount);
-                    Object value = null;
+                    final Class<?> componentType = rowClass == null ? Object.class : rowClass.getComponentType();
+                    final Object[] a = N.newArray(componentType, fieldCount);
 
                     for (int i = 0; i < fieldCount; i++) {
-                        value = row.get(i).getValue();
-
-                        if (value instanceof FieldValueList) {
-                            a[i] = readRow((FieldValueList) value, Object[].class);
-                        } else if (value instanceof List) {
-                            a[i] = unwrapRepeatedValue(rowFields.get(i), (List<?>) value);
-                        } else {
-                            a[i] = value;
-                        }
+                        a[i] = toArrayElement(rowFields.get(i), row.get(i), componentType);
                     }
 
                     return (T) a;
@@ -1140,7 +1165,8 @@ public class BigQueryExecutor {
      *       {@link #toEntity(FieldList, FieldValueList, Class)}.</li>
      *   <li>{@link Map} or a {@link Map} subclass &rarr; each row becomes a map of column-to-value.</li>
      *   <li>An object-array class (e.g. {@code Object[].class}) or {@code null} &rarr; each row is
-     *       returned as an object array sized to the row width.</li>
+     *       returned as an object array sized to the row width. {@code Object[]} rows keep the raw cell values; a typed
+     *       array class (e.g. {@code Long[].class}) converts each cell to its component type.</li>
      *   <li>A {@link Collection} subclass &rarr; each row becomes a collection of values in column
      *       order.</li>
      *   <li>Any other class &rarr; the result is treated as a single-column scalar; the first
@@ -2342,8 +2368,10 @@ public class BigQueryExecutor {
     /**
      * Queries a BigQuery table and returns results as a Dataset using a condition.
      * <p>
-     * This method performs a SELECT * query on the table corresponding to the target class
-     * and returns the results in a columnar Dataset format. All columns are selected by default.
+     * This method performs a SELECT query on the table corresponding to the target class
+     * and returns the results in a columnar Dataset format. Every column mapped to a property of
+     * the target class is selected (not {@code SELECT *}), and the result columns are named after
+     * the properties.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2466,8 +2494,9 @@ public class BigQueryExecutor {
     /**
      * Queries a BigQuery table and returns results as a List using a condition.
      * <p>
-     * This method performs a SELECT * query on the table corresponding to the target class
-     * and returns the results as a List of objects. All columns are selected by default.
+     * This method performs a SELECT query on the table corresponding to the target class
+     * and returns the results as a List of objects. Every column mapped to a property of the
+     * target class is selected (not {@code SELECT *}).
      * The target class determines the format of returned objects.
      *
      * <p><b>Usage Examples:</b></p>
@@ -2600,8 +2629,9 @@ public class BigQueryExecutor {
     /**
      * Queries a BigQuery table and returns results as a Stream using a condition.
      * <p>
-     * This method performs a SELECT * query on the table corresponding to the target class
-     * and returns the results as a Stream of objects. All columns are selected by default.
+     * This method performs a SELECT query on the table corresponding to the target class
+     * and returns the results as a Stream of objects. Every column mapped to a property of the
+     * target class is selected (not {@code SELECT *}).
      * The query job is submitted and awaited before this method returns. Row iteration and conversion
      * are deferred until the returned Stream is consumed.
      *

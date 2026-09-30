@@ -33,7 +33,7 @@ import com.landawn.abacus.annotation.Internal;
  *
  * <p>The constants are primarily used in:</p>
  * <ul>
- *   <li>{@code N.checkArgNotNull / checkArgNotEmpty / checkArgNotBlank / checkArgNotNegative / checkArgPositive}
+ *   <li>{@code N.checkArgNotNull / checkArgNotEmpty / checkArgNotNegative}
  *       validation calls inside framework methods</li>
  *   <li>Argument labels for exception messages thrown by framework methods</li>
  * </ul>

@@ -108,7 +108,8 @@ import com.landawn.abacus.util.N;
  * <h3>Deletion Strategies:</h3>
  * <ul>
  * <li><strong>{@link #addColumn(String, String)}</strong>: deletes a single version of a column.
- *     When no explicit timestamp is supplied (neither to this call nor to the factory), the
+ *     When no explicit timestamp is supplied (not to this call, the factory, or
+ *     {@link #setTimestamp(long)}), the
  *     delete uses {@code LATEST_TIMESTAMP}, which triggers a server-side get to resolve the latest
  *     version's stamp before writing the tombstone (expensive).</li>
  * <li><strong>{@link #addColumns(String, String)}</strong>: deletes all versions of a column up
@@ -604,8 +605,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * <p>Delegates to {@link Delete#addFamily(byte[])}. Writes a single family-level tombstone
      * that covers all columns and all versions of the family with timestamps up to the row's
-     * default timestamp (i.e. the timestamp passed to the {@code AnyDelete} constructor, or
-     * {@code HConstants.LATEST_TIMESTAMP} when none was supplied). Per HBase semantics, this
+     * default timestamp (i.e. the timestamp passed to the factory or last set via
+     * {@link #setTimestamp(long)}, or {@code HConstants.LATEST_TIMESTAMP} when none was supplied).
+     * Per HBase semantics, this
      * call overrides any previous {@code addColumn}/{@code addColumns} entries for the same
      * family on this delete.</p>
      *
@@ -796,7 +798,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * Marks a single version of a specific column for deletion.
      *
      * <p>Delegates to {@link Delete#addColumn(byte[], byte[])} using this delete's default
-     * timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied to the constructor).
+     * timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied to the factory or set
+     * via {@link #setTimestamp(long)}).
      * When the default {@code LATEST_TIMESTAMP} is in effect, the region server must first issue
      * a get to discover the latest version's stamp and then write a {@code Delete} tombstone for
      * exactly that stamp — an expensive round-trip. For better performance, prefer
@@ -864,7 +867,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * Marks a single version of a specific column for deletion, using byte array identifiers.
      *
      * <p>Delegates to {@link Delete#addColumn(byte[], byte[])} using this delete's default
-     * timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied to the constructor).
+     * timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied to the factory or set
+     * via {@link #setTimestamp(long)}).
      * When the default {@code LATEST_TIMESTAMP} is in effect, the region server must first issue
      * a get to discover the latest version's stamp, so this call is more expensive than the
      * timestamped variant or {@link #addColumns(byte[], byte[])}.</p>
@@ -930,7 +934,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <p>Delegates to {@link Delete#addColumns(byte[], byte[])}. Writes a {@code DeleteColumn}
      * tombstone covering every version of the column whose timestamp is less than or equal to
      * this delete's default timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied
-     * to the constructor — interpreted server-side as "every version up to the time the delete
+     * to the factory or set via {@link #setTimestamp(long)} — interpreted server-side as "every version up to the time the delete
      * is applied"). Unlike {@link #addColumn(String, String)}, no server-side get is required,
      * making this the preferred call when you intend to remove the column entirely.</p>
      *

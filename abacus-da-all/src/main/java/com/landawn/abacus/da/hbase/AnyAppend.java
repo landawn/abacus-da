@@ -112,8 +112,11 @@ import com.landawn.abacus.util.N;
  * <li><strong>Atomicity</strong>: single-row atomic; safe under concurrent access</li>
  * <li><strong>Grouping</strong>: requested column updates are applied while holding the same row lock</li>
  * <li><strong>Existence</strong>: a new cell is created when the column did not previously exist</li>
- * <li><strong>Versioning</strong>: each append creates a new version stamped with the server time
- *     (or the timestamp set via {@link #setTimestamp(long)} before the cell is added)</li>
+ * <li><strong>Versioning</strong>: each append writes a new version. When the column already has a
+ *     cell, the server stamps the new version {@code max(existingTimestamp + 1, serverTime)} and
+ *     ignores any timestamp set via {@link #setTimestamp(long)}; only when the column has no cell
+ *     yet is such a timestamp (set before the cell is added) kept, otherwise the server time is
+ *     used</li>
  * </ul>
  *
  * @see AnyMutation

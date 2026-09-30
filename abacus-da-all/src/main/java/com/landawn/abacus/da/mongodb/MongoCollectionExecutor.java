@@ -1044,7 +1044,10 @@ public final class MongoCollectionExecutor {
      * automatic type conversion. BSON projection allows for more advanced field selection including
      * computed fields and array operations. Result types that can directly hold a {@link Document}
      * (such as {@code Object} or {@link Bson}) receive the raw projected document, matching
-     * {@code list}/{@code stream}.</p>
+     * {@code list}/{@code stream}. For a single-value {@code rowType}, the document's sole non-{@code _id}
+     * field is converted; a matched document that has only its {@code _id} (for example because it lacks the
+     * projected field) has its {@code _id} converted instead. Use
+     * {@link #findFirst(Collection, Bson, Bson, Class)} to get {@link Optional#empty()} in that case.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1369,6 +1372,11 @@ public final class MongoCollectionExecutor {
      * property name collections. This is suitable when you need all matching results or when
      * the result set is expected to be manageable in size.</p>
      *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted. A document
+     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} when
+     * another returned document has the projected field, but its converted {@code _id} when none does. Use
+     * {@link #list(Collection, Bson, Bson, Class)} to always get {@code null} for a missing field.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson projection = Projections.include("name", "email");
@@ -1403,6 +1411,11 @@ public final class MongoCollectionExecutor {
      * <p>This method provides the most comprehensive query capabilities using BSON objects for
      * projection, filtering, and sorting. It offers advanced projection features like computed fields,
      * array slicing, and conditional inclusions that are not available with simple field name collections.</p>
+     *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted. A document
+     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} when
+     * another returned document has the projected field, but its converted {@code _id} when none does. Use
+     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2816,6 +2829,10 @@ public final class MongoCollectionExecutor {
      * <p>Uses BSON projection for more complex field selection scenarios,
      * such as including/excluding nested fields or using projection operators.</p>
      *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted; a document
+     * that has only its {@code _id} (for example because it lacks the projected field) has its {@code _id}
+     * converted instead. Use {@link #stream(Collection, Bson, Bson, Class)} to get {@code null} for a missing field.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Complex projection with nested fields
@@ -2851,6 +2868,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>The most flexible streaming method, supporting BSON projection for
      * complex field selection along with all other query features.</p>
+     *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted; a document
+     * that has only its {@code _id} (for example because it lacks the projected field) has its {@code _id}
+     * converted instead. Use {@link #stream(Collection, Bson, Bson, int, int, Class)} to get {@code null} for a
+     * missing field.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -5218,12 +5240,20 @@ public final class MongoCollectionExecutor {
     /**
      * Groups documents by a single field with type conversion.
      *
-     * <p>Groups documents and converts results to the specified type.</p>
+     * <p>Groups documents and converts results to the specified type.
+     * {@link Document} results are the raw {@code {_id: <key>}} group documents; other Map, bean, and
+     * {@code Object} results receive {@code {<fieldName>: <key>}} rows (a dotted {@code fieldName} such as
+     * {@code "a.b"} yields the nested row {@code {a: {b: <key>}}}); a single-value {@code rowType}
+     * (such as {@code String.class}) emits each group key converted to that type. The group of documents that
+     * lack the field has key {@code null}: it is emitted as a {@code null} element for a wrapper or reference
+     * {@code rowType}, as the primitive default for a primitive {@code rowType} (such as {@code 0} for
+     * {@code int.class}), and as a {@code {<fieldName>: null}} row for Map, bean, and {@code Object} results.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.groupBy("department", DepartmentGroup.class) // returns a lazy Stream of group documents converted to DepartmentGroup
      *     .forEach(group -> processDepartment(group));
+     * List<String> cities = executor.groupBy("address.city", String.class).toList(); // the group keys, e.g. ["Paris", "Rome"]
      * }</pre>
      *
      * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
@@ -5339,7 +5369,11 @@ public final class MongoCollectionExecutor {
     /**
      * Groups and counts with type conversion.
      *
-     * <p>Groups documents, counts frequency, and converts results to the specified type.</p>
+     * <p>Groups documents, counts frequency, and converts results to the specified type.
+     * {@link Document} results are the raw {@code {_id: <key>, count: <n>}} group documents; other Map, bean,
+     * and {@code Object} results receive {@code {<fieldName>: <key>, count: <n>}} rows. Because each row carries
+     * two values, a single-value {@code rowType} (such as {@code String.class}) cannot hold it: consuming the
+     * stream then fails with {@link IllegalArgumentException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

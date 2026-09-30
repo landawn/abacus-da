@@ -312,8 +312,6 @@ public class CqlMapperTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> m.saveTo((OutputStream) null));
     }
 
-    // TODO: round-trip saveTo/loadFrom/load tests skipped — XmlUtil requires jakarta.xml.bind at runtime, which is not on the test classpath.
-
     // ---------------------------------------------------------------------------------------------
     // equals / hashCode / toString.
     // ---------------------------------------------------------------------------------------------
@@ -421,5 +419,100 @@ public class CqlMapperTest extends TestBase {
         assertThrows(IllegalStateException.class, () -> badAttr.saveTo(os));
 
         assertEquals(0, os.size());
+    }
+
+    // ---- 2026-09-29 sliceR ----
+
+    @Test
+    public void testSaveToFile_InvalidAttributeName_throwsAndKeepsExistingFile() throws Exception {
+        // Regression: the DOM (and so the DOMException for an attribute name that is not an XML name) was built only
+        // after the FileOutputStream had truncated the existing file, leaving a 0-byte file behind.
+        final File file = File.createTempFile("cql-mapper-", ".xml");
+        file.deleteOnExit();
+        final byte[] original = "<cqlMapper><cql id=\"good\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8);
+        java.nio.file.Files.write(file.toPath(), original);
+
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("bad name", "x");
+        final CqlMapper m = new CqlMapper();
+        m.add("q", "SELECT * FROM t", attrs);
+
+        final org.w3c.dom.DOMException ex = assertThrows(org.w3c.dom.DOMException.class, () -> m.saveTo(file));
+        assertEquals(org.w3c.dom.DOMException.INVALID_CHARACTER_ERR, ex.code);
+        assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void testSaveToFile_RoundTripsThroughLoadFrom() throws Exception {
+        final File file = File.createTempFile("cql-mapper-", ".xml");
+        file.deleteOnExit();
+
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "30");
+        final CqlMapper m = new CqlMapper();
+        m.add("findById", "SELECT * FROM users WHERE id = :id", attrs);
+        m.add("count", "SELECT COUNT(*) FROM users");
+        m.saveTo(file);
+
+        final CqlMapper loaded = CqlMapper.loadFrom(file);
+        assertEquals(m.ids(), loaded.ids());
+        assertEquals("SELECT * FROM users WHERE id = :id", loaded.get("findById").originalCql());
+        assertEquals("30", loaded.getAttributes("findById").get("timeout"));
+        assertEquals("SELECT COUNT(*) FROM users", loaded.get("count").originalCql());
+    }
+
+    @Test
+    public void testSaveToFile_MissingXmlBindingRuntime_keepsExistingFile() throws Exception {
+        // Without the Jakarta XML Binding API, abacus-common's XmlUtil fails with NoClassDefFoundError while the DOM is
+        // built; that must also happen before the target file is opened (and so truncated). The API is on the test
+        // classpath, so CqlMapper and abacus-common are re-loaded in a child-first loader that hides jakarta.xml.bind.
+        final File file = File.createTempFile("cql-mapper-", ".xml");
+        file.deleteOnExit();
+        final byte[] original = "<cqlMapper><cql id=\"good\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8);
+        java.nio.file.Files.write(file.toPath(), original);
+
+        final ClassLoader parent = CqlMapperTest.class.getClassLoader();
+        final ClassLoader isolated = new ClassLoader(parent) {
+            @Override
+            protected Class<?> loadClass(final String name, final boolean resolve) throws ClassNotFoundException {
+                synchronized (getClassLoadingLock(name)) {
+                    if (name.startsWith("jakarta.xml.bind.")) {
+                        throw new ClassNotFoundException(name);
+                    }
+
+                    Class<?> c = findLoadedClass(name);
+
+                    if (c == null && name.startsWith("com.landawn.abacus.")) {
+                        try (InputStream is = parent.getResourceAsStream(name.replace('.', '/') + ".class")) {
+                            if (is != null) {
+                                final byte[] bytes = is.readAllBytes();
+                                c = defineClass(name, bytes, 0, bytes.length);
+                            }
+                        } catch (final java.io.IOException e) {
+                            throw new ClassNotFoundException(name, e);
+                        }
+                    }
+
+                    if (c == null) {
+                        c = super.loadClass(name, false);
+                    }
+
+                    if (resolve) {
+                        resolveClass(c);
+                    }
+
+                    return c;
+                }
+            }
+        };
+
+        final Class<?> mapperClass = isolated.loadClass(CqlMapper.class.getName());
+        final Object m = mapperClass.getConstructor().newInstance();
+        mapperClass.getMethod("add", String.class, String.class).invoke(m, "q", "SELECT * FROM t");
+
+        final java.lang.reflect.InvocationTargetException ex = assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> mapperClass.getMethod("saveTo", File.class).invoke(m, file));
+        assertTrue(ex.getCause() instanceof NoClassDefFoundError, String.valueOf(ex.getCause()));
+        assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
     }
 }

@@ -318,11 +318,20 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Creates a Scan operation for the range of rows specified.
      *
+     * <p>This delegates to HBase's deprecated {@code Scan(byte[], byte[])} constructor, which keeps
+     * a legacy rule: when the start and stop rows are equal (and non-empty) the stop row becomes
+     * <i>inclusive</i>, so the scan is a single-row "get scan". The suggested replacement
+     * {@code create().withStartRow(row).withStopRow(row)} keeps the stop row exclusive and
+     * therefore matches no rows in that case.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyScan scan = AnyScan.of("a", "z");
      * byte[] start = scan.getStartRow();   // returns the bytes of "a"
      * byte[] stop = scan.getStopRow();     // returns the bytes of "z" (exclusive)
+     *
+     * // Edge: equal start and stop rows make a single-row scan (stop row inclusive).
+     * boolean single = AnyScan.of("a", "a").isGetScan();   // returns true
      *
      * // A null start row is tolerated; the resulting start row is null.
      * AnyScan nullStart = AnyScan.of((Object) null, "z");   // no exception
@@ -400,6 +409,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * This factory method converts a Get operation into a Scan operation,
      * preserving the families, qualifiers, time range and other settings from the original Get.
      * </p>
+     *
+     * <p>HBase's {@link Scan#Scan(Get)} constructor does not copy the Get's family map: the new scan
+     * and {@code get} share the same live map, so adding or removing families/columns through the
+     * returned AnyScan also changes {@code get} (and vice versa). Pass a copy
+     * ({@code new Get(get)}) if the Get must stay unchanged.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

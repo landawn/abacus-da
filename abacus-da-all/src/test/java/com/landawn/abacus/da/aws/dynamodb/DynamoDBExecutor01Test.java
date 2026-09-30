@@ -3336,4 +3336,73 @@ public class DynamoDBExecutor01Test extends TestBase {
             this.partition_key = partition_key;
         }
     }
+
+    // ---- 2026-09-29 sliceA ----
+
+    // A getter-only property inherited from an @Entity superclass is written by toItem; reading the item back used to fail
+    // the whole entity with UnsupportedOperationException from PropInfo.setPropValue.
+    @Test
+    public void testToEntity_ReadOnlyInheritedPropertyAttributeIsSkipped() {
+        ReadOnlyPropSubEntity source = new ReadOnlyPropSubEntity();
+        source.setId("id-1");
+        source.setName("n");
+
+        Map<String, AttributeValue> item = DynamoDBExecutor.toItem(source);
+        assertEquals("computed:id-1", item.get("computed").getS());
+
+        ReadOnlyPropSubEntity result = DynamoDBExecutor.toEntity(item, ReadOnlyPropSubEntity.class);
+        assertEquals("id-1", result.getId());
+        assertEquals("n", result.getName());
+
+        when(mockDynamoDBClient.getItem(eq("TestTable"), any())).thenReturn(new GetItemResult().withItem(item));
+        ReadOnlyPropSubEntity fromMapper = executor.mapper(ReadOnlyPropSubEntity.class).getItem(source);
+        assertEquals("n", fromMapper.getName());
+        assertEquals("computed:id-1", fromMapper.getComputed());
+    }
+
+    // isJsonArrayText only checks the brackets: plain text such as "[a] and [b]" read into a String[] property used to throw
+    // a ParsingException (failing the whole item) instead of keeping the lenient single-element conversion.
+    @Test
+    public void testToEntity_BracketedNonJsonTextIntoStringArrayKeepsSingleElement() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("tags", new AttributeValue().withS("[a] and [b]"));
+        item.put("values", new AttributeValue().withS("[\"unterminated]"));
+
+        ObjectArrayPropsEntity result = DynamoDBExecutor.toEntity(item, ObjectArrayPropsEntity.class);
+
+        assertArrayEquals(new String[] { "[a] and [b]" }, result.getTags());
+        assertArrayEquals(new Object[] { "[\"unterminated]" }, result.getValues());
+        assertArrayEquals(new String[] { "[x] [y]" }, DynamoDBExecutor.toValue(new AttributeValue().withS("[x] [y]"), String[].class));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class ReadOnlyPropBaseEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getComputed() {
+            return "computed:" + id;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    public static class ReadOnlyPropSubEntity extends ReadOnlyPropBaseEntity {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
 }

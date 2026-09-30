@@ -60,8 +60,10 @@ import com.amazonaws.services.dynamodbv2.model.ScanResult;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 import com.amazonaws.services.dynamodbv2.model.WriteRequest;
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.aws.AnyUtil;
 import com.landawn.abacus.da.cs;
+import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
@@ -1510,7 +1512,8 @@ public final class DynamoDBExecutor {
      *       {@code @Column}/{@code @Table} column-to-property map), and writes the converted value if found;</li>
      *   <li>if the attribute name contains a {@code '.'} (dot) and no top-level property matches, treats
      *       it as a nested-property path and assigns into the nested bean;</li>
-     *   <li>silently ignores attributes that match neither a property nor a dotted path.</li>
+     *   <li>silently ignores attributes that match neither a property nor a dotted path, and attributes of read-only
+     *       (getter-only) properties, whose computed values {@link #toItem(Object)} writes but which cannot be assigned.</li>
      * </ul>
      *
      * <p>AttributeValue payloads are converted by {@link #toValue(AttributeValue, Class)}, which handles
@@ -1518,7 +1521,7 @@ public final class DynamoDBExecutor {
      * ({@code SS}, {@code NS}, {@code BS}), and nested {@code L}/{@code M} structures. Note that
      * DynamoDB {@code N} values arrive as Strings and are coerced to the property's declared type via
      * {@link N#convert(Object, Class)}; a {@code B} (binary) value is copied into a {@code byte[]} property; and the JSON
-     * text that {@link #toItem(Object)} writes (as an {@code S} value) for a collection, map, or object-array property is
+     * text that {@link #toItem(Object)} writes (as an {@code S} value) for a collection, map, array, or nested-bean property is
      * parsed back into that property's declared type. Native binary collection elements, array elements, and map
      * values are converted directly when declared as {@code byte[]} or {@link ByteBuffer}, without consuming source buffers. Containers
      * with {@code Object}-typed elements or values retain their natural Java representations.</p>
@@ -1573,6 +1576,14 @@ public final class DynamoDBExecutor {
                 continue;
             }
 
+            // A getter-only (computed) property, e.g. one inherited from an @Entity superclass, is in propInfoList, so
+            // toItem writes its value as an attribute; but PropInfo.setPropValue throws UnsupportedOperationException for
+            // it, which failed the whole item on read. Skip it, as the JSON parser does. PropInfo's isReadOnlyProperty flag
+            // is package-private; a property without a field is SERIALIZE_ONLY exactly when it is read-only.
+            if (propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
+                continue;
+            }
+
             final Object rawValue = toValue(propValue);
             final Type<?> propType = propInfo.jsonXmlType;
 
@@ -1620,10 +1631,15 @@ public final class DynamoDBExecutor {
         // toAttributeValue writes an object array as its JSON text (an S attribute), but N.convert(String, X[].class) wraps the
         // whole text as ONE element whenever String is assignable to the component type (String[], CharSequence[], Object[]):
         // ["a", "b"] came back as {"[\"a\", \"b\"]"}. Parse JSON-array text with the array Type's codec (the inverse of stringOf);
-        // any other string keeps the N.convert behavior.
+        // any other string keeps the N.convert behavior. isJsonArrayText only checks the brackets, so plain text such as
+        // "[a] and [b]" fails to parse: it falls back to N.convert instead of failing the whole item.
         if (value instanceof String && targetClass.isArray() && targetClass.getComponentType().isAssignableFrom(String.class)
                 && isJsonArrayText((String) value)) {
-            return N.typeOf(targetClass).valueOf((String) value);
+            try {
+                return N.typeOf(targetClass).valueOf((String) value);
+            } catch (final ParsingException e) {
+                // not JSON-array text after all: fall through to the lenient N.convert below
+            }
         }
 
         return N.convert(value, targetClass);

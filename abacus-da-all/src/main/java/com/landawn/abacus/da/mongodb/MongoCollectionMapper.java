@@ -3905,7 +3905,8 @@ public final class MongoCollectionMapper<T> {
      * <p>This method groups entities by a single field value, useful for basic grouping operations.
      * The grouped results are returned as a stream of entities representing each group, with the group
      * key surfaced under {@code fieldName}. A single-value {@code T} (such as {@code String}) gets no
-     * {@code $project} stage and receives each group key directly, converted to {@code T}.</p>
+     * {@code $project} stage and receives each group key directly, converted to {@code T}; a {@link Document}
+     * {@code T} likewise receives the raw {@code {_id: <key>}} group documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

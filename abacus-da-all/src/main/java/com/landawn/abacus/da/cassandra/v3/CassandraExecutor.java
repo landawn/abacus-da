@@ -59,6 +59,7 @@ import com.landawn.abacus.da.cassandra.CqlBuilder;
 import com.landawn.abacus.da.cassandra.CqlMapper;
 import com.landawn.abacus.da.cassandra.ParsedCql;
 import com.datastax.driver.core.exceptions.NoHostAvailableException;
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.exception.ParsingException;
@@ -151,7 +152,8 @@ import lombok.experimental.Accessors;
  * {@link com.landawn.abacus.da.cassandra.CassandraExecutor} for:</p>
  * <ul>
  * <li>Better performance and reduced memory usage</li>
- * <li>Improved async programming model with ContinuableFuture</li>
+ * <li>Improved async programming model (built on the 4.x driver's native {@code CompletionStage} API
+ *     rather than Guava {@code ListenableFuture}; both executors expose {@code ContinuableFuture})</li>
  * <li>Enhanced query builder integration</li>
  * <li>Active development and bug fixes</li>
  * <li>Support for newer Cassandra features</li>
@@ -909,6 +911,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 continue;
             }
 
+            if (isReadOnlyProperty(propInfo)) {
+                continue;
+            }
+
             parameterType = propInfo.clazz;
 
             if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof Row)) {
@@ -921,6 +927,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    // A getter-only (computed) property, e.g. one inherited from an @Entity superclass (abacus-common 8.1.0), is in
+    // propInfoList, so generated INSERT/SELECT statements (and UDT serialization) include its column; but
+    // PropInfo.setPropValue throws UnsupportedOperationException for it, which failed the whole row on read. Its value is
+    // skipped on read, as the JSON parser does. PropInfo's isReadOnlyProperty flag is package-private; a property without
+    // a field is SERIALIZE_ONLY exactly when it is read-only.
+    private static boolean isReadOnlyProperty(final PropInfo propInfo) {
+        return propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY;
     }
 
     /**
@@ -1041,8 +1056,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p>Internal dispatcher used by the public conversion helpers. Behavior by
      * {@code rowClass}:</p>
      * <ul>
-     *   <li>{@code null} or an object-array class: each column becomes an array element;
-     *       nested {@link Row}s are recursively flattened to {@code Object[]}</li>
+     *   <li>{@code null} or an object-array class: each column becomes an array element, converted to
+     *       the array's component type; nested {@link Row}s are recursively flattened to {@code Object[]}</li>
      *   <li>{@link Collection} class: a fresh collection of column values</li>
      *   <li>{@link Map} class: a fresh map keyed by column name</li>
      *   <li>Bean class: delegates to {@link #toEntity(Row, Class)}</li>
@@ -2044,7 +2059,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * </ul>
      * <p>A codec registered for a scalar or bean value takes precedence over expanding bean properties or
      * coercing it to the column's default Java type. Positional collections and named maps retain their
-     * usual parameter-container behavior.</p>
+     * usual parameter-container behavior; in particular, a Map keyed by the name of a query's single named
+     * marker is always read as the named-parameter container, even when that marker's column is itself a map
+     * type. A single empty map, collection, or array supplies no values, so it is accepted for a query without
+     * bind markers.</p>
      *
      * <p>Values are coerced to the column's declared Java type using the executor's
      * {@link CodecRegistry} and {@code N.convert(...)} where applicable. If
@@ -2079,6 +2097,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         Class<?> javaClazz = null;
 
         if (parameterCount == 0) {
+            // A single empty Map/Collection/array supplies zero parameters (e.g. execute(query, emptyMap)): it must not be
+            // counted as one value.
+            if (parameters.length == 1 && (parameters[0] instanceof final Map<?, ?> m && m.isEmpty()
+                    || parameters[0] instanceof final Collection<?> c && c.isEmpty() || parameters[0] instanceof final Object[] a && a.length == 0)) {
+                return bind(preStmt);
+            }
+
             throw new IllegalArgumentException("Too many parameters for parameterless query: expected 0 but got " + parameters.length + " for query: " + query);
         } else if (N.isEmpty(parameters)) {
             throw new IllegalArgumentException("Null or empty parameters for parameterized query: " + query);
@@ -2090,7 +2115,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         // not the value: skip the single-value shortcut, which would otherwise bind the whole Map when the marker's column
         // is a map type, because a Map is then assignable to that column's Java type.
         if (parameterCount == 1 && parameters.length == 1
-                && !(parameters[0] instanceof final Map<?, ?> m && N.notEmpty(namedParameters) && m.containsKey(namedParameters.get(0)))) {
+                && !(parameters[0] instanceof final Map<?, ?> m && N.notEmpty(namedParameters) && containsKeySafely(m, namedParameters.get(0)))) {
             colType = columnDefinitions.getType(0);
             javaClazz = namedDataType.get(colType.getName().name());
 
@@ -2203,6 +2228,21 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return bind(preStmt, values);
+    }
+
+    /**
+     * Returns whether {@code map} contains the String key {@code name}, treating a map that cannot hold String keys as
+     * not containing it.
+     */
+    private static boolean containsKeySafely(final Map<?, ?> map, final String name) {
+        try {
+            return map.containsKey(name);
+        } catch (final ClassCastException | NullPointerException e) {
+            // Map.containsKey may throw for a key of an inappropriate type: a sorted map with non-String keys (for example
+            // a TreeMap<Integer, String> bound as the value of a map<int, text> column) compares the String name against
+            // its own keys. Such a map cannot be a name -> value container, so it is the column value itself.
+            return false;
+        }
     }
 
     /**
@@ -2704,7 +2744,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                                 propInfo = propName == null ? null : beanInfo.getPropInfo(propName);
                             }
 
-                            if (propInfo != null) {
+                            if (propInfo != null && !isReadOnlyProperty(propInfo)) {
                                 final Object fieldValue = udtValue.getObject(idx);
 
                                 // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.

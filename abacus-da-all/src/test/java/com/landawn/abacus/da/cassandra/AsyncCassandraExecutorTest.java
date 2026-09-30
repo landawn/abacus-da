@@ -687,4 +687,26 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertSame(error, assertThrows(AssertionError.class, () -> once.apply("a")));
         assertEquals(1, calls[0]);
     }
+
+    // ---- 2026-09-29 sliceO ----
+
+    /**
+     * The driver's default {@code PagingIterable.all()} (inherited by {@code rs.map(f)}) sizes its list with
+     * {@code getAvailableWithoutFetching()}; the wrapper used to throw UnsupportedOperationException there, so
+     * {@code async.execute(...).get().map(f).all()} failed on any non-empty result.
+     */
+    @Test
+    public void testWrappedResultSet_mapAllAndAvailableWithoutFetching_sliceO() {
+        final Row first = mock(Row.class);
+        final Row second = mock(Row.class);
+        final AsyncResultSet asyncResultSet = mock(AsyncResultSet.class);
+        when(asyncResultSet.currentPage()).thenReturn(Arrays.asList(first, second));
+        when(asyncResultSet.hasMorePages()).thenReturn(false);
+        when(asyncResultSet.remaining()).thenReturn(2);
+
+        final ResultSet resultSet = ResultSets.wrap(asyncResultSet);
+
+        assertEquals(2, resultSet.getAvailableWithoutFetching());
+        assertEquals(Arrays.asList(first, second), resultSet.map(java.util.function.Function.identity()).all());
+    }
 }

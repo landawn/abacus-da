@@ -33,9 +33,11 @@ import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonInvalidOperationException;
 import org.bson.BsonReader;
+import org.bson.BsonType;
 import org.bson.BsonWriter;
 import org.bson.Document;
 import org.bson.codecs.BsonTypeClassMap;
+import org.bson.codecs.BsonValueCodec;
 import org.bson.codecs.Codec;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
@@ -1887,7 +1889,9 @@ public abstract class MongoDBBase {
      * <p>This method converts a MongoDB query result into a typed Java Stream, automatically
      * converting each Document to the specified target type. This provides type safety and
      * eliminates the need for manual conversion within stream operations. The conversion
-     * handles entity mapping, Maps, and primitive types appropriately.</p>
+     * handles entity mapping, Maps, and primitive types appropriately. A target type that can hold the
+     * {@link Document} itself ({@code Object}, {@link Bson}, {@code Map} or {@code Document}) receives each
+     * document unchanged, as in {@link #toList(MongoIterable, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1972,7 +1976,9 @@ public abstract class MongoDBBase {
      * <p>This method converts a MongoDB cursor into a typed Java Stream, automatically
      * converting each Document to the specified target type as it's consumed. The stream
      * provides both lazy evaluation and automatic cursor lifecycle management, making it
-     * ideal for processing large datasets with type safety and memory efficiency.</p>
+     * ideal for processing large datasets with type safety and memory efficiency. A target type that can
+     * hold the {@link Document} itself ({@code Object}, {@link Bson}, {@code Map} or {@code Document})
+     * receives each document unchanged, as in {@link #toList(MongoIterable, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2007,6 +2013,13 @@ public abstract class MongoDBBase {
      * @see #stream(MongoIterable, Class)
      */
     public static <T> Stream<T> stream(final MongoCursor<Document> cursor, final Class<T> rowType) {
+        // Same short-circuit as toList and the executors' list/stream/findFirst: a type that can hold the Document
+        // itself (Object, Bson, Map, Document) gets the row as-is. readRow's scalar fallback would otherwise reject a
+        // multi-field document requested as Object/Bson, and return the sole value of a single-field one.
+        if (rowType != null && rowType.isAssignableFrom(Document.class)) {
+            return (Stream<T>) Stream.of(cursor).onClose(Fn.close(cursor));
+        }
+
         return Stream.of(cursor).map(it -> readRow(it, rowType)).onClose(Fn.close(cursor));
     }
 
@@ -2152,12 +2165,19 @@ public abstract class MongoDBBase {
      * Generic {@link Codec} that encodes bean-style entities as BSON documents (via
      * {@link MongoDBBase#toDocument(Object)}) and other types as their {@link N#stringOf(Object)}
      * string form. Decoding mirrors this: entity classes are read as Documents and then mapped to
-     * the bean, while other types are read as strings and parsed via {@link N#valueOf(String, Class)}.
+     * the bean, while other types parse a BSON string via {@link N#valueOf(String, Class)} and convert
+     * any other BSON value (as decoded for a {@link Document} field) to the target type.
      */
     static class GeneralCodec<T> implements Codec<T> {
 
         /** Shared {@link DocumentCodec} used to encode/decode the BSON document representation of beans. */
         private static final DocumentCodec documentCodec = new DocumentCodec(codecRegistry, new BsonTypeClassMap());
+
+        /** Reads a single non-string BSON value of any type during {@link #decode(BsonReader, DecoderContext)}. */
+        private static final BsonValueCodec bsonValueCodec = new BsonValueCodec();
+
+        /** Field name of the one-entry holder document used to decode a single value into its plain Java form. */
+        private static final String VALUE_FIELD = "v";
 
         /** The Java class this codec handles. */
         private final Class<T> cls;
@@ -2216,15 +2236,18 @@ public abstract class MongoDBBase {
         /**
          * Decodes the next BSON value into an instance of {@link #cls}. Beans are read as a
          * {@link Document} through the shared {@link DocumentCodec} and then mapped via
-         * {@link MongoDBBase#readRow(Document, Class)}; all other types are read as a BSON string and
-         * parsed using {@code N.valueOf(String, Class)}.
+         * {@link MongoDBBase#readRow(Document, Class)}. For all other types a BSON string is parsed using
+         * {@code N.valueOf(String, Class)}, and any other BSON value (number, document, array, null, ...) is
+         * decoded to the plain Java value a {@link Document} field would hold and then converted to the target
+         * type (so an {@code Object} target receives that value unchanged).
          *
          * @param reader BSON reader positioned at the value to decode; must not be null
          * @param decoderContext decoder context forwarded to the underlying document codec for bean values; ignored for scalar values
          *        and may be null when no nested bean-field codec requires it
          * @return the decoded value
          * @throws IllegalArgumentException if {@code reader} is null or a decoded value cannot be converted to the target Java type
-         * @throws BsonInvalidOperationException if the current BSON value does not have the document or string type required by this codec
+         * @throws BsonInvalidOperationException if a bean value is not a BSON document, or the reader is not yet positioned on a value
+         *         and that value is not a BSON string
          * @throws CodecConfigurationException if a nested BSON value has no usable codec
          * @throws NullPointerException if {@code decoderContext} is null and a nested field codec needs that context while decoding a bean document
          * @throws RuntimeException if a decoded value overflows its target numeric range, a registered converter or type handler throws,
@@ -2237,9 +2260,22 @@ public abstract class MongoDBBase {
 
             if (isEntityClass) {
                 return readRow(documentCodec.decode(reader, decoderContext), cls);
-            } else {
+            }
+
+            final BsonType bsonType = reader.getCurrentBsonType();
+
+            // Types without a driver codec (e.g. Object, Number) resolve to this codec, so the driver's
+            // distinct(field, Object.class) hands it values of any BSON type; readString only accepts a BSON string.
+            // Decode any other value the way a Document field value is decoded, then convert it to cls. A string (or a
+            // reader not yet positioned on a value) keeps the string-parsing path that mirrors encode.
+            if (bsonType == null || bsonType == BsonType.STRING) {
                 return N.valueOf(reader.readString(), cls);
             }
+
+            final DecoderContext context = DecoderContext.builder().build();
+            final BsonDocument holder = new BsonDocument(VALUE_FIELD, bsonValueCodec.decode(reader, context));
+
+            return convertBsonValue(documentCodec.decode(new BsonDocumentReader(holder), context).get(VALUE_FIELD), cls);
         }
 
         /**

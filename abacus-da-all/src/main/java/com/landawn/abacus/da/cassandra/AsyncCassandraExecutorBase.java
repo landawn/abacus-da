@@ -1776,7 +1776,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to map result rows to
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link Stream} of mapped entities, backed by the
-     *         underlying result-set iterator
+     *         underlying result-set iterator; further result pages are fetched (blocking) while the stream is
+     *         consumed, so a page-fetch failure is thrown by the stream's terminal operation rather than reported
+     *         by the future
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         or the supplied condition contains a relation unsupported by CQL
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -1813,7 +1815,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
      * @param whereClause the WHERE condition selecting rows
-     * @return a future whose payload is a {@link Stream} of mapped entities
+     * @return a future whose payload is a {@link Stream} of mapped entities; further result pages are fetched
+     *         (blocking) while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal
+     *         operation rather than reported by the future
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         or the supplied condition contains a relation unsupported by CQL
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -1851,7 +1855,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is a {@link Stream} of {@code Object[]} rows
+     * @return a future whose payload is a {@link Stream} of {@code Object[]} rows; further result pages are
+     *         fetched (blocking) while the stream is consumed, so a page-fetch failure is thrown by the stream's
+     *         terminal operation rather than reported by the future
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -3237,9 +3243,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * params.put("id", 1L);
      * ResultSet rs = async.execute("SELECT * FROM users WHERE id = :id", params).get();
      *
-     * // Edge: even an empty parameter map counts as one argument for a parameterless
-     * // statement and is rejected during the synchronous preparation.
-     * async.execute("SELECT * FROM users", new HashMap<String, Object>()); // throws IllegalArgumentException synchronously
+     * // Edge: an empty parameter map supplies no values, so a parameterless statement runs normally.
+     * ResultSet all = async.execute("SELECT * FROM users", new HashMap<String, Object>()).get(); // same as execute("SELECT * FROM users")
      *
      * // Edge: the statement is prepared and bound synchronously before the async call is issued,
      * // so a missing named parameter throws directly from the call site (no future is created).

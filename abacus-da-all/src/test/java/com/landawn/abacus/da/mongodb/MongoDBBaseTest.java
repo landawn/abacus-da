@@ -1078,6 +1078,74 @@ public class MongoDBBaseTest extends TestBase {
         assertSame(sameType, MongoDBBase.toList(iterable, Long.class));
     }
 
+    // ---- 2026-09-29 sliceH ----
+
+    @Test
+    public void testStreamCursorWithDocumentHoldingRowTypeReturnsDocumentsUnchanged() {
+        // Regression: stream(cursor, Object.class/Bson.class) ran every row through readRow's scalar fallback, so a
+        // multi-field document threw IllegalArgumentException and a single-field one yielded its sole value, unlike
+        // toList(iterable, Object.class) and the executors' stream/list, which return the documents as-is.
+        final Document multi = new Document("_id", 5).append("a", 1).append("b", 2);
+        final Document single = new Document("_id", 6).append("a", 3);
+
+        for (final Class<?> rowType : Arrays.<Class<?>> asList(Object.class, Bson.class, Map.class, Document.class)) {
+            when(mockCursor.hasNext()).thenReturn(true, true, false);
+            when(mockCursor.next()).thenReturn(multi, single);
+
+            final List<?> rows = MongoDBBase.stream(mockCursor, rowType).toList();
+
+            assertEquals(2, rows.size(), rowType.getName());
+            assertSame(multi, rows.get(0), rowType.getName());
+            assertSame(single, rows.get(1), rowType.getName());
+        }
+
+        // A scalar row type still extracts the single projected value.
+        when(mockCursor.hasNext()).thenReturn(true, false);
+        when(mockCursor.next()).thenReturn(single);
+
+        assertEquals(Arrays.asList(3L), MongoDBBase.stream(mockCursor, Long.class).toList());
+    }
+
+    @Test
+    public void testGeneralCodecDecodesNonStringScalarValues() {
+        // Regression: the registry resolves Object/Number (no driver codec) to GeneralCodec, whose decode read every
+        // non-bean value with readString, so the driver's distinct(field, Object.class) threw
+        // BsonInvalidOperationException ("readString ... not when CurrentBSONType is INT32") for any non-string value.
+        final org.bson.BsonArray values = new org.bson.BsonArray(Arrays.asList(new org.bson.BsonInt32(1), new org.bson.BsonString("a"),
+                new org.bson.BsonInt64(2L), new org.bson.BsonDocument("x", new org.bson.BsonInt32(3)), org.bson.BsonNull.VALUE,
+                new org.bson.BsonArray(Arrays.asList(new org.bson.BsonInt32(4), new org.bson.BsonInt32(5)))));
+
+        final List<Object> objects = decodeArrayWith(values, Object.class);
+        assertEquals(Arrays.asList(1, "a", 2L, new Document("x", 3), null, Arrays.asList(4, 5)), objects);
+        assertEquals(Document.class, objects.get(3).getClass());
+
+        final List<Number> numbers = decodeArrayWith(new org.bson.BsonArray(Arrays.asList(new org.bson.BsonInt32(7), new org.bson.BsonDouble(1.5))),
+                Number.class);
+        assertEquals(Arrays.asList(7, 1.5), numbers);
+
+        // A BSON string still goes through the string-parsing path.
+        assertEquals(Arrays.asList("s"), decodeArrayWith(new org.bson.BsonArray(Arrays.asList(new org.bson.BsonString("s"))), Object.class));
+    }
+
+    private static <T> List<T> decodeArrayWith(final org.bson.BsonArray values, final Class<T> cls) {
+        final org.bson.codecs.Codec<T> codec = MongoDBBase.codecRegistry.get(cls);
+        final org.bson.BsonDocumentReader reader = new org.bson.BsonDocumentReader(new org.bson.BsonDocument("values", values));
+        final List<T> result = new ArrayList<>();
+
+        reader.readStartDocument();
+        reader.readName("values");
+        reader.readStartArray();
+
+        while (reader.readBsonType() != org.bson.BsonType.END_OF_DOCUMENT) {
+            result.add(codec.decode(reader, org.bson.codecs.DecoderContext.builder().build()));
+        }
+
+        reader.readEndArray();
+        reader.readEndDocument();
+
+        return result;
+    }
+
     public static class BinaryEntity {
         private ByteBuffer buffer;
         private byte[] bytes;

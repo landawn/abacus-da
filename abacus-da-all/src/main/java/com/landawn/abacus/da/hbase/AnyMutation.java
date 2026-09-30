@@ -226,6 +226,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * Sets this mutation's default timestamp, used as the version for cells added subsequently
      * without their own explicit timestamp. Cells already added are not re-stamped. The timestamp
      * drives versioning, time-based queries, and TTL / compaction decisions on the server.
+     * For an {@link AnyAppend} or {@link AnyIncrement} the server keeps it only when the target
+     * column has no cell yet; otherwise the result is stamped
+     * {@code max(existingTimestamp + 1, serverTime)}.
      *
      * @param timestamp the timestamp to assign, in milliseconds since the epoch
      * @return this mutation instance, to allow fluent method chaining

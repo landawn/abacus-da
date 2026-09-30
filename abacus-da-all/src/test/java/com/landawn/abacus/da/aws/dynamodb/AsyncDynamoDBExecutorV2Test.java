@@ -1767,4 +1767,99 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
             this.tags = tags;
         }
     }
+
+    // ---- 2026-09-29 sliceD ----
+
+    /**
+     * The async read paths convert through the sync v2 helpers, so they inherit the sync fix that skips a getter-only
+     * property inherited from an {@code @Entity} superclass (the mapper writes its computed value; reading it back used to
+     * fail the whole item with UnsupportedOperationException).
+     */
+    @Test
+    public void testAsyncReadsSkipReadOnlyInheritedPropertyAttribute() throws Exception {
+        final AsyncDynamoDBExecutor.Mapper<AsyncReadOnlyPropSubEntity> mapper = asyncExecutor.mapper(AsyncReadOnlyPropSubEntity.class);
+        final AsyncReadOnlyPropSubEntity source = new AsyncReadOnlyPropSubEntity();
+        source.setId("id-1");
+        source.setName("n");
+
+        when(mockDynamoDbAsyncClient.putItem(any(PutItemRequest.class))).thenReturn(CompletableFuture.completedFuture(PutItemResponse.builder().build()));
+        mapper.putItem(source).get();
+        final ArgumentCaptor<PutItemRequest> putCaptor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(mockDynamoDbAsyncClient).putItem(putCaptor.capture());
+        final Map<String, AttributeValue> item = putCaptor.getValue().item();
+        assertEquals("computed:id-1", item.get("computed").s());
+
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().item(item).build()));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(item)).build()));
+        when(mockDynamoDbAsyncClient.batchGetItem(any(BatchGetItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(BatchGetItemResponse.builder().responses(Map.of("AsyncReadOnlyTable", List.of(item))).build()));
+
+        final List<AsyncReadOnlyPropSubEntity> reads = new ArrayList<>();
+        reads.add(mapper.getItem(source).get());
+        reads.addAll(mapper.list(QueryRequest.builder().build()).get());
+        reads.addAll(mapper.stream(QueryRequest.builder().build()).get().toList());
+        reads.addAll(mapper.batchGetItem(List.of(source)).get());
+
+        assertEquals(4, reads.size());
+        for (final AsyncReadOnlyPropSubEntity e : reads) {
+            assertEquals("id-1", e.getId());
+            assertEquals("n", e.getName());
+            assertEquals("computed:id-1", e.getComputed());
+        }
+    }
+
+    /**
+     * The async read paths inherit the sync fix for bracketed plain text (not a JSON array) read into a String[] property:
+     * it keeps the lenient single-element conversion instead of failing the item with a ParsingException.
+     */
+    @Test
+    public void testAsyncReadsKeepBracketedNonJsonTextAsSingleStringArrayElement() throws Exception {
+        final Map<String, AttributeValue> item = Map.of("id", AttributeValue.fromS("1"), "tags", AttributeValue.fromS("[a] and [b]"));
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().item(item).build()));
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(ScanResponse.builder().items(List.of(item)).build()));
+
+        final List<StringArrayEntity> reads = new ArrayList<>();
+        reads.add(asyncExecutor.getItem("T", Map.of("id", AttributeValue.fromS("1")), StringArrayEntity.class).get());
+        reads.addAll(asyncExecutor.scan("T", (List<String>) null, StringArrayEntity.class).get().toList());
+
+        assertEquals(2, reads.size());
+        for (final StringArrayEntity e : reads) {
+            assertTrue(java.util.Arrays.equals(new String[] { "[a] and [b]" }, e.getTags()), java.util.Arrays.toString(e.getTags()));
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class AsyncReadOnlyPropBaseEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getComputed() {
+            return "computed:" + id;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "AsyncReadOnlyTable")
+    public static class AsyncReadOnlyPropSubEntity extends AsyncReadOnlyPropBaseEntity {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
 }

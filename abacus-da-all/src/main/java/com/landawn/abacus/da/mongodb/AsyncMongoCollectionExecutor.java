@@ -4680,13 +4680,14 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously groups documents by a single field.
      *
      * <p>This method performs a non-blocking group operation on documents by the specified field.
-     * It's a convenience method that creates an aggregation pipeline with a $group stage.
+     * It's a convenience method that creates an aggregation pipeline with a $group stage; each
+     * resulting document is the raw {@code {_id: <field value>}} group document.
      * This is a beta API and may change in future versions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.groupBy("department")
-     *      .thenRunAsync(stream -> stream.forEach(group -> System.out.println(group)));
+     *      .thenRunAsync(stream -> stream.forEach(group -> System.out.println(group.get("_id"))));   // each distinct department
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
@@ -4714,7 +4715,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking group operation on documents by multiple fields.
      * It's a convenience method that creates an aggregation pipeline with a $group stage
-     * for composite grouping. This is a beta API and may change in future versions.</p>
+     * for composite grouping; each resulting document is the raw group document whose {@code _id} is the
+     * composite key, e.g. {@code {_id: {department: <value>, location: <value>}}}.
+     * This is a beta API and may change in future versions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4747,8 +4750,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking group operation that both groups documents by the
      * specified field and counts the number of documents in each group. It's a convenience method
-     * that creates an aggregation pipeline with $group and $sum stages. The result includes the
-     * grouping field value and a count of documents for each distinct value.</p>
+     * that creates an aggregation pipeline with a $group stage using a $sum accumulator. Each result is
+     * the raw {@code {_id: <field value>, count: <n>}} group document.</p>
      *
      * <p>This is a beta API and may change in future versions.</p>
      *
@@ -4794,8 +4797,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking group operation that groups documents by multiple
      * fields and counts the number of documents in each group. It's a convenience method that
-     * creates an aggregation pipeline with $group and $sum stages for composite grouping. The
-     * result includes the grouping field values as a composite key and a count of documents.</p>
+     * creates an aggregation pipeline with a $group stage using a $sum accumulator for composite grouping.
+     * Each result is the raw group document {@code {_id: {<field>: <value>, ...}, count: <n>}}.</p>
      *
      * <p>This is a beta API and may change in future versions.</p>
      *

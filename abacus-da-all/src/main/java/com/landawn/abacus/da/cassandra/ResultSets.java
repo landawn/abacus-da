@@ -74,8 +74,8 @@ final class ResultSets {
      * from the current position instead of replaying rows from the current page.</li>
      * <li>{@link ResultSet#isFullyFetched()} reflects whether the current page is the last one
      * known to the driver; it does not guarantee that all rows have already been iterated.</li>
-     * <li>{@link ResultSet#getAvailableWithoutFetching()} is <strong>not</strong> supported by
-     * this wrapper and always throws {@link UnsupportedOperationException}.</li>
+     * <li>{@link ResultSet#getAvailableWithoutFetching()} returns the number of rows left in the
+     * current page ({@link AsyncResultSet#remaining()}); it never triggers a fetch.</li>
      * <li>Checked exceptions raised while fetching the next page (e.g.
      * {@link java.util.concurrent.ExecutionException} or {@link InterruptedException}) are
      * converted into runtime exceptions via {@link com.landawn.abacus.util.ExceptionUtil}.
@@ -176,11 +176,14 @@ final class ResultSets {
             }
 
             /**
-             * @throws UnsupportedOperationException always; this wrapper does not expose a buffered-row count
+             * @return the number of rows left in the current page, as reported by {@link AsyncResultSet#remaining()}
              */
             @Override
-            public int getAvailableWithoutFetching() throws UnsupportedOperationException {
-                throw new UnsupportedOperationException();
+            public int getAvailableWithoutFetching() {
+                // Must not throw: the driver's default PagingIterable.all() (inherited by rs.map(f)) sizes its list with this
+                // count. The current page's rows are consumed through currentPage(), whose iterator remaining() counts down,
+                // exactly as the driver's own synchronous MultiPageResultSet reports it.
+                return currentResultSet.remaining();
             }
 
             /**

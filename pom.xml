@@ -199,6 +199,14 @@
 				<scope>test</scope>
 			</dependency>
 
+			<!-- abacus-common's XmlUtil (used by CqlMapper.saveTo/load) needs the Jakarta XML Binding API at runtime. -->
+			<dependency>
+				<groupId>jakarta.xml.bind</groupId>
+				<artifactId>jakarta.xml.bind-api</artifactId>
+				<version>4.0.5</version>
+				<scope>test</scope>
+			</dependency>
+
 			<dependency>
 				<groupId>org.junit.jupiter</groupId>
 				<artifactId>junit-jupiter-engine</artifactId>

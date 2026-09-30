@@ -4685,4 +4685,50 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> unchanged.onlyIf("-- c"));
         assertEquals("DELETE FROM account WHERE id = ?", unchanged.build().query());
     }
+
+    // ---- 2026-09-29 sliceQ ----
+
+    /**
+     * {@code deleteFrom(...)} already names the table, but a following {@code from(...)} was accepted: before any
+     * other clause it silently retargeted the statement, and after {@code where(...)} it appended a second statement
+     * ("DELETE FROM account WHERE id = ?DELETE FROM other"). It is now rejected and the builder is left usable.
+     */
+    @Test
+    public void test_deleteFrom_thenFrom_isRejected() {
+        final CqlBuilder afterWhere = PSC.deleteFrom("account").where(Filters.eq("id", 1));
+        assertThrows(IllegalStateException.class, () -> afterWhere.from("other"));
+        assertEquals("DELETE FROM account WHERE id = ?", afterWhere.build().query());
+
+        final CqlBuilder beforeWhere = PSC.deleteFrom(Account.class);
+        assertThrows(IllegalStateException.class, () -> beforeWhere.from("other"));
+        assertThrows(IllegalStateException.class, () -> beforeWhere.from(Account.class));
+        assertThrows(IllegalStateException.class, () -> beforeWhere.from("other", Account.class));
+        assertThrows(IllegalStateException.class, () -> beforeWhere.from(N.asList("other")));
+        assertEquals("DELETE FROM account WHERE id = ?", beforeWhere.where(Filters.eq("id", 1)).build().query());
+
+        // A column DELETE still takes its table from from(...).
+        assertEquals("DELETE first_name FROM account WHERE id = ?", PSC.delete("firstName").from("account").where(Filters.eq("id", 1)).build().query());
+    }
+
+    /**
+     * The key-excluding {@code set(Class, Set)} / {@code set(Object, Set)} overrides validated the argument before the
+     * inherited state checks, so a closed or non-UPDATE builder reported IllegalArgumentException for a null class or a
+     * non-bean argument instead of the documented IllegalStateException (the parent checks state first).
+     */
+    @Test
+    public void test_set_stateCheckedBeforeEntityArgument() {
+        final CqlBuilder closed = PSC.update("account").set("firstName");
+        closed.build();
+
+        assertThrows(IllegalStateException.class, () -> closed.set((Class<?>) null));
+        assertThrows(IllegalStateException.class, () -> closed.set(Integer.class));
+        assertThrows(IllegalStateException.class, () -> closed.set((Object) 3));
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set(Integer.class));
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set((Object) 3));
+
+        // Argument errors on a valid UPDATE builder are unchanged.
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Object) 3));
+    }
 }

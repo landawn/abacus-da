@@ -112,7 +112,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
-     * @return a future that completes with a Stream of {@code Object[]} rows
+     * @return a future that completes with a Stream of {@code Object[]} rows; further result pages are fetched
+     *         (blocking) while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal
+     *         operation rather than reported by the future
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -154,7 +156,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @param parameters the positional query parameters
-     * @return a future that completes with a Stream of mapped objects
+     * @return a future that completes with a Stream of mapped objects; further result pages are fetched (blocking)
+     *         while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal operation
+     *         rather than reported by the future
      * @throws IllegalArgumentException if {@code query} or {@code rowMapper} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -198,7 +202,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param <T> the type of objects in the returned stream
      * @param statement the CQL statement to execute
      * @param rowMapper a function that maps the column definitions and each row to a result object
-     * @return a future that completes with a Stream of mapped objects
+     * @return a future that completes with a Stream of mapped objects; further result pages are fetched (blocking)
+     *         while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal operation
+     *         rather than reported by the future
      * @throws IllegalArgumentException if {@code statement} or {@code rowMapper} is {@code null}
      * @throws RuntimeException if the driver rejects request submission (for example, the statement names an
      *         unknown execution profile); failures after submission, including execution on a closed session, are

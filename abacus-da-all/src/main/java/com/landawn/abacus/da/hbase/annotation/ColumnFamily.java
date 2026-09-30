@@ -123,7 +123,9 @@ public @interface ColumnFamily {
      * <p><strong>Behavior by target:</strong></p>
      * <ul>
      *   <li><strong>When applied to a class:</strong> All fields in the class will use this
-     *       column family name, with field names (or {@code @Column} values) as qualifiers.</li>
+     *       column family name, with field names (or {@code @Column} values) as qualifiers. A nested
+     *       entity field without {@code @Column} is flattened instead: its own properties become
+     *       qualifiers in this family.</li>
      *   <li><strong>When applied to a field:</strong> Only that field will use this column
      *       family name, overriding any class-level column family annotation.</li>
      * </ul>

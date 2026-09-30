@@ -260,6 +260,15 @@ public final class ParsedCql {
 
                 for (int i = 0, size = words.size(); i < size; i++) {
                     String word = words.get(i);
+
+                    if (word.startsWith("/*")) {
+                        // A block comment is a token of its own only in SqlParser's "-- Keep comments" mode. Its text is
+                        // not CQL: a '{', '[' or "$$" in it must not open a literal (which would hide every later marker),
+                        // and a "::name" in it must not be rewritten into a marker.
+                        sb.append(word);
+                        continue;
+                    }
+
                     final int prevCurlyDepth = literalState[0];
                     final boolean prevInsideBrackets = openContainers.length() > 0 && openContainers.charAt(openContainers.length() - 1) == '[';
                     final boolean dollarQuotedToken = updateLiteralState(literalState, openContainers, word, bracketMask);
@@ -303,7 +312,9 @@ public final class ParsedCql {
                                         "Malformed iBatis/MyBatis parameter: missing closing '}' for token starting with '#{' in CQL: " + cql);
                             }
 
-                            final String namedParameter = extractIbatisNamedParameter(ibatisToken.substring(2, rightBracketIndex));
+                            // The marker's content is a property expression, not CQL: a subscript in it ("#{ids[0]}")
+                            // was masked like any other bracket and must be restored in the name itself.
+                            final String namedParameter = unmaskBrackets(extractIbatisNamedParameter(ibatisToken.substring(2, rightBracketIndex)), bracketMask);
 
                             if (Strings.isEmpty(namedParameter)) {
                                 throw new IllegalArgumentException(
@@ -425,7 +436,8 @@ public final class ParsedCql {
                 openContainers.setLength(index < 0 ? 0 : index); // also drops any '[' left unclosed inside the braces
             } else if (bracketMask != null && ch == bracketMask.left) {
                 openContainers.append('[');
-            } else if (bracketMask != null && ch == bracketMask.right && openContainers.length() > 0 && openContainers.charAt(openContainers.length() - 1) == '[') {
+            } else if (bracketMask != null && ch == bracketMask.right && openContainers.length() > 0
+                    && openContainers.charAt(openContainers.length() - 1) == '[') {
                 openContainers.setLength(openContainers.length() - 1);
             }
         }
@@ -725,6 +737,11 @@ public final class ParsedCql {
         return result.toString();
     }
 
+    /** Replaces the masked bracket characters in {@code text} with {@code [} / {@code ]}; returns it as-is if {@code bracketMask} is {@code null}. */
+    private static String unmaskBrackets(final String text, final BracketMask bracketMask) {
+        return bracketMask == null ? text : text.replace(bracketMask.left, '[').replace(bracketMask.right, ']');
+    }
+
     /**
      * A pair of private-use characters standing in for {@code [} / {@code ]} during tokenization, plus the tokenizer
      * that treats them as single-character separators.
@@ -740,9 +757,12 @@ public final class ParsedCql {
             // The default separators also include PostgreSQL JSON operators that start with '?' ("?-", "?|", "?&",
             // "?#", "?-|", "?||"). CQL has none of them, and keeping them would glue a bind marker to the next
             // character, so that "a = ?-1" yields the token "?-" and the marker is not counted.
+            // CQL's slice operator ".." (for example "m[:from..:to]") is added as a separator: '.' and ':' are not
+            // separators, so ":from..:to" would otherwise be ONE token, read as a single marker named "from..:to".
             this.tokenizer = SqlParser.tokenizer(SqlParser.TokenizerConfig.builder()
                     .withSeparator(left)
                     .withSeparator(right)
+                    .withSeparator("..")
                     .withoutSeparator("?-")
                     .withoutSeparator("?|")
                     .withoutSeparator("?&")
@@ -966,7 +986,8 @@ public final class ParsedCql {
      * <li>For recognized data operations, MyBatis-style parameters ({@code #{name}}) are converted to {@code ?}</li>
      * <li>For recognized data operations, comments are removed and each run of whitespace outside quoted
      *     literals and dollar-quoted ({@code $$...$$}) string constants is collapsed to a single space; the
-     *     contents of quoted literals and dollar-quoted constants are kept verbatim</li>
+     *     contents of quoted literals and dollar-quoted constants are kept verbatim (a statement that starts
+     *     with the line {@code -- Keep comments} keeps its block comments, verbatim and unscanned)</li>
      * <li>Leading and trailing whitespace is stripped</li>
      * <li>All trailing semicolons (and any whitespace between or around them) are removed</li>
      * </ul>
@@ -976,7 +997,8 @@ public final class ParsedCql {
      * placeholders; only surrounding whitespace and trailing semicolons are removed.</p>
      *
      * <p>Markers inside list literals and subscripts are handled like any other marker: for example
-     * {@code l + [:a, :b]}, {@code m[:k] = :v} and {@code l + [#{a}]} are rewritten to {@code ?}, and every
+     * {@code l + [:a, :b]}, {@code m[:k] = :v}, the slice {@code m[:from..:to]} and {@code l + [#{a}]} are rewritten
+     * to {@code ?}, and every
      * {@code ?} inside {@code [...]} is included in {@link #parameterCount()}.</p>
      *
      * <p><b>Known limitation.</b> Inside braces, a named or MyBatis marker is recognized only when it follows a

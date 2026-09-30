@@ -562,7 +562,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Typical: fetch only the listed fields; unselected fields stay at their default values.
+     * // Typical: fetch only the listed fields (plus _id); other fields stay at their default values.
      * Collection<String> fields = Arrays.asList("name", "email", "status");
      * Mono<User> userMono = userMapper.get("507f1f77bcf86cd799439011", fields);   // cold; partially populated User
      * userMono.subscribe(user -> System.out.println("User basic info: " + user.getName()));
@@ -606,7 +606,7 @@ public final class MongoCollectionMapper<T> {
      * // Typical: typed id + projection -> partially populated entity.
      * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
      * Collection<String> fields = Arrays.asList("name", "email");
-     * Mono<User> userMono = userMapper.get(userId, fields);   // cold; only name/email populated
+     * Mono<User> userMono = userMapper.get(userId, fields);   // cold; only name/email (plus _id) populated
      * userMono.subscribe(user -> processUserBasicInfo(user));
      *
      * // Edge: unused id -> Mono completes EMPTY.
@@ -914,7 +914,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Typical: stream entities with only name/email populated.
+     * // Typical: stream entities with only name/email (plus _id) populated.
      * List<String> fields = Arrays.asList("name", "email");
      * Bson filter = Filters.eq("department", "IT");
      * Flux<User> itUsers = userMapper.list(fields, filter);   // cold; partially populated Users
@@ -937,7 +937,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
-     * @return a Flux that emits matching entities with only the specified fields populated
+     * @return a Flux that emits matching entities with only the specified fields (plus {@code _id}) populated
      * @throws IllegalArgumentException if {@code filter} is null
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter) throws IllegalArgumentException {
@@ -3225,7 +3225,8 @@ public final class MongoCollectionMapper<T> {
      * @param update the entity containing update values
      * @param options configuration for the find-and-update operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
-     *         post-write version per {@code options} — or completes empty when no document matches
+     *         post-write version per {@code options} — or completes empty when no document matches (an
+     *         upsert with {@code ReturnDocument.AFTER} instead emits the newly inserted document)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
      *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
@@ -3303,7 +3304,8 @@ public final class MongoCollectionMapper<T> {
      * @param objList collection of objects containing update values
      * @param options configuration for the operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
-     *         post-write version per {@code options} — or completes empty when no document matches
+     *         post-write version per {@code options} — or completes empty when no document matches (an
+     *         upsert with {@code ReturnDocument.AFTER} instead emits the newly inserted document)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty or contains a null element, or if an
      *         update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if
      *         an update value cannot be converted from a Map, bean, or array of String name/value pairs
@@ -3394,7 +3396,8 @@ public final class MongoCollectionMapper<T> {
      * @param replacement the complete replacement document
      * @param options configuration for the replace operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
-     *         post-write version per {@code options} — or completes empty when no document matches
+     *         post-write version per {@code options} — or completes empty when no document matches (an
+     *         upsert with {@code ReturnDocument.AFTER} instead emits the newly inserted document)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
      *         from a Map, bean, or array of String name/value pairs
      * @throws RuntimeException if a bean accessor, BSON implementation, or codec throws while preparing the request before the publisher is returned
@@ -3495,8 +3498,14 @@ public final class MongoCollectionMapper<T> {
      * {@code distinct(field, T.class)}, which throws {@code BsonInvalidOperationException} when
      * {@code T} is a POJO and the field is scalar. When {@code T} itself is a single-value type (such as
      * {@code String}), the {@code $project} stage is omitted and each distinct value is emitted directly,
-     * converted to {@code T}. To obtain raw scalar values instead, use
-     * {@link MongoCollectionExecutor#distinct(String, Class)} with an explicit value class.</p>
+     * converted to {@code T}; for such a {@code T} the {@code null} value shared by documents that lack the
+     * field is not emitted, because Reactive Streams forbids {@code null} elements. To obtain raw scalar values
+     * instead, use {@link MongoCollectionExecutor#distinct(String, Class)} with an explicit value class.</p>
+     *
+     * <p>Because the values come from a {@code $group} stage rather than the driver's native {@code distinct}
+     * command, an array-valued field is <i>not</i> unwound: each distinct whole array is one result (the native
+     * command, used by {@link MongoCollectionExecutor#distinct(String, Class)}, returns each array element
+     * separately).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3526,8 +3535,9 @@ public final class MongoCollectionMapper<T> {
      * @param fieldName the name of the field to get distinct values for
      * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
      *         surfaced on an entity of type {@code T}, then completes; completes empty when the
-     *         collection has no documents (documents that all lack the field produce a single
-     *         entity whose field value is {@code null})
+     *         collection has no documents (documents that lack the field produce a single
+     *         entity whose field value is {@code null}, except for a single-value {@code T}, which
+     *         skips that {@code null} value)
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
      * @see #distinct(String, Bson)
      * @see #groupBy(String)
@@ -3580,9 +3590,10 @@ public final class MongoCollectionMapper<T> {
      * <p>Like {@link #distinct(String)} but only considers documents matching {@code filter}. Each
      * distinct value is surfaced under {@code fieldName} on an entity of the mapped type via a
      * {@code $group}/{@code $project} pipeline, so scalar values decode cleanly into {@code T} (a single-value
-     * {@code T} such as {@code String} receives each value directly, as in {@link #distinct(String)}). To
-     * obtain raw scalar values instead, use {@link MongoCollectionExecutor#distinct(String, Bson, Class)}
-     * with an explicit value class.</p>
+     * {@code T} such as {@code String} receives each value directly and skips the {@code null} value, as in
+     * {@link #distinct(String)}). As with {@link #distinct(String)}, an array-valued field is not unwound: each
+     * distinct whole array is one result. To obtain raw scalar values instead, use
+     * {@link MongoCollectionExecutor#distinct(String, Bson, Class)} with an explicit value class.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3667,7 +3678,8 @@ public final class MongoCollectionMapper<T> {
      * {@link Document}, a {@code $project} stage follows that drops {@code _id} and surfaces the group
      * key under {@code fieldName}, so it is readable through the entity's matching property. A
      * single-value {@code T} (such as {@code String}) skips that stage and receives each group key
-     * directly, converted to {@code T}.</p>
+     * directly, converted to {@code T}; for such a {@code T} the group of documents that lack the field
+     * (key {@code null}) is not emitted, because Reactive Streams forbids {@code null} elements.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3746,7 +3758,10 @@ public final class MongoCollectionMapper<T> {
      * <p>Equivalent to {@link #groupBy(String)} with a {@code $sum: 1} accumulator: each emitted
      * document represents one group and carries the count of documents that fell into it under a
      * {@code count} field (readable only if {@code T} declares a matching property). Useful for
-     * frequency distributions and summary statistics.</p>
+     * frequency distributions and summary statistics. Because each row carries both the group key and
+     * its count, a single-value {@code T} (such as {@code String}) fails with an
+     * {@link IllegalArgumentException} signalled through the publisher; map to a bean, {@code Map} or
+     * {@link Document} type instead.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3785,7 +3800,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Equivalent to {@link #groupBy(Collection)} with a {@code $sum: 1} accumulator: each
      * emitted document represents one unique combination of {@code fieldNames} and carries the
-     * count of documents that fell into it.</p>
+     * count of documents that fell into it. As with {@link #groupByAndCount(String)}, a single-value
+     * {@code T} fails with an {@link IllegalArgumentException} signalled through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

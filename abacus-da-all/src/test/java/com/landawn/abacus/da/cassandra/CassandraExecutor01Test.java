@@ -1041,6 +1041,137 @@ public class CassandraExecutor01Test extends TestBase {
         assertEquals(Arrays.asList(1L, null), Arrays.asList(longs));
     }
 
+    // ---- 2026-09-29 sliceN ----
+
+    @Test
+    public void testSliceN_udtCodecMapDecodeReadsCaseDistinctFieldsByPosition() {
+        // UDT fields "Val" and val differ only by case. Reading a field by its internal name goes through the driver's
+        // CQL-form (case-insensitive) lookup, so both map entries used to receive the first field's value
+        // ({Val=1, val=1}, reproduced against a live Cassandra).
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("case_type"),
+                false,
+                List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("Val"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("val")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.INT, com.datastax.oss.driver.api.core.type.DataTypes.INT));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+
+        final Map<?, ?> decoded = mapCodec.decode(mapCodec.encode(Map.of("Val", 1, "val", 2), ProtocolVersion.V4), ProtocolVersion.V4);
+
+        assertEquals(1, decoded.get("Val"));
+        assertEquals(2, decoded.get("val"));
+    }
+
+    @Test
+    public void testSliceN_emptyParameterContainerForParameterlessQueryBindsNothing() {
+        // An empty Map/Collection/array supplies zero parameters, which matches a query without bind markers; the
+        // container itself used to be counted as one value ("expected 0 but got 1", reproduced against a live Cassandra).
+        final String query = "SELECT * FROM parameterless_query";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(0);
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+
+        for (final Object emptyContainer : new Object[] { new HashMap<String, Object>(), List.of(), new Object[0] }) {
+            bound[0] = null;
+            assertSame(mockBoundStatement, executor.prepareStatement(query, emptyContainer));
+            assertEquals(0, bound[0].length);
+        }
+
+        // A non-empty container or a scalar is still rejected for a parameterless query.
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, List.of(1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, 1L));
+    }
+
+    @Test
+    public void testSliceN_sortedMapWithNonStringKeysForSingleNamedMarkerIsBoundAsValue() {
+        // The named-container check probed the Map with the marker's String name; a TreeMap<Integer, String> (the value
+        // of a map<int, text> column) threw ClassCastException from containsKey instead of being bound as the value.
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("sorted-map-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String namedQuery = "UPDATE t SET m = :m WHERE id = 1";
+        final String positionalQuery = "UPDATE t SET m = ? WHERE id = 1";
+        when(mockSession.prepare(positionalQuery)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType())
+                .thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.mapOf(com.datastax.oss.driver.api.core.type.DataTypes.INT,
+                        com.datastax.oss.driver.api.core.type.DataTypes.TEXT));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final java.util.TreeMap<Integer, String> columnValue = new java.util.TreeMap<>(Map.of(1, "a"));
+
+        codecExecutor.prepareStatement(namedQuery, columnValue);
+
+        assertEquals(1, bound[0].length);
+        assertSame(columnValue, bound[0][0]);
+    }
+
+    @Test
+    public void testSliceN_readOnlyPropertyInheritedFromEntitySuperclassIsSkippedOnRead() {
+        // abacus-common 8.1.0 lists a getter-only property inherited from an @Entity superclass, so the generated
+        // INSERT/SELECT include its column; reading it back used to fail the whole row with UnsupportedOperationException
+        // (reproduced against a live Cassandra through list/findFirst/gett/stream).
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition nameCol = mock(ColumnDefinition.class);
+        final ColumnDefinition displayCol = mock(ColumnDefinition.class);
+        when(cols.size()).thenReturn(2);
+        when(cols.get(0)).thenReturn(nameCol);
+        when(cols.get(1)).thenReturn(displayCol);
+        when(nameCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name"));
+        when(displayCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("display"));
+        when(mockRow.getColumnDefinitions()).thenReturn(cols);
+        when(mockRow.getObject(0)).thenReturn("n1");
+        when(mockRow.getObject(1)).thenReturn("stored");
+
+        final SliceNReadOnlyChild entity = CassandraExecutor.toEntity(mockRow, SliceNReadOnlyChild.class);
+        assertEquals("n1", entity.getName());
+        assertEquals("computed", entity.getDisplay());
+
+        // Same for a UDT decoded into such a bean.
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ro_type"),
+                false,
+                List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name"),
+                        com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("display")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.TEXT, com.datastax.oss.driver.api.core.type.DataTypes.TEXT));
+        final CassandraExecutor.UDTCodec<SliceNReadOnlyChild> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNReadOnlyChild.class);
+        final SliceNReadOnlyChild source = new SliceNReadOnlyChild();
+        source.setName("n2");
+
+        final SliceNReadOnlyChild decoded = beanCodec.decode(beanCodec.encode(source, ProtocolVersion.V4), ProtocolVersion.V4);
+        assertEquals("n2", decoded.getName());
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class SliceNReadOnlyBase {
+        public String getDisplay() {
+            return "computed";
+        }
+    }
+
+    public static class SliceNReadOnlyChild extends SliceNReadOnlyBase {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    // ---- 2026-09-29 sliceN end ----
+
     // Test entity class
     public static class RenamedColumnEntity {
         private Long id;

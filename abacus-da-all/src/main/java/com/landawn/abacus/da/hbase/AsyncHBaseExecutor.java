@@ -2100,8 +2100,12 @@ public final class AsyncHBaseExecutor {
      * async.coprocessorService("users", "user123")
      *      .thenRunAsync(channel -> System.out.println(channel)); // returns ContinuableFuture<Void>
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.coprocessorService("badTable", "user123").get(); // throws InterruptedException, ExecutionException
+     * // Edge: creating the channel makes no RPC, so a well-formed but non-existent table still yields a
+     * // channel; the missing table is reported only when an endpoint method is invoked through it
+     * CoprocessorRpcChannel unchecked = async.coprocessorService("noSuchTable", "user123").get(); // returns a channel
+     *
+     * // Negative: exceptions from the underlying call (e.g. an illegal table name) surface wrapped in ExecutionException
+     * async.coprocessorService("bad table", "user123").get(); // throws ExecutionException (cause: IllegalArgumentException)
      * }</pre>
      *
      * @param tableName the name of the HBase table

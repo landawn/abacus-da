@@ -947,7 +947,10 @@ public final class MongoCollectionExecutor {
      * <p>Provides full control over the projection by accepting a Bson projection object directly,
      * useful for complex projections like exclusions or computed fields. Results are converted
      * to the specified type. Result types that can directly hold a {@link Document} (such as
-     * {@code Object} or {@link Bson}) receive the raw document, matching {@code list}.</p>
+     * {@code Object} or {@link Bson}) receive the raw document, matching {@code list}. For a single-value
+     * {@code rowType}, the document's sole non-{@code _id} field is converted; a matched document that has
+     * only its {@code _id} (for example because it lacks the projected field) has its {@code _id} converted
+     * instead. Use {@link #findFirst(Collection, Bson, Bson, Class)} to complete empty in that case.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1218,7 +1221,9 @@ public final class MongoCollectionExecutor {
      * Lists documents with Bson projection, filter, sort, and type conversion.
      *
      * <p>Uses a Bson projection object for complex field specifications,
-     * combined with filtering and sorting. All results are converted to the target type.</p>
+     * combined with filtering and sorting. All results are converted to the target type. For a single-value
+     * {@code rowType}, each document's sole non-{@code _id} field is converted; a document that has only its
+     * {@code _id} (for example because it lacks the projected field) has its {@code _id} converted instead.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1246,7 +1251,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Provides maximum flexibility with Bson projection, filtering, sorting, and pagination.
      * This method is ideal for complex queries requiring fine-grained control over all aspects
-     * of the query execution.</p>
+     * of the query execution. For a single-value {@code rowType}, each document's sole non-{@code _id}
+     * field is converted; a document that has only its {@code _id} (for example because it lacks the
+     * projected field) has its {@code _id} converted instead.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3310,7 +3317,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param objectId string representation of the ObjectId; must be a valid 24-character hex string
      * @param replacement the replacement document which can be Document, Map, or entity class with
@@ -3343,7 +3352,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param objectId the ObjectId of the document to replace; must not be null
      * @param replacement the replacement document which can be Document, Map, or entity class with
@@ -3378,7 +3389,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to identify the document to replace; must not be null
      * @param replacement the replacement document which can be Document, Map, or entity class with
@@ -3414,7 +3427,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to identify the document to replace; must not be null
      * @param replacement the replacement document which can be Document, Map, or entity class with
@@ -3921,7 +3936,8 @@ public final class MongoCollectionExecutor {
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
      * @param update the update operations to apply; must not be null
-     * @param rowType the class to deserialize the result into; must not be null
+     * @param rowType the class to deserialize the result into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the returned document itself)
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null, or if an update
@@ -4006,7 +4022,8 @@ public final class MongoCollectionExecutor {
      * @param update the update operations to apply; must not be null
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
-     * @param rowType the class to deserialize the result into; must not be null
+     * @param rowType the class to deserialize the result into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the returned document itself)
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null, or if an update
@@ -4097,7 +4114,8 @@ public final class MongoCollectionExecutor {
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
      * @param objList collection of update operations to apply; must not be null or empty
-     * @param rowType the class to deserialize the result into; must not be null
+     * @param rowType the class to deserialize the result into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the returned document itself)
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null, or if
@@ -4192,7 +4210,8 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations to apply as a pipeline; must not be null or empty
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
-     * @param rowType the class to deserialize the result into; must not be null
+     * @param rowType the class to deserialize the result into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the returned document itself)
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null, or if
@@ -4242,7 +4261,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to find the document; must not be null
      * @param replacement the replacement document (Document/Map/entity class); must not be null
@@ -4276,12 +4297,15 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
      * @param replacement the replacement document; must not be null
-     * @param rowType the class to deserialize the result into; must not be null
+     * @param rowType the class to deserialize the result into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the returned document itself)
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
@@ -4315,7 +4339,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to find the document; must not be null
      * @param replacement the replacement document; must not be null
@@ -4359,14 +4385,17 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
      * @param replacement the replacement document; must not be null
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
-     * @param rowType the class to deserialize the result into; must not be null
+     * @param rowType the class to deserialize the result into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the returned document itself)
      * @return a Mono that emits the found document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null, or if a
@@ -4444,7 +4473,8 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document to delete; must not be null
-     * @param rowType the class to deserialize the deleted document into; must not be null
+     * @param rowType the class to deserialize the deleted document into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the deleted document itself)
      * @return a Mono that emits the deleted document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
@@ -4519,7 +4549,8 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to find the document to delete; must not be null
      * @param options the options such as projection, sort, or collation;
      *                may be null to use default options
-     * @param rowType the class to deserialize the deleted document into; must not be null
+     * @param rowType the class to deserialize the deleted document into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the deleted document itself)
      * @return a Mono that emits the deleted document mapped to the specified type, or completes empty
      *         when no document matches the filter
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
@@ -4724,7 +4755,12 @@ public final class MongoCollectionExecutor {
      * This convenience method simplifies common grouping operations with typed results.
      * {@link Document} results are the raw {@code {_id: <key>}} group documents; other Map, bean, and
      * {@code Object} results receive {@code {<fieldName>: <key>}} rows; a single-value {@code rowType}
-     * (such as {@code String.class}) emits each group key converted to that type.</p>
+     * (such as {@code String.class}) emits each group key converted to that type. For a dotted
+     * {@code fieldName} such as {@code "address.city"}, the Map/bean/{@code Object} row is nested:
+     * {@code {address: {city: <key>}}}. For a single-value {@code rowType}, the group of documents that
+     * lack the field (key {@code null}) is not emitted, because Reactive Streams forbids {@code null}
+     * elements; a primitive {@code rowType} (such as {@code int.class}) emits its default value for it
+     * instead.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4841,7 +4877,9 @@ public final class MongoCollectionExecutor {
      * Groups documents by a field and counts frequency, returning as a specific type.
      *
      * <p>Groups documents by field, counts frequency, and maps results to the specified type.
-     * Useful for generating typed frequency distributions and statistical summaries.</p>
+     * Useful for generating typed frequency distributions and statistical summaries. Each row carries both
+     * the group key and its count, so a single-value {@code rowType} (such as {@code Long.class}) fails with an
+     * {@link IllegalArgumentException} signalled through the publisher; use a bean, Map or {@link Document} type.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4893,7 +4931,9 @@ public final class MongoCollectionExecutor {
      * Groups by multiple fields with counts, returning as a specific type.
      *
      * <p>Groups documents by multiple fields, counts frequency, and maps results to the
-     * specified type. Enables complex multi-dimensional analysis with type-safe results.</p>
+     * specified type. Enables complex multi-dimensional analysis with type-safe results. Each row carries
+     * the group keys and the count, so a single-value {@code rowType} fails with an
+     * {@link IllegalArgumentException} signalled through the publisher; use a bean, Map or {@link Document} type.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -5042,7 +5082,8 @@ public final class MongoCollectionExecutor {
      * @param <T> the type of the map-reduce results
      * @param mapFunction the JavaScript map function; must not be null or empty
      * @param reduceFunction the JavaScript reduce function; must not be null or empty
-     * @param rowType the class to deserialize results into; must not be null
+     * @param rowType the class to deserialize results into; must not be null ({@link Document}, {@code Map},
+     *                {@code Object} or {@link Bson} receive the result documents themselves)
      * @return a cold {@code Flux} that, on subscription, emits each result document decoded as
      *         {@code T}, then completes
      * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty, or if {@code

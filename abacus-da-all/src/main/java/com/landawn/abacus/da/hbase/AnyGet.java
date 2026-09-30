@@ -181,7 +181,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * Creates a new AnyGet instance for the specified row key.
      *
      * <p>This is the primary factory method for creating AnyGet instances. The row key
-     * will be automatically converted to the appropriate byte array format for HBase operations.</p>
+     * will be automatically converted to the appropriate byte array format for HBase operations.
+     * A {@code byte[]} row key is used as-is, not copied: the wrapped {@link Get} keeps a reference to
+     * the caller's array, so do not modify it afterwards.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

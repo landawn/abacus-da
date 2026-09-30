@@ -2614,6 +2614,127 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals("x", ((Map<?, ?>) executor.queryForSingleValue(Map.class, "SELECT s").get()).get("b"));
     }
 
+    // ---- 2026-09-29 sliceS ----
+    // A typed array row target (e.g. Long[]) received the raw cell text and failed with ArrayStoreException in both
+    // the list/stream row mapper and readRow (the registered FieldValueList converter). Each cell is now decoded and
+    // converted to the array's component type; Object[] rows still keep the raw cell values.
+    @Test
+    public void testTypedArrayRowTargetConvertsCellsToComponentType() {
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("n", StandardSQLTypeName.INT64));
+        final FieldValueList row = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, null)), fields);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(row));
+
+        assertTrue(Arrays.equals(new Long[] { 1L, null }, BigQueryExecutor.toList(mockTableResult, Long[].class).get(0)));
+        assertTrue(Arrays.equals(new Object[] { "1", null }, BigQueryExecutor.toList(mockTableResult, Object[].class).get(0)));
+        assertTrue(Arrays.equals(new String[] { "1", null }, BigQueryExecutor.toList(mockTableResult, String[].class).get(0)));
+        assertTrue(Arrays.equals(new Integer[] { 1, null }, N.convert(row, Integer[].class)));
+
+        // BYTES / TIMESTAMP cells are decoded for binary / date-time component types
+        final FieldList typedFields = FieldList.of(Field.of("b", StandardSQLTypeName.BYTES), Field.of("t", StandardSQLTypeName.TIMESTAMP));
+        final FieldValueList typedRow = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "AQID"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1718900000.123456")),
+                typedFields);
+        final byte[][] binary = N.convert(FieldValueList.of(Arrays.asList(typedRow.get(0)), FieldList.of(typedFields.get(0))), byte[][].class);
+        assertTrue(Arrays.equals(new byte[] { 1, 2, 3 }, binary[0]));
+        final java.time.Instant[] instants = N.convert(FieldValueList.of(Arrays.asList(typedRow.get(1)), FieldList.of(typedFields.get(1))),
+                java.time.Instant[].class);
+        assertEquals(java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L), instants[0]);
+
+        // a nested STRUCT cell is converted to a non-Object component type (Map) instead of an Object[]
+        final FieldList sub = FieldList.of(Field.of("a", StandardSQLTypeName.INT64));
+        final FieldValueList struct = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "5")), sub);
+        final FieldValueList structRow = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, struct)),
+                FieldList.of(Field.newBuilder("s", StandardSQLTypeName.STRUCT, sub).build()));
+        assertEquals("5", N.convert(structRow, Map[].class)[0].get("a"));
+        assertTrue(Arrays.equals(new Object[] { "5" }, (Object[]) N.convert(structRow, Object[].class)[0]));
+    }
+
+    // A REPEATED TIMESTAMP / BYTES cell holds epoch-seconds / base64 text per element; a typed array row whose component
+    // is itself an array (Instant[][], byte[][][]) must decode each element by schema instead of handing the raw text
+    // to N.convert (DateTimeParseException / NumberFormatException).
+    @Test
+    public void testTypedArrayRowTargetDecodesRepeatedTimestampAndBytesElements() {
+        final Field tsField = Field.newBuilder("ts", StandardSQLTypeName.TIMESTAMP).setMode(Field.Mode.REPEATED).build();
+        final FieldValueList tsRow = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.REPEATED, Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1718900000.123456"),
+                        FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1718900001")))),
+                FieldList.of(tsField));
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(tsField));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(tsRow));
+
+        final java.time.Instant[] expected = { java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L), java.time.Instant.ofEpochSecond(1_718_900_001L) };
+        assertTrue(Arrays.equals(expected, N.convert(tsRow, java.time.Instant[][].class)[0]));
+        assertTrue(Arrays.equals(expected, BigQueryExecutor.toList(mockTableResult, java.time.Instant[][].class).get(0)[0]));
+
+        final Field bytesField = Field.newBuilder("b", StandardSQLTypeName.BYTES).setMode(Field.Mode.REPEATED).build();
+        final FieldValueList bytesRow = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.REPEATED,
+                        Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "AQID"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "BAU=")))),
+                FieldList.of(bytesField));
+        final byte[][] binary = N.convert(bytesRow, byte[][][].class)[0];
+        assertTrue(Arrays.equals(new byte[] { 1, 2, 3 }, binary[0]));
+        assertTrue(Arrays.equals(new byte[] { 4, 5 }, binary[1]));
+
+        // Object[] rows still keep the raw repeated values as a List
+        assertEquals(Arrays.asList("AQID", "BAU="), N.convert(bytesRow, Object[].class)[0]);
+    }
+
+    // A getter-only property inherited from an @Entity superclass is in propInfoList, so insert/update write it and the
+    // generated SELECT projects it; reading that column back threw UnsupportedOperationException for the whole row.
+    @Test
+    public void testGetterOnlyPropertyColumnIsSkippedOnRead() throws Exception {
+        when(mockTableResult.getSchema()).thenReturn(null);
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        executor.list(ComputedSubEntity.class, Filters.eq("id", "1"));
+        assertTrue(captureGeneratedSql().contains("computed"), "the generated SELECT projects the getter-only column");
+
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.STRING), Field.of("name", StandardSQLTypeName.STRING),
+                Field.of("computed", StandardSQLTypeName.STRING));
+        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"),
+                FieldValue.of(FieldValue.Attribute.PRIMITIVE, "n"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "c-n")), fields);
+
+        final ComputedSubEntity entity = BigQueryExecutor.toEntity(fields, row, ComputedSubEntity.class);
+        assertEquals("1", entity.getId());
+        assertEquals("n", entity.getName());
+        assertEquals("c-n", entity.getComputed());
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class ComputedBaseEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public String getComputed() {
+            return "c-" + name;
+        }
+    }
+
+    public static class ComputedSubEntity extends ComputedBaseEntity {
+    }
+
     public static class RepeatedBinaryTimestampEntity {
         private List<byte[]> data;
         private List<java.nio.ByteBuffer> buffers;

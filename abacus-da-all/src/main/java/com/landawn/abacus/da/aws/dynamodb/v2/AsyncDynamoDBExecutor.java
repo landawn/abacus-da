@@ -1083,14 +1083,12 @@ public final class AsyncDynamoDBExecutor {
      *
      * future.thenAccept(response -> {
      *         System.out.println("Item saved successfully");
-     *         System.out.println("Consumed capacity: " + response.consumedCapacity());
+     *         // response.consumedCapacity() is null: this overload does not request consumed capacity
      *     })
      *     .exceptionally(ex -> {
-     *         if (ex.getCause() instanceof ConditionalCheckFailedException) {
-     *             System.err.println("Item already exists");
-     *         } else {
-     *             logger.error("Failed to save item", ex);
-     *         }
+     *         // no condition is sent, so an existing item is replaced rather than rejected;
+     *         // use putItem(PutItemRequest) with a conditionExpression to create-only
+     *         logger.error("Failed to save item", ex);
      *         return null;
      *     });
      * }</pre>
@@ -2924,8 +2922,10 @@ public final class AsyncDynamoDBExecutor {
          * Asynchronously retrieves multiple items using a custom BatchGetItemRequest.
          *
          * <p>This method provides full control over the batch get operation, allowing
-         * specification of multiple tables, projection expressions, and other advanced options.
-         * The response will only include items from this mapper's table.</p>
+         * specification of projection expressions, read consistency, and other advanced options.
+         * Every table named in the request must be this mapper's table (another table is rejected
+         * with {@link IllegalArgumentException}); no table name is substituted, so the request items
+         * must be keyed by this mapper's table name.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3105,7 +3105,8 @@ public final class AsyncDynamoDBExecutor {
          * <ul>
          * <li>Only non-null entity properties are updated</li>
          * <li>Uses PUT action for all attribute updates</li>
-         * <li>Null properties are ignored (not deleted)</li>
+         * <li>Null properties are ignored (not deleted); primitive properties are never null, so their
+         *     current values (possibly the defaults {@code 0}/{@code false}) are always written</li>
          * <li>Key attributes are used for item identification only</li>
          * </ul>
          *

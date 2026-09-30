@@ -156,7 +156,9 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * <li><strong>Column Qualifiers</strong>: A {@code @Column} name, or the naming-policy-converted property
  *     name when a {@link ColumnFamily} applies; a property that maps to its own family (no
  *     {@code @ColumnFamily} and no {@code @Column}) is stored under the empty qualifier. For nested bean
- *     properties, the bean's own property names become qualifiers under the enclosing property's family.</li>
+ *     properties, the bean's own property names become qualifiers under the enclosing property's family;
+ *     a nested bean property that carries {@code @Column} is instead stored as a single cell holding the
+ *     bean's JSON text.</li>
  * <li><strong>Versioning</strong>: {@link HBaseColumn} property values are stored at their
  *     embedded {@code version()} timestamp.</li>
  * <li><strong>Collections / Maps</strong>: {@code Collection<HBaseColumn>} and
@@ -482,7 +484,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * you can guarantee the row key byte array will not be modified after the put is created.</p>
      *
      * <p><strong>Performance Consideration:</strong> Only set {@code rowIsImmutable} to true if you
-     * are certain the row key bytes will not be modified, otherwise data corruption may occur.</p>
+     * are certain the row key bytes will not be modified, otherwise data corruption may occur. The flag
+     * only matters for a {@code byte[]} row key, which is passed through without conversion (so the Put
+     * then references the caller's array); any other key type is converted to a fresh array that the
+     * caller cannot reach.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

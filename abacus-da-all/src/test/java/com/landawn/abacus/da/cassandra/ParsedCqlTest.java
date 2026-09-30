@@ -647,4 +647,62 @@ public class ParsedCqlTest extends TestBase {
         assertEquals("UPDATE t SET l = ? WHERE id = ?", noBrackets.parameterizedCql());
         assertEquals(2, noBrackets.parameterCount());
     }
+
+    // ---- 2026-09-29 sliceR ----
+
+    @Test
+    public void testParse_NamedMarkersAroundSliceRange_areSeparateMarkers() {
+        // Regression: ':' and '.' are not token separators, so ":from..:to" was one token, read as a single marker
+        // named "from..:to" (parameterCount 2 instead of 3); "[..:to]" was not recognized at all.
+        final ParsedCql parsed = ParsedCql.parse("SELECT m[:from..:to] FROM t WHERE id = :id");
+        assertEquals("SELECT m[?..?] FROM t WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(3, parsed.parameterCount());
+        assertEquals("from", parsed.namedParameters().get(0));
+        assertEquals("to", parsed.namedParameters().get(1));
+        assertEquals("id", parsed.namedParameters().get(2));
+
+        final ParsedCql openStart = ParsedCql.parse("SELECT m[..:to] FROM t WHERE id = :id");
+        assertEquals("SELECT m[..?] FROM t WHERE id = ?", openStart.parameterizedCql());
+        assertEquals(2, openStart.parameterCount());
+        assertEquals("to", openStart.namedParameters().get(0));
+
+        final ParsedCql openEnd = ParsedCql.parse("SELECT m[:from..] FROM t WHERE id = :id");
+        assertEquals("SELECT m[?..] FROM t WHERE id = ?", openEnd.parameterizedCql());
+        assertEquals("from", openEnd.namedParameters().get(0));
+
+        // Literal slices and ".." inside a string are untouched.
+        assertEquals("SELECT s[1..3] FROM t WHERE a = '..:x' AND id = ?", ParsedCql.parse("SELECT s[1..3] FROM t WHERE a = '..:x' AND id = ?").parameterizedCql());
+    }
+
+    @Test
+    public void testParse_KeepCommentsMode_blockCommentContentIsNotScanned() {
+        // Regression: in SqlParser's "-- Keep comments" mode a retained block comment was scanned like CQL: a '{' or
+        // "$$" in it hid every later marker (":b" left in the statement, parameterCount 1), and a "::y" in it was
+        // rewritten into a phantom marker.
+        final ParsedCql brace = ParsedCql.parse("-- Keep comments\nSELECT * FROM t WHERE a = :a /* { */ AND b = :b");
+        assertEquals("SELECT * FROM t WHERE a = ? /* { */ AND b = ?", brace.parameterizedCql());
+        assertEquals(2, brace.parameterCount());
+        assertEquals("b", brace.namedParameters().get(1));
+
+        final ParsedCql dollar = ParsedCql.parse("-- Keep comments\nSELECT * FROM t WHERE a = :a /* $$ */ AND b = :b");
+        assertEquals("SELECT * FROM t WHERE a = ? /* $$ */ AND b = ?", dollar.parameterizedCql());
+        assertEquals(2, dollar.parameterCount());
+
+        final ParsedCql udt = ParsedCql.parse("-- Keep comments\nSELECT * FROM t WHERE a = :a /* {x::y} */ AND b = :b");
+        assertEquals("SELECT * FROM t WHERE a = ? /* {x::y} */ AND b = ?", udt.parameterizedCql());
+        assertEquals(2, udt.parameterCount());
+        assertEquals("b", udt.namedParameters().get(1));
+    }
+
+    @Test
+    public void testParse_IbatisMarkerWithSubscript_keepsBracketsInName() {
+        // Regression: the bracket masking leaked into the property expression of a MyBatis marker, so "#{ids[0]}"
+        // yielded the name "ids0" instead of "ids[0]".
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM t WHERE id = #{ids[0]} AND l = [#{x}] AND n = #{a[1].name}");
+        assertEquals("SELECT * FROM t WHERE id = ? AND l = [?] AND n = ?", parsed.parameterizedCql());
+        assertEquals(3, parsed.parameterCount());
+        assertEquals("ids[0]", parsed.namedParameters().get(0));
+        assertEquals("x", parsed.namedParameters().get(1));
+        assertEquals("a[1].name", parsed.namedParameters().get(2));
+    }
 }

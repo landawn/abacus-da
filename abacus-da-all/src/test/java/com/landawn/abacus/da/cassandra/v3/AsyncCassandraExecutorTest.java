@@ -1037,4 +1037,135 @@ public class AsyncCassandraExecutorTest extends TestBase {
             this.data = data;
         }
     }
+
+    // ---- 2026-09-29 sliceP ----
+
+    @Test
+    public void testSliceP_sortedMapWithNonStringKeysForSingleNamedMapMarkerIsBoundAsValue() {
+        // The named-container check (Map keyed by the single named marker's name) called containsKey(String) on the
+        // value map; a TreeMap<Integer, String> bound to a map<int, text> column threw ClassCastException from that probe.
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        final String namedQuery = "UPDATE t SET m = :m WHERE id = 1";
+        final String positionalQuery = "UPDATE t SET m = ? WHERE id = 1";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        when(session.prepare(positionalQuery)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(1);
+        when(variables.getType(0)).thenReturn(com.datastax.driver.core.DataType.map(com.datastax.driver.core.DataType.cint(),
+                com.datastax.driver.core.DataType.text()));
+        when(variables.getName(0)).thenReturn("m");
+        final Object[][] bound = new Object[1][];
+        when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mock(BoundStatement.class);
+        });
+        final Map<Integer, String> columnValue = new java.util.TreeMap<>(Map.of(1, "a", 2, "b"));
+
+        executor.prepareStatement(namedQuery, columnValue);
+        assertEquals(1, bound[0].length);
+        assertSame(columnValue, bound[0][0]);
+
+        // A String-keyed map naming the marker is still read as the named-parameter container.
+        final Map<Integer, String> namedValue = Map.of(3, "c");
+        executor.prepareStatement(namedQuery, new java.util.TreeMap<>(Map.of("m", namedValue)));
+        assertSame(namedValue, bound[0][0]);
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class SlicePReadOnlyBase {
+        private String first;
+
+        public String getFirst() {
+            return first;
+        }
+
+        public void setFirst(final String first) {
+            this.first = first;
+        }
+
+        public String getFullName() {
+            return "full:" + first;
+        }
+    }
+
+    public static class SlicePReadOnlyEntity extends SlicePReadOnlyBase {
+        private int id;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+    }
+
+    @Test
+    public void testSliceP_getterOnlyInheritedPropertyIsSkippedOnRead() throws ReflectiveOperationException {
+        // abacus-common 8.1.0 lists a getter-only property inherited from an @Entity superclass, so the generated
+        // INSERT/SELECT include its column ("full_name AS \"fullName\""); reading it back used to throw
+        // UnsupportedOperationException from PropInfo.setPropValue and fail the whole row.
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        when(cols.size()).thenReturn(3);
+        when(cols.getName(0)).thenReturn("id");
+        when(cols.getName(1)).thenReturn("first");
+        when(cols.getName(2)).thenReturn("fullName");
+        final Row row = mock(Row.class);
+        when(row.getColumnDefinitions()).thenReturn(cols);
+        when(row.getObject(0)).thenReturn(7);
+        when(row.getObject(1)).thenReturn("x");
+        when(row.getObject(2)).thenReturn("full:x");
+
+        final SlicePReadOnlyEntity entity = CassandraExecutor.toEntity(row, SlicePReadOnlyEntity.class);
+        assertEquals(7, entity.getId());
+        assertEquals("x", entity.getFirst());
+
+        // Same for a UDT whose fields are mapped to the bean (serialize writes the computed value).
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class,
+                com.datastax.driver.core.DataType.class);
+        fieldConstructor.setAccessible(true);
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, ProtocolVersion.class, CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        final var userType = typeConstructor.newInstance("ks", "person", false,
+                List.of(fieldConstructor.newInstance("id", com.datastax.driver.core.DataType.cint()),
+                        fieldConstructor.newInstance("first", com.datastax.driver.core.DataType.text()),
+                        fieldConstructor.newInstance("fullName", com.datastax.driver.core.DataType.text())),
+                ProtocolVersion.V4, new CodecRegistry());
+        final CassandraExecutor.UDTCodec<SlicePReadOnlyEntity> codec = CassandraExecutor.UDTCodec.create(userType, SlicePReadOnlyEntity.class);
+        final SlicePReadOnlyEntity source = new SlicePReadOnlyEntity();
+        source.setId(8);
+        source.setFirst("y");
+
+        final SlicePReadOnlyEntity decoded = codec.deserialize(codec.serialize(source, ProtocolVersion.V4), ProtocolVersion.V4);
+        assertEquals(8, decoded.getId());
+        assertEquals("y", decoded.getFirst());
+    }
+
+    @Test
+    public void testSliceP_emptyParameterContainerForParameterlessQueryBindsNothing() {
+        // A single empty Map/Collection/array supplies zero values (e.g. execute(query, emptyMap)); it used to be counted
+        // as one value and rejected with "Too many parameters for parameterless query: expected 0 but got 1".
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        final String query = "SELECT * FROM v3_parameterless_query";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final BoundStatement boundStatement = mock(BoundStatement.class);
+        when(session.prepare(query)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(0);
+        when(preparedStatement.bind(any(Object[].class))).thenReturn(boundStatement);
+
+        assertSame(boundStatement, executor.prepareStatement(query, new HashMap<String, Object>()));
+        assertSame(boundStatement, executor.prepareStatement(query, List.of()));
+        assertSame(boundStatement, executor.prepareStatement(query, (Object) new Object[0]));
+
+        // Non-empty containers and scalars are still rejected.
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, Map.of("a", 1)));
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, List.of(1)));
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, 1L));
+    }
 }

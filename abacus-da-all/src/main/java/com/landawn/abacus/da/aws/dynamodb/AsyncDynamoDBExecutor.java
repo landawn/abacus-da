@@ -801,7 +801,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type to convert retrieved items to
      * @param requestItems a map of table names to KeysAndAttributes specifying items to retrieve, must not be {@code null}
-     * @param returnConsumedCapacity the level of capacity details to return ("INDEXES", "TOTAL", or "NONE")
+     * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" forwarded to the service; not present on the future result
      * @param targetClass the class to convert each retrieved item to, must not be {@code null}
      * @return a ContinuableFuture containing a map of table names to lists of converted items
      * @throws IllegalArgumentException if {@code targetClass} is null
@@ -1172,7 +1172,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Return consumed capacity for cost monitoring and optimization</li>
      * <li>Return item collection metrics for tables with local secondary indexes</li>
      * <li>Full control over request items across multiple tables</li>
-     * <li>Custom request timeout and retry configurations</li>
+     * <li>Per-request SDK timeouts ({@code withSdkRequestTimeout}/{@code withSdkClientExecutionTimeout}); retries follow the client configuration</li>
      * </ul>
      *
      * <p><b>Unprocessed Items Handling:</b></p>

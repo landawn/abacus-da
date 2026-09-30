@@ -3986,9 +3986,9 @@ public final class HBaseExecutor {
         /**
          * Stores an entity in the table.
          *
-         * <p>The row key is extracted from the entity's {@code @Id} annotated field,
-         * and the entity's properties are mapped to HBase columns according to the
-         * configured naming policy.</p>
+         * <p>The row key is extracted from the entity's ID property ({@code @Id}-annotated or, when no
+         * property is annotated, a conventionally typed property named {@code id}), and the entity's
+         * other properties are mapped to HBase columns according to the configured naming policy.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4045,7 +4045,8 @@ public final class HBaseExecutor {
         /**
          * Deletes an entity from the table.
          *
-         * <p>The row key is extracted from the entity's {@code @Id} annotated field.</p>
+         * <p>The row key is read from the entity's ID property ({@code @Id}-annotated or, when no
+         * property is annotated, a conventionally typed property named {@code id}).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

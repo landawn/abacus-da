@@ -62,6 +62,7 @@ import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry
 import com.datastax.oss.driver.api.core.type.reflect.GenericType;
 import com.datastax.oss.protocol.internal.ProtocolConstants;
 import com.datastax.oss.driver.api.core.AllNodesFailedException;
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.exception.ParsingException;
@@ -824,6 +825,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 continue;
             }
 
+            if (isReadOnlyProperty(propInfo)) {
+                continue;
+            }
+
             parameterType = propInfo.clazz;
 
             if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof Row)) {
@@ -836,6 +841,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    // A getter-only (computed) property, e.g. one inherited from an @Entity superclass (abacus-common 8.1.0), is in
+    // propInfoList, so generated INSERT/SELECT statements (and UDT serialization) include its column; but
+    // PropInfo.setPropValue throws UnsupportedOperationException for it, which failed the whole row on read. Its value is
+    // skipped on read, as the JSON parser does. PropInfo's isReadOnlyProperty flag is package-private; a property without
+    // a field is SERIALIZE_ONLY exactly when it is read-only.
+    private static boolean isReadOnlyProperty(final PropInfo propInfo) {
+        return propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY;
     }
 
     /**
@@ -1909,7 +1923,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * usual parameter-container behavior; in particular, a Map keyed by the name of a query's single named
      * marker is always read as the named-parameter container, even when that marker's column is itself a map
      * type. A bean's properties are matched to parameter names by property name (naming-policy variants
-     * included) or by the column name declared with {@code @Column}.</p>
+     * included) or by the column name declared with {@code @Column}. A single empty map, collection, or array
+     * supplies no values, so it is accepted for a query without bind markers.</p>
      *
      * @param query the CQL text or mapper identifier
      * @param parameters positional values, a single positional array/collection, or a named map/bean
@@ -1938,6 +1953,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         Class<?> javaClass = null;
 
         if (parameterCount == 0) {
+            // A single empty Map/Collection/array supplies zero parameters (e.g. execute(query, emptyMap)): it must not be
+            // counted as one value.
+            if (parameters.length == 1 && (parameters[0] instanceof final Map<?, ?> m && m.isEmpty()
+                    || parameters[0] instanceof final Collection<?> c && c.isEmpty() || parameters[0] instanceof final Object[] a && a.length == 0)) {
+                return bind(preStmt);
+            }
+
             throw new IllegalArgumentException("Too many parameters for parameterless query: expected 0 but got " + parameters.length + " for query: " + query);
         } else if (N.isEmpty(parameters)) {
             throw new IllegalArgumentException("Null or empty parameters for parameterized query: " + query);
@@ -1949,7 +1971,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         // not the value: skip the single-value shortcut, which would otherwise bind the whole Map when the marker's column
         // is a map type (or has no mapped Java type) because a Map is then assignable to / accepted for that column.
         if (parameterCount == 1 && parameters.length == 1
-                && !(parameters[0] instanceof final Map<?, ?> m && N.notEmpty(namedParameters) && m.containsKey(namedParameters.get(0)))) {
+                && !(parameters[0] instanceof final Map<?, ?> m && N.notEmpty(namedParameters) && containsKeySafely(m, namedParameters.get(0)))) {
             colType = columnDefinitions.get(0).getType();
             javaClass = protocolCodeDataType.get(colType.getProtocolCode());
 
@@ -2062,6 +2084,21 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return bind(preStmt, values);
+    }
+
+    /**
+     * Returns whether {@code map} contains the String key {@code name}, treating a map that cannot hold String keys as
+     * not containing it.
+     */
+    private static boolean containsKeySafely(final Map<?, ?> map, final String name) {
+        try {
+            return map.containsKey(name);
+        } catch (final ClassCastException | NullPointerException e) {
+            // Map.containsKey may throw for a key of an inappropriate type: a sorted map with non-String keys (for example
+            // a TreeMap<Integer, String> bound as the value of a map<int, text> column) compares the String name against
+            // its own keys. Such a map cannot be a name -> value container, so it is the column value itself.
+            return false;
+        }
     }
 
     /**
@@ -2420,21 +2457,25 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         return (T) coll;
                     } else if (Map.class.isAssignableFrom(javaClazz)) {
                         final Map<String, Object> map = N.newMap((Class<Map<String, Object>>) javaClazz);
-                        final Collection<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
+                        final List<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
 
-                        for (final String fieldName : fieldNames) {
-                            map.put(fieldName, udtValue.getObject(fieldName));
+                        // Fields are read by position: the driver's getObject(String) treats the name as CQL (case-insensitive
+                        // unless quoted), so of two fields differing only by case both would read the first one's value.
+                        for (int i = 0; i < size; i++) {
+                            map.put(fieldNames.get(i), udtValue.getObject(i));
                         }
 
                         return (T) map;
                     } else if (Beans.isBeanClass(javaClazz)) {
                         final BeanInfo beanInfo = ParserUtil.getBeanInfo(javaClazz);
-                        final Collection<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
+                        final List<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
                         final Map<String, String> columnToPropNameMap = QueryUtil.columnToPropNameMap(javaClazz);
                         Object targetBean = beanInfo.createBeanResult();
                         PropInfo propInfo = null;
+                        String fieldName = null;
 
-                        for (final String fieldName : fieldNames) {
+                        for (int i = 0; i < size; i++) {
+                            fieldName = fieldNames.get(i);
                             propInfo = beanInfo.getPropInfo(fieldName);
 
                             if (propInfo == null) {
@@ -2442,8 +2483,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                                 propInfo = propName == null ? null : beanInfo.getPropInfo(propName);
                             }
 
-                            if (propInfo != null) {
-                                final Object fieldValue = udtValue.getObject(fieldName);
+                            if (propInfo != null && !isReadOnlyProperty(propInfo)) {
+                                // Read by position for the same reason as the Map branch above.
+                                final Object fieldValue = udtValue.getObject(i);
 
                                 // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
                                 propInfo.setPropValue(targetBean,
