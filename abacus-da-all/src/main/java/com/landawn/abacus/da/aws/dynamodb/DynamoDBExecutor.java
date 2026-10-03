@@ -467,7 +467,7 @@ public final class DynamoDBExecutor {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(cls);
 
             if (entityInfo.tableName.isEmpty()) {
-                throw new IllegalArgumentException("Entity class " + cls
+                throw new IllegalArgumentException("Entity class " + ClassUtil.getCanonicalClassName(cls)
                         + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use DynamoDBExecutor.mapper(Class<T> targetEntityClass, String tableName, NamingPolicy namingPolicy)");
             }
 
@@ -1052,7 +1052,7 @@ public final class DynamoDBExecutor {
         N.checkArgNotEmpty(keyName, cs.keyName);
         N.checkArgument(value != null, "DynamoDB key attribute '%s' must not be null", keyName);
         N.checkArgument(!(value instanceof Collection) && !(value instanceof Map) && !value.getClass().isArray(),
-                "DynamoDB key attribute '%s' must be scalar, not %s", keyName, value.getClass().getName());
+                "DynamoDB key attribute '%s' must be scalar, not %s", keyName, ClassUtil.getCanonicalClassName(value.getClass()));
 
         final AttributeValue attrVal = toAttributeValue(value);
         if (Strings.isNotEmpty(attrVal.getS()) || Strings.isNotEmpty(attrVal.getN()) || attrVal.getB() != null && attrVal.getB().hasRemaining()) {
@@ -1060,7 +1060,7 @@ public final class DynamoDBExecutor {
         }
 
         throw new IllegalArgumentException("DynamoDB key attribute '" + keyName
-                + "' must be a non-empty String, finite Number, or non-empty binary value; received " + value.getClass().getName());
+                + "' must be a non-empty String, finite Number, or non-empty binary value; received " + ClassUtil.getCanonicalClassName(value.getClass()));
     }
 
     /**
@@ -4004,7 +4004,8 @@ public final class DynamoDBExecutor {
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy)
                 throws IllegalArgumentException {
             N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
-            N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
+            N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method",
+                    ClassUtil.getCanonicalClassName(targetEntityClass));
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 

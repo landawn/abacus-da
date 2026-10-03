@@ -3405,4 +3405,73 @@ public class DynamoDBExecutor01Test extends TestBase {
             this.name = name;
         }
     }
+
+    // ---- 2026-10-02 sliceA ----
+
+    // The mapper() messages concatenated the Class object itself, rendering "Entity class class com...$NoTableEntity" and
+    // "class java.lang.Integer is not an entity class"; they now name the class by its canonical name.
+    @Test
+    public void testMapper_ErrorMessagesNameClassOnce() {
+        final IllegalArgumentException noTable = assertThrows(IllegalArgumentException.class, () -> executor.mapper(NoTableEntity.class));
+        assertTrue(noTable.getMessage().startsWith("Entity class " + com.landawn.abacus.util.ClassUtil.getCanonicalClassName(NoTableEntity.class) + " must"),
+                noTable.getMessage());
+        org.junit.jupiter.api.Assertions.assertFalse(noTable.getMessage().contains("class class"), noTable.getMessage());
+
+        final IllegalArgumentException notBean = assertThrows(IllegalArgumentException.class, () -> executor.mapper(Integer.class, "t", null));
+        assertTrue(notBean.getMessage().startsWith("java.lang.Integer is not an entity class"), notBean.getMessage());
+    }
+
+    // ---- 2026-10-02 verify (main) ----
+
+    // An array key value was named by Class.getName(): "must be scalar, not [Ljava.lang.String;".
+    @Test
+    public void testAsKey_NonScalarMessageNamesArrayTypeReadably() {
+        final IllegalArgumentException array = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", new String[] { "a" }));
+        assertEquals("DynamoDB key attribute 'id' must be scalar, not java.lang.String[]", array.getMessage());
+
+        final IllegalArgumentException list = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", new java.util.ArrayList<>()));
+        assertEquals("DynamoDB key attribute 'id' must be scalar, not java.util.ArrayList", list.getMessage());
+    }
+
+    // ---- 2026-10-04 coverageDC ----
+
+    // The Mapper-constructor message on its own: testMapper_ErrorMessagesNameClassOnce fails at its first (@Table) assertion on
+    // HEAD, so it never proved this second site, which rendered "class java.lang.Integer is not an entity class ...".
+    @Test
+    public void testMapperConstructor_NonBeanMessageNamesClassOnce_coverageDC() {
+        final IllegalArgumentException notBean = assertThrows(IllegalArgumentException.class, () -> executor.mapper(Integer.class, "t", null));
+        assertEquals("java.lang.Integer is not an entity class with getter/setter method", notBean.getMessage());
+
+        final IllegalArgumentException nested = assertThrows(IllegalArgumentException.class,
+                () -> executor.mapper(BlankKeyValue_coverageDC.class, "t", NamingPolicy.CAMEL_CASE));
+        assertEquals("com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor01Test.BlankKeyValue_coverageDC is not an entity class with getter/setter method",
+                nested.getMessage());
+    }
+
+    // Twin of testAsKey_NonScalarMessageNamesArrayTypeReadably: the second toKeyAttributeValue message (a scalar converting to an empty
+    // or non-key attribute) still used Class.getName(), so a nested value class read "received ...DynamoDBExecutor01Test$BlankKeyValue_coverageDC".
+    @Test
+    public void testAsKey_EmptyOrNonKeyValueMessageNamesClassReadably_coverageDC() {
+        final String prefix = "DynamoDB key attribute 'id' must be a non-empty String, finite Number, or non-empty binary value; received ";
+
+        assertEquals(prefix + "com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor01Test.BlankKeyValue_coverageDC",
+                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", new BlankKeyValue_coverageDC())).getMessage());
+        // The composite-key overload validates its sort key through the same check.
+        assertEquals(prefix.replace("'id'", "'sk'") + "com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor01Test.BlankKeyValue_coverageDC",
+                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", "1", "sk", new BlankKeyValue_coverageDC())).getMessage());
+
+        // Top-level classes read the same as before.
+        assertEquals(prefix + "java.lang.String", assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", "")).getMessage());
+        assertEquals(prefix + "java.lang.Boolean", assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", true)).getMessage());
+        assertEquals(prefix + "java.nio.HeapByteBuffer",
+                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", ByteBuffer.allocate(0))).getMessage());
+    }
+
+    /** A value type whose string form is empty, so it converts to an empty {@code S} key attribute. */
+    public static final class BlankKeyValue_coverageDC {
+        @Override
+        public String toString() {
+            return "";
+        }
+    }
 }

@@ -448,4 +448,37 @@ public class AnyDeleteTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> AnyDelete.of("rk", 1L, null));
         assertThrows(IllegalArgumentException.class, () -> AnyDelete.of((org.apache.hadoop.hbase.client.Delete) null));
     }
+
+    // ---- 2026-10-02 sliceM ----
+
+    /**
+     * Pins the documented default-timestamp contract: the no-timestamp {@code addColumn},
+     * {@code addColumns} and {@code addFamily} overloads (String and byte[]) use the timestamp last
+     * set via {@code setTimestamp(long)}, with the tombstone type matching each strategy; tombstones
+     * added before {@code setTimestamp} keep {@code LATEST_TIMESTAMP}.
+     */
+    @Test
+    public void testDefaultTimestamp_comesFromSetTimestamp_sliceM() {
+        AnyDelete delete = AnyDelete.of("row").addColumn("early", "q").setTimestamp(500L);
+        delete.addColumn("f", "q").addColumns("f", "q2").addFamily("g");
+        delete.addColumn(Bytes.toBytes("h"), Bytes.toBytes("q")).addColumns(Bytes.toBytes("h"), Bytes.toBytes("q2")).addFamily(Bytes.toBytes("k"));
+
+        assertEquals(org.apache.hadoop.hbase.HConstants.LATEST_TIMESTAMP, delete.get("early", "q").get(0).getTimestamp());
+
+        assertEquals(500L, delete.get("f", "q").get(0).getTimestamp());
+        assertEquals(Cell.Type.Delete, delete.get("f", "q").get(0).getType());
+        assertEquals(500L, delete.get("f", "q2").get(0).getTimestamp());
+        assertEquals(Cell.Type.DeleteColumn, delete.get("f", "q2").get(0).getType());
+        final Cell family = delete.getFamilyCellMap().get(Bytes.toBytes("g")).get(0);
+        assertEquals(500L, family.getTimestamp());
+        assertEquals(Cell.Type.DeleteFamily, family.getType());
+
+        assertEquals(500L, delete.get("h", "q").get(0).getTimestamp());
+        assertEquals(Cell.Type.Delete, delete.get("h", "q").get(0).getType());
+        assertEquals(500L, delete.get("h", "q2").get(0).getTimestamp());
+        assertEquals(Cell.Type.DeleteColumn, delete.get("h", "q2").get(0).getType());
+        final Cell byteFamily = delete.getFamilyCellMap().get(Bytes.toBytes("k")).get(0);
+        assertEquals(500L, byteFamily.getTimestamp());
+        assertEquals(Cell.Type.DeleteFamily, byteFamily.getType());
+    }
 }

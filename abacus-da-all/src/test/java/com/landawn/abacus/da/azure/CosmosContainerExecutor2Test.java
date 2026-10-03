@@ -999,6 +999,79 @@ public class CosmosContainerExecutor2Test extends TestBase {
         assertTrue(ex.getCause().getMessage().contains("expected 2 placeholders but found 3"));
     }
 
+    // ---- 2026-10-04 coverageDC ----
+
+    /**
+     * Live end-to-end check of the coalesce fix: a raw {@code ??} expression combined with a bound condition executes on the real
+     * query engine and filters correctly (HEAD rejected both queries client-side with "Query parameter count mismatch"). Only
+     * indexed paths ({@code id}, partition key {@code name}) are filtered/projected, so this runs on the vNext emulator too; a
+     * coalesce over a property the items lack ({@code missing}) is accepted by the emulator and yields the fallback value.
+     */
+    @Test
+    public void testCoalesceWithBoundConditionRunsOnEmulator_coverageDC() {
+        assumeCosmosAvailable();
+        final String partition = newPartition();
+        final TestItem first = itemIn(partition, "coalesce-1");
+        final TestItem second = itemIn(partition, "coalesce-2");
+        executor.createItem(first);
+        executor.createItem(second);
+
+        try {
+            // SELECT VALUE { "id": c.id } FROM test_item c WHERE (c.name = @p0) AND ((c.id ?? 'none') = '<first.id>')
+            final List<TestItem> byId = executor
+                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("(id ?? 'none') = '" + first.id + "'")),
+                            TestItem.class)
+                    .toList();
+            assertEquals(List.of(first.id), byId.stream().map(it -> it.id).toList());
+
+            final List<String> fallback = executor
+                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("(missing ?? 'none') = 'none'")),
+                            TestItem.class)
+                    .map(it -> it.id)
+                    .sorted()
+                    .toList();
+            assertEquals(java.util.stream.Stream.of(first.id, second.id).sorted().toList(), fallback);
+        } finally {
+            executor.deleteItem(first.id, pk(first), new CosmosItemRequestOptions());
+            executor.deleteItem(second.id, pk(second), new CosmosItemRequestOptions());
+        }
+    }
+
+    /**
+     * Live end-to-end check of the ESCAPE fix: {@code id LIKE 'esc!_%' ESCAPE '!'} next to a bound partition-key condition executes on
+     * the real query engine and matches only the id with a literal underscore, while the same pattern without ESCAPE also matches the
+     * id where {@code _} is a wildcard. HEAD rendered {@code c.id LIKE 'esc!_%' c.escape '!'}, which the engine rejects with 400.
+     */
+    @Test
+    public void testLikeEscapeWithBoundConditionRunsOnEmulator_coverageDC() {
+        assumeCosmosAvailable();
+        final String partition = newPartition();
+        final String suffix = UUID.randomUUID().toString().substring(0, 8);
+        final TestItem literalUnderscore = new TestItem("esc_" + suffix, partition, "escape-1");
+        final TestItem otherChar = new TestItem("escX" + suffix, partition, "escape-2");
+        executor.createItem(literalUnderscore);
+        executor.createItem(otherChar);
+
+        try {
+            final List<String> escaped = executor
+                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("id LIKE 'esc!_%' ESCAPE '!'")),
+                            TestItem.class)
+                    .map(it -> it.id)
+                    .toList();
+            assertEquals(List.of(literalUnderscore.id), escaped);
+
+            final List<String> wildcard = executor
+                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("id LIKE 'esc_%'")), TestItem.class)
+                    .map(it -> it.id)
+                    .sorted()
+                    .toList();
+            assertEquals(java.util.stream.Stream.of(literalUnderscore.id, otherChar.id).sorted().toList(), wildcard);
+        } finally {
+            executor.deleteItem(literalUnderscore.id, pk(literalUnderscore), new CosmosItemRequestOptions());
+            executor.deleteItem(otherChar.id, pk(otherChar), new CosmosItemRequestOptions());
+        }
+    }
+
     // ----------------------------------------------------------------------------------------------------
     // Test data class
     // ----------------------------------------------------------------------------------------------------

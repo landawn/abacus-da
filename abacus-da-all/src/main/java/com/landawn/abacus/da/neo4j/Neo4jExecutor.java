@@ -2260,6 +2260,11 @@ public final class Neo4jExecutor {
      * related entity. New nodes are created and assigned a generated ID (written back onto the
      * entity); existing nodes (those with an ID) are updated in place. Use {@link #save(Object, int)}
      * to bound the traversal explicitly.
+     * <p>
+     * Each call runs on a pooled session whose mapping context has been cleared, so OGM does not know the
+     * relationships an entity had when it was loaded by an earlier call: a relationship removed from such an
+     * entity (e.g. {@code person.setCompany(null)}) is <i>not</i> deleted by this method. Load, modify and
+     * save within one {@link #run(Consumer)}/{@link #call(Function)} session, or delete the relationship with Cypher.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2299,6 +2304,8 @@ public final class Neo4jExecutor {
      * Delegates to {@link Session#save(Object, int)}. {@code depth == 0} saves only the
      * node's scalar properties (no relationships are written); a positive integer recursively
      * saves related entities to that many hops; {@code -1} saves the entire reachable sub-graph.
+     * As with {@link #save(Object)}, a relationship removed from an entity loaded by an earlier call is not
+     * deleted, because the session's mapping context does not carry over between calls.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

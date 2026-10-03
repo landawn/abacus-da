@@ -2780,6 +2780,60 @@ public class MongoCollectionExecutorTest extends TestBase {
         assertEquals(2, pipelines.get(pipelines.size() - 1).size());
     }
 
+    // ---- 2026-10-02 sliceF ----
+
+    // Regression: for a non-Document rowType, groupByAndCount projects {<fieldName>: "$_id", count: 1}; a group field
+    // named "count" was overwritten by the count column, so every row silently lost its group key (live: rows {count: 2}).
+    // It must be rejected at call time, while the Document row type ({_id: key, count: n}) keeps working.
+    @Test
+    public void testGroupByAndCountRejectsGroupFieldNamedCountForNonDocumentRowType_sliceF() {
+        final List<List<? extends Bson>> pipelines = new ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            return mockAggregatePublisher;
+        });
+
+        for (final Class<?> rowType : Arrays.asList(Map.class, Object.class, GroupRow.class)) {
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType));
+            assertTrue(e.getMessage().contains("'count'"), e.getMessage());
+            e = assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType));
+            assertTrue(e.getMessage().contains("'count'"), e.getMessage());
+        }
+
+        assertTrue(pipelines.isEmpty());
+
+        // The Document row type keeps the key in _id and is unaffected; groupBy (no count column) is unaffected too.
+        assertNotNull(executor.groupByAndCount("count"));
+        assertNotNull(executor.groupByAndCount(Arrays.asList("department", "count")));
+        assertNotNull(executor.groupBy("count", Map.class));
+        assertEquals(3, pipelines.size());
+    }
+
+    // Regression: a dotted select name such as "address.city" is a valid projection, but MongoDB returns it nested
+    // ({address: {city: ...}}) while Dataset columns are read by flat map key / bean property, so the column was all null.
+    @Test
+    public void testQueryDatasetResolvesDottedSelectNamesFromNestedDocuments_sliceF() {
+        final Bson filter = new Document("status", "active");
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("department", "ops"));
+
+        final List<String> selectPropNames = Arrays.asList("department", "address.city");
+
+        for (final Class<?> rowType : Arrays.asList(Map.class, Document.class, GroupRow.class)) {
+            final Dataset dataset = executor.query(selectPropNames, filter, rowType).block();
+
+            assertEquals(selectPropNames, dataset.columnNames());
+            assertEquals(Arrays.asList("eng", "ops"), dataset.getColumn("department"));
+            assertEquals(Arrays.asList("Paris", null), dataset.getColumn("address.city"));
+        }
+
+        // A dotted path through a non-Document value fails through the publisher, as for list/findFirst.
+        stubEmits(mockFindPublisher, new Document("_id", 3).append("department", "x").append("address", Arrays.asList(new Document("city", "Rome"))));
+        StepVerifier.create(executor.query(selectPropNames, filter, Map.class)).expectError(ClassCastException.class).verify();
+    }
+
     public static class CountingBean {
         private int readCount;
 
@@ -2813,4 +2867,271 @@ public class MongoCollectionExecutorTest extends TestBase {
             this.count = count;
         }
     }
+
+    // ---- 2026-10-02 verifyME ----
+
+    private static final String COUNT_COLUMN_CONFLICT_verifyME = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
+
+    private void stubFindChain_verifyME(final Bson filter) {
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(mockFindPublisher);
+    }
+
+    @Test
+    public void testQueryDatasetDottedSelectNamesOnEveryOverloadKeepOrderAndRawNestedValues_verifyME() {
+        // Every Collection-projection Dataset overload resolves dotted names from the nested documents (they were all-null
+        // columns): requested order kept, null for a missing/null parent or leaf, raw nested value (Integer zip although
+        // GroupRow declares no address), plain columns converted as before; an empty result still emits an empty Dataset.
+        final Bson filter = new Document("status", "active");
+        final Bson sort = new Document("_id", 1);
+        stubFindChain_verifyME(filter);
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris").append("zip", 75001)),
+                new Document("_id", 2).append("department", "ops"), new Document("_id", 3).append("department", "hr").append("address", new Document("city", null)),
+                new Document("_id", 4).append("department", "qa").append("address", null));
+        final List<String> names = Arrays.asList("address.zip", "department", "address.city");
+
+        for (final Class<?> rowType : Arrays.asList(Map.class, java.util.LinkedHashMap.class, Document.class, GroupRow.class)) {
+            for (final Mono<Dataset> mono : Arrays.asList(executor.query(names, filter, rowType), executor.query(names, filter, 1, 3, rowType),
+                    executor.query(names, filter, sort, rowType), executor.query(names, filter, sort, 1, 3, rowType))) {
+                final Dataset ds = mono.block();
+                assertEquals(names, ds.columnNames(), rowType.getName());
+                assertEquals(Arrays.asList("eng", "ops", "hr", "qa"), ds.getColumn("department"), rowType.getName());
+                assertEquals(Arrays.asList(75001, null, null, null), ds.getColumn("address.zip"), rowType.getName());
+                assertEquals(Arrays.asList("Paris", null, null, null), ds.getColumn("address.city"), rowType.getName());
+            }
+        }
+
+        final Dataset withId = executor.query(new java.util.LinkedHashSet<>(Arrays.asList("_id", "address.city")), filter, Map.class).block();
+        assertEquals(Arrays.asList("_id", "address.city"), withId.columnNames());
+        assertEquals(Arrays.asList(1, 2, 3, 4), withId.getColumn("_id"));
+
+        stubEmits(mockFindPublisher);
+        assertEquals(0, executor.query(names, filter, sort, 0, 10, Map.class).block().size());
+    }
+
+    @Test
+    public void testQueryDatasetDottedSelectNameThroughArrayFailsOnEveryOverload_verifyME() {
+        final Bson filter = new Document("status", "active");
+        final Bson sort = new Document("_id", 1);
+        stubFindChain_verifyME(filter);
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("department", "ops").append("address", Arrays.asList(new Document("city", "Rome"))));
+        final List<String> names = Arrays.asList("department", "address.city");
+
+        StepVerifier.create(executor.query(names, filter, Map.class)).expectError(ClassCastException.class).verify();
+        StepVerifier.create(executor.query(names, filter, 0, 5, Document.class)).expectError(ClassCastException.class).verify();
+        StepVerifier.create(executor.query(names, filter, sort, GroupRow.class)).expectError(ClassCastException.class).verify();
+        StepVerifier.create(executor.query(names, filter, sort, 1, 5, Map.class)).expectError(ClassCastException.class).verify();
+
+        // Without a dotted name the same rows load as before: the array is just a column value.
+        final Dataset plain = executor.query(Arrays.asList("department", "address"), filter, Map.class).block();
+        assertEquals(Arrays.asList("eng", "ops"), plain.getColumn("department"));
+        assertEquals(Arrays.asList(new Document("city", "Rome")), plain.getColumn("address").get(1));
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testGroupByAndCountCountFieldRejectedForEveryNonDocumentRowType_verifyME() {
+        // Same rule and message as the sync executor, thrown at call time (no aggregate, no subscription): only Document
+        // rows (key kept under _id) accept a group field named "count"; a Document subclass is projected like a Map.
+        final List<List<? extends Bson>> pipelines = new ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            return mockAggregatePublisher;
+        });
+
+        for (final Class rowType : Arrays.<Class> asList(Map.class, java.util.LinkedHashMap.class, Object.class, Bson.class, CountDocument_verifyME.class,
+                GroupRow.class, Long.class, long.class, String.class)) {
+            assertEquals(COUNT_COLUMN_CONFLICT_verifyME, assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType)).getMessage(),
+                    rowType.getName());
+            assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
+                    assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType)).getMessage(),
+                    rowType.getName());
+        }
+
+        assertTrue(pipelines.isEmpty());
+
+        // Document rows, other field names, and groupBy (no count column) are unaffected.
+        executor.groupByAndCount("count", Document.class);
+        executor.groupByAndCount(Arrays.asList("department", "count"), Document.class);
+        executor.groupByAndCount("department", Map.class);
+        executor.groupBy("count", CountDocument_verifyME.class);
+        executor.groupBy(Arrays.asList("department", "count"), Map.class);
+        assertEquals(5, pipelines.size());
+        assertEquals(new Document("$project", new Document("_id", 0).append("department", "$_id").append("count", 1)), pipelines.get(2).get(1));
+    }
+
+    public static class CountDocument_verifyME extends Document {
+        private static final long serialVersionUID = 1L;
+    }
+
+    // ---- 2026-10-04 coverageME ----
+
+    // End-to-end coverage of the MongoDBBase read-side changes (typed container elements, java.time Local* in UTC, generic
+    // bean type arguments, records) through the reactive read paths; the documents, beans and per-path assertions are shared
+    // with the sync executor test (com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest, *_coverageME). Each read path
+    // is asserted on its own (assertAll), so every path that bypassed the conversion is reported.
+
+    // A collection whose every read (find, aggregate, findOneAndUpdate/Delete) emits the given row on each subscription.
+    @SuppressWarnings("unchecked")
+    public static MongoCollection<Document> mockCollectionReturning_coverageME(final Document row) {
+        final org.mockito.MockSettings lenient = org.mockito.Mockito.withSettings().strictness(org.mockito.quality.Strictness.LENIENT);
+        final MongoCollection<Document> collection = mock(MongoCollection.class, lenient);
+        final FindPublisher<Document> findPublisher = mock(FindPublisher.class, lenient);
+        final AggregatePublisher<Document> aggregatePublisher = mock(AggregatePublisher.class, lenient);
+        when(collection.find(any(Bson.class))).thenReturn(findPublisher);
+        when(findPublisher.projection(any())).thenReturn(findPublisher);
+        when(findPublisher.sort(any())).thenReturn(findPublisher);
+        when(findPublisher.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findPublisher);
+        when(findPublisher.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findPublisher);
+        when(collection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregatePublisher);
+        when(collection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(Mono.just(row));
+        when(collection.findOneAndDelete(any(Bson.class))).thenReturn(Mono.just(row));
+
+        for (final Publisher<Document> publisher : Arrays.<Publisher<Document>> asList(findPublisher, aggregatePublisher)) {
+            doAnswer(invocation -> {
+                Flux.just(row).subscribe((Subscriber<? super Document>) invocation.getArgument(0));
+                return null;
+            }).when(publisher).subscribe(any());
+        }
+
+        return collection;
+    }
+
+    @Test
+    public void testEntityReadPathsConvertDecodedValuesToDeclaredTypes_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.entityDoc_coverageME()));
+        final Bson filter = new Document();
+        final Bson update = new Document("$set", new Document("x", 1));
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eEntity_coverageME.class;
+        final String oid = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.OID_HEX_coverageME;
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list", exec.list(filter, type).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list(Collection)",
+                        exec.list(Arrays.asList("nums", "day"), filter, type).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findFirst", exec.findFirst(filter, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("get(ObjectId)",
+                        exec.get(new ObjectId(oid), type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("get(String)", exec.get(oid, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("aggregate",
+                        exec.aggregate(pipeline, type).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndUpdate",
+                        exec.findOneAndUpdate(filter, update, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndDelete",
+                        exec.findOneAndDelete(filter, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntityDataset_coverageME("query(Bson, Class)",
+                        exec.query(filter, type).block()));
+    }
+
+    @Test
+    public void testRecordRowsOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.recordDoc_coverageME()));
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eRecord_coverageME.class;
+        final Object expected = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.expectedRecord_coverageME();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expected, exec.list(filter, type).blockFirst(), "list"),
+                () -> assertEquals(expected, exec.findFirst(filter, type).block(), "findFirst"),
+                () -> assertEquals(expected, exec.get(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.OID_HEX_coverageME, type).block(), "get(String)"),
+                () -> assertEquals(expected, exec.aggregate(pipeline, type).blockFirst(), "aggregate"),
+                () -> assertEquals(expected, exec.findOneAndDelete(filter, type).block(), "findOneAndDelete"),
+                () -> assertEquals(Arrays.asList(4L), exec.query(filter, type).block().getColumn("nums").get(0), "query Dataset"));
+    }
+
+    @Test
+    public void testGenericSubclassRowsOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.longBoxDoc_coverageME()));
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eLongBox_coverageME.class;
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals((Object) 9L, exec.list(filter, type).blockFirst().getValue(), "list"),
+                () -> assertEquals((Object) 9L, exec.findFirst(filter, type).block().getValue(), "findFirst"),
+                () -> assertEquals((Object) 9L, exec.aggregate(pipeline, type).blockFirst().getValue(), "aggregate"),
+                () -> assertEquals((Object) 9L, exec.findOneAndDelete(filter, type).block().getValue(), "findOneAndDelete"));
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleValuesAreReadInUtcOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.entityDoc_coverageME()));
+        final Bson filter = new Document();
+        final java.time.LocalDate day = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
+        final Date dayDate = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.DAY_coverageME;
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(day, exec.queryForSingleValue("day", filter, java.time.LocalDate.class).block(), "queryForSingleValue LocalDate"),
+                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_AT_coverageME,
+                        exec.queryForSingleValue("at", filter, java.time.LocalDateTime.class).block(), "queryForSingleValue LocalDateTime"),
+                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_TIME_coverageME,
+                        exec.queryForSingleValue("time", filter, java.time.LocalTime.class).block(), "queryForSingleValue LocalTime"),
+                () -> assertEquals(day, exec.findFirst(Arrays.asList("day"), filter, java.time.LocalDate.class).block(), "findFirst(Collection)"),
+                () -> assertEquals(day, exec.list(Arrays.asList("day"), filter, java.time.LocalDate.class).blockFirst(), "list(Collection)"),
+                // Previous behavior kept: other date targets keep the instant.
+                () -> assertEquals(dayDate, exec.queryForSingleValue("day", filter, Date.class).block(), "Date"),
+                () -> assertEquals(dayDate.toInstant(), exec.queryForSingleValue("day", filter, java.time.Instant.class).block(), "Instant"));
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.dayDoc_coverageME()));
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("day", 1)));
+        final java.time.LocalDate day = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(day, exec.list(filter, java.time.LocalDate.class).blockFirst(), "list"),
+                () -> assertEquals(day, exec.findFirst(filter, java.time.LocalDate.class).block(), "findFirst"),
+                () -> assertEquals(day, exec.aggregate(pipeline, java.time.LocalDate.class).blockFirst(), "aggregate"),
+                () -> assertEquals(day, exec.findOneAndDelete(filter, java.time.LocalDate.class).block(), "findOneAndDelete"));
+    }
+
+    @Test
+    public void testDottedSelectNameCheckToleratesNullNames_coverageME() {
+        // Pin: the dotted-name check runs when the Mono is assembled, so it must be null-safe: a null select name still fails
+        // through the publisher with the Dataset's IllegalArgumentException (as before the fix), whichever position it has.
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(new Document("_id", 1).append("address", new Document("city", "Paris"))));
+        final Bson filter = new Document();
+
+        for (final List<String> names : Arrays.asList(Arrays.asList(null, "address.city"), Arrays.asList("address.city", null),
+                Arrays.asList("department", null))) {
+            StepVerifier.create(exec.query(names, filter, Map.class)).expectError(IllegalArgumentException.class).verify();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testAggregateSingleValueRowTypeSkipsDocumentsWithoutAValue_coverageME() {
+        // Pins the behavior documented on aggregate(List, Class) (and the mapper's aggregate) this round: for a single-value
+        // rowType an output document that yields no value (an empty document, or BSON null for a non-primitive rowType) is
+        // skipped, as Reactive Streams forbids null elements; a primitive rowType receives its default for BSON null.
+        final org.mockito.MockSettings lenient = org.mockito.Mockito.withSettings().strictness(org.mockito.quality.Strictness.LENIENT);
+        final MongoCollection<Document> collection = mock(MongoCollection.class, lenient);
+        final AggregatePublisher<Document> publisher = mock(AggregatePublisher.class, lenient);
+        when(collection.aggregate(anyList(), eq(Document.class))).thenReturn(publisher);
+        doAnswer(invocation -> {
+            Flux.just(new Document(), new Document("v", null), new Document("_id", 1).append("v", 5))
+                    .subscribe((Subscriber<? super Document>) invocation.getArgument(0));
+            return null;
+        }).when(publisher).subscribe(any());
+
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(collection);
+        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("v", 1)));
+
+        assertEquals(Arrays.asList(5L), exec.aggregate(pipeline, Long.class).collectList().block());
+        assertEquals(Arrays.asList("5"), exec.aggregate(pipeline, String.class).collectList().block());
+        assertEquals(Arrays.asList(0L, 5L), exec.aggregate(pipeline, long.class).collectList().block());
+    }
+
+    // ---- end 2026-10-04 coverageME ----
 }

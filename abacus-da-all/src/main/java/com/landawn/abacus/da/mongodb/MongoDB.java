@@ -244,9 +244,14 @@ public final class MongoDB extends MongoDBBase {
      * which is useful when you need specific collection-level configurations like read preferences,
      * write concerns, or custom codec registries.</p>
      *
+     * <p>The collection is used as-is, including its codec registry: unlike a collection obtained by name, it
+     * does not receive this instance's framework codec registry, so writing an entity with a nested bean
+     * property fails with {@code CodecConfigurationException} unless the collection comes from {@link #db()}
+     * (or its own registry can encode that bean).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<Document> coll = database.getCollection("users").withWriteConcern(WriteConcern.MAJORITY);
+     * MongoCollection<Document> coll = mongoDB.db().getCollection("users").withWriteConcern(WriteConcern.MAJORITY); // keeps the framework codec registry
      * MongoCollectionExecutor executor = mongoDB.collectionExecutor(coll); // never null; wraps the supplied collection as-is
      *
      * // Edge case: a null collection is rejected.
@@ -340,9 +345,14 @@ public final class MongoDB extends MongoDBBase {
      * which is useful when you need specific collection-level settings like custom read preferences,
      * write concerns, or codec registries while maintaining the benefits of object-document mapping.</p>
      *
+     * <p>The collection is used as-is, including its codec registry: unlike a collection obtained by name, it
+     * does not receive this instance's framework codec registry, so writing an entity with a nested bean
+     * property fails with {@code CodecConfigurationException} unless the collection comes from {@link #db()}
+     * (or its own registry can encode that bean).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<Document> customCollection = database
+     * MongoCollection<Document> customCollection = mongoDB.db()   // keeps the framework codec registry
      *     .getCollection("users")
      *     .withReadPreference(ReadPreference.secondaryPreferred())
      *     .withWriteConcern(WriteConcern.MAJORITY);

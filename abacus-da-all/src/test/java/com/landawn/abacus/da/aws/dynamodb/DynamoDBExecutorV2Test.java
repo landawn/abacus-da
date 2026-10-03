@@ -3481,4 +3481,113 @@ public class DynamoDBExecutorV2Test extends TestBase {
             this.name = name;
         }
     }
+
+    // ---- 2026-10-02 sliceC ----
+
+    // The mapper() messages concatenated the Class object itself, rendering "Entity class class com...$V2NoTableEntity" and
+    // "class java.lang.Integer is not an entity class"; they now name the class by its canonical name (v1 twin: slice A).
+    @Test
+    public void testMapper_ErrorMessagesNameClassOnce() {
+        final IllegalArgumentException noTable = assertThrows(IllegalArgumentException.class, () -> executor.mapper(V2NoTableEntity.class));
+        assertTrue(noTable.getMessage().startsWith("Entity class " + com.landawn.abacus.util.ClassUtil.getCanonicalClassName(V2NoTableEntity.class) + " must"),
+                noTable.getMessage());
+        assertFalse(noTable.getMessage().contains("class class"), noTable.getMessage());
+
+        final IllegalArgumentException notBean = assertThrows(IllegalArgumentException.class, () -> executor.mapper(Integer.class, "t", null));
+        assertTrue(notBean.getMessage().startsWith("java.lang.Integer is not an entity class"), notBean.getMessage());
+    }
+
+    // toItem/toUpdateItem also accept Object[] name-value pairs, but their rejection message listed only "Entity or Map<String, Object>
+    // classes with getter/setter methods" (v1 already names all three accepted shapes).
+    @Test
+    public void testToItem_UnsupportedTypeMessageListsAcceptedShapes() {
+        final IllegalArgumentException item = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem(5));
+        assertTrue(item.getMessage().startsWith("Unsupported type: java.lang.Integer. "), item.getMessage());
+        assertTrue(item.getMessage().contains("Object[] name-value pairs"), item.getMessage());
+
+        final IllegalArgumentException update = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem("text"));
+        assertTrue(update.getMessage().contains("Object[] name-value pairs"), update.getMessage());
+    }
+
+    // ---- 2026-10-02 verify (main) ----
+
+    // An array key value was named by Class.getName(): "must be scalar, not [Ljava.lang.String;".
+    @Test
+    public void testAsKey_NonScalarMessageNamesArrayTypeReadably() {
+        final IllegalArgumentException array = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", new String[] { "a" }));
+        assertEquals("DynamoDB key attribute 'id' must be scalar, not java.lang.String[]", array.getMessage());
+
+        final IllegalArgumentException list = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", new java.util.ArrayList<>()));
+        assertEquals("DynamoDB key attribute 'id' must be scalar, not java.util.ArrayList", list.getMessage());
+    }
+
+    // ---- 2026-10-04 coverageDC ----
+
+    // The Mapper-constructor message on its own: testMapper_ErrorMessagesNameClassOnce fails at its first (@Table) assertion on
+    // HEAD, so it never proved this second site, which rendered "class java.lang.Integer is not an entity class ...".
+    @Test
+    public void testMapperConstructor_NonBeanMessageNamesClassOnce_coverageDC() {
+        final IllegalArgumentException notBean = assertThrows(IllegalArgumentException.class, () -> executor.mapper(Integer.class, "t", null));
+        assertEquals("java.lang.Integer is not an entity class with getter/setter method", notBean.getMessage());
+    }
+
+    // Exact text of both "Unsupported type" sites and both overloads of each (testToItem_UnsupportedTypeMessageListsAcceptedShapes fails
+    // at its toItem assertion on HEAD, so the toUpdateItem site was never proven on its own).
+    @Test
+    public void testToItemAndToUpdateItem_UnsupportedTypeMessagesListAcceptedShapes_coverageDC() {
+        final String suffix = ". Only entity classes with getter/setter methods, Map<String, Object>, or Object[] name-value pairs are supported";
+
+        assertEquals(List.of("Unsupported type: java.lang.String" + suffix, "Unsupported type: java.lang.Integer" + suffix,
+                "Unsupported type: java.lang.Integer" + suffix, "Unsupported type: java.lang.String" + suffix),
+                List.of(assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem("text")).getMessage(),
+                        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem(5, NamingPolicy.SNAKE_CASE)).getMessage(),
+                        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem(5)).getMessage(),
+                        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem("text", NamingPolicy.SNAKE_CASE)).getMessage()));
+    }
+
+    // Twin of testAsKey_NonScalarMessageNamesArrayTypeReadably: v2 accepts byte[] keys, so an EMPTY byte[] reaches the second
+    // toKeyAttributeValue message, which still used Class.getName() and read "received [B" (also via a Mapper's entity key).
+    @Test
+    public void testAsKey_EmptyBinaryKeyMessageNamesByteArrayReadably_coverageDC() {
+        final String prefix = "DynamoDB key attribute 'id' must be a non-empty String, finite Number, or non-empty binary value; received ";
+
+        assertEquals(prefix + "byte[]", assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", new byte[0])).getMessage());
+        assertEquals(prefix.replace("'id'", "'sk'") + "byte[]",
+                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", "1", "sk", new byte[0])).getMessage());
+
+        final BinaryKeyEntity_coverageDC entity = new BinaryKeyEntity_coverageDC();
+        entity.setId(new byte[0]);
+        assertEquals(prefix + "byte[]", assertThrows(IllegalArgumentException.class,
+                () -> executor.mapper(BinaryKeyEntity_coverageDC.class, "t", NamingPolicy.CAMEL_CASE).getItem(entity)).getMessage());
+        verify(mockDynamoDbClient, never()).getItem(any(GetItemRequest.class));
+
+        // Nested classes are named canonically; top-level classes read the same as before.
+        assertEquals(prefix + "com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2Test.BlankKeyValue_coverageDC",
+                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", new BlankKeyValue_coverageDC())).getMessage());
+        assertEquals(prefix + "java.lang.String", assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", "")).getMessage());
+        assertEquals(prefix + "java.lang.Boolean", assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", true)).getMessage());
+        assertEquals(prefix + "java.nio.HeapByteBuffer",
+                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", ByteBuffer.allocate(0))).getMessage());
+    }
+
+    /** A value type whose string form is empty, so it converts to an empty {@code S} key attribute. */
+    public static final class BlankKeyValue_coverageDC {
+        @Override
+        public String toString() {
+            return "";
+        }
+    }
+
+    public static class BinaryKeyEntity_coverageDC {
+        @com.landawn.abacus.annotation.Id
+        private byte[] id;
+
+        public byte[] getId() {
+            return id;
+        }
+
+        public void setId(final byte[] id) {
+            this.id = id;
+        }
+    }
 }

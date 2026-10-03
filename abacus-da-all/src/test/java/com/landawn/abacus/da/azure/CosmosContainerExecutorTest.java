@@ -1033,6 +1033,190 @@ public class CosmosContainerExecutorTest extends TestBase {
         verifyNoInteractions(mockCosmosContainer);
     }
 
+    // ---- 2026-10-02 sliceT ----
+
+    /**
+     * Regression: the Cosmos coalesce operator {@code ??} in a raw expression was counted as two positional placeholders, so combining it
+     * with any parameterized condition failed with "Query parameter count mismatch: expected 1 placeholders but found 3".
+     */
+    @Test
+    public void testCoalesceOperatorIsNotCountedAsPlaceholders_sliceT() throws Exception {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.and(Filters.eq("id", "1"), Filters.expr("(score ?? 0) > 1")), TestItem.class).toList();
+        executor.streamItems(Filters.and(Filters.expr("(score ?? 0) > 1"), Filters.in("name", Arrays.asList("a", "b"))), TestItem.class).toList();
+
+        final List<SqlQuerySpec> specs = specCaptor.getAllValues();
+        assertEquals("SELECT * FROM test_item c WHERE (c.id = @p0) AND ((c.score ?? 0) > 1)", specs.get(0).getQueryText());
+        assertEquals("1", specs.get(0).getParameters().get(0).getValue(String.class));
+        assertEquals("SELECT * FROM test_item c WHERE ((c.score ?? 0) > 1) AND (c.name IN (@p0, @p1))", specs.get(1).getQueryText());
+        assertEquals(Arrays.asList("a", "b"), specs.get(1).getParameters().stream().map(p -> p.getValue(String.class)).toList());
+
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        assertEquals("SELECT * FROM c WHERE c.a = @p0 AND (c.b??c.d) > @p1", method.invoke(null, "SELECT * FROM c WHERE c.a = ? AND (c.b??c.d) > ?", 2));
+    }
+
+    /** Regression: the {@code ESCAPE} keyword of a raw Cosmos {@code LIKE ... ESCAPE '!'} predicate was alias-qualified as {@code c.escape}. */
+    @Test
+    public void testLikeEscapeKeywordIsNotAliasQualified_sliceT() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("name LIKE 'a!%' ESCAPE '!'"),
+                Filters.expr("name NOT LIKE 'a!_' escape '!' AND id = '1'"), Filters.eq("escape", 1), Filters.isNull("escape"),
+                Filters.expr("IS_DEFINED(escape) AND id = escape"), Filters.expr("id = '1' AND NOT escape"));
+
+        // SNAKE_CASE lower-cases the keyword token; Cosmos DB keywords are case-insensitive.
+        assertEquals("SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape '!'", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.name NOT LIKE 'a!_' escape '!' AND c.id = '1'", queries.get(1));
+        // A property that is merely named "escape" is still qualified.
+        assertEquals("SELECT * FROM test_item c WHERE c.escape = @p0", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.escape)", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE IS_DEFINED(c.escape) AND c.id = c.escape", queries.get(4));
+        assertEquals("SELECT * FROM test_item c WHERE c.id = '1' AND NOT c.escape", queries.get(5));
+    }
+
+    // ---- 2026-10-02 verifyCN ----
+
+    /**
+     * Edge cases of the coalesce rule: adjacent question marks pair left to right ({@code ???} is {@code ??} plus one placeholder,
+     * {@code ????} is two coalesce operators), spaced or comma-joined placeholders are still counted, a quoted {@code ??} is ignored,
+     * and a lone {@code ??} never satisfies a parameter.
+     */
+    @Test
+    public void testCoalescePairingAndPlaceholderCountingEdgeCases_verifyCN() throws Exception {
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+
+        assertEquals("(c.t ??@p0) = 1", method.invoke(null, "(c.t ???) = 1", 1));
+        assertEquals("(c.t ????) = @p0", method.invoke(null, "(c.t ????) = ?", 1));
+        assertEquals("c.a ?? @p0 ?? c.b", method.invoke(null, "c.a ?? ? ?? c.b", 1));
+        assertEquals("@p0 @p1", method.invoke(null, "? ?", 2));
+        assertEquals("(@p0,@p1)", method.invoke(null, "(?,?)", 2));
+        assertEquals("c.n = 'a''??' AND c.d = \"x\\\"??\" AND c.a = @p0", method.invoke(null, "c.n = 'a''??' AND c.d = \"x\\\"??\" AND c.a = ?", 1));
+
+        final InvocationTargetException e = assertThrows(InvocationTargetException.class, () -> method.invoke(null, "c.a = ??", 1));
+        assertTrue(e.getCause() instanceof IllegalArgumentException);
+        assertEquals("Query parameter count mismatch: expected 1 placeholders but found 0", e.getCause().getMessage());
+    }
+
+    /**
+     * A raw sub-query whose user-written bindings sit next to a coalesce ({@code ???}) is counted the same way abacus-query counts its
+     * bindings, so the parameters line up; a raw {@code ?} that is not a binding (a ternary) is still rejected as a count mismatch.
+     */
+    @Test
+    public void testCoalesceNextToRawSubQueryBindingAndRawQuestionMarkMismatch_verifyCN() {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.and(Filters.eq("id", "1"),
+                Filters.in("name", Filters.subQuery("SELECT VALUE t FROM t IN c.tags WHERE (t ???) = 1", Arrays.asList("a")))), TestItem.class)
+                .toList();
+
+        final SqlQuerySpec spec = specCaptor.getValue();
+        assertTrue(spec.getQueryText().startsWith("SELECT * FROM test_item c WHERE (c.id = @p0) AND "), spec.getQueryText());
+        assertTrue(spec.getQueryText().contains("??@p1) = 1"), spec.getQueryText());
+        assertEquals(Arrays.asList("@p0", "@p1"), spec.getParameters().stream().map(p -> p.getName()).toList());
+        assertEquals(Arrays.asList("1", "a"), spec.getParameters().stream().map(p -> p.getValue(String.class)).toList());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.streamItems(Filters.and(Filters.eq("id", "1"), Filters.expr("(score > 0 ? score ?? 0 : 1) > 0")), TestItem.class));
+    }
+
+    /** The ESCAPE keyword rule with extra whitespace or a double-quoted escape literal, next to a bound parameter, and under every naming policy. */
+    @Test
+    public void testLikeEscapeKeywordSpacingAndNamingPolicies_verifyCN() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("name LIKE 'a!%' ESCAPE    '!'"),
+                Filters.expr("name LIKE 'a!%' ESCAPE\"!\""), Filters.and(Filters.eq("id", "1"), Filters.expr("name LIKE '%!_x' ESCAPE '!'")));
+
+        assertEquals("SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape '!'", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape\"!\"", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE (c.id = @p0) AND (c.name LIKE '%!_x' escape '!')", queries.get(2));
+
+        final List<String> screaming = captureConditionQueries(new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE),
+                Filters.expr("name LIKE 'a!%' ESCAPE '!'"), Filters.expr("name like 'a!%' escape '!'"), Filters.eq("escape", 1));
+
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.NAME LIKE 'a!%' ESCAPE '!'", screaming.get(0));
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.NAME LIKE 'a!%' ESCAPE '!'", screaming.get(1));
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.ESCAPE = @p0", screaming.get(2));
+
+        final List<String> camel = captureConditionQueries(new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.CAMEL_CASE),
+                Filters.expr("name LIKE 'a!%' ESCAPE '!'"), Filters.expr("escape = 'x'"));
+
+        assertEquals("SELECT * FROM testItem c WHERE c.name LIKE 'a!%' escape '!'", camel.get(0));
+        assertEquals("SELECT * FROM testItem c WHERE c.escape = 'x'", camel.get(1));
+    }
+
+    // ---- 2026-10-04 coverageDC ----
+
+    /**
+     * Every ESCAPE shape compared as one list, so each is proven on its own (the sliceT/verifyCN tests stop at their first assertion
+     * on HEAD, which qualified every keyword below as {@code c.escape}): single- and double-quoted escape literal, mixed keyword case,
+     * NOT LIKE, two LIKE ... ESCAPE predicates in one expression, and next to a bound parameter. The last two entries pin that a
+     * property named {@code escape} that is not followed by a string literal is still qualified.
+     */
+    @Test
+    public void testLikeEscapeKeywordEveryShapeIsNotAliasQualified_coverageDC() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("name LIKE 'a!%' ESCAPE '!'"),
+                Filters.expr("name LIKE 'a!%' ESCAPE \"!\""), Filters.expr("name LIKE 'a!%' Escape '!'"), Filters.expr("name NOT LIKE 'a!_' escape '!'"),
+                Filters.expr("(name LIKE 'a!%' ESCAPE '!') OR (id LIKE 'b!_%' ESCAPE '!')"),
+                Filters.and(Filters.eq("id", "1"), Filters.expr("name LIKE 'a!%' ESCAPE '!'")), Filters.expr("name = escape"),
+                Filters.expr("escape LIKE 'a%'"));
+
+        assertEquals(List.of("SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape '!'", //
+                "SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape \"!\"", //
+                "SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape '!'", //
+                "SELECT * FROM test_item c WHERE c.name NOT LIKE 'a!_' escape '!'", //
+                "SELECT * FROM test_item c WHERE (c.name LIKE 'a!%' escape '!') OR (c.id LIKE 'b!_%' escape '!')", //
+                "SELECT * FROM test_item c WHERE (c.id = @p0) AND (c.name LIKE 'a!%' escape '!')", //
+                "SELECT * FROM test_item c WHERE c.name = c.escape", //
+                "SELECT * FROM test_item c WHERE c.escape LIKE 'a%'"), queries);
+    }
+
+    /**
+     * Every coalesce shape that is combined with a bound parameter, rendered one by one so that each is proven on its own (HEAD
+     * counted each {@code ??} as two placeholders and rejected every one of them with "Query parameter count mismatch"): a coalesce
+     * before or after the bound condition, a chained coalesce, no spaces around {@code ??}, and several bound values. The last entry
+     * pins that a coalesce without any bound parameter was, and still is, passed through unchanged.
+     */
+    @Test
+    public void testCoalesceWithBoundParametersEveryShape_coverageDC() {
+        final List<String> rendered = new java.util.ArrayList<>();
+
+        for (final com.landawn.abacus.query.condition.Condition condition : List.of(
+                Filters.and(Filters.eq("id", "1"), Filters.expr("(score ?? 0) > 1")),
+                Filters.and(Filters.expr("(score ?? 0) > 1"), Filters.eq("id", "1")),
+                Filters.and(Filters.eq("id", "1"), Filters.expr("(score ?? bonus ?? 0) > 1")),
+                Filters.and(Filters.eq("id", "1"), Filters.expr("(score??0) > 1")),
+                Filters.and(Filters.between("id", "a", "b"), Filters.expr("(name ?? '') != ''"), Filters.in("name", Arrays.asList("x", "y"))),
+                Filters.expr("(score ?? 0) > 1"))) {
+            rendered.add(renderQueryOrFailure_coverageDC(condition));
+        }
+
+        assertEquals(List.of("SELECT * FROM test_item c WHERE (c.id = @p0) AND ((c.score ?? 0) > 1) [1]", //
+                "SELECT * FROM test_item c WHERE ((c.score ?? 0) > 1) AND (c.id = @p0) [1]", //
+                "SELECT * FROM test_item c WHERE (c.id = @p0) AND ((c.score ?? c.bonus ?? 0) > 1) [1]", //
+                "SELECT * FROM test_item c WHERE (c.id = @p0) AND ((c.score??0) > 1) [1]", //
+                "SELECT * FROM test_item c WHERE (c.id BETWEEN @p0 AND @p1) AND ((c.name ?? '') != '') AND (c.name IN (@p2, @p3)) [a, b, x, y]", //
+                "SELECT * FROM test_item c WHERE (c.score ?? 0) > 1 []"), rendered);
+    }
+
+    private String renderQueryOrFailure_coverageDC(final com.landawn.abacus.query.condition.Condition condition) {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        try {
+            executor.streamItems(condition, TestItem.class).toList();
+        } catch (final IllegalArgumentException e) {
+            return "IllegalArgumentException: " + e.getMessage();
+        }
+
+        final SqlQuerySpec spec = specCaptor.getValue();
+        return spec.getQueryText() + " " + spec.getParameters().stream().map(p -> p.getValue(Object.class)).toList();
+    }
+
     // Test data class
     public static class TestItem {
         public String id;

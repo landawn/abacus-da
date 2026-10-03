@@ -186,6 +186,19 @@ public class MongoDBTest extends TestBase {
         Assertions.assertEquals(oid, doc.get("_id"));
     }
 
+    // ---- 2026-10-02 verifyME ----
+
+    @Test
+    public void testSuppliedCollectionIsUsedAsIsWithItsOwnCodecRegistry_verifyME() {
+        // Pins the documented contract of collectionExecutor(MongoCollection)/collectionMapper(MongoCollection, Class):
+        // the supplied collection is wrapped as-is and does not receive this instance's framework codec registry.
+        Assertions.assertSame(mockCollection, mongoDB.collectionExecutor(mockCollection).coll());
+        Assertions.assertSame(mockCollection, mongoDB.collectionMapper(mockCollection, TestEntity.class).collectionExecutor().coll());
+        verify(mockCollection, org.mockito.Mockito.never()).withCodecRegistry(any());
+    }
+
+    // ---- end 2026-10-02 verifyME ----
+
     // Test entity class
     private static class TestEntity {
         private String id;

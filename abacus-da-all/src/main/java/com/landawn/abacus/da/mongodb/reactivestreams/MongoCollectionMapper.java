@@ -1847,7 +1847,10 @@ public final class MongoCollectionMapper<T> {
      * Queries documents with field projection and returns them as a Dataset.
      *
      * <p>Retrieves documents matching the filter with only specified fields included
-     * and returns them as a Dataset. This optimizes memory usage and network traffic.</p>
+     * and returns them as a Dataset. This optimizes memory usage and network traffic. A dotted field name such as
+     * {@code "address.city"} becomes a column holding the nested value; a dotted path that traverses a non-null
+     * value that is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled
+     * through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1885,7 +1888,10 @@ public final class MongoCollectionMapper<T> {
      * Queries documents with field projection and pagination, returning a Dataset.
      *
      * <p>Combines field projection with pagination to retrieve a subset of documents
-     * with only specific fields, returned as a Dataset for structured data processing.</p>
+     * with only specific fields, returned as a Dataset for structured data processing. A dotted field name such as
+     * {@code "address.city"} becomes a column holding the nested value; a dotted path that traverses a non-null
+     * value that is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled
+     * through the publisher.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1925,7 +1931,10 @@ public final class MongoCollectionMapper<T> {
      * Queries documents with field projection and sorting, returning a Dataset.
      *
      * <p>Retrieves sorted documents matching the filter with specified field projection,
-     * returned as a Dataset. The sorting order determines the sequence of rows in the Dataset.</p>
+     * returned as a Dataset. The sorting order determines the sequence of rows in the Dataset. A dotted field name
+     * such as {@code "address.city"} becomes a column holding the nested value; a dotted path that traverses a
+     * non-null value that is not a {@link Document} (such as an array) fails with a {@link ClassCastException}
+     * signalled through the publisher.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1965,7 +1974,11 @@ public final class MongoCollectionMapper<T> {
      * Queries documents with complete control over projection, filtering, sorting, and pagination.
      *
      * <p>Provides full control over query execution with field projection, filtering, sorting,
-     * and pagination, returning results as a Dataset for structured data manipulation.</p>
+     * and pagination, returning results as a Dataset for structured data manipulation. A dotted field name such as
+     * {@code "address.city"} becomes a column holding the nested value, read from the returned document rather
+     * than converted through the mapped type; a dotted path that traverses a non-null value that is not a
+     * {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the
+     * publisher.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3633,7 +3646,9 @@ public final class MongoCollectionMapper<T> {
      * mapper's row type {@code T}.
      *
      * <p>Processes documents through the supplied pipeline stages to perform filtering, grouping,
-     * sorting, projection, and other transformations.</p>
+     * sorting, projection, and other transformations. For a single-value {@code T} (such as {@code String}), an
+     * output document that yields no value (an empty document, or, for a non-primitive row type, one whose value is
+     * BSON null) is skipped rather than emitted, because Reactive Streams forbids {@code null} elements.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3788,7 +3803,8 @@ public final class MongoCollectionMapper<T> {
      * @param fieldName the field name to group and count by
      * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
      *         as {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} and {@code T}
+     *         is not {@link Document} (the group key would be overwritten by the count column)
      */
     @Beta
     public Flux<T> groupByAndCount(final String fieldName) throws IllegalArgumentException {
@@ -3827,7 +3843,8 @@ public final class MongoCollectionMapper<T> {
      * @param fieldNames collection of field names to compose the group key
      * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
      *         as {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code fieldNames} contains {@code "count"} and
+     *         {@code T} is not {@link Document} (that group key would be overwritten by the count column)
      */
     @Beta
     public Flux<T> groupByAndCount(final Collection<String> fieldNames) throws IllegalArgumentException {

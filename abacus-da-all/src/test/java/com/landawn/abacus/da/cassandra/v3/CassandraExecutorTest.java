@@ -1678,6 +1678,214 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
+    // ---- 2026-10-04 coverageCS ----
+
+    public static class CoverageCSTimeUdt {
+        private java.sql.Time t;
+        private java.time.LocalTime lt;
+
+        public java.sql.Time getT() {
+            return t;
+        }
+
+        public void setT(final java.sql.Time t) {
+            this.t = t;
+        }
+
+        public java.time.LocalTime getLt() {
+            return lt;
+        }
+
+        public void setLt(final java.time.LocalTime lt) {
+            this.lt = lt;
+        }
+    }
+
+    public static class CoverageCSLocalTimeRow {
+        private int id;
+        private java.time.LocalTime t;
+        private CoverageCSTimeUdt u;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+
+        public java.time.LocalTime getT() {
+            return t;
+        }
+
+        public void setT(final java.time.LocalTime t) {
+            this.t = t;
+        }
+
+        public CoverageCSTimeUdt getU() {
+            return u;
+        }
+
+        public void setU(final CoverageCSTimeUdt u) {
+            this.u = u;
+        }
+    }
+
+    public static class CoverageCSSqlTimeRow {
+        private int id;
+        private java.sql.Time t;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+
+        public java.sql.Time getT() {
+            return t;
+        }
+
+        public void setT(final java.sql.Time t) {
+            this.t = t;
+        }
+    }
+
+    /** Schema changes get a generous timeout (they wait for schema agreement). */
+    private static void coverageCSSchemaChange(final String cql) {
+        cassandraExecutor.execute(new com.datastax.driver.core.SimpleStatement(cql).setReadTimeoutMillis(60_000));
+    }
+
+    @Test
+    public void test_coverageCS_dateTimeAndValueTypeParametersBindRoundTrip() throws Exception {
+        final String table = "simplex.coverage_cs_binds3";
+        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, ts timestamp, b blob)");
+
+        try {
+            final String readT = "SELECT t FROM " + table + " WHERE id = ?";
+            final java.time.LocalTime nanoTime = java.time.LocalTime.of(10, 15, 30, 123_456_789);
+            final java.sql.Time sqlTime = new java.sql.Time(java.sql.Time.valueOf(java.time.LocalTime.of(10, 15, 30)).getTime() + 123);
+            final java.util.Calendar calendar = java.util.Calendar.getInstance();
+            calendar.setTime(sqlTime);
+            final LocalDate date = LocalDate.of(2020, 1, 2);
+            final java.time.ZoneOffset offset = java.time.ZoneOffset.ofHours(5);
+
+            // Binds into the time column, which driver 3 stores from a Long of nanoseconds since midnight: a Date/Calendar or a
+            // LocalDateTime/OffsetDateTime/ZonedDateTime/Instant was bound as epoch milliseconds (silently stored ~00:00:00.0xx or
+            // 00:26:17.98...), a LocalTime/OffsetTime could not be bound at all. Each value's own time of day is stored now - among
+            // two parameters and as the single parameter of a single marker (a single Calendar was read as a bean of named values).
+            final long millisNanos = 36_930_123_000_000L; // 10:15:30.123
+            final List<Object[]> valuesAndNanos = List.of(new Object[] { nanoTime, nanoTime.toNanoOfDay() }, new Object[] { sqlTime, millisNanos },
+                    new Object[] { new java.util.Date(sqlTime.getTime()), millisNanos }, new Object[] { new java.sql.Timestamp(sqlTime.getTime()), millisNanos },
+                    new Object[] { calendar, millisNanos }, new Object[] { LocalDateTime.of(date, nanoTime), nanoTime.toNanoOfDay() },
+                    new Object[] { java.time.OffsetDateTime.of(date, nanoTime, offset), nanoTime.toNanoOfDay() },
+                    new Object[] { java.time.ZonedDateTime.of(date, nanoTime, java.time.ZoneId.of("Asia/Tokyo")), nanoTime.toNanoOfDay() },
+                    new Object[] { java.time.OffsetTime.of(nanoTime, offset), nanoTime.toNanoOfDay() },
+                    new Object[] { java.time.ZonedDateTime.of(date, nanoTime, java.time.ZoneId.systemDefault()).toInstant(), nanoTime.toNanoOfDay() },
+                    new Object[] { nanoTime.toNanoOfDay(), nanoTime.toNanoOfDay() }); // unchanged: a Long is the nanosecond count itself
+
+            for (final Object[] valueAndNanos : valuesAndNanos) {
+                final String type = valueAndNanos[0].getClass().getName();
+                cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 2, valueAndNanos[0]);
+                assertEquals(valueAndNanos[1], cassandraExecutor.queryForSingleValue(Long.class, readT, 2).get(), type);
+                cassandraExecutor.execute("UPDATE " + table + " SET t = ? WHERE id = 3", valueAndNanos[0]);
+                assertEquals(valueAndNanos[1], cassandraExecutor.queryForSingleValue(Long.class, readT, 3).get(), type);
+            }
+
+            // An entity's LocalTime / java.sql.Time property bound as a named parameter goes through the same conversion.
+            final CoverageCSLocalTimeRow localTimeRow = new CoverageCSLocalTimeRow();
+            localTimeRow.setId(5);
+            localTimeRow.setT(nanoTime);
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (:id, :t)", localTimeRow);
+            assertEquals(nanoTime.toNanoOfDay(), cassandraExecutor.queryForSingleValue(Long.class, readT, 5).get());
+            final CoverageCSSqlTimeRow sqlTimeRow = new CoverageCSSqlTimeRow();
+            sqlTimeRow.setId(6);
+            sqlTimeRow.setT(sqlTime);
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (:id, :t)", sqlTimeRow);
+            assertEquals(millisNanos, cassandraExecutor.queryForSingleValue(Long.class, readT, 6).get());
+
+            // A single Calendar for a single timestamp marker, too.
+            cassandraExecutor.execute("UPDATE " + table + " SET ts = ? WHERE id = 3", calendar);
+            assertEquals(calendar.getTime(), cassandraExecutor.queryForSingleValue(java.util.Date.class, "SELECT ts FROM " + table + " WHERE id = 3").get());
+
+            // A single ByteBuffer is one positional value: bound to a single blob marker, too few values for two markers.
+            cassandraExecutor.execute("UPDATE " + table + " SET b = ? WHERE id = 3", ByteBuffer.wrap(new byte[] { 1, 2 }));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2 },
+                    cassandraExecutor.queryForSingleValue(byte[].class, "SELECT b FROM " + table + " WHERE id = 3").get());
+            final IllegalArgumentException tooFew = assertThrows(IllegalArgumentException.class,
+                    () -> cassandraExecutor.execute("UPDATE " + table + " SET b = ? WHERE id = ?", ByteBuffer.wrap(new byte[] { 1 })));
+            assertTrue(tooFew.getMessage().startsWith("Not enough parameters for parameterized query: expected 2 but got 1"), tooFew.getMessage());
+        } finally {
+            coverageCSSchemaChange("DROP TABLE IF EXISTS " + table);
+        }
+    }
+
+    @Test
+    public void test_coverageCS_timeColumnReadsIntoTimeTargetsOnEveryPath() throws Exception {
+        final String table = "simplex.coverage_cs_reads3";
+        coverageCSSchemaChange("CREATE TYPE IF NOT EXISTS simplex.coverage_cs_time_udt3 (t time, lt time)");
+        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, u frozen<coverage_cs_time_udt3>)");
+
+        try {
+            final String readT = "SELECT t FROM " + table + " WHERE id = ?";
+            final java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss.SSS");
+            final java.time.LocalTime nanoTime = java.time.LocalTime.of(10, 15, 30, 123_456_789);
+
+            // Reads: driver 3 decodes a time as a Long of nanoseconds since midnight, which N.convert/setPropValue read as epoch
+            // milliseconds (10:00 came back as 09:00 or 16:xx); every read path into a LocalTime or java.sql.Time target uses the
+            // nanoseconds since midnight.
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t, u) VALUES (1, '10:15:30.123456789', {t: '10:15:30.123456789', lt: '10:15:30.123456789'})");
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (4, '12:30:00')");
+            cassandraExecutor.session()
+                    .getCluster()
+                    .getConfiguration()
+                    .getCodecRegistry()
+                    .register(UDTCodec.create(cassandraExecutor.session().getCluster(), "simplex", "coverage_cs_time_udt3", CoverageCSTimeUdt.class));
+
+            for (final java.time.LocalTime expected : List.of(nanoTime, java.time.LocalTime.of(12, 30))) {
+                final int id = expected.equals(nanoTime) ? 1 : 4;
+                final String expectedText = timeFormat.format(new java.sql.Time(java.sql.Time.valueOf(expected.withNano(0)).getTime() + expected.getNano() / 1_000_000));
+                final String readRow = "SELECT id, t FROM " + table + " WHERE id = ?";
+
+                assertEquals(expected, cassandraExecutor.queryForSingleValue(java.time.LocalTime.class, readT, id).get());
+                assertEquals(expected, cassandraExecutor.queryForSingleNonNull(java.time.LocalTime.class, readT, id).get());
+                assertEquals(expected, cassandraExecutor.findFirst(java.time.LocalTime.class, readT, id).get());
+                assertEquals(expected, cassandraExecutor.list(java.time.LocalTime.class, readT, id).get(0));
+                assertEquals(expected, cassandraExecutor.list(java.time.LocalTime[].class, readT, id).get(0)[0]);
+                assertEquals(expected, cassandraExecutor.stream(java.time.LocalTime.class, readT, id).first().get());
+                assertEquals(expected, cassandraExecutor.findFirst(CoverageCSLocalTimeRow.class, readRow, id).get().getT());
+                assertEquals(expected, cassandraExecutor.query(CoverageCSLocalTimeRow.class, readRow, id).getColumn("t").get(0));
+                assertEquals(expected, cassandraExecutor.async().queryForSingleValue(java.time.LocalTime.class, readT, id).get().get());
+                assertEquals(expected, cassandraExecutor.async().list(java.time.LocalTime.class, readT, id).get().get(0));
+
+                assertEquals(expectedText, timeFormat.format(cassandraExecutor.queryForSingleValue(java.sql.Time.class, readT, id).get()));
+                assertEquals(expectedText, timeFormat.format(cassandraExecutor.list(java.sql.Time.class, readT, id).get(0)));
+                assertEquals(expectedText, timeFormat.format(cassandraExecutor.list(java.sql.Time[].class, readT, id).get(0)[0]));
+                assertEquals(expectedText, timeFormat.format(cassandraExecutor.findFirst(CoverageCSSqlTimeRow.class, readRow, id).get().getT()));
+                assertEquals(expectedText,
+                        timeFormat.format(cassandraExecutor.query(CoverageCSSqlTimeRow.class, readRow, id).<java.sql.Time> getColumn("t").get(0)));
+                assertEquals(expectedText, timeFormat.format(cassandraExecutor.async().queryForSingleNonNull(java.sql.Time.class, readT, id).get().get()));
+            }
+
+            // Several rows: every row is converted, not only the first.
+            assertEquals(N.asSet(nanoTime, java.time.LocalTime.of(12, 30)),
+                    N.newHashSet(cassandraExecutor.list(java.time.LocalTime.class, "SELECT t FROM " + table + " WHERE id IN (1, 4)")));
+
+            // UDT time fields decoded into java.sql.Time / LocalTime bean properties (through the registered UDT codec).
+            final CoverageCSTimeUdt udt = cassandraExecutor.findFirst(CoverageCSLocalTimeRow.class, "SELECT id, t, u FROM " + table + " WHERE id = ?", 1)
+                    .get()
+                    .getU();
+            assertEquals("10:15:30.123", timeFormat.format(udt.getT()));
+            assertEquals(nanoTime, udt.getLt());
+        } finally {
+            coverageCSSchemaChange("DROP TABLE IF EXISTS " + table);
+            coverageCSSchemaChange("DROP TYPE IF EXISTS simplex.coverage_cs_time_udt3");
+        }
+    }
+
+    // ---- 2026-10-04 coverageCS end ----
+
     private Users createUser() {
         Users user = new Users();
         user.setId(UUID.randomUUID());

@@ -4731,4 +4731,455 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set(Integer.class));
         assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Object) 3));
     }
+
+    // ---- 2026-10-02 sliceQ ----
+
+    /** Bean whose primary key is declared only via {@link CassandraExecutorBase#registerKeys(Class, java.util.Collection)}. */
+    public static class RegKeyUser {
+        private String userId;
+        private String tenantId;
+        private String name;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(final String userId) {
+            this.userId = userId;
+        }
+
+        public String getTenantId() {
+            return tenantId;
+        }
+
+        public void setTenantId(final String tenantId) {
+            this.tenantId = tenantId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    /**
+     * The documented key exclusion ("via @Id / registered keys") ignored keys registered with
+     * {@code CassandraExecutorBase.registerKeys}: update(Class), set(bean), set(Class) and delete(Class) rendered the key
+     * columns in SET / the DELETE column list, which Cassandra rejects for PRIMARY KEY parts.
+     */
+    @Test
+    public void test_sliceQ_registeredKeys_areExcludedLikeIdProperties() {
+        CassandraExecutorBase.registerKeys(RegKeyUser.class, N.asList("userId", "tenantId"));
+
+        assertEquals("UPDATE reg_key_user SET name = ? WHERE user_id = ?", PSC.update(RegKeyUser.class).where(Filters.eq("userId", "u")).build().query());
+        assertEquals("UPDATE reg_key_user SET name = ? WHERE user_id = ?",
+                PSC.update("reg_key_user").set(RegKeyUser.class).where(Filters.eq("userId", "u")).build().query());
+        assertEquals("DELETE name FROM reg_key_user WHERE user_id = ?",
+                PSC.delete(RegKeyUser.class).from(RegKeyUser.class).where(Filters.eq("userId", "u")).build().query());
+
+        final RegKeyUser user = new RegKeyUser();
+        user.setUserId("u");
+        user.setTenantId("t");
+        user.setName("n");
+
+        final SP sp = PSC.update("reg_key_user").set(user).where(Filters.eq("userId", "u")).build();
+        assertEquals("UPDATE reg_key_user SET name = ? WHERE user_id = ?", sp.query());
+        assertEquals(N.asList("n", "u"), sp.parameters());
+    }
+
+    /**
+     * USING appended to update(Class) before set(...) expanded the implicit SET list immediately, so a following
+     * explicit set(...) was appended to it (duplicate columns, unbound placeholders) instead of replacing it as
+     * documented for update(Class, Set).
+     */
+    @Test
+    public void test_sliceQ_updateEntityClass_usingBeforeSet_explicitSetReplacesImplicitList() {
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ? WHERE id = ?",
+                PSC.update(Account.class).usingTTL(5).set("firstName").where(Filters.eq("id", 1)).build().query());
+
+        final SP sp = PSC.update(Account.class).usingTTL(5).usingTimestamp(7L).set(N.asMap("firstName", (Object) "f")).where(Filters.eq("id", 1)).build();
+        assertEquals("UPDATE account USING TTL 5 AND TIMESTAMP 7000 SET first_name = ? WHERE id = ?", sp.query());
+        assertEquals(N.asList("f", 1), sp.parameters());
+
+        final Account account = new Account();
+        account.setFirstName("f");
+        final String beanCql = PSC.update(Account.class).usingTTL(5).set(account).where(Filters.eq("id", 1)).build().query();
+        assertTrue(beanCql.startsWith("UPDATE account USING TTL 5 SET gui = ?, "), beanCql);
+        assertEquals(1, Strings.countMatches(beanCql, "first_name = ?"), beanCql);
+
+        assertEquals("UPDATE account USING TIMESTAMP 7 SET first_name = :firstName WHERE id = :id",
+                NSC.update(Account.class).usingTimestamp("7").set("firstName").where(Filters.eq("id", 1)).build().query());
+
+        // Without an explicit set(...) the implicit list is still rendered, whether where() or build() finalizes it.
+        final String implicitCql = PSC.update(Account.class).usingTTL(5).build().query();
+        assertTrue(implicitCql.startsWith("UPDATE account USING TTL 5 SET gui = ?, "), implicitCql);
+        assertTrue(implicitCql.endsWith("devices = ?"), implicitCql);
+
+        // An UPDATE with no SET columns at all is still rejected when USING is appended.
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").usingTTL(5));
+    }
+
+    /**
+     * A Dsl factory that failed after allocating its builder (non-bean class, unsupported condition, mismatched batch
+     * rows, ...) never released it, permanently inflating the parent's active-builder count (which logs a warning/error
+     * on every builder once it passes 512/1024). The parent SqlBuilder Dsl releases such builders.
+     */
+    @Test
+    public void test_sliceQ_failedDslFactory_releasesBuilder() throws Exception {
+        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
+        field.setAccessible(true);
+        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
+        final int before = counter.get();
+
+        assertThrows(IllegalArgumentException.class, () -> PSC.insert((Object) Integer.valueOf(3)));
+        assertThrows(IllegalArgumentException.class, () -> PSC.insert(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.insertInto(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(N.asList(N.asMap("a", 1), N.asMap("b", 2))));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.delete(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.deleteFrom(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.selectFrom(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.count(Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.renderCondition(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2)), Account.class));
+
+        assertEquals(before, counter.get());
+    }
+
+    // ---- 2026-10-02 verifyQB ----
+
+    private static final java.util.Set<String> VERIFY_QB_ALL_BUT_NAMES = N.asSet("gui", "emailAddress", "middleName", "birthDate", "status",
+            "lastUpdateTime", "createTime", "contact", "devices");
+
+    /** Bean whose keys are registered only after the builder has already resolved (and cached) its key names. */
+    public static class VerifyQbLateKeyUser {
+        private String userId;
+        private String name;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(final String userId) {
+            this.userId = userId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    /** Bean whose metadata cannot be loaded (a LocalDate with the "long" date format), so setEntityClass fails. */
+    public static class VerifyQbLongDateEntity {
+        private long id;
+        @com.landawn.abacus.annotation.JsonXmlField(dateFormat = "long")
+        private java.time.LocalDate day;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public java.time.LocalDate getDay() {
+            return day;
+        }
+
+        public void setDay(final java.time.LocalDate day) {
+            this.day = day;
+        }
+    }
+
+    /** Valid bean whose derived table name is not one CQL table, so only the factory's later into(..)/from(..) step fails. */
+    @com.landawn.abacus.annotation.Table(name = "a b")
+    public static class VerifyQbBadTableEntity {
+        private long id;
+        private String name;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    /** Every SET overload called after USING replaces the pending implicit SET list of update(Class) (was appended to it). */
+    @Test
+    public void test_verifyQB_usingBeforeSet_everySetOverloadReplacesImplicitList() {
+        SP sp = PSC.update(Account.class).usingTTL(5).set(N.asList("firstName", "lastName")).where(Filters.eq("id", 1)).build();
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ?, last_name = ? WHERE id = ?", sp.query());
+        assertEquals(N.asList(1), sp.parameters());
+
+        sp = PSC.update(Account.class).usingTTL(5).set("firstName", "v").where(Filters.eq("id", 1)).build();
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ? WHERE id = ?", sp.query());
+        assertEquals(N.asList("v", 1), sp.parameters());
+
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ?, last_name = ? WHERE id = ?",
+                PSC.update(Account.class).usingTTL(5).set(Account.class, VERIFY_QB_ALL_BUT_NAMES).where(Filters.eq("id", 1)).build().query());
+        assertEquals("UPDATE account USING TIMESTAMP 7000 SET first_name = ?, last_name = ? WHERE id = ?",
+                PSC.update(Account.class).usingTimestamp(7L).set("firstName").set("lastName").where(Filters.eq("id", 1)).build().query());
+        assertEquals("UPDATE account USING TTL 5 SET first_name = 'v' WHERE id = 1",
+                SCCB.update(Account.class).usingTTL(5).set("firstName", "v").where(Filters.eq("id", 1)).build().query());
+
+        // Named parameters are numbered as for a fresh builder: the replaced implicit list consumes no names.
+        sp = NSC.update(Account.class)
+                .usingTTL(5)
+                .set(N.asList("firstName"))
+                .where(Filters.and(Filters.eq("firstName", "a"), Filters.eq("id", 1)))
+                .build();
+        assertEquals("UPDATE account USING TTL 5 SET first_name = :firstName WHERE first_name = :firstName_2 AND id = :id", sp.query());
+        assertEquals(N.asList("a", 1), sp.parameters());
+        assertEquals("UPDATE ACCOUNT USING TTL 5 SET FIRST_NAME = :firstName WHERE FIRST_NAME = :firstName_2 AND ID = :id",
+                NAC.update(Account.class).usingTTL(5).set(N.asList("firstName")).where(Filters.and(Filters.eq("firstName", "a"), Filters.eq("id", 1))).build().query());
+
+        // Previous behavior kept: set(...) before USING, and a rejected explicit set(...) leaves the implicit list pending.
+        assertEquals("UPDATE account USING TTL 5 AND TIMESTAMP 8000 SET first_name = ? WHERE id = ?",
+                PSC.update(Account.class).set("firstName").usingTTL(5).usingTimestamp(8L).where(Filters.eq("id", 1)).build().query());
+
+        final CqlBuilder builder = PSC.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTTL(5);
+        assertThrows(IllegalArgumentException.class, () -> builder.set(N.asList("firstName", "bad -- x")));
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ?, last_name = ? WHERE id = ?", builder.where(Filters.eq("id", 1)).build().query());
+    }
+
+    /** The implicit SET list kept pending by USING is rendered (with its exclusions) by every clause that finalizes the statement. */
+    @Test
+    public void test_verifyQB_usingBeforeWhere_pendingImplicitListFinalizedByEveryClause() {
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ?, last_name = ? WHERE id = ?",
+                PSC.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTTL(5).where(Filters.eq("id", 1)).build().query());
+
+        SP sp = PSC.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTTL(5).where(Filters.eq("id", 1)).onlyIf(Filters.eq("firstName", "x")).build();
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ?, last_name = ? WHERE id = ? IF first_name = ?", sp.query());
+        assertEquals(N.asList(1, "x"), sp.parameters());
+
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ?, last_name = ? WHERE id = ? IF EXISTS",
+                PSC.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTTL(5).where(Filters.eq("id", 1)).ifExists().build().query());
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ?, last_name = ? WHERE id = 1",
+                PSC.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTTL(5).append(" WHERE id = 1").build().query());
+        assertEquals("UPDATE account USING TTL 5 AND TIMESTAMP 7000 SET first_name = ?, last_name = ?",
+                PSC.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTTL(5).usingTimestamp(7L).build().query());
+        assertEquals("UPDATE account USING TIMESTAMP 7000 SET first_name = ?, last_name = ? WHERE id = 1",
+                SCCB.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTimestamp(7L).where(Filters.eq("id", 1)).build().query());
+
+        sp = NSC.update(Account.class, VERIFY_QB_ALL_BUT_NAMES).usingTTL(5).where(Filters.and(Filters.eq("firstName", "a"), Filters.eq("id", 1))).build();
+        assertEquals("UPDATE account USING TTL 5 SET first_name = :firstName, last_name = :lastName WHERE first_name = :firstName_2 AND id = :id", sp.query());
+        assertEquals(N.asList("a", 1), sp.parameters());
+
+        // An UPDATE with no SET column at all is still rejected when USING is appended.
+        assertThrows(IllegalStateException.class, () -> PSC.update("account", Account.class).usingTTL(5));
+        assertThrows(IllegalStateException.class, () -> PSC.update(Account.class, N.asSet("gui", "emailAddress", "firstName", "middleName", "lastName",
+                "birthDate", "status", "lastUpdateTime", "createTime", "contact", "devices")).usingTimestamp(7L));
+    }
+
+    /** Keys registered after the builder first resolved the class's (then empty) key names take effect on the next builder. */
+    @Test
+    public void test_verifyQB_registerKeys_afterFirstUse_takesEffect() {
+        try {
+            assertEquals("UPDATE verify_qb_late_key_user SET user_id = ?, name = ? WHERE user_id = ?",
+                    PSC.update(VerifyQbLateKeyUser.class).where(Filters.eq("userId", "u")).build().query());
+
+            CassandraExecutorBase.registerKeys(VerifyQbLateKeyUser.class, N.asList("userId"));
+
+            assertEquals("UPDATE verify_qb_late_key_user SET name = ? WHERE user_id = ?",
+                    PSC.update(VerifyQbLateKeyUser.class).where(Filters.eq("userId", "u")).build().query());
+            assertEquals("UPDATE verify_qb_late_key_user USING TTL 3 SET name = :name WHERE user_id = :userId",
+                    NSC.update(VerifyQbLateKeyUser.class).usingTTL(3).where(Filters.eq("userId", "u")).build().query());
+            assertEquals("DELETE name FROM verify_qb_late_key_user WHERE user_id = ?",
+                    PSC.delete(VerifyQbLateKeyUser.class).from(VerifyQbLateKeyUser.class).where(Filters.eq("userId", "u")).build().query());
+        } finally {
+            CassandraExecutorBase.entityKeyNamesMap.remove(VerifyQbLateKeyUser.class);
+        }
+    }
+
+    /** Factories whose set-up fails in a later step (entity metadata, derived table name) release their builder too. */
+    @Test
+    public void test_verifyQB_failedDslFactory_releasesBuilder_afterLaterSetUpStep() throws Exception {
+        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
+        field.setAccessible(true);
+        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
+        final int before = counter.get();
+
+        assertThrows(UnsupportedOperationException.class, () -> PSC.update("t", VerifyQbLongDateEntity.class));
+        assertThrows(UnsupportedOperationException.class, () -> PSC.deleteFrom("t", VerifyQbLongDateEntity.class));
+        assertThrows(UnsupportedOperationException.class, () -> NSC.update(VerifyQbLongDateEntity.class));
+        assertThrows(UnsupportedOperationException.class, () -> NSC.insert(new VerifyQbLongDateEntity()));
+        assertThrows(UnsupportedOperationException.class, () -> PSC.renderCondition(Filters.eq("id", 1), VerifyQbLongDateEntity.class));
+
+        // insert(Class)/select(..) succeed; the derived table "a b" is rejected by the factory's own into(..)/from(..) step.
+        assertThrows(IllegalArgumentException.class, () -> PSC.insertInto(VerifyQbBadTableEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.selectFrom(VerifyQbBadTableEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.count(VerifyQbBadTableEntity.class));
+
+        assertEquals(before, counter.get());
+
+        // A successful factory still hands its live builder to the caller, whose build() releases it.
+        final CqlBuilder builder = PSC.selectFrom(Account.class);
+        assertEquals(before + 1, counter.get());
+        builder.build();
+        assertEquals(before, counter.get());
+    }
+
+    // ---- 2026-10-04 coverageCQ ----
+
+    /** Bean whose composite primary key (userId, tenantId) is declared only via registerKeys (no @Id, no "id" property). */
+    public static class CoverageCqRegKeyItem {
+        private String userId;
+        private String tenantId;
+        private String name;
+        private int score;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(final String userId) {
+            this.userId = userId;
+        }
+
+        public String getTenantId() {
+            return tenantId;
+        }
+
+        public void setTenantId(final String tenantId) {
+            this.tenantId = tenantId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public int getScore() {
+            return score;
+        }
+
+        public void setScore(final int score) {
+            this.score = score;
+        }
+    }
+
+    /**
+     * Registered keys are excluded at every site that drops key columns -- update(Class[, excluded]) (implicit SET list,
+     * also when USING keeps it pending), set(Class[, excluded]) / set(bean[, excluded]) (withIdPropNames) and
+     * delete(Class[, excluded]) (column DELETE) -- in a positional, a named and a raw-literal dialect. assertAll reports
+     * every case, so the HEAD run shows each site rendering the key columns, not only the first one.
+     */
+    @Test
+    public void test_coverageCQ_registeredKeys_excludedAtEverySiteAndOverload() {
+        CassandraExecutorBase.registerKeys(CoverageCqRegKeyItem.class, N.asList("userId", "tenantId"));
+
+        try {
+            final Condition key = Filters.and(Filters.eq("userId", "u"), Filters.eq("tenantId", "t"));
+            final CoverageCqRegKeyItem item = new CoverageCqRegKeyItem();
+            item.setUserId("u");
+            item.setTenantId("t");
+            item.setName("n");
+            item.setScore(3);
+
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertEquals("UPDATE coverage_cq_reg_key_item SET name = ?, score = ? WHERE user_id = ? AND tenant_id = ?",
+                            PSC.update(CoverageCqRegKeyItem.class).where(key).build().query()),
+                    () -> assertEquals("UPDATE coverage_cq_reg_key_item SET name = ? WHERE user_id = ? AND tenant_id = ?",
+                            PSC.update(CoverageCqRegKeyItem.class, N.asSet("score")).where(key).build().query()),
+                    () -> assertEquals("UPDATE coverage_cq_reg_key_item SET name = :name, score = :score WHERE user_id = :userId AND tenant_id = :tenantId",
+                            NSC.update(CoverageCqRegKeyItem.class).where(key).build().query()),
+                    () -> assertEquals("UPDATE coverage_cq_reg_key_item SET name = ?, score = ? WHERE user_id = 'u' AND tenant_id = 't'",
+                            SCCB.update(CoverageCqRegKeyItem.class).where(key).build().query()),
+                    () -> assertEquals(
+                            "UPDATE coverage_cq_reg_key_item USING TTL 5 SET name = :name, score = :score WHERE user_id = :userId AND tenant_id = :tenantId",
+                            NSC.update(CoverageCqRegKeyItem.class).usingTTL(5).where(key).build().query()),
+                    () -> assertEquals("UPDATE coverage_cq_reg_key_item SET name = ?, score = ? WHERE user_id = ? AND tenant_id = ?",
+                            PSC.update("coverage_cq_reg_key_item").set(CoverageCqRegKeyItem.class).where(key).build().query()),
+                    () -> assertEquals("UPDATE coverage_cq_reg_key_item SET score = ? WHERE user_id = ? AND tenant_id = ?",
+                            PSC.update("coverage_cq_reg_key_item").set(CoverageCqRegKeyItem.class, N.asSet("name")).where(key).build().query()),
+                    () -> {
+                        final SP sp = PSC.update("coverage_cq_reg_key_item").set(item).where(key).build();
+                        assertEquals("UPDATE coverage_cq_reg_key_item SET name = ?, score = ? WHERE user_id = ? AND tenant_id = ?", sp.query());
+                        assertEquals(N.asList("n", 3, "u", "t"), sp.parameters());
+                    }, () -> {
+                        final SP sp = PSC.update("coverage_cq_reg_key_item").set(item, N.asSet("score")).where(key).build();
+                        assertEquals("UPDATE coverage_cq_reg_key_item SET name = ? WHERE user_id = ? AND tenant_id = ?", sp.query());
+                        assertEquals(N.asList("n", "u", "t"), sp.parameters());
+                    },
+                    () -> assertEquals("DELETE name, score FROM coverage_cq_reg_key_item WHERE user_id = ? AND tenant_id = ?",
+                            PSC.delete(CoverageCqRegKeyItem.class).from(CoverageCqRegKeyItem.class).where(key).build().query()),
+                    () -> assertEquals("DELETE name FROM coverage_cq_reg_key_item WHERE user_id = :userId AND tenant_id = :tenantId",
+                            NSC.delete(CoverageCqRegKeyItem.class, N.asSet("score")).from(CoverageCqRegKeyItem.class).where(key).build().query()),
+                    // Excluding every non-key property leaves nothing to SET (on HEAD the key columns were still set).
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> PSC.update("coverage_cq_reg_key_item").set(CoverageCqRegKeyItem.class, N.asSet("name", "score"))));
+
+            // Previous behavior kept: INSERT and SELECT still list the key columns.
+            assertEquals("INSERT INTO coverage_cq_reg_key_item (user_id, tenant_id, name, score) VALUES (?, ?, ?, ?)",
+                    PSC.insertInto(CoverageCqRegKeyItem.class).build().query());
+            assertEquals("SELECT user_id AS \"userId\", tenant_id AS \"tenantId\", name AS \"name\", score AS \"score\" FROM coverage_cq_reg_key_item",
+                    PSC.selectFrom(CoverageCqRegKeyItem.class).build().query());
+        } finally {
+            CassandraExecutorBase.entityKeyNamesMap.remove(CoverageCqRegKeyItem.class);
+        }
+    }
+
+    /**
+     * The overloads not covered by the sliceQ/verifyQB tests -- usingTTL(String), usingTimestamp(Date),
+     * usingTimestampMicros(long) -- also keep the implicit SET list of update(Class) pending, so a later set(...) replaces
+     * it (HEAD appended it: duplicate columns, unbound placeholders). The other statement shapes keep their USING placement.
+     */
+    @Test
+    public void test_coverageCQ_usingBeforeSet_remainingUsingOverloads() {
+        final Date date = new Date(7L);
+        final java.util.Set<String> allButFirstName = N.asSet("gui", "emailAddress", "middleName", "lastName", "birthDate", "status", "lastUpdateTime", "createTime",
+                "contact", "devices");
+        final Account account = new Account();
+        account.setFirstName("f");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("UPDATE account USING TTL 5 SET first_name = ? WHERE id = ?",
+                        PSC.update(Account.class).usingTTL("5").set("firstName").where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE account USING TIMESTAMP 7000 SET first_name = ? WHERE id = ?",
+                        PSC.update(Account.class).usingTimestamp(date).set("firstName").where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE account USING TIMESTAMP 7 SET first_name = ? WHERE id = ?",
+                        PSC.update(Account.class).usingTimestampMicros(7L).set("firstName").where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE account USING TIMESTAMP 7 AND TTL 5 SET first_name = ? WHERE id = ?",
+                        PSC.update(Account.class).usingTimestampMicros(7L).usingTTL("5").set("firstName").where(Filters.eq("id", 1)).build().query()),
+                () -> {
+                    final SP sp = NSC.update(Account.class, allButFirstName).usingTTL("5").set(account, allButFirstName).where(Filters.eq("id", 1)).build();
+                    assertEquals("UPDATE account USING TTL 5 SET first_name = :firstName WHERE id = :id", sp.query());
+                    assertEquals(N.asList("f", 1), sp.parameters());
+                });
+
+        // Previous behavior kept: without set(...) the implicit list is rendered at where(); update(table[, Class]),
+        // INSERT and DELETE place USING as before.
+        assertEquals("UPDATE account USING TIMESTAMP 7000 SET first_name = ? WHERE id = ?",
+                PSC.update(Account.class, allButFirstName).usingTimestamp(date).where(Filters.eq("id", 1)).build().query());
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ? WHERE id = ?",
+                PSC.update("account", Account.class).set("firstName").usingTTL(5).where(Filters.eq("id", 1)).build().query());
+        assertEquals("UPDATE account USING TTL 5 SET first_name = ? WHERE id = ?",
+                PSC.update("account").set("firstName").usingTTL(5).where(Filters.eq("id", 1)).build().query());
+        assertEquals("INSERT INTO account (first_name) VALUES (?) USING TTL 5", PSC.insert("firstName").into("account").usingTTL(5).build().query());
+        assertEquals("DELETE FROM account USING TIMESTAMP 7000 WHERE id = ?",
+                PSC.deleteFrom("account").usingTimestamp(7L).where(Filters.eq("id", 1)).build().query());
+        assertEquals("DELETE first_name FROM account USING TIMESTAMP 7000 WHERE id = ?",
+                PSC.delete("firstName").from("account").usingTimestamp(7L).where(Filters.eq("id", 1)).build().query());
+    }
 }

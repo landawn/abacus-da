@@ -1936,6 +1936,7 @@ public final class AsyncMongoCollectionExecutor {
      * <p>Only the named property of the first matched document is read; any remaining documents or
      * fields are ignored. The value is converted to {@code valueType} via
      * binary-aware scalar conversion: binary payloads can be read as byte arrays or readable {@link java.nio.ByteBuffer} values;
+     * a BSON date requested as {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC;
      * other values use {@link com.landawn.abacus.util.N#convert(Object, Class)}.</p>
      *
      * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()} when no nonempty document is found.
@@ -2137,7 +2138,8 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously queries for specific fields from matching documents.
      *
      * <p>Retrieves only the specified fields from documents matching the filter,
-     * reducing network overhead and improving query performance.</p>
+     * reducing network overhead and improving query performance. A dotted field name such as
+     * {@code "address.city"} becomes a column holding the nested value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2146,7 +2148,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
-     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a
+     * {@link ClassCastException} when a dotted field name traverses a non-null value that is not a Document.</p>
      *
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
@@ -2171,7 +2174,8 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously queries for specific fields with pagination support.
      *
      * <p>Combines field projection with pagination, retrieving only specified fields
-     * from a subset of matching documents.</p>
+     * from a subset of matching documents. A dotted field name such as {@code "address.city"}
+     * becomes a column holding the nested value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2180,8 +2184,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
-     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
-     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, an {@link
+     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a {@link ClassCastException} when a dotted
+     * field name traverses a non-null value that is not a Document.</p>
      *
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
@@ -2207,17 +2212,19 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously queries for specific fields with sorting.
      *
      * <p>Retrieves specified fields from documents matching the filter, sorted according
-     * to the provided sort specification.</p>
+     * to the provided sort specification. A dotted field name such as {@code "address.city"}
+     * becomes a column holding the nested value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * async.query(Arrays.asList("name", "score"), Filters.gte("score", 80), 
+     * async.query(Arrays.asList("name", "score"), Filters.gte("score", 80),
      *            Sorts.descending("score"), Student.class)
      *      .thenRunAsync(dataset -> displayTopStudents(dataset));
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
-     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a
+     * {@link ClassCastException} when a dotted field name traverses a non-null value that is not a Document.</p>
      *
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
@@ -2243,7 +2250,9 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously queries with projection, filtering, sorting, and pagination.
      *
      * <p>Comprehensive query method combining all query features: field projection,
-     * filtering, sorting, and pagination for maximum control over query results.</p>
+     * filtering, sorting, and pagination for maximum control over query results. A dotted field
+     * name such as {@code "address.city"} becomes a column holding the nested value, read from the
+     * returned document rather than converted through {@code rowType}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2253,8 +2262,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
-     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
-     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, an {@link
+     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a {@link ClassCastException} when a dotted
+     * field name traverses a non-null value that is not a Document.</p>
      *
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)

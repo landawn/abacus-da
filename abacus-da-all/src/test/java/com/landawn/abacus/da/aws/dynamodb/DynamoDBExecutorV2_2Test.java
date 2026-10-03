@@ -15,6 +15,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -23,6 +27,7 @@ import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.aws.AnyUtil;
+import com.landawn.abacus.da.aws.dynamodb.v2.AsyncDynamoDBExecutor;
 import com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor;
 import com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.ConditionBuilder;
 import com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.Filters;
@@ -34,6 +39,7 @@ import com.landawn.abacus.util.stream.Stream;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeAction;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
@@ -2212,6 +2218,164 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
 
         assertNotNull(read);
         org.junit.jupiter.api.Assertions.assertArrayEquals(new String[] { "red", "green, blue" }, read.getTags());
+    }
+
+    // ---- 2026-10-04 coverageDC ----
+
+    private static final List<String> PAGINATING_ASYNC_METHODS_coverageDC = List.of("list", "list(Entity)", "query", "query(LinkedHashMap)",
+            "query(Entity)", "mapper.list", "mapper.query");
+
+    /**
+     * Live end-to-end check of the v2 AsyncDynamoDBExecutor early-completion fix against DynamoDB Local. A 6-item partition read with
+     * Limit 1 is a 7-request pagination (the 6th page still carries a LastEvaluatedKey). For every auto-paginating entry point
+     * (executor list/query with Map, LinkedHashMap and entity rows; Mapper list/query) the real page-2 response is held back while the
+     * returned future is cancelled or timed out with orTimeout(...); once page 2 is released, no page-3 request may follow (HEAD kept
+     * requesting every remaining page). Without early completion every entry point still returns all 6 items over 7 real requests.
+     */
+    @Test
+    public void testAsyncListAndQueryStopPaginatingWhenReturnedFutureCompletesEarly_coverageDC() throws Exception {
+        assumeAvailable();
+        final String pk = seedRange(6);
+        final DynamoDbAsyncClient realAsyncClient = DynamoDbAsyncClient.builder()
+                .endpointOverride(URI.create(ENDPOINT))
+                .region(Region.US_EAST_1)
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy")))
+                .build();
+
+        try {
+            final QueryRequest request = QueryRequest.builder().tableName(RANGE_TABLE).keyConditions(Filters.eq("pk", pk)).limit(1).build();
+            final List<String> wrong = new ArrayList<>();
+
+            for (final String method : PAGINATING_ASYNC_METHODS_coverageDC) {
+                for (final String mode : List.of("cancel", "orTimeout", "notCompletedEarly")) {
+                    final String where = method + "/" + mode;
+                    final AtomicInteger queryRequests = new AtomicInteger();
+                    final CompletableFuture<Void> page2Gate = mode.equals("notCompletedEarly") ? CompletableFuture.completedFuture(null)
+                            : new CompletableFuture<>();
+                    final CompletableFuture<CompletableFuture<?>> page2Response = new CompletableFuture<>();
+                    final AsyncDynamoDBExecutor asyncExecutor = new AsyncDynamoDBExecutor(
+                            gatedQueryClient_coverageDC(realAsyncClient, queryRequests, page2Gate, page2Response));
+                    final CompletableFuture<?> result = invokePaginatingAsyncQuery_coverageDC(asyncExecutor, method, request);
+
+                    if (mode.equals("notCompletedEarly")) {
+                        final Object value = result.get(30, TimeUnit.SECONDS);
+                        assertEquals(6, value instanceof Dataset ? ((Dataset) value).size() : ((List<?>) value).size(), where);
+                        assertEquals(7, queryRequests.get(), where);
+                        continue;
+                    }
+
+                    // Page 2 has been requested and its real response (with a LastEvaluatedKey) has arrived, but is held back.
+                    page2Response.get(30, TimeUnit.SECONDS).get(30, TimeUnit.SECONDS);
+
+                    if (mode.equals("cancel")) {
+                        assertTrue(result.cancel(true), where);
+                    } else {
+                        final ExecutionException e = assertThrows(ExecutionException.class,
+                                () -> result.orTimeout(1, TimeUnit.MILLISECONDS).get(30, TimeUnit.SECONDS), where);
+                        assertTrue(e.getCause() instanceof java.util.concurrent.TimeoutException, where + ": " + e.getCause());
+                    }
+
+                    page2Gate.complete(null); // hand the real page-2 response to the page chain
+                    awaitAsyncPageChain_coverageDC();
+
+                    if (queryRequests.get() != 2) {
+                        wrong.add(where + ": " + queryRequests.get() + " query requests, expected 2");
+                    }
+                }
+            }
+
+            assertTrue(wrong.isEmpty(), wrong.toString());
+        } finally {
+            realAsyncClient.close();
+
+            for (int i = 0; i < 6; i++) {
+                executor.deleteItem(RANGE_TABLE, DynamoDBExecutor.asKey("pk", pk, "sk", "sk-" + i));
+            }
+        }
+    }
+
+    /**
+     * Delegates every call to the real async client; counts query requests, publishes the response future of the 2nd one and holds
+     * that response back until {@code page2Gate} completes.
+     */
+    private static DynamoDbAsyncClient gatedQueryClient_coverageDC(final DynamoDbAsyncClient delegate, final AtomicInteger queryRequests,
+            final CompletableFuture<Void> page2Gate, final CompletableFuture<CompletableFuture<?>> page2Response) {
+        return (DynamoDbAsyncClient) java.lang.reflect.Proxy.newProxyInstance(DynamoDbAsyncClient.class.getClassLoader(),
+                new Class<?>[] { DynamoDbAsyncClient.class }, (proxy, method, args) -> {
+                    if ("query".equals(method.getName()) && args != null && args.length == 1 && args[0] instanceof QueryRequest) {
+                        final CompletableFuture<software.amazon.awssdk.services.dynamodb.model.QueryResponse> response = delegate.query((QueryRequest) args[0]);
+
+                        if (queryRequests.incrementAndGet() == 2) {
+                            page2Response.complete(response);
+                            return response.thenCombine(page2Gate, (page, ignored) -> page);
+                        }
+
+                        return response;
+                    }
+
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (final java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+    }
+
+    private static CompletableFuture<?> invokePaginatingAsyncQuery_coverageDC(final AsyncDynamoDBExecutor asyncExecutor, final String method,
+            final QueryRequest request) {
+        return switch (method) {
+            case "list" -> asyncExecutor.list(request);
+            case "list(Entity)" -> asyncExecutor.list(request, RangeEntity.class);
+            case "query" -> asyncExecutor.query(request);
+            case "query(LinkedHashMap)" -> asyncExecutor.query(request, LinkedHashMap.class);
+            case "query(Entity)" -> asyncExecutor.query(request, RangeEntity.class);
+            case "mapper.list" -> asyncExecutor.mapper(RangeKeyEntity_coverageDC.class, RANGE_TABLE, NamingPolicy.CAMEL_CASE).list(request);
+            case "mapper.query" -> asyncExecutor.mapper(RangeKeyEntity_coverageDC.class, RANGE_TABLE, NamingPolicy.CAMEL_CASE).query(request);
+            default -> throw new IllegalArgumentException(method);
+        };
+    }
+
+    // Waits until the page chain has run: CompletableFuture runs the async page stages in the common pool when it has more than one
+    // worker (otherwise on a new thread per task, which awaitQuiescence cannot see, so fall back to a fixed wait).
+    private static void awaitAsyncPageChain_coverageDC() throws InterruptedException {
+        if (java.util.concurrent.ForkJoinPool.getCommonPoolParallelism() > 1) {
+            java.util.concurrent.ForkJoinPool.commonPool().awaitQuiescence(10, TimeUnit.SECONDS);
+        } else {
+            Thread.sleep(1000);
+        }
+    }
+
+    /** RangeTable entity with its partition and sort keys declared as ID properties (required by a Mapper). */
+    public static class RangeKeyEntity_coverageDC {
+        @com.landawn.abacus.annotation.Id
+        private String pk;
+        @com.landawn.abacus.annotation.Id
+        private String sk;
+        private String name;
+
+        public String getPk() {
+            return pk;
+        }
+
+        public void setPk(final String pk) {
+            this.pk = pk;
+        }
+
+        public String getSk() {
+            return sk;
+        }
+
+        public void setSk(final String sk) {
+            this.sk = sk;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
     }
 
     // ====================================================================================================

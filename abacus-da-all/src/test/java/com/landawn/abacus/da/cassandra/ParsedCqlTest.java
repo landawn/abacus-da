@@ -705,4 +705,267 @@ public class ParsedCqlTest extends TestBase {
         assertEquals("x", parsed.namedParameters().get(1));
         assertEquals("a[1].name", parsed.namedParameters().get(2));
     }
+
+    // ---- 2026-10-02 sliceR ----
+
+    @Test
+    public void testParse_IbatisMarkerGluedToLiteralFieldSeparator_isRewritten() {
+        // Regression: '#', '{' and ':' are not token separators, so in "{street:#{street}}" the MyBatis marker was part
+        // of the field token and reached the driver unconverted (parameterCount 1). The spaced form and the named
+        // "{street::street}" form were already handled.
+        final ParsedCql udt = ParsedCql.parse("UPDATE t SET addr = {street:#{street}, city:#{city}} WHERE id = #{id}");
+        assertEquals("UPDATE t SET addr = {street:?, city:?} WHERE id = ?", udt.parameterizedCql());
+        assertEquals(3, udt.parameterCount());
+        assertEquals("street", udt.namedParameters().get(0));
+        assertEquals("city", udt.namedParameters().get(1));
+        assertEquals("id", udt.namedParameters().get(2));
+
+        final ParsedCql map = ParsedCql.parse("UPDATE t SET m = m + {'k':#{v}} WHERE id = #{id}");
+        assertEquals("UPDATE t SET m = m + {'k':?} WHERE id = ?", map.parameterizedCql());
+        assertEquals(2, map.parameterCount());
+        assertEquals("v", map.namedParameters().get(0));
+
+        final ParsedCql nested = ParsedCql.parse("UPDATE t SET u = {a:{b:#{x[0]}}} WHERE id = #{id}");
+        assertEquals("UPDATE t SET u = {a:{b:?}} WHERE id = ?", nested.parameterizedCql());
+        assertEquals("x[0]", nested.namedParameters().get(0));
+
+        // Inside a quoted literal it is data; a glued marker now takes part in the mixed-style check.
+        assertEquals("UPDATE t SET u = {'a:#{x}':1} WHERE id = ?", ParsedCql.parse("UPDATE t SET u = {'a:#{x}':1} WHERE id = #{id}").parameterizedCql());
+        assertEquals(1, ParsedCql.parse("UPDATE t SET u = {a:'#{x}'} WHERE id = #{id}").parameterCount());
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET u = {a:#{x}} WHERE id = :id"));
+    }
+
+    // ---- 2026-10-02 verifyPC ----
+
+    private static void assertIbatisParsed(final String cql, final String expectedCql, final String... expectedNames) {
+        final ParsedCql parsed = ParsedCql.parse(cql);
+        assertEquals(expectedCql, parsed.parameterizedCql(), cql);
+        assertEquals(expectedNames.length, parsed.parameterCount(), cql);
+        assertEquals(expectedNames.length, parsed.namedParameters().size(), cql);
+
+        for (int i = 0; i < expectedNames.length; i++) {
+            assertEquals(expectedNames[i], parsed.namedParameters().get(i), cql);
+        }
+    }
+
+    @Test
+    public void testParse_IbatisMarkerGluedAfterMarkerKey_isRewritten() {
+        // Regression: a map key marker with a glued value marker ("#{k}:#{v}") is one token that starts with "#{"; only
+        // the key was rewritten and "#{v}" reached the driver unconverted and uncounted.
+        assertIbatisParsed("UPDATE t SET m = m + {'a':#{x}, #{k}:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {'a':?, ?:?} WHERE id = ?", "x", "k",
+                "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k1}:#{v1}, #{k2}:#{v2} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:?, ?:? } WHERE id = ?", "k1",
+                "v1", "k2", "v2", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k}:{a:#{v}} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:{a:?} } WHERE id = ?", "k", "v", "id");
+        // A quoted value after the marker key stays data.
+        assertIbatisParsed("UPDATE t SET m = m + { #{k}:'x:#{y}' } WHERE id = #{id}", "UPDATE t SET m = m + { ?:'x:#{y}' } WHERE id = ?", "k", "id");
+    }
+
+    @Test
+    public void testParse_IbatisMarkerGluedToLiteralFieldSeparator_allShapes() {
+        // The glued form in every position: unspaced fields, nested literals, a list inside the literal and a literal
+        // inside a list, a double-quoted key, a space before ':', WHERE / IF clauses, a USING clause and a BATCH.
+        assertIbatisParsed("INSERT INTO t (id, a) VALUES (#{id}, {a:#{a},b:#{b},c:#{c}})", "INSERT INTO t (id, a) VALUES (?, {a:?,b:?,c:?})", "id", "a",
+                "b", "c");
+        assertIbatisParsed("UPDATE t SET u = {a:{b:#{x},c:#{y}},d:#{z}} WHERE id = #{id}", "UPDATE t SET u = {a:{b:?,c:?},d:?} WHERE id = ?", "x", "y",
+                "z", "id");
+        assertIbatisParsed("UPDATE t SET u = {s:[#{x}],street:#{a}} WHERE id = #{id}", "UPDATE t SET u = {s:[?],street:?} WHERE id = ?", "x", "a", "id");
+        assertIbatisParsed("UPDATE t SET l = [{k:#{x}}] WHERE id = #{id}", "UPDATE t SET l = [{k:?}] WHERE id = ?", "x", "id");
+        assertIbatisParsed("UPDATE t SET m = {\"q\":#{v}} WHERE id = #{id}", "UPDATE t SET m = {\"q\":?} WHERE id = ?", "v", "id");
+        assertIbatisParsed("UPDATE t SET u = {a :#{x}} WHERE id = #{id}", "UPDATE t SET u = {a :?} WHERE id = ?", "x", "id");
+        assertIbatisParsed("SELECT * FROM t WHERE m = {k:#{v}} AND x = #{x}", "SELECT * FROM t WHERE m = {k:?} AND x = ?", "v", "x");
+        assertIbatisParsed("UPDATE t SET m = m + {k:#{v}} WHERE id = #{id} IF m = {k:#{old}}", "UPDATE t SET m = m + {k:?} WHERE id = ? IF m = {k:?}", "v",
+                "id", "old");
+        assertIbatisParsed("INSERT INTO t (id, a) VALUES (#{id}, {s:#{a}}) USING TTL #{ttl}", "INSERT INTO t (id, a) VALUES (?, {s:?}) USING TTL ?", "id",
+                "a", "ttl");
+        assertIbatisParsed("BEGIN BATCH INSERT INTO t (id, a) VALUES (#{id}, {s:#{a}}); INSERT INTO t (id, a) VALUES (#{id2}, {s:#{b}}); APPLY BATCH",
+                "BEGIN BATCH INSERT INTO t (id, a) VALUES (?, {s:?}); INSERT INTO t (id, a) VALUES (?, {s:?}); APPLY BATCH", "id", "a", "id2", "b");
+
+        // A glued marker mixed with positional markers is rejected like any other MyBatis marker.
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("INSERT INTO t (id, a) VALUES (?, {a:#{x}})"));
+    }
+
+    @Test
+    public void testParse_GluedIbatisLookalikeInStringOrComment_isNotSplit() {
+        // Pins: ":#{" inside a string, a dollar-quoted constant or a kept block comment is data, not a marker.
+        assertIbatisParsed("SELECT * FROM t WHERE x = '{a:#{b}}' AND y = #{y}", "SELECT * FROM t WHERE x = '{a:#{b}}' AND y = ?", "y");
+        assertIbatisParsed("SELECT * FROM t WHERE x = $${a:#{b}}$$ AND y = #{y}", "SELECT * FROM t WHERE x = $${a:#{b}}$$ AND y = ?", "y");
+        assertIbatisParsed("-- Keep comments\nSELECT * FROM t /* {a:#{b}} */ WHERE y = #{y}", "SELECT * FROM t /* {a:#{b}} */ WHERE y = ?", "y");
+
+        // Documented limitation (see parameterizedCql()): a marker directly after '{' is not rewritten; with a space it is.
+        assertIbatisParsed("UPDATE t SET tags = tags + {#{tag}} WHERE id = #{id}", "UPDATE t SET tags = tags + {#{tag}} WHERE id = ?", "id");
+        assertIbatisParsed("UPDATE t SET tags = tags + { #{tag} } WHERE id = #{id}", "UPDATE t SET tags = tags + { ? } WHERE id = ?", "tag", "id");
+    }
+
+    // ---- 2026-10-03 fixPC ----
+
+    /** Asserts that {@code cql} parses exactly like {@code singleTokenForm}, the same statement with the markers unspaced. */
+    private static void assertParsedLike(final String cql, final String singleTokenForm) {
+        final ParsedCql parsed = ParsedCql.parse(cql);
+        final ParsedCql expected = ParsedCql.parse(singleTokenForm);
+        assertEquals(expected.parameterizedCql(), parsed.parameterizedCql(), cql);
+        assertEquals(expected.parameterCount(), parsed.parameterCount(), cql);
+        assertEquals(expected.namedParameters(), parsed.namedParameters(), cql);
+    }
+
+    @Test
+    public void testParse_IbatisValueGluedAfterKeyMarkerWithMetadata_isRewritten() {
+        // Regression: a key marker with MyBatis metadata spans several tokens ("#{k" "," "jdbcType" "=" "TEXT}:#{v}"). The
+        // glued-marker split ran only on the first of them, so the value marker in the token holding the key's '}' was
+        // appended verbatim ("{ ?:#{v} }"): invalid CQL, and "v" missing from the bindings.
+        assertIbatisParsed("UPDATE t SET m = m + { #{k,jdbcType=TEXT}:#{v} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k,javaType=String}:#{v} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k,javaType=String,jdbcType=TEXT}:#{v} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?",
+                "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k, javaType=String, jdbcType=VARCHAR}:#{v} } WHERE id = #{id}",
+                "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+        // Metadata on both markers; the parameterizedCql() Javadoc example.
+        assertIbatisParsed("UPDATE t SET m = m + { #{k,jdbcType=TEXT}:#{v,jdbcType=INT} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?",
+                "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k, jdbcType=VARCHAR}:#{v} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v",
+                "id");
+    }
+
+    @Test
+    public void testParse_IbatisValueGluedAfterKeyMarkerWithWhitespace_isRewritten() {
+        // Same defect with whitespace inside the key marker's braces: "#{ k }:#{v}" is tokenized "#{" " " "k" " " "}:#{v}".
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k }:#{v} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k }:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + { ?:?} WHERE id = ?", "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k}:#{v} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+        // Whitespace in both markers, and whitespace together with metadata.
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k }:#{ v } } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k , jdbcType=TEXT }:#{ v ,jdbcType=INT} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?",
+                "k", "v", "id");
+
+        // Pins: whitespace only inside the VALUE marker already worked (the key "#{k}:" is then a single token).
+        assertIbatisParsed("UPDATE t SET m = m + { #{k}:#{ v } } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k}:#{v } } WHERE id = #{id}", "UPDATE t SET m = m + { ?:? } WHERE id = ?", "k", "v", "id");
+    }
+
+    @Test
+    public void testParse_IbatisValueGluedAfterMultiTokenKey_multiplePairsAndNesting() {
+        assertIbatisParsed("UPDATE t SET m = m + { #{k1,jdbcType=TEXT}:#{v1}, #{k2}:#{v2,jdbcType=INT} } WHERE id = #{id}",
+                "UPDATE t SET m = m + { ?:?, ?:? } WHERE id = ?", "k1", "v1", "k2", "v2", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k1 }:#{v1},#{k2 }:#{v2} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:?,?:? } WHERE id = ?", "k1",
+                "v1", "k2", "v2", "id");
+
+        // A nested literal as the value: its glued markers are found after a multi-token key as well.
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k }:{a:#{x}} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:{a:?} } WHERE id = ?", "k", "x", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k,jdbcType=TEXT}:{a:#{x},b:#{y}} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:{a:?,b:?} } WHERE id = ?",
+                "k", "x", "y", "id");
+        // The map literal nested in another literal.
+        assertIbatisParsed("UPDATE t SET m = {'a':{ #{ k }:#{v}}} WHERE id = #{id}", "UPDATE t SET m = {'a':{ ?:?}} WHERE id = ?", "k", "v", "id");
+        // Pin: the spaced nested literal already worked.
+        assertIbatisParsed("UPDATE t SET m = m + { #{k}:{ a:#{x} } } WHERE id = #{id}", "UPDATE t SET m = m + { ?:{ a:? } } WHERE id = ?", "k", "x", "id");
+
+        // A chained tail is handled like the single-token form "#{k}:#{v}:#{w}".
+        assertParsedLike("UPDATE t SET m = m + { #{k,jdbcType=TEXT}:#{v}:#{w} } WHERE id = #{id}", "UPDATE t SET m = m + { #{k}:#{v}:#{w} } WHERE id = #{id}");
+        assertParsedLike("UPDATE t SET m = m + { #{ k }:#{v}:#{w} } WHERE id = #{id}", "UPDATE t SET m = m + { #{k}:#{v}:#{w} } WHERE id = #{id}");
+        assertEquals(4, ParsedCql.parse("UPDATE t SET m = m + { #{ k }:#{v}:#{w} } WHERE id = #{id}").parameterCount());
+    }
+
+    @Test
+    public void testParse_IbatisValueGluedAfterMultiTokenKey_inEveryClause() {
+        assertIbatisParsed("INSERT INTO t (id, m) VALUES (#{id}, { #{k,jdbcType=TEXT}:#{v} })", "INSERT INTO t (id, m) VALUES (?, { ?:? })", "id", "k", "v");
+        assertIbatisParsed("SELECT * FROM t WHERE m = { #{ k }:#{v} } AND id = #{id}", "SELECT * FROM t WHERE m = { ?:? } AND id = ?", "k", "v", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k }:#{v} } WHERE id = #{id} IF m = { #{ k2 }:#{v2} }",
+                "UPDATE t SET m = m + { ?:? } WHERE id = ? IF m = { ?:? }", "k", "v", "id", "k2", "v2");
+        assertIbatisParsed(
+                "BEGIN BATCH UPDATE t SET m = m + { #{ k }:#{v} } WHERE id = #{id}; INSERT INTO t (id, m) VALUES (#{id2}, { #{k2,jdbcType=TEXT}:#{v2} }); APPLY BATCH",
+                "BEGIN BATCH UPDATE t SET m = m + { ?:? } WHERE id = ?; INSERT INTO t (id, m) VALUES (?, { ?:? }); APPLY BATCH", "k", "v", "id", "id2", "k2",
+                "v2");
+    }
+
+    @Test
+    public void testParse_IbatisValueGluedAfterMultiTokenKey_isValidatedLikeSingleTokenForm() {
+        // The split-off value marker is validated like the one of the single-token form "{ #{k}:#{} }" instead of being
+        // passed through verbatim.
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{ k }:#{} } WHERE id = #{id}"));
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{k}:#{} } WHERE id = #{id}"));
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{ k }:#{v WHERE id = 1"));
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{k}:#{v WHERE id = 1"));
+
+        // Mixed styles are still rejected.
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{k,jdbcType=TEXT}:#{v} } WHERE id = ?"));
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{ k }:#{v} } WHERE id = :id"));
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{ k }:? } WHERE id = #{id}"));
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + { #{ k }:#{v}, 'a':? } WHERE id = #{id}"));
+    }
+
+    @Test
+    public void testParse_IbatisMarkerAfterMultiTokenKey_outsideBracesOrInLiteral_isNotSplit() {
+        // Pins: outside braces ':' is no field separator, so the tail stays as it is, exactly as for the single-token form.
+        assertIbatisParsed("SELECT * FROM t WHERE x = #{a,jdbcType=INT}:#{b} AND id = #{id}", "SELECT * FROM t WHERE x = ?:#{b} AND id = ?", "a", "id");
+        assertParsedLike("SELECT * FROM t WHERE x = #{ a }:#{b} AND id = #{id}", "SELECT * FROM t WHERE x = #{a}:#{b} AND id = #{id}");
+        assertIbatisParsed("UPDATE t SET l = l + [ #{k,jdbcType=TEXT}:#{v} ] WHERE id = #{id}", "UPDATE t SET l = l + [ ?:#{v} ] WHERE id = ?", "k", "id");
+
+        // Pins: a lookalike in a string, a dollar-quoted constant or a kept block comment after a multi-token key is data.
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k }:'x:#{v}' } WHERE id = #{id}", "UPDATE t SET m = m + { ?:'x:#{v}' } WHERE id = ?", "k", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{ k }:{a:'#{x}'} } WHERE id = #{id}", "UPDATE t SET m = m + { ?:{a:'#{x}'} } WHERE id = ?", "k", "id");
+        assertIbatisParsed("UPDATE t SET m = m + { #{k,jdbcType=TEXT}:$$x:#{v}$$ } WHERE id = #{id}", "UPDATE t SET m = m + { ?:$$x:#{v}$$ } WHERE id = ?",
+                "k", "id");
+        assertIbatisParsed("-- Keep comments\nUPDATE t SET m = m + { #{ k }/* :#{x} */:#{v} } WHERE id = #{id}",
+                "UPDATE t SET m = m + { ?/* :#{x} */:? } WHERE id = ?", "k", "v", "id");
+        // A kept block comment pulled into an (unclosed) marker is never split, so a marker inside it is never bound.
+        assertFalse(ParsedCql.parse("-- Keep comments\nUPDATE t SET m = m + { #{ k /* }:#{x} */ }:#{v} } WHERE id = #{id}").namedParameters().containsValue("x"));
+    }
+
+    // ---- 2026-10-04 coverageCQ ----
+
+    @Test
+    public void testParse_coverageCQ_gluedIbatisMarker_everyKeyKindAndStatementShape() {
+        // The glued-marker split for key kinds and statement shapes the earlier tests do not use. assertAll reports every
+        // case, so the HEAD run lists each shape whose "#{...}" reached the driver unconverted.
+        org.junit.jupiter.api.Assertions.assertAll(
+                // Keys: dollar-quoted (masked to one "$$n$$" token glued to the marker), doubled-quote, backslash-ending
+                // (a backslash is data in CQL), numeric, negative, non-ASCII, and a marker key after an unspaced ','.
+                () -> assertIbatisParsed("UPDATE t SET m = m + {$$k$$:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {$$k$$:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + { $$k$$:#{v} } WHERE id = #{id}", "UPDATE t SET m = m + { $$k$$:? } WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {'it''s':#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {'it''s':?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {\"it\"\"s\":#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {\"it\"\"s\":?} WHERE id = ?", "v",
+                        "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {'a\\':#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {'a\\':?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {1:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {1:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {-1:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {-1:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {ключ:#{v}} WHERE id = #{id}",
+                        "UPDATE t SET m = m + {ключ:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {'a':1,#{k}:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {'a':1,?:?} WHERE id = ?", "k", "v",
+                        "id"),
+                // Values: metadata or whitespace inside the glued marker, and the same name twice.
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{v,jdbcType=INT}} WHERE id = #{id}", "UPDATE t SET m = m + {k:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{v, jdbcType=INT}} WHERE id = #{id}", "UPDATE t SET m = m + {k:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{ v }} WHERE id = #{id}", "UPDATE t SET m = m + {k:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{v},k2:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {k:?,k2:?} WHERE id = ?", "v", "v",
+                        "id"),
+                // Statement shapes: two literals, literals inside a list and a tuple, three nesting levels, no WHERE (with
+                // and without ';'), IF NOT EXISTS / IF EXISTS.
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{v}}, n = n + {k2:#{w}} WHERE id = #{id}",
+                        "UPDATE t SET m = m + {k:?}, n = n + {k2:?} WHERE id = ?", "v", "w", "id"),
+                () -> assertIbatisParsed("UPDATE t SET l = l + [{a:#{x}}, {b:#{y}}] WHERE id = #{id}", "UPDATE t SET l = l + [{a:?}, {b:?}] WHERE id = ?", "x",
+                        "y", "id"),
+                () -> assertIbatisParsed("UPDATE t SET tup = (#{a}, {k:#{v}}) WHERE id = #{id}", "UPDATE t SET tup = (?, {k:?}) WHERE id = ?", "a", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {a:{b:{c:#{x}}}} WHERE id = #{id}", "UPDATE t SET u = {a:{b:{c:?}}} WHERE id = ?", "x", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{v}}", "UPDATE t SET m = m + {k:?}", "v"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{v}};", "UPDATE t SET m = m + {k:?}", "v"),
+                () -> assertIbatisParsed("INSERT INTO t (id, m) VALUES (#{id}, {k:#{v}}) IF NOT EXISTS", "INSERT INTO t (id, m) VALUES (?, {k:?}) IF NOT EXISTS",
+                        "id", "v"),
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k:#{v}} WHERE id = #{id} IF EXISTS", "UPDATE t SET m = m + {k:?} WHERE id = ? IF EXISTS", "v",
+                        "id"),
+                // Block comments next to the glued marker: removed, or kept as tokens of their own ("-- Keep comments").
+                () -> assertIbatisParsed("UPDATE t SET m = m + {k/* c */:#{v}} WHERE id = #{id}", "UPDATE t SET m = m + {k :?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("-- Keep comments\nUPDATE t SET m = m + {k/* c */:#{v}} WHERE id = #{id}",
+                        "UPDATE t SET m = m + {k/* c */:?} WHERE id = ?", "v", "id"),
+                () -> assertIbatisParsed("-- Keep comments\nUPDATE t SET m = m + {k:#{v}/* :#{b} */} WHERE id = #{id}",
+                        "UPDATE t SET m = m + {k:?/* :#{b} */} WHERE id = ?", "v", "id"),
+                // An empty glued marker is rejected like the spaced form "{k: #{}}".
+                () -> assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + {k:#{}} WHERE id = #{id}")));
+
+        // Pins (unchanged from HEAD): the spaced form; ":#{" inside a string whose quote is doubled; after an
+        // unterminated "$$" the rest of the statement is dollar-quoted text and nothing in it is split or bound.
+        assertIbatisParsed("UPDATE t SET u = {a: #{x}, b: #{y}} WHERE id = #{id}", "UPDATE t SET u = {a: ?, b: ?} WHERE id = ?", "x", "y", "id");
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET m = m + {k: #{}} WHERE id = #{id}"));
+        assertIbatisParsed("UPDATE t SET m = m + {'a'':#{x}':1} WHERE id = #{id}", "UPDATE t SET m = m + {'a'':#{x}':1} WHERE id = ?", "id");
+        assertIbatisParsed("SELECT * FROM t WHERE x = #{x} AND y = $$ {a:#{b}}", "SELECT * FROM t WHERE x = ? AND y = $$ {a:#{b}}", "x");
+        assertIbatisParsed("SELECT * FROM t WHERE x = #{x} AND y = $$ { #{ k }:#{b} }", "SELECT * FROM t WHERE x = ? AND y = $$ { #{ k }:#{b} }", "x");
+    }
 }

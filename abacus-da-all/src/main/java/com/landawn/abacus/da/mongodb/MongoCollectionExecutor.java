@@ -2177,7 +2177,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method performs a find operation with field projection, converting the results
      * into a Dataset with only the selected fields populated in each typed row. This combination
-     * provides both bandwidth optimization through projection and type safety through row conversion.</p>
+     * provides both bandwidth optimization through projection and type safety through row conversion.
+     * A dotted field name such as {@code "address.city"} becomes a column holding the nested value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2201,13 +2202,14 @@ public final class MongoCollectionExecutor {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      * @see #query(Collection, Bson, int, int, Class)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType)
-            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return query(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2216,7 +2218,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method combines field projection, filtering, and pagination to efficiently retrieve
      * a specific subset of documents with only selected fields. The results are converted to the
-     * specified row type and organized in a Dataset for tabular operations.</p>
+     * specified row type and organized in a Dataset for tabular operations. A dotted field name such as
+     * {@code "address.city"} becomes a column holding the nested value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2248,13 +2251,14 @@ public final class MongoCollectionExecutor {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      * @see #query(Collection, Bson, Class)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<?> rowType)
-            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return query(selectPropNames, filter, null, offset, count, rowType);
     }
 
@@ -2263,7 +2267,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method performs a find operation with field projection and sorting, converting all
      * matching results into a Dataset with predictable ordering. The combination of projection,
-     * sorting, and type conversion provides optimized data retrieval with consistent ordering.</p>
+     * sorting, and type conversion provides optimized data retrieval with consistent ordering.
+     * A dotted field name such as {@code "address.city"} becomes a column holding the nested value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2291,6 +2296,7 @@ public final class MongoCollectionExecutor {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
@@ -2298,7 +2304,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType)
-            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return query(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -2307,7 +2313,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method combines field projection, filtering, sorting, and pagination to efficiently retrieve
      * a specific subset of documents with only selected fields, ordered by the specified criteria. The results
-     * are converted to the specified row type and organized in a Dataset for tabular operations.</p>
+     * are converted to the specified row type and organized in a Dataset for tabular operations. A dotted
+     * field name such as {@code "address.city"} becomes a column holding the nested value, read from the
+     * returned document rather than converted through {@code rowType}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2337,11 +2345,13 @@ public final class MongoCollectionExecutor {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<?> rowType) throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            final Class<?> rowType)
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNegative(offset, cs.offset);
         N.checkArgNotNegative(count, cs.count);
@@ -2351,9 +2361,38 @@ public final class MongoCollectionExecutor {
 
         if (N.isEmpty(selectPropNames)) {
             return MongoDBBase.extractData(findIterable, rowType);
-        } else {
+        } else if (selectPropNames.stream().noneMatch(propName -> propName != null && propName.indexOf('.') >= 0)) {
             return MongoDBBase.extractData(selectPropNames, findIterable, rowType);
         }
+
+        // A dotted name such as "address.city" is a valid projection, but MongoDB returns it nested
+        // ({address: {city: ...}}) while Dataset columns are read by flat map key or bean property name,
+        // so its column came back all null. Resolve dotted columns from the returned documents instead.
+        final List<Document> rowList = findIterable.into(new ArrayList<>());
+        final Dataset dataset = MongoDBBase.extractData(selectPropNames, rowList, rowType);
+
+        if (rowList.isEmpty()) {
+            return dataset;
+        }
+
+        final List<String> columnNames = dataset.columnNames();
+        final List<List<?>> columns = new ArrayList<>(columnNames.size());
+
+        for (final String columnName : columnNames) {
+            if (columnName.indexOf('.') < 0) {
+                columns.add(dataset.getColumn(columnName));
+            } else {
+                final List<Object> column = new ArrayList<>(rowList.size());
+
+                for (final Document row : rowList) {
+                    column.add(getPropValueByPath(row, columnName));
+                }
+
+                columns.add(column);
+            }
+        }
+
+        return Dataset.columns(columnNames, columns);
     }
 
     /**
@@ -5388,7 +5427,8 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field to group by
      * @param rowType the class to convert results to
      * @return a Stream of typed documents with counts
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null, or if {@code fieldName} is
+     *         {@code "count"} (it would collide with the count column) and {@code rowType} is not {@link Document}
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -5449,7 +5489,8 @@ public final class MongoCollectionExecutor {
      * @param fieldNames collection of fields to group by
      * @param rowType the class to convert results to
      * @return a Stream of typed documents with counts
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null, or if {@code fieldNames} contains
+     *         {@code "count"} (it would collide with the count column) and {@code rowType} is not {@link Document}
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -5463,7 +5504,11 @@ public final class MongoCollectionExecutor {
         return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
     }
 
-    private static List<Document> groupByPipeline(final String fieldName, final boolean count, final Class<?> rowType) {
+    private static List<Document> groupByPipeline(final String fieldName, final boolean count, final Class<?> rowType) throws IllegalArgumentException {
+        if (count) {
+            checkGroupFieldNotCountColumn(fieldName, rowType);
+        }
+
         final Document group = new Document(MongoDBBase._ID, _$ + fieldName);
 
         if (count) {
@@ -5499,6 +5544,12 @@ public final class MongoCollectionExecutor {
             throws IllegalArgumentException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
+        if (count) {
+            for (final String fieldName : fieldNames) {
+                checkGroupFieldNotCountColumn(fieldName, rowType);
+            }
+        }
+
         final Document groupFields = new Document();
 
         for (final String fieldName : fieldNames) {
@@ -5526,6 +5577,14 @@ public final class MongoCollectionExecutor {
         }
 
         return N.asList(new Document(_$GROUP, group), new Document("$project", project));
+    }
+
+    // Non-Document groupByAndCount rows are projected as {<fieldName>: <key>, count: <n>}: a group field literally named
+    // "count" would be overwritten by the count, silently losing the group key. Document rows keep the key in _id.
+    private static void checkGroupFieldNotCountColumn(final String fieldName, final Class<?> rowType) throws IllegalArgumentException {
+        if (_COUNT.equals(fieldName) && !Document.class.equals(rowType)) {
+            throw new IllegalArgumentException("Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type");
+        }
     }
 
     /**

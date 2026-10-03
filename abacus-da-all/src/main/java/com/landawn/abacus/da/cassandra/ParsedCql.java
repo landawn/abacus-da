@@ -243,7 +243,8 @@ public final class ParsedCql {
         final BracketMask bracketMask = hasBrackets ? mask : null;
         final List<String> dollarQuotedStrings = new ArrayList<>(0);
         final String maskedCql = maskCqlStrings(removeDoubleSlashComments(this.cql), dollarQuotedStrings, bracketMask);
-        final List<String> words = (mask == null ? DEFAULT_BRACKET_MASK : mask).tokenizer.tokenize(maskedCql);
+        // Copied: the scan below may split a token in place (see splitGluedLiteralIbatisParameter).
+        final List<String> words = new ArrayList<>((mask == null ? DEFAULT_BRACKET_MASK : mask).tokenizer.tokenize(maskedCql));
         final boolean isOpSqlPrefix = isOpSqlPrefix(words);
 
         int type = 0; // bit mask: 1 - '?', 2 - ':propName', 4 - '#{propName}'
@@ -267,6 +268,14 @@ public final class ParsedCql {
                         // and a "::name" in it must not be rewritten into a marker.
                         sb.append(word);
                         continue;
+                    }
+
+                    // '#', '{' and ':' are not token separators, so a MyBatis marker glued to a map/UDT field separator
+                    // ("{street:#{street}}", "city:#{city}}") is part of the same token and would reach the driver
+                    // unconverted. Split it off so it is handled like the spaced form ("{street: #{street}}").
+                    if (splitGluedLiteralIbatisParameter(words, i, literalState)) {
+                        word = words.get(i);
+                        size++;
                     }
 
                     final int prevCurlyDepth = literalState[0];
@@ -299,6 +308,15 @@ public final class ParsedCql {
                             ibatisTokenBuilder.append(word);
 
                             while (ibatisTokenBuilder.indexOf(RIGHT_OF_IBATIS_NAMED_PARAMETER) < 0 && i < size - 1) {
+                                // A pulled token gets the same glued-marker split before it is consumed: for a key marker
+                                // spanning several tokens ("#{k,jdbcType=TEXT}:#{v}", "#{ k }:#{v}") the value marker sits
+                                // in the token holding the key's closing '}' and would otherwise be appended verbatim as
+                                // the key's tail. Splitting before updateLiteralState keeps the brace state exact, and the
+                                // split-off "#{v}" is then scanned as a token of its own.
+                                if (splitGluedLiteralIbatisParameter(words, i + 1, literalState)) {
+                                    size++;
+                                }
+
                                 final String next = words.get(++i);
                                 updateLiteralState(literalState, openContainers, next, bracketMask);
                                 ibatisTokenBuilder.append(next);
@@ -500,6 +518,81 @@ public final class ParsedCql {
                 }
             } else if (depth > 0 && ch == ':' && word.charAt(i + 1) == ':' && i + 2 < word.length() && word.charAt(i + 2) != '}') {
                 return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * If {@code words[index]} carries a MyBatis marker glued to a map/UDT field separator (see
+     * {@link #indexOfGluedLiteralIbatisParameter(String, int)}), splits the token in place so the marker starts a new
+     * token at {@code index + 1}. A kept block comment, or a token that continues a dollar-quoted string, is never split.
+     *
+     * @param words the mutable token list
+     * @param index the index of the token to examine
+     * @param literalState the literal state in effect before that token (see the constructor); it is not changed
+     * @return {@code true} if a token was inserted (the caller's token count must grow by one)
+     */
+    private static boolean splitGluedLiteralIbatisParameter(final List<String> words, final int index, final int[] literalState) {
+        final String word = words.get(index);
+
+        if (literalState[1] != 0 || word.startsWith("/*")) {
+            return false;
+        }
+
+        final int splitIndex = indexOfGluedLiteralIbatisParameter(word, literalState[0]);
+
+        if (splitIndex <= 0) {
+            return false;
+        }
+
+        words.set(index, word.substring(0, splitIndex));
+        words.add(index + 1, word.substring(splitIndex));
+        return true;
+    }
+
+    /**
+     * Finds a MyBatis marker glued to a map/UDT field separator inside braces ({@code {street:#{street}}}): returns the
+     * index of the {@code '#'} that directly follows a {@code ':'} at brace depth &gt; 0, or -1. As in
+     * {@link #indexOfEmbeddedLiteralNamedParameter(String, int)}, the depth is tracked within the token from
+     * {@code startDepth}, and quoted literals are skipped. A token that itself starts with a marker is scanned too, so
+     * the value of a marker key ({@code #{k}:#{v}}) is split off as well; for a key marker spanning several tokens, the
+     * token holding its closing brace (<code>TEXT&#125;:#&#123;v&#125;</code>) is scanned from a depth that still
+     * counts the marker's own <code>&#123;</code>, so the {@code ':'} after that brace is at the depth of the enclosing
+     * literal.
+     */
+    private static int indexOfGluedLiteralIbatisParameter(final String word, final int startDepth) {
+        if (word.indexOf(LEFT_OF_IBATIS_NAMED_PARAMETER, 1) < 0) {
+            return -1;
+        }
+
+        char quoteChar = 0;
+        int depth = startDepth;
+
+        for (int i = 0, len = word.length(); i < len; i++) {
+            final char ch = word.charAt(i);
+
+            if (quoteChar != 0) {
+                if (ch == '\\') {
+                    i++;
+                } else if (ch == quoteChar) {
+                    if (i + 1 < len && word.charAt(i + 1) == quoteChar) {
+                        i++;
+                    } else {
+                        quoteChar = 0;
+                    }
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quoteChar = ch;
+            } else if (ch == '{') {
+                depth++;
+            } else if (ch == '}') {
+                if (depth > 0) {
+                    depth--;
+                }
+            } else if (depth > 0 && ch == ':' && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER, i + 1)) {
+                return i + 1;
             }
         }
 
@@ -1001,14 +1094,20 @@ public final class ParsedCql {
      * to {@code ?}, and every
      * {@code ?} inside {@code [...]} is included in {@link #parameterCount()}.</p>
      *
-     * <p><b>Known limitation.</b> Inside braces, a named or MyBatis marker is recognized only when it follows a
-     * map/UDT field separator ({@code {street: :street}}, {@code {street::street}}) or sits directly inside a
-     * {@code [...]} nested in the braces. A marker written directly after <code>&#123;</code>, or after
-     * {@code ,} inside braces — for example <code>tags + &#123;:tag&#125;</code> or
+     * <p><b>Known limitation.</b> Inside braces, a named marker is recognized only when it follows a map/UDT field
+     * separator ({@code {street: :street}}, {@code {street::street}}) or sits directly inside a {@code [...]} nested in
+     * the braces; a MyBatis marker is recognized after a field separator too, whatever the key ({@code {street:#{street}}},
+     * {@code { #{k, jdbcType=VARCHAR}:#{v} }}), and wherever it starts a token of its own (after whitespace or
+     * {@code ,}). A marker written directly after
+     * <code>&#123;</code>, or a named marker after {@code ,} inside braces — for example
+     * <code>tags + &#123;:tag&#125;</code>, <code>tags + &#123;#&#123;tag&#125;&#125;</code> or
      * <code>&#123;:a, :b&#125;</code> — is <i>not</i> rewritten and is <i>not</i> counted: <code>&#123;</code>
-     * does not start a new token, and a marker after {@code ,} inside braces is taken for a map key. Such a
-     * statement reaches the driver with a native {@code :name} marker still in it and will not bind correctly.
-     * Use a positional {@code ?} inside set and map literals instead (<code>tags + &#123;?&#125;</code> works).</p>
+     * does not start a new token, and a named marker after {@code ,} inside braces is taken for a map key. Such a
+     * statement reaches the driver with the native marker still in it and will not bind correctly.
+     * Note that Cassandra itself (verified on 5.0) rejects any bind marker inside a set, list or map literal ("bind
+     * variables are not supported inside collection literals"), so markers in braces are useful in UDT literals
+     * ({@code {street: ?, city: ?}}) and subscripts ({@code m[?] = ?}); bind a whole collection instead
+     * ({@code tags = tags + ?} with a {@code Set} value).</p>
      *
      * <p>This parameterized version is what gets sent to Cassandra for prepared statement creation.</p>
      *

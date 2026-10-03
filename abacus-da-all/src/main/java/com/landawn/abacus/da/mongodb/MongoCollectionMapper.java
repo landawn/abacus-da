@@ -1839,7 +1839,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method performs a find operation with field projection and returns the results
      * as a Dataset. Only the specified fields are included in the Dataset columns,
-     * reducing memory usage and improving performance for large datasets.</p>
+     * reducing memory usage and improving performance for large datasets.
+     * A dotted field name such as {@code "address.city"} becomes a column holding the nested value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1858,12 +1859,13 @@ public final class MongoCollectionMapper<T> {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see Dataset
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter)
-            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return collectionExecutor.query(selectPropNames, filter, rowType);
     }
 
@@ -1872,8 +1874,9 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p>This method performs a find operation with field projection and pagination, returning
      * a subset of matching documents as a Dataset. Pagination parameters control which portion
-     * of the result set is returned, enabling efficient processing of large collections in chunks.</p>
-     * 
+     * of the result set is returned, enabling efficient processing of large collections in chunks.
+     * A dotted field name such as {@code "address.city"} becomes a column holding the nested value.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("orderId", "total", "status");
@@ -1891,12 +1894,13 @@ public final class MongoCollectionMapper<T> {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #query(Collection, Bson)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count)
-            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return collectionExecutor.query(selectPropNames, filter, offset, count, rowType);
     }
 
@@ -1905,8 +1909,9 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p>This method performs a find operation with field projection and sorting, returning
      * ordered results as a Dataset. The sort parameter determines the order of documents
-     * in the result set, which is essential for consistent data processing and reporting.</p>
-     * 
+     * in the result set, which is essential for consistent data processing and reporting.
+     * A dotted field name such as {@code "address.city"} becomes a column holding the nested value.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("username", "score", "level");
@@ -1925,12 +1930,13 @@ public final class MongoCollectionMapper<T> {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see com.mongodb.client.model.Sorts
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort)
-            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return collectionExecutor.query(selectPropNames, filter, sort, rowType);
     }
 
@@ -1939,8 +1945,9 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p>This method combines field projection, sorting, and pagination to retrieve a specific
      * window of ordered documents as a Dataset. This is the most comprehensive query method,
-     * ideal for implementing pagination in user interfaces or processing large datasets in sorted chunks.</p>
-     * 
+     * ideal for implementing pagination in user interfaces or processing large datasets in sorted chunks.
+     * A dotted field name such as {@code "address.city"} becomes a column holding the nested value.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("productName", "price", "rating");
@@ -1961,12 +1968,13 @@ public final class MongoCollectionMapper<T> {
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if converting a result value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean or map, or invoking a bean accessor, fails
      * @see #query(Collection, Bson, Bson)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count)
-            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, RuntimeException {
+            throws IllegalArgumentException, CodecConfigurationException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         return collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
     }
 
@@ -3767,7 +3775,9 @@ public final class MongoCollectionMapper<T> {
      * stream.</p>
      *
      * @param fieldName the name of the field to get distinct values from
-     * @return a Stream of entities containing only the distinct field values
+     * @return a Stream of entities containing only the distinct field values (unlike the native {@code distinct} command,
+     *         documents that lack the field contribute one more entity whose field value is {@code null}, or a {@code null}
+     *         element for a single-value {@code T})
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3840,7 +3850,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param fieldName the name of the field to get distinct values from
      * @param filter the query filter to match entities before extracting distinct values
-     * @return a Stream of entities containing only the distinct field values from matching entities
+     * @return a Stream of entities containing only the distinct field values from matching entities (matching documents that
+     *         lack the field contribute one more entity whose field value is {@code null}, as in {@link #distinct(String)})
      * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code filter} is null
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3994,7 +4005,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param fieldName the field name to group entities by
      * @return a Stream of entities with group information and counts
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} (it would
+     *         collide with the count column) and the mapped type is not {@link Document}
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -4033,7 +4045,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param fieldNames collection of field names to group entities by
      * @return a Stream of entities with group information and counts
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code fieldNames} contains {@code "count"} (it
+     *         would collide with the count column) and the mapped type is not {@link Document}
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error

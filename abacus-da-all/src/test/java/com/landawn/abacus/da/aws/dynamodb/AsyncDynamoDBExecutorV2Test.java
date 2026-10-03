@@ -1862,4 +1862,310 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
             this.name = name;
         }
     }
+
+    // ---- 2026-10-02 sliceD ----
+
+    /**
+     * mapper(Class) without {@code @Table} and the Mapper constructor for a non-bean class concatenated the Class object,
+     * so the messages read "Entity class class com.x.Foo must ..." and "class java.lang.Integer is not an entity class".
+     */
+    @Test
+    public void testMapper_ErrorMessagesNameClassOnce() {
+        final IllegalArgumentException noTable = assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(NoTableEntity.class));
+        assertTrue(noTable.getMessage().startsWith("Entity class " + com.landawn.abacus.util.ClassUtil.getCanonicalClassName(NoTableEntity.class) + " must"),
+                noTable.getMessage());
+        assertFalse(noTable.getMessage().contains("class class"), noTable.getMessage());
+
+        final IllegalArgumentException notBean = assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(Integer.class, "t", null));
+        assertTrue(notBean.getMessage().startsWith("java.lang.Integer is not an entity class"), notBean.getMessage());
+    }
+
+    /**
+     * Cancelling (or timing out) the future returned by list/query must stop the auto-pagination. The cancellation of a
+     * dependent stage never reaches the page chain, which used to keep requesting every remaining page in the background.
+     */
+    @Test
+    public void testListAndQueryStopPaginatingOnceReturnedFutureIsCancelled() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final Map<String, AttributeValue> row = Map.of("id", AttributeValue.fromS("1"));
+
+        for (int variant = 0; variant < 3; variant++) {
+            final DynamoDbAsyncClient client = mock(DynamoDbAsyncClient.class);
+            final AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client);
+            final CompletableFuture<QueryResponse> secondPage = new CompletableFuture<>();
+            when(client.query(any(QueryRequest.class))).thenReturn(
+                    CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(row)).lastEvaluatedKey(Map.of("id", AttributeValue.fromS("1"))).build()),
+                    secondPage, CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(row)).build()));
+
+            final CompletableFuture<?> result = variant == 0 ? executor.list(queryRequest, StringArrayEntity.class)
+                    : variant == 1 ? executor.query(queryRequest) : executor.query(queryRequest, StringArrayEntity.class);
+
+            verify(client, org.mockito.Mockito.timeout(5000).times(2)).query(any(QueryRequest.class)); // page 2 is in flight
+            assertTrue(result.cancel(true));
+
+            secondPage.complete(QueryResponse.builder().items(List.of(row)).lastEvaluatedKey(Map.of("id", AttributeValue.fromS("2"))).build());
+
+            verify(client, org.mockito.Mockito.after(1000).times(2)).query(any(QueryRequest.class)); // no page 3 request
+            assertTrue(result.isCancelled(), "variant " + variant);
+        }
+    }
+
+    /**
+     * The result future of list/query is completed from the page chain, so a page failure still reaches get() as the
+     * unwrapped cause and exceptionally(...) as a CompletionException, and an uncancelled multi-page query returns every page.
+     */
+    @Test
+    public void testListAndQueryForwardPagesAndFailuresToReturnedFuture() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final Map<String, AttributeValue> row = Map.of("id", AttributeValue.fromS("1"));
+        final QueryResponse firstPage = QueryResponse.builder().items(List.of(row)).lastEvaluatedKey(Map.of("id", AttributeValue.fromS("1"))).build();
+        final software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException failure = software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException
+                .builder()
+                .message("gone")
+                .build();
+
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(firstPage),
+                CompletableFuture.completedFuture(firstPage.copy(b -> b.lastEvaluatedKey(Map.of("id", AttributeValue.fromS("2"))))),
+                CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(row)).build()), CompletableFuture.completedFuture(firstPage),
+                CompletableFuture.failedFuture(failure), CompletableFuture.completedFuture(firstPage), CompletableFuture.failedFuture(failure));
+
+        assertEquals(3, asyncExecutor.list(queryRequest, StringArrayEntity.class).get().size());
+
+        final CompletableFuture<Dataset> failedQuery = asyncExecutor.query(queryRequest);
+        assertSame(failure, assertThrows(ExecutionException.class, failedQuery::get).getCause());
+        final Throwable seen = failedQuery.handle((r, e) -> e).get();
+        assertTrue(seen instanceof java.util.concurrent.CompletionException && seen.getCause() == failure, String.valueOf(seen));
+
+        assertSame(failure, assertThrows(ExecutionException.class, () -> asyncExecutor.query(queryRequest, StringArrayEntity.class).get()).getCause());
+    }
+
+    // ---- 2026-10-02 verifyDD ----
+
+    private static final List<String> PAGINATING_QUERY_METHODS_verifyDD = List.of("list", "list(Entity)", "query", "query(LinkedHashMap)", "query(Entity)",
+            "mapper.list", "mapper.query");
+
+    private static CompletableFuture<?> invokePaginatingQuery_verifyDD(final AsyncDynamoDBExecutor executor, final String method,
+            final QueryRequest queryRequest) {
+        return switch (method) {
+            case "list" -> executor.list(queryRequest);
+            case "list(Entity)" -> executor.list(queryRequest, StringArrayEntity.class);
+            case "query" -> executor.query(queryRequest);
+            case "query(LinkedHashMap)" -> executor.query(queryRequest, java.util.LinkedHashMap.class);
+            case "query(Entity)" -> executor.query(queryRequest, StringArrayEntity.class);
+            case "mapper.list" -> executor.mapper(TestEntity.class).list(queryRequest);
+            case "mapper.query" -> executor.mapper(TestEntity.class).query(queryRequest);
+            default -> throw new IllegalArgumentException(method);
+        };
+    }
+
+    private static long queryCalls_verifyDD(final DynamoDbAsyncClient client) {
+        return org.mockito.Mockito.mockingDetails(client).getInvocations().stream().filter(i -> i.getMethod().getName().equals("query")).count();
+    }
+
+    // Waits until the page chain has run to its end. CompletableFuture runs async stages in the common pool when it has more
+    // than one worker (otherwise on a new thread per task, which awaitQuiescence cannot see, so fall back to a fixed wait).
+    private static void awaitPageChain_verifyDD() throws InterruptedException {
+        if (java.util.concurrent.ForkJoinPool.getCommonPoolParallelism() > 1) {
+            java.util.concurrent.ForkJoinPool.commonPool().awaitQuiescence(5, java.util.concurrent.TimeUnit.SECONDS);
+        } else {
+            Thread.sleep(500);
+        }
+    }
+
+    /**
+     * Every auto-paginating entry point (list/query, Map and entity rows, executor and Mapper) stops requesting pages once the
+     * returned future is completed early: cancelled before the first page arrives, or timed out with orTimeout(...) /
+     * completeOnTimeout(...) while page 2 is in flight. Before the fix only a cancel that beat the first page of list/raw-Map
+     * query stopped it (the returned stage was that page's direct dependent); otherwise the remaining pages were still
+     * requested. Without early completion every page is still fetched and returned.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testEveryPaginatingListAndQueryStopsWhenReturnedFutureCompletesEarly_verifyDD() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final Map<String, AttributeValue> row = Map.of("id", AttributeValue.fromS("1"));
+        final QueryResponse pageWithMore = QueryResponse.builder().items(List.of(row)).lastEvaluatedKey(Map.of("id", AttributeValue.fromS("1"))).build();
+        final QueryResponse lastPage = QueryResponse.builder().items(List.of(row)).build();
+        final List<String> wrong = new ArrayList<>();
+
+        for (final String method : PAGINATING_QUERY_METHODS_verifyDD) {
+            for (final String mode : List.of("cancelBeforeFirstPage", "orTimeoutDuringPage2", "completeOnTimeoutDuringPage2", "notCompletedEarly")) {
+                final DynamoDbAsyncClient client = mock(DynamoDbAsyncClient.class);
+                final AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client);
+                final CompletableFuture<QueryResponse> firstPage = new CompletableFuture<>();
+                final CompletableFuture<QueryResponse> secondPage = new CompletableFuture<>();
+                when(client.query(any(QueryRequest.class))).thenReturn(firstPage, secondPage, CompletableFuture.completedFuture(lastPage));
+
+                final CompletableFuture<Object> result = (CompletableFuture<Object>) invokePaginatingQuery_verifyDD(executor, method, queryRequest);
+                final long expectedCalls;
+
+                if (mode.equals("cancelBeforeFirstPage")) {
+                    assertTrue(result.cancel(true));
+                    firstPage.complete(pageWithMore);
+                    expectedCalls = 1;
+                } else {
+                    firstPage.complete(pageWithMore);
+                    verify(client, org.mockito.Mockito.timeout(5000).times(2)).query(any(QueryRequest.class)); // page 2 is in flight
+
+                    if (mode.equals("orTimeoutDuringPage2")) {
+                        final ExecutionException e = assertThrows(ExecutionException.class,
+                                () -> result.orTimeout(1, java.util.concurrent.TimeUnit.MILLISECONDS).get(5, java.util.concurrent.TimeUnit.SECONDS));
+                        assertTrue(e.getCause() instanceof java.util.concurrent.TimeoutException, method + ": " + e.getCause());
+                        expectedCalls = 2;
+                    } else if (mode.equals("completeOnTimeoutDuringPage2")) {
+                        assertEquals("fallback",
+                                result.completeOnTimeout("fallback", 1, java.util.concurrent.TimeUnit.MILLISECONDS).get(5, java.util.concurrent.TimeUnit.SECONDS));
+                        expectedCalls = 2;
+                    } else {
+                        expectedCalls = 3;
+                    }
+
+                    secondPage.complete(pageWithMore);
+                }
+
+                awaitPageChain_verifyDD();
+
+                if (queryCalls_verifyDD(client) != expectedCalls) {
+                    wrong.add(method + "/" + mode + ": " + queryCalls_verifyDD(client) + " query requests, expected " + expectedCalls);
+                }
+
+                if (mode.equals("notCompletedEarly")) {
+                    final Object value = result.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                    assertEquals(3, value instanceof Dataset ? ((Dataset) value).size() : ((List<?>) value).size(), method);
+                } else if (mode.equals("cancelBeforeFirstPage")) {
+                    assertTrue(result.isCancelled(), method);
+                }
+            }
+        }
+
+        assertTrue(wrong.isEmpty(), wrong.toString());
+    }
+
+    /**
+     * Pins that list/query report every failure point exactly like the plain thenComposeAsync stage they returned before the
+     * result future was separated from the page chain: a client that throws on the first request makes the call itself throw;
+     * a failed first or later page, a later page request that throws, and a row-conversion failure complete the future so that
+     * get() throws ExecutionException(cause), join() throws CompletionException(cause), and exceptionally/handle/whenComplete
+     * see that same CompletionException instance.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testListAndQueryFailureShapesMatchPlainDependentStage_verifyDD() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final QueryResponse pageWithMore = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1"))))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.fromS("1")))
+                .build();
+        final software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException failure = software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException
+                .builder()
+                .message("gone")
+                .build();
+        final IllegalStateException thrown = new IllegalStateException("client threw");
+
+        for (final String method : PAGINATING_QUERY_METHODS_verifyDD) {
+            final DynamoDbAsyncClient syncThrowing = mock(DynamoDbAsyncClient.class);
+            when(syncThrowing.query(any(QueryRequest.class))).thenThrow(thrown);
+            assertSame(thrown,
+                    assertThrows(IllegalStateException.class, () -> invokePaginatingQuery_verifyDD(new AsyncDynamoDBExecutor(syncThrowing), method, queryRequest)),
+                    method);
+
+            for (final String failurePoint : List.of("firstPageFails", "thirdPageFails", "secondRequestThrows")) {
+                final DynamoDbAsyncClient client = mock(DynamoDbAsyncClient.class);
+
+                if (failurePoint.equals("firstPageFails")) {
+                    when(client.query(any(QueryRequest.class))).thenReturn(CompletableFuture.failedFuture(failure));
+                } else if (failurePoint.equals("thirdPageFails")) {
+                    when(client.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(pageWithMore),
+                            CompletableFuture.completedFuture(pageWithMore), CompletableFuture.failedFuture(failure));
+                } else {
+                    when(client.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(pageWithMore)).thenThrow(thrown);
+                }
+
+                final Throwable cause = failurePoint.equals("secondRequestThrows") ? thrown : failure;
+                final CompletableFuture<Object> result = (CompletableFuture<Object>) invokePaginatingQuery_verifyDD(new AsyncDynamoDBExecutor(client), method,
+                        queryRequest);
+                final String where = method + "/" + failurePoint;
+
+                assertSame(cause, assertThrows(ExecutionException.class, () -> result.get(5, java.util.concurrent.TimeUnit.SECONDS)).getCause(), where);
+                final java.util.concurrent.CompletionException joined = assertThrows(java.util.concurrent.CompletionException.class, result::join, where);
+                assertSame(cause, joined.getCause(), where);
+                assertSame(joined, result.exceptionally(e -> e).join(), where);
+                assertSame(joined, result.handle((r, e) -> e).join(), where);
+                final Throwable[] seen = new Throwable[1];
+                result.whenComplete((r, e) -> seen[0] = e).exceptionally(e -> null).join();
+                assertSame(joined, seen[0], where);
+                assertTrue(result.isCompletedExceptionally() && !result.isCancelled(), where);
+            }
+        }
+
+        // A row that cannot be converted on a later page fails the future the same way (single-value row type, 2 columns).
+        final DynamoDbAsyncClient client = mock(DynamoDbAsyncClient.class);
+        when(client.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(pageWithMore), CompletableFuture
+                .completedFuture(QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2"), "x", AttributeValue.fromS("y")))).build()));
+        final CompletableFuture<List<String>> converted = new AsyncDynamoDBExecutor(client).list(queryRequest, String.class);
+        final Throwable conversionFailure = assertThrows(ExecutionException.class, () -> converted.get(5, java.util.concurrent.TimeUnit.SECONDS)).getCause();
+        assertTrue(conversionFailure instanceof IllegalArgumentException && conversionFailure.getMessage().startsWith("Column count must be 1"),
+                String.valueOf(conversionFailure));
+        assertSame(conversionFailure, assertThrows(java.util.concurrent.CompletionException.class, converted::join).getCause());
+    }
+
+    // ---- 2026-10-04 coverageDC ----
+
+    // The Mapper-constructor message on its own: testMapper_ErrorMessagesNameClassOnce fails at its first (@Table) assertion on
+    // HEAD, so it never proved this second site, which rendered "class java.lang.Integer is not an entity class ...".
+    @Test
+    public void testMapperConstructor_NonBeanMessageNamesClassOnce_coverageDC() {
+        final IllegalArgumentException notBean = assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(Integer.class, "t", null));
+        assertEquals("java.lang.Integer is not an entity class with getter/setter method", notBean.getMessage());
+    }
+
+    // The async Mapper builds entity keys with the sync v2 toKeyAttributeValue, so an empty byte[] key is named "byte[]" (was "[B")
+    // and rejected before any request is sent.
+    @Test
+    public void testMapperEmptyBinaryKeyMessageNamesByteArrayReadably_coverageDC() {
+        final BinaryKeyEntity_coverageDC entity = new BinaryKeyEntity_coverageDC();
+        entity.setId(new byte[0]);
+
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> asyncExecutor.mapper(BinaryKeyEntity_coverageDC.class, "t", NamingPolicy.CAMEL_CASE).getItem(entity));
+        assertEquals("DynamoDB key attribute 'id' must be a non-empty String, finite Number, or non-empty binary value; received byte[]", e.getMessage());
+        verifyNoInteractions(mockDynamoDbAsyncClient);
+    }
+
+    /**
+     * Pins the unchanged single-page contract next to the separated result future: a request that already carries an
+     * exclusiveStartKey is answered with exactly that page, even when the page has a LastEvaluatedKey, on every paginating entry point.
+     */
+    @Test
+    public void testListAndQueryWithExclusiveStartKeyStillReturnOnlyThatPage_coverageDC() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").exclusiveStartKey(Map.of("id", AttributeValue.fromS("0"))).build();
+        final QueryResponse pageWithMore = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1"))))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.fromS("1")))
+                .build();
+
+        for (final String method : PAGINATING_QUERY_METHODS_verifyDD) {
+            final DynamoDbAsyncClient client = mock(DynamoDbAsyncClient.class);
+            when(client.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(pageWithMore),
+                    CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2")))).build()));
+
+            final Object value = invokePaginatingQuery_verifyDD(new AsyncDynamoDBExecutor(client), method, queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+            assertEquals(1, value instanceof Dataset ? ((Dataset) value).size() : ((List<?>) value).size(), method);
+            verify(client, times(1)).query(any(QueryRequest.class));
+        }
+    }
+
+    public static class BinaryKeyEntity_coverageDC {
+        @com.landawn.abacus.annotation.Id
+        private byte[] id;
+
+        public byte[] getId() {
+            return id;
+        }
+
+        public void setId(final byte[] id) {
+            this.id = id;
+        }
+    }
 }

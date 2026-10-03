@@ -1849,6 +1849,7 @@ public final class MongoCollectionExecutor {
      * <p>Only the named property of the first matched document is read; any remaining documents or
      * fields are ignored. The value is converted to {@code valueType} via
      * binary-aware scalar conversion: binary payloads can be read as byte arrays or readable {@link java.nio.ByteBuffer} values;
+     * a BSON date requested as {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC;
      * other values use {@link com.landawn.abacus.util.N#convert(Object, Class)}.
      * This is the underlying method delegated to by the
      * primitive-wrapper convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.).</p>
@@ -2044,7 +2045,10 @@ public final class MongoCollectionExecutor {
      * Executes a query with field projection and returns results as a typed Dataset.
      *
      * <p>Performs a query with field projection, returning only specified fields
-     * in a Dataset structure with typed rows for efficient data processing.</p>
+     * in a Dataset structure with typed rows for efficient data processing. A dotted field name such as
+     * {@code "address.city"} becomes a column holding the nested value; a dotted path that traverses a non-null
+     * value that is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled
+     * through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2070,7 +2074,9 @@ public final class MongoCollectionExecutor {
      * Executes a paginated query with field projection and returns results as a typed Dataset.
      *
      * <p>Combines field projection with pagination to return a limited set of documents
-     * with only specified fields in a Dataset structure.</p>
+     * with only specified fields in a Dataset structure. A dotted field name such as {@code "address.city"}
+     * becomes a column holding the nested value; a dotted path that traverses a non-null value that is not a
+     * {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2099,7 +2105,9 @@ public final class MongoCollectionExecutor {
      * Executes a sorted query with field projection and returns results as a typed Dataset.
      *
      * <p>Performs a sorted query with field projection, returning ordered results
-     * with only specified fields in a Dataset structure.</p>
+     * with only specified fields in a Dataset structure. A dotted field name such as {@code "address.city"}
+     * becomes a column holding the nested value; a dotted path that traverses a non-null value that is not a
+     * {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2128,7 +2136,11 @@ public final class MongoCollectionExecutor {
      * Executes a fully customized query and returns results as a typed Dataset.
      *
      * <p>Performs a query with complete control over projection, filtering, sorting,
-     * and pagination, returning results in a Dataset structure for advanced data processing.</p>
+     * and pagination, returning results in a Dataset structure for advanced data processing. A dotted field
+     * name such as {@code "address.city"} becomes a column holding the nested value, read from the returned
+     * document rather than converted through {@code rowType}; a dotted path that traverses a non-null value that
+     * is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the
+     * publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2159,9 +2171,44 @@ public final class MongoCollectionExecutor {
 
         if (N.isEmpty(selectPropNames)) {
             return query(selectPropNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
-        } else {
+        } else if (selectPropNames.stream().noneMatch(propName -> propName != null && propName.indexOf('.') >= 0)) {
             return query(selectPropNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(selectPropNames, rowList, rowType));
+        } else {
+            return query(selectPropNames, filter, sort, offset, count).collectList()
+                    .map(rowList -> extractDataWithDottedColumns(selectPropNames, rowList, rowType));
         }
+    }
+
+    // A dotted name such as "address.city" is a valid projection, but MongoDB returns it nested ({address: {city: ...}})
+    // while Dataset columns are read by flat map key or bean property name, so its column came back all null.
+    // Resolve dotted columns from the returned documents instead (a path through a non-Document throws ClassCastException,
+    // as in list/findFirst/queryForSingleValue).
+    private static Dataset extractDataWithDottedColumns(final Collection<String> selectPropNames, final List<Document> rowList, final Class<?> rowType)
+            throws IllegalArgumentException, ClassCastException, RuntimeException {
+        final Dataset dataset = MongoDB.extractData(selectPropNames, rowList, rowType);
+
+        if (rowList.isEmpty()) {
+            return dataset;
+        }
+
+        final List<String> columnNames = dataset.columnNames();
+        final List<List<?>> columns = new ArrayList<>(columnNames.size());
+
+        for (final String columnName : columnNames) {
+            if (columnName.indexOf('.') < 0) {
+                columns.add(dataset.getColumn(columnName));
+            } else {
+                final List<Object> column = new ArrayList<>(rowList.size());
+
+                for (final Document row : rowList) {
+                    column.add(getPropValueByPath(row, columnName));
+                }
+
+                columns.add(column);
+            }
+        }
+
+        return Dataset.columns(columnNames, columns);
     }
 
     /**
@@ -4683,7 +4730,10 @@ public final class MongoCollectionExecutor {
      * <p>The pipeline is always executed against {@link Document}, and each output document is
      * converted to {@code rowType} via {@code toEntity}/{@link MongoDB#readRow(Document, Class)}.
      * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
-     * receive the raw output documents, matching {@code list(...)}/{@code findFirst(...)}.</p>
+     * receive the raw output documents, matching {@code list(...)}/{@code findFirst(...)}. For a single-value
+     * {@code rowType}, an output document that yields no value (an empty document, or, for a non-primitive
+     * {@code rowType}, one whose value is BSON null) is skipped rather than emitted, because Reactive Streams
+     * forbids {@code null} elements.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4893,7 +4943,8 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field name to group by; must not be null
      * @param rowType the class to deserialize results into; must not be null
      * @return a Flux that emits grouped and counted documents mapped to the specified type
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null, or if {@code fieldName} is
+     *         {@code "count"} and {@code rowType} is not {@link Document} (the group key would be overwritten by the count column)
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final String fieldName, final Class<T> rowType) throws IllegalArgumentException {
@@ -4948,7 +4999,8 @@ public final class MongoCollectionExecutor {
      * @param fieldNames collection of field names to group by; must not be null or empty
      * @param rowType the class to deserialize results into; must not be null
      * @return a Flux that emits grouped and counted documents mapped to the specified type
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null, or if {@code fieldNames}
+     *         contains {@code "count"} and {@code rowType} is not {@link Document} (that group key would be overwritten by the count column)
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) throws IllegalArgumentException {
@@ -4972,6 +5024,10 @@ public final class MongoCollectionExecutor {
             return N.asList(new Document(_$GROUP, group));
         }
 
+        if (count) {
+            checkGroupFieldNotCountColumn(fieldName);
+        }
+
         final Document project = new Document(MongoDBBase._ID, 0).append(fieldName, "$" + MongoDBBase._ID);
 
         if (count) {
@@ -4988,7 +5044,8 @@ public final class MongoCollectionExecutor {
      * @param count whether to include the group count
      * @param rowType the requested result type
      * @return the aggregation stages
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code count} is set, {@code rowType} is not
+     *         {@link Document}, and {@code fieldNames} contains {@code "count"}
      */
     private static List<Document> groupByPipeline(final Collection<String> fieldNames, final boolean count, final Class<?> rowType)
             throws IllegalArgumentException {
@@ -5013,6 +5070,10 @@ public final class MongoCollectionExecutor {
         final Document project = new Document(MongoDBBase._ID, 0);
 
         for (final String fieldName : fieldNames) {
+            if (count) {
+                checkGroupFieldNotCountColumn(fieldName);
+            }
+
             project.append(fieldName, "$" + MongoDBBase._ID + "." + fieldName);
         }
 
@@ -5021,6 +5082,15 @@ public final class MongoCollectionExecutor {
         }
 
         return N.asList(new Document(_$GROUP, group), new Document("$project", project));
+    }
+
+    // The non-Document groupByAndCount row is {<fieldName>: key, count: n}: a group field named "count" would be
+    // overwritten by the count column, silently dropping the group key, so no correct row shape exists for it.
+    private static void checkGroupFieldNotCountColumn(final String fieldName) throws IllegalArgumentException {
+        if (_COUNT.equals(fieldName)) {
+            throw new IllegalArgumentException(
+                    "Group field name '" + _COUNT + "' conflicts with the count column of groupByAndCount; use Document as the row type");
+        }
     }
 
     /**

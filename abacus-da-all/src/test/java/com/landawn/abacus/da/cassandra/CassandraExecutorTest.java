@@ -1517,6 +1517,302 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
+    // ---- 2026-10-04 coverageCS ----
+
+    public static class CoverageCSTimeUdt {
+        private java.sql.Time t;
+
+        public java.sql.Time getT() {
+            return t;
+        }
+
+        public void setT(final java.sql.Time t) {
+            this.t = t;
+        }
+    }
+
+    public static class CoverageCSTimeRow {
+        private int id;
+        private java.sql.Time t;
+        private CoverageCSTimeUdt u;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+
+        public java.sql.Time getT() {
+            return t;
+        }
+
+        public void setT(final java.sql.Time t) {
+            this.t = t;
+        }
+
+        public CoverageCSTimeUdt getU() {
+            return u;
+        }
+
+        public void setU(final CoverageCSTimeUdt u) {
+            this.u = u;
+        }
+    }
+
+    /** Schema changes can take longer than the driver's default 2s request timeout. */
+    private static void coverageCSSchemaChange(final String cql) {
+        cassandraExecutor.execute(com.datastax.oss.driver.api.core.cql.SimpleStatement.newInstance(cql).setTimeout(Duration.ofSeconds(60)));
+    }
+
+    @Test
+    public void test_coverageCS_dateTimeAndValueTypeParametersBindRoundTrip() throws Exception {
+        final String table = "simplex.coverage_cs_binds4";
+        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, ts timestamp, b blob)");
+
+        try {
+            final String readT = "SELECT t FROM " + table + " WHERE id = ?";
+            final java.sql.Time sqlTime = new java.sql.Time(java.sql.Time.valueOf(LocalTime.of(10, 15, 30)).getTime() + 123);
+            final java.util.Calendar calendar = java.util.Calendar.getInstance();
+            calendar.setTime(sqlTime);
+
+            // Binds into the time column: a LocalTime as is; a Date/Calendar (converted to the column's LocalTime) - among two
+            // parameters and as the single parameter of a single marker (a single Calendar was read as a bean of named values:
+            // "Missing required parameter: 't'").
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 1, LocalTime.of(10, 15, 30, 123_456_789));
+            assertEquals(LocalTime.of(10, 15, 30, 123_456_789), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 1).get());
+
+            for (final Object value : List.of(sqlTime, new java.util.Date(sqlTime.getTime()), new Timestamp(sqlTime.getTime()), calendar)) {
+                cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 2, value);
+                assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 2).get(),
+                        value.getClass().getName());
+                cassandraExecutor.execute("UPDATE " + table + " SET t = ? WHERE id = 3", value);
+                assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 3).get(),
+                        value.getClass().getName());
+            }
+
+            // Unchanged: an entity's java.sql.Time property bound as a named parameter is converted the same way.
+            final CoverageCSTimeRow entity = new CoverageCSTimeRow();
+            entity.setId(5);
+            entity.setT(sqlTime);
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (:id, :t)", entity);
+            assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 5).get());
+
+            // A single Calendar for a single timestamp marker, too.
+            cassandraExecutor.execute("UPDATE " + table + " SET ts = ? WHERE id = 3", calendar);
+            assertEquals(calendar.toInstant(), cassandraExecutor.queryForSingleValue(java.time.Instant.class, "SELECT ts FROM " + table + " WHERE id = 3").get());
+
+            // A single ByteBuffer is one positional value: bound to a single blob marker, too few values for two markers.
+            cassandraExecutor.execute("UPDATE " + table + " SET b = ? WHERE id = 3", ByteBuffer.wrap(new byte[] { 1, 2 }));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2 },
+                    cassandraExecutor.queryForSingleValue(byte[].class, "SELECT b FROM " + table + " WHERE id = 3").get());
+            final IllegalArgumentException tooFew = assertThrows(IllegalArgumentException.class,
+                    () -> cassandraExecutor.execute("UPDATE " + table + " SET b = ? WHERE id = ?", ByteBuffer.wrap(new byte[] { 1 })));
+            assertTrue(tooFew.getMessage().startsWith("Not enough parameters for parameterized query: expected 2 but got 1"), tooFew.getMessage());
+        } finally {
+            coverageCSSchemaChange("DROP TABLE IF EXISTS " + table);
+        }
+    }
+
+    @Test
+    public void test_coverageCS_timeColumnReadsIntoSqlTimeOnEveryPath() throws Exception {
+        final String table = "simplex.coverage_cs_reads4";
+        coverageCSSchemaChange("CREATE TYPE IF NOT EXISTS simplex.coverage_cs_time_udt4 (t time)");
+        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, u frozen<coverage_cs_time_udt4>)");
+
+        try {
+            final String readT = "SELECT t FROM " + table + " WHERE id = ?";
+            final java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss.SSS");
+
+            // Reads into java.sql.Time: a time with a fractional second (id 1) and one on a whole minute (id 4) both failed the
+            // N.convert text parse; every read path converts them (to the millisecond).
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t, u) VALUES (1, '10:15:30.123456789', {t: '10:15:30.123456789'})");
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (4, '12:30:00')");
+            codecRegistry.register(UDTCodec.create(session, "simplex", "coverage_cs_time_udt4", CoverageCSTimeUdt.class));
+
+            for (final Object[] idAndText : new Object[][] { { 1, "10:15:30.123" }, { 4, "12:30:00.000" } }) {
+                final int id = (Integer) idAndText[0];
+                final String expected = (String) idAndText[1];
+                final String readRow = "SELECT id, t FROM " + table + " WHERE id = ?";
+
+                assertEquals(expected, timeFormat.format(cassandraExecutor.queryForSingleValue(java.sql.Time.class, readT, id).get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.queryForSingleNonNull(java.sql.Time.class, readT, id).get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.findFirst(java.sql.Time.class, readT, id).get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.list(java.sql.Time.class, readT, id).get(0)));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.list(java.sql.Time[].class, readT, id).get(0)[0]));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.stream(java.sql.Time.class, readT, id).first().get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.findFirst(CoverageCSTimeRow.class, readRow, id).get().getT()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.query(CoverageCSTimeRow.class, readRow, id).<java.sql.Time> getColumn("t").get(0)));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.async().queryForSingleValue(java.sql.Time.class, readT, id).get().get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.async().list(java.sql.Time.class, readT, id).get().get(0)));
+            }
+
+            // Several rows: every row is converted, not only the first.
+            assertEquals(N.asSet("10:15:30.123", "12:30:00.000"), N.newHashSet(
+                    cassandraExecutor.list(java.sql.Time.class, "SELECT t FROM " + table + " WHERE id IN (1, 4)").stream().map(timeFormat::format).toList()));
+
+            // A UDT time field decoded into a java.sql.Time bean property (through the registered UDT codec).
+            assertEquals("10:15:30.123", timeFormat.format(
+                    cassandraExecutor.findFirst(CoverageCSTimeRow.class, "SELECT id, t, u FROM " + table + " WHERE id = ?", 1).get().getU().getT()));
+        } finally {
+            coverageCSSchemaChange("DROP TABLE IF EXISTS " + table);
+            coverageCSSchemaChange("DROP TYPE IF EXISTS simplex.coverage_cs_time_udt4");
+        }
+    }
+
+    // ---- 2026-10-04 coverageCS end ----
+
+    // ---- 2026-10-04 coverageCQ ----
+
+    /** Entity of the coverageCQ live check: its primary key (user_id, tenant_id) is declared only via registerKeys. */
+    @com.landawn.abacus.annotation.Table("simplex.coverage_cq_probe")
+    public static class CoverageCqProbe {
+        private String userId;
+        private String tenantId;
+        private String name;
+        private Map<String, Integer> scores;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(final String userId) {
+            this.userId = userId;
+        }
+
+        public String getTenantId() {
+            return tenantId;
+        }
+
+        public void setTenantId(final String tenantId) {
+            this.tenantId = tenantId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public Map<String, Integer> getScores() {
+            return scores;
+        }
+
+        public void setScores(final Map<String, Integer> scores) {
+            this.scores = scores;
+        }
+    }
+
+    /** Schema changes can take longer than the driver's default 2s request timeout. */
+    private static void coverageCQSchemaChange(final String cql) {
+        cassandraExecutor.execute(com.datastax.oss.driver.api.core.cql.SimpleStatement.newInstance(cql).setTimeout(Duration.ofSeconds(60)));
+    }
+
+    /**
+     * The CQL rendered by the fixed CqlBuilder paths (registered keys left out of SET / set(bean) / the column DELETE;
+     * update(Class).usingTTL(..).set(..)) and by ParsedCql's glued-marker rewrite is prepared, bound and applied by a real
+     * Cassandra. Each check uses its own partition, so the HEAD run reports every statement Cassandra rejected there (key
+     * columns in SET or in the DELETE column list, the implicit SET list duplicated after USING, a raw "#{street}" in the CQL).
+     */
+    @Test
+    public void test_coverageCQ_fixedRenderingsPrepareAndApplyOnCassandra() {
+        // A fresh table (and UDT) name per run: this Cassandra serves stale prepared statements for a table that was dropped
+        // and re-created under the same name ("table ... does not exist"). The CQL rendered for the entity's @Table name is
+        // redirected to it with onTable.
+        final String suffix = Long.toString(System.currentTimeMillis(), 36);
+        final String table = "simplex.coverage_cq_probe_" + suffix;
+        final String udt = "simplex.coverage_cq_addr_" + suffix;
+        final java.util.function.UnaryOperator<String> onTable = cql -> cql.replace("simplex.coverage_cq_probe ", table + " ");
+        coverageCQSchemaChange("CREATE TYPE " + udt + " (street text, city text, zip int)");
+        coverageCQSchemaChange("CREATE TABLE " + table + " (user_id text, tenant_id text, name text, scores map<text, int>, addr frozen<"
+                + udt.substring("simplex.".length()) + ">, PRIMARY KEY (user_id, tenant_id))");
+        CassandraExecutorBase.registerKeys(CoverageCqProbe.class, N.asList("userId", "tenantId"));
+
+        try {
+            final String select = "SELECT name, scores, TTL(name) AS name_ttl, addr.city AS city, addr.zip AS zip FROM " + table
+                    + " WHERE user_id = ? AND tenant_id = ?";
+            final java.util.function.Function<String, CoverageCqProbe> insert = userId -> {
+                final CoverageCqProbe probe = new CoverageCqProbe();
+                probe.setUserId(userId);
+                probe.setTenantId("t");
+                probe.setName("n0");
+                probe.setScores(N.asMap("a", 1));
+                cassandraExecutor.execute(onTable.apply(NSC.insertInto(CoverageCqProbe.class).build().query()), probe);
+                return probe;
+            };
+            final java.util.function.Function<String, com.landawn.abacus.query.condition.Condition> key = userId -> Filters.and(Filters.eq("userId", userId),
+                    Filters.eq("tenantId", "t"));
+
+            org.junit.jupiter.api.Assertions.assertAll(() -> {
+                // update(Class): the implicit SET list leaves out the registered keys.
+                final CoverageCqProbe probe = insert.apply("u1");
+                probe.setName("n1");
+                probe.setScores(N.asMap("b", 2));
+                cassandraExecutor.execute(onTable.apply(NSC.update(CoverageCqProbe.class).where(key.apply("u1")).build().query()), probe);
+                final Row row = cassandraExecutor.execute(select, "u1", "t").one();
+                assertEquals("n1", row.getString("name"));
+                assertEquals(N.asMap("b", 2), row.getMap("scores", String.class, Integer.class));
+            }, () -> {
+                // update(table).set(bean): the bean's key properties are not SET either.
+                final CoverageCqProbe probe = insert.apply("u2");
+                probe.setName("n2");
+                cassandraExecutor.execute(NSC.update(table).set(probe).where(key.apply("u2")).build().query(), probe);
+                assertEquals("n2", cassandraExecutor.execute(select, "u2", "t").one().getString("name"));
+            }, () -> {
+                // USING before set(...): only the explicit column is SET (the implicit list is replaced), with the TTL applied.
+                final CoverageCqProbe probe = insert.apply("u3");
+                probe.setName("n3");
+                probe.setScores(N.asMap("c", 3));
+                cassandraExecutor.execute(onTable.apply(
+                        NSC.update(CoverageCqProbe.class, N.asSet("userId", "tenantId")).usingTTL(3600).set("name").where(key.apply("u3")).build().query()),
+                        probe);
+                final Row row = cassandraExecutor.execute(select, "u3", "t").one();
+                assertEquals("n3", row.getString("name"));
+                assertEquals(N.asMap("a", 1), row.getMap("scores", String.class, Integer.class));
+                final int ttl = row.getInt("name_ttl");
+                assertTrue(ttl > 0 && ttl <= 3600, String.valueOf(ttl));
+            }, () -> {
+                // delete(Class).from(Class): only the non-key columns are deleted; the row itself remains.
+                insert.apply("u4");
+                final Map<String, Object> keyValues = new java.util.HashMap<>();
+                keyValues.put("userId", "u4");
+                keyValues.put("tenantId", "t");
+                cassandraExecutor.execute(onTable.apply(NSC.delete(CoverageCqProbe.class).from(CoverageCqProbe.class).where(key.apply("u4")).build().query()),
+                        keyValues);
+                final Row row = cassandraExecutor.execute(select, "u4", "t").one();
+                assertNotNull(row);
+                assertNull(row.getString("name"));
+                assertTrue(row.getMap("scores", String.class, Integer.class).isEmpty());
+            }, () -> {
+                // ParsedCql: MyBatis markers glued to the fields of a UDT literal (also with metadata / whitespace inside the
+                // marker). The map-literal shapes are covered offline only: this Cassandra (5.0) rejects any bind marker inside
+                // a set/list/map literal ("bind variables are not supported inside collection literals").
+                insert.apply("u5");
+                final Map<String, Object> params = new java.util.HashMap<>();
+                params.put("street", "s");
+                params.put("city", "c");
+                params.put("zip", 12345);
+                params.put("userId", "u5");
+                params.put("tenantId", "t");
+                cassandraExecutor.execute("UPDATE " + table + " SET addr = {street:#{street,jdbcType=VARCHAR},city:#{ city },zip:#{zip}}"
+                        + " WHERE user_id = #{userId} AND tenant_id = #{tenantId}", params);
+                final Row row = cassandraExecutor.execute(select, "u5", "t").one();
+                assertEquals("c", row.getString("city"));
+                assertEquals(12345, row.getInt("zip"));
+                assertEquals("n0", row.getString("name"));
+            });
+        } finally {
+            CassandraExecutorBase.entityKeyNamesMap.remove(CoverageCqProbe.class);
+            coverageCQSchemaChange("DROP TABLE IF EXISTS " + table);
+            coverageCQSchemaChange("DROP TYPE IF EXISTS " + udt);
+        }
+    }
+
+    // ---- 2026-10-04 coverageCQ end ----
+
     private Users createUser() {
         Users user = new Users();
         user.setId(UUID.randomUUID());

@@ -2440,6 +2440,111 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         }
     }
 
+    // ---- 2026-10-02 verifyME ----
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testQueryDottedSelectNameThroughAsyncFillsNestedColumn_verifyME() throws Exception {
+        // The async Collection-projection Dataset overloads run the sync query, so a dotted select name comes back as the
+        // nested value (it was an all-null column) and a path through an array fails the future with ClassCastException.
+        final MongoCollection<Document> collection = mock(MongoCollection.class);
+        final com.mongodb.client.FindIterable<Document> findIterable = mock(com.mongodb.client.FindIterable.class);
+        when(collection.find(any(Bson.class))).thenReturn(findIterable);
+        when(findIterable.projection(any())).thenReturn(findIterable);
+        when(findIterable.sort(any())).thenReturn(findIterable);
+        when(findIterable.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findIterable);
+        when(findIterable.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findIterable);
+        final List<Document> rows = new java.util.concurrent.CopyOnWriteArrayList<>(Arrays.asList(
+                new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris")), new Document("_id", 2).append("name", "n2")));
+        doAnswer(invocation -> {
+            final java.util.Collection<Object> target = invocation.getArgument(0);
+            target.addAll(rows);
+            return target;
+        }).when(findIterable).into(any());
+
+        final AsyncExecutor realExecutor = new AsyncExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.SECONDS);
+
+        try {
+            final AsyncMongoCollectionExecutor async = new MongoCollectionExecutor(collection, realExecutor).async();
+            final List<String> names = Arrays.asList("name", "address.city");
+            final Bson filter = new Document();
+            final Bson sort = new Document("_id", 1);
+
+            for (final ContinuableFuture<Dataset> future : Arrays.asList(async.query(names, filter, java.util.Map.class),
+                    async.query(names, filter, 1, 5, Document.class), async.query(names, filter, sort, java.util.Map.class),
+                    async.query(names, filter, sort, 1, 5, java.util.Map.class))) {
+                final Dataset ds = future.get();
+                Assertions.assertEquals(names, ds.columnNames());
+                Assertions.assertEquals(Arrays.asList("n1", "n2"), ds.getColumn("name"));
+                Assertions.assertEquals(Arrays.asList("Paris", null), ds.getColumn("address.city"));
+            }
+
+            rows.add(new Document("_id", 3).append("name", "n3").append("address", Arrays.asList(new Document("city", "Rome"))));
+            final java.util.concurrent.ExecutionException e = Assertions.assertThrows(java.util.concurrent.ExecutionException.class,
+                    () -> async.query(names, filter, sort, 0, 5, java.util.Map.class).get());
+            Assertions.assertInstanceOf(ClassCastException.class, e.getCause());
+        } finally {
+            realExecutor.shutdown();
+        }
+    }
+
+    // ---- end 2026-10-02 verifyME ----
+
+    // ---- 2026-10-04 coverageME ----
+
+    @Test
+    public void testDecodedValueConversionsOnAsyncReadPaths_coverageME() throws Exception {
+        // The async read methods run the sync ones, so the MongoDBBase read-side conversions (typed container elements,
+        // java.time Local* in UTC, generic bean type arguments, records) must hold for the futures' results too. Fixtures are
+        // shared with MongoCollectionExecutorTest (*_coverageME); each read path is asserted on its own.
+        final AsyncExecutor realExecutor = new AsyncExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.SECONDS);
+
+        try {
+            final AsyncMongoCollectionExecutor entityAsync = new MongoCollectionExecutor(
+                    MongoCollectionExecutorTest.mockCollectionReturning_coverageME(MongoCollectionExecutorTest.entityDoc_coverageME()), realExecutor).async();
+            final AsyncMongoCollectionExecutor recordAsync = new MongoCollectionExecutor(
+                    MongoCollectionExecutorTest.mockCollectionReturning_coverageME(MongoCollectionExecutorTest.recordDoc_coverageME()), realExecutor).async();
+            final AsyncMongoCollectionExecutor boxAsync = new MongoCollectionExecutor(
+                    MongoCollectionExecutorTest.mockCollectionReturning_coverageME(MongoCollectionExecutorTest.longBoxDoc_coverageME()), realExecutor).async();
+            final AsyncMongoCollectionExecutor dayAsync = new MongoCollectionExecutor(
+                    MongoCollectionExecutorTest.mockCollectionReturning_coverageME(MongoCollectionExecutorTest.dayDoc_coverageME()), realExecutor).async();
+            final Bson filter = new Document();
+            final Bson update = new Document("$set", new Document("x", 1));
+            final Class<MongoCollectionExecutorTest.E2eEntity_coverageME> type = MongoCollectionExecutorTest.E2eEntity_coverageME.class;
+            final Class<MongoCollectionExecutorTest.E2eRecord_coverageME> recordType = MongoCollectionExecutorTest.E2eRecord_coverageME.class;
+            final Class<MongoCollectionExecutorTest.E2eLongBox_coverageME> boxType = MongoCollectionExecutorTest.E2eLongBox_coverageME.class;
+            final java.time.LocalDate day = MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
+
+            Assertions.assertAll(() -> MongoCollectionExecutorTest.assertEntity_coverageME("list", entityAsync.list(filter, type).get().get(0)),
+                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("findFirst", entityAsync.findFirst(filter, type).get().get()),
+                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("get(ObjectId)",
+                            entityAsync.get(new ObjectId(MongoCollectionExecutorTest.OID_HEX_coverageME), type).get().get()),
+                    () -> {
+                        try (Stream<MongoCollectionExecutorTest.E2eEntity_coverageME> stream = entityAsync.stream(filter, type).get()) {
+                            MongoCollectionExecutorTest.assertEntity_coverageME("stream", stream.toList().get(0));
+                        }
+                    }, () -> MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndUpdate", entityAsync.findOneAndUpdate(filter, update, type).get()),
+                    () -> MongoCollectionExecutorTest.assertEntityDataset_coverageME("query(Bson, Class)", entityAsync.query(filter, type).get()),
+                    () -> Assertions.assertEquals(MongoCollectionExecutorTest.expectedRecord_coverageME(), recordAsync.list(filter, recordType).get().get(0),
+                            "record list"),
+                    () -> Assertions.assertEquals(MongoCollectionExecutorTest.expectedRecord_coverageME(), recordAsync.findFirst(filter, recordType).get().get(),
+                            "record findFirst"),
+                    () -> Assertions.assertEquals((Object) 9L, boxAsync.list(filter, boxType).get().get(0).getValue(), "LongBox list"),
+                    () -> Assertions.assertEquals((Object) 9L, boxAsync.findFirst(filter, boxType).get().get().getValue(), "LongBox findFirst"),
+                    () -> Assertions.assertEquals(day, entityAsync.queryForSingleValue("day", filter, java.time.LocalDate.class).get().get(),
+                            "queryForSingleValue LocalDate"),
+                    () -> Assertions.assertEquals(MongoCollectionExecutorTest.LOCAL_TIME_coverageME,
+                            entityAsync.queryForSingleValue("time", filter, java.time.LocalTime.class).get().get(), "queryForSingleValue LocalTime"),
+                    () -> Assertions.assertEquals(day, entityAsync.queryForSingleNonNull("day", filter, java.time.LocalDate.class).get().get(),
+                            "queryForSingleNonNull LocalDate"),
+                    () -> Assertions.assertEquals(Arrays.asList(day), dayAsync.list(filter, java.time.LocalDate.class).get(), "single-field row list"));
+        } finally {
+            realExecutor.shutdown();
+        }
+    }
+
+    // ---- end 2026-10-04 coverageME ----
+
     // Test entity class for testing
     private static class TestEntity {
         private String id;

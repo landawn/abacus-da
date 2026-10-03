@@ -14,6 +14,7 @@
 
 package com.landawn.abacus.da.cassandra;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -771,9 +772,10 @@ public final class CqlMapper {
      *         allowed in XML 1.0 (such as most control characters below U+0020); this is checked before the file is
      *         opened, so an existing file is left unchanged
      * @throws UncheckedIOException if the parent directory cannot be created, the file cannot be opened for writing,
-     *         or flushing or closing the file fails
+     *         or writing, flushing or closing the file fails
      * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
-     *         and written to the file
+     *         (for example, an attribute name with an undeclared namespace prefix); the document is serialized in memory
+     *         before the file is opened, so an existing file is left unchanged
      * @throws DOMException if a stored attribute name is not a valid XML name; like the XML-character check, this is
      *         detected before the file is opened, so an existing file is left unchanged
      * @see #saveTo(OutputStream)
@@ -781,10 +783,12 @@ public final class CqlMapper {
      */
     public void saveTo(final File file) throws IllegalArgumentException, IllegalStateException, UncheckedIOException, RuntimeException, DOMException {
         N.checkArgNotNull(file, cs.file);
-        // Build (and so validate) the whole document before the FileOutputStream truncates an existing file: an
-        // invalid XML character, an invalid attribute name (DOMException) or a missing XML runtime would otherwise
-        // fail only after opening the file, leaving the previous file destroyed.
-        final Document doc = toDocument();
+        // Build and serialize the whole document in memory before the FileOutputStream truncates an existing file: an
+        // invalid XML character, an invalid attribute name (DOMException), a missing XML runtime or a serializer
+        // failure (for example an attribute "p:t" whose namespace prefix was declared on the root element of the file
+        // it was loaded from) would otherwise fail only after opening the file, leaving the previous file destroyed.
+        final ByteArrayOutputStream xml = new ByteArrayOutputStream();
+        write(toDocument(), xml);
 
         final File parentFile = file.getParentFile();
 
@@ -793,7 +797,7 @@ public final class CqlMapper {
         }
 
         try (OutputStream os = new FileOutputStream(file)) {
-            write(doc, os);
+            xml.writeTo(os);
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }

@@ -15,11 +15,24 @@
 package com.landawn.abacus.da.mongodb;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.TypeVariable;
 import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Date;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,6 +42,7 @@ import java.util.function.IntFunction;
 
 import org.bson.BSONObject;
 import org.bson.BasicBSONObject;
+import org.bson.BsonBinary;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonInvalidOperationException;
@@ -36,12 +50,14 @@ import org.bson.BsonReader;
 import org.bson.BsonType;
 import org.bson.BsonWriter;
 import org.bson.Document;
+import org.bson.UuidRepresentation;
 import org.bson.codecs.BsonTypeClassMap;
 import org.bson.codecs.BsonValueCodec;
 import org.bson.codecs.Codec;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
+import org.bson.codecs.OverridableUuidRepresentationCodec;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.configuration.CodecRegistry;
@@ -49,6 +65,7 @@ import org.bson.conversions.Bson;
 import org.bson.types.Binary;
 import org.bson.types.ObjectId;
 
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.exception.UncheckedIOException;
@@ -178,6 +195,17 @@ public abstract class MongoDBBase {
     /** Decodes a {@link BsonDocument} into a plain {@link Document} for {@link #toJson(Bson)}. */
     private static final DocumentCodec jsonDocumentCodec = new DocumentCodec(codecRegistry);
     private static final Map<Class<?>, Method> classIdSetMethodPool = new ConcurrentHashMap<>();
+    /** Marks a type whose decoded values need no conversion beyond the regular pass, see {@link #propConversions(Type)}. */
+    private static final PropConversions NO_PROP_CONVERSIONS = new PropConversions(Map.of(), false, null);
+    /** Per parameterized bean type, see {@link #propConversions(Type)}. */
+    private static final Map<Type<?>, PropConversions> propConversionsPool = new ConcurrentHashMap<>();
+    /** Per class (a bean used without type arguments, or any other class), see {@link #propConversions(Type)}. */
+    private static final ClassValue<PropConversions> classPropConversions = new ClassValue<>() {
+        @Override
+        protected PropConversions computeValue(final Class<?> cls) {
+            return N.typeOf(cls).isBean() ? resolvePropConversions(cls, cls) : NO_PROP_CONVERSIONS;
+        }
+    };
 
     /**
      * Protected no-arg constructor for subclasses; this class is not intended to be instantiated
@@ -1030,6 +1058,23 @@ public abstract class MongoDBBase {
      * binary value type. A binary collection property can be populated from a source collection or reference array.
      * Raw containers and containers of Object or Binary retain their normal bean-mapping behavior.</p>
      *
+     * <p>The elements of typed collection, array and map properties are converted to their declared types (for example
+     * embedded documents into the beans of a {@code List<Address>} property, or {@code Integer} values into a
+     * {@code List<Long>}); an element that cannot be converted fails the conversion, as a property value of that type would.
+     * The type arguments of a generic bean type are honored as well, in container elements and in a bean property itself:
+     * given {@code class Box<T> { T value; }}, every {@code Box} of a {@code List<Box<Long>>} or {@code Box<Long>} property
+     * receives a {@code Long} value (and a {@code Box<Address>} an {@code Address} bean), as does a {@code LongBox extends Box<Long>},
+     * whether it is an element, a property or {@code rowType} itself. BSON dates read into {@link LocalDate},
+     * {@link LocalDateTime} or {@link LocalTime} properties are interpreted in UTC, matching how the driver's codecs write
+     * those types.</p>
+     *
+     * <p>Immutable beans such as records, at the top level, as property values and as container elements, receive every
+     * value converted to its declared component type the way a bean setter's value is (for example an {@code int32}
+     * {@code Integer} into a {@code Long} or {@code long} component, a {@code String} into an enum, a {@code Decimal128}
+     * into a {@code BigDecimal}). A record has no setter for the document's {@code _id}: it is passed as the record's
+     * String- or ObjectId-typed id component (by the same id-property rules as for a mutable bean) unless the document
+     * stores that component under its own field, as it does for a record written by this class.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // _id is an ObjectId. If the entity's id property is String-typed, it receives the hex string:
@@ -1054,8 +1099,8 @@ public abstract class MongoDBBase {
      * @throws IllegalArgumentException if {@code rowType} is null, or a non-null {@code doc} cannot be mapped to its bean properties or identifier
      *         type
      * @throws RuntimeException if a property conversion overflows its target numeric range, a registered converter or type handler throws,
-     *         a bean constructor or property setter cannot be accessed or throws while populating the result, or a requested binary property
-     *         collection or map cannot be constructed or populated
+     *         a bean constructor or property setter cannot be accessed or throws while populating the result, or a requested collection or
+     *         map property cannot be constructed or populated (for example an element-typed container that rejects a {@code null} element)
      * @see Document
      * @see #_ID
      * @see com.landawn.abacus.annotation.Id
@@ -1070,6 +1115,7 @@ public abstract class MongoDBBase {
         final Method idSetMethod = getObjectIdSetMethod(rowType);
         final Class<?> parameterType = idSetMethod == null ? null : idSetMethod.getParameterTypes()[0];
         final Object objectId = doc.get(_ID);
+        final PropConversions propConversions = propConversions(N.typeOf(rowType));
         final Document beanProperties;
 
         if (doc.containsKey(_ID)) {
@@ -1078,11 +1124,22 @@ public abstract class MongoDBBase {
             // by another thread while Beans.mapToBean was running.
             beanProperties = new Document(doc);
             beanProperties.remove(_ID);
+
+            // A record (immutable bean) has no id setter to receive _id once it is built, so _id is passed as its id
+            // component, converted like a setter's value would be (an ObjectId into a String id becomes its hex string).
+            // A record written by this class stores the component under its own field, which then takes precedence.
+            final PropInfo idPropInfo = propConversions == null ? null : propConversions.idPropInfo();
+
+            if (objectId != null && idSetMethod == null && idPropInfo != null && !containsProperty(beanProperties, rowType, idPropInfo)) {
+                beanProperties.put(idPropInfo.name,
+                        idPropInfo.clazz.isAssignableFrom(objectId.getClass()) || !idPropInfo.clazz.isAssignableFrom(String.class) ? objectId
+                                : objectId.toString());
+            }
         } else {
             beanProperties = doc;
         }
 
-        final T entity = Beans.mapToBean(normalizeBinaryProperties(beanProperties, rowType), rowType);
+        final T entity = Beans.mapToBean(normalizeDecodedProperties(normalizeBinaryProperties(beanProperties, rowType), rowType, propConversions), rowType);
 
         if (objectId != null && parameterType != null && entity != null) {
             if (parameterType.isAssignableFrom(objectId.getClass()) || !parameterType.isAssignableFrom(String.class)) {
@@ -1217,9 +1274,14 @@ public abstract class MongoDBBase {
      * @throws IllegalArgumentException if the bean metadata cannot be resolved
      */
     private static PropInfo binaryPropertyInfo(final Class<?> beanType, final String propName) throws IllegalArgumentException {
+        // A null key names no property, and Beans.mapToBean skips it; BeanInfo.getPropInfo(null) would throw instead.
+        if (propName == null) {
+            return null;
+        }
+
         final PropInfo propInfo = ParserUtil.getBeanInfo(beanType).getPropInfo(propName);
 
-        if (propInfo != null || propName == null) {
+        if (propInfo != null) {
             return propInfo;
         }
 
@@ -1237,13 +1299,349 @@ public abstract class MongoDBBase {
     }
 
     /**
+     * Tells whether a key of {@code properties} names {@code propInfo} (directly or through an alias, as bean mapping resolves it).
+     */
+    private static boolean containsProperty(final Map<String, Object> properties, final Class<?> beanType, final PropInfo propInfo) {
+        final ParserUtil.BeanInfo beanInfo = ParserUtil.getBeanInfo(beanType);
+
+        for (final String key : properties.keySet()) {
+            if (key != null && beanInfo.getPropInfo(key) == propInfo) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Converts decoded values to their declared property types where {@link Beans#mapToBean(Map, Class)} would not:
+     * the elements, keys and values of typed collection, array and map properties (including nested bean maps),
+     * {@link Date} values of {@link LocalDate}, {@link LocalDateTime} and {@link LocalTime} properties (read in UTC, like
+     * the driver's codecs write them), any value of a property whose type comes from a type argument of a generic bean,
+     * and every value of an immutable bean (a record). The supplied map and its nested maps are never modified.
+     *
+     * @param properties the source bean properties
+     * @param beanType the bean class that defines the target property types
+     * @param propConversions the extra conversions the declared bean type needs (from {@link #propConversions(Type)});
+     *        {@code null} when it needs none
+     * @return the original map if nothing needs converting, otherwise a copy with converted values
+     * @throws IllegalArgumentException if the bean metadata cannot be resolved, or a value cannot be converted to its declared type
+     * @throws RuntimeException if a conversion overflows its target numeric range, a registered converter or type handler throws,
+     *         or a required collection, map or bean cannot be constructed or populated
+     */
+    private static Map<String, Object> normalizeDecodedProperties(final Map<String, Object> properties, final Class<?> beanType,
+            final PropConversions propConversions) throws IllegalArgumentException, RuntimeException {
+        Map<String, Object> result = properties;
+
+        for (final Map.Entry<String, Object> entry : properties.entrySet()) {
+            final Object value = entry.getValue();
+
+            if (value == null || (propConversions == null
+                    && !(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date))) {
+                continue;
+            }
+
+            final PropInfo propInfo = binaryPropertyInfo(beanType, entry.getKey());
+
+            // Beans.mapToBean skips a read-only (getter-only) property, so its stored value need not convert. PropInfo's
+            // isReadOnlyProperty flag is package-private; a property without a field is SERIALIZE_ONLY exactly when it is read-only.
+            if (propInfo == null || (propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY)) {
+                continue;
+            }
+
+            final Type<?> typeArgumentType = propConversions == null ? null : propConversions.typeArgumentTypes().get(propInfo);
+            final Object converted;
+
+            if (typeArgumentType != null) {
+                // Beans.mapToBean misses a type that comes from a type argument: it only knows the raw class (where the T of a
+                // Box<T> is Object), and for a class binding T itself (LongBox extends Box<Long>) it assigns any value the erased
+                // field accepts. Either way the decoded Integer would stay; convert it to the resolved type (Long) here.
+                converted = toDeclaredElement(value, typeArgumentType);
+            } else if (propConversions != null && propConversions.convertEveryValue()) {
+                // Beans.mapToBean passes the values of an immutable bean (a record) to its constructor without any conversion
+                // (a setter's value is converted once assigning it fails), so an int32 Integer for a Long or BigDecimal component,
+                // a String for an enum one, ... failed with "argument type mismatch". Convert each one to its declared type (to the
+                // wrapper of a primitive one: the constructor call unboxes it).
+                final Class<?> declaredClass = propInfo.jsonXmlType.javaType();
+                converted = toDeclaredElement(value, declaredClass.isPrimitive() ? N.typeOf(ClassUtil.wrap(declaredClass)) : propInfo.jsonXmlType);
+            } else if (!(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date)) {
+                continue;
+            } else if (value instanceof Map && Beans.isBeanClass(propInfo.clazz)) {
+                // A nested bean property stays a Map: Beans.mapToBean builds the bean from it. It builds it from the raw class
+                // without these extra conversions, though, so a bean property that needs them (Box<Long>, LongBox, a record) is
+                // built here instead.
+                converted = propInfo.jsonXmlType.isBean() && propConversions(propInfo.jsonXmlType) != null ? toDeclaredElement(value, propInfo.jsonXmlType)
+                        : normalizeDecodedProperties((Map<String, Object>) value, propInfo.clazz, null);
+            } else {
+                converted = toDeclaredType(value, propInfo.jsonXmlType);
+            }
+
+            if (converted != value) {
+                if (result == properties) {
+                    result = new LinkedHashMap<>(properties);
+                }
+
+                result.put(entry.getKey(), converted);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Converts the elements of a decoded container, or a decoded {@link Date}, to the declared {@code type}. Beans.mapToBean
+     * assigns a decoded List/Map to a typed collection or map property as-is (its container class already matches), which
+     * left Documents, Integers or Strings in a {@code List<Bean>}, {@code List<Long>} or {@code List<Enum>} property, so
+     * reading an element failed later with a ClassCastException.
+     *
+     * @return {@code value} itself when nothing needs converting
+     */
+    @SuppressWarnings("rawtypes")
+    private static Object toDeclaredType(final Object value, final Type<?> type) throws IllegalArgumentException, RuntimeException {
+        final Class<?> cls = type.javaType();
+
+        if (value instanceof Date) {
+            return cls == LocalDate.class || cls == LocalDateTime.class || cls == LocalTime.class ? convertBsonValue(value, cls) : value;
+        } else if ((value instanceof Collection || value instanceof Object[]) && (type.isCollection() || type.isObjectArray())) {
+            // The array type's own element type keeps generic arguments (Box<Long> of a Box<Long>[]); the component class does not.
+            final Type<?> elementType = type.isObjectArray() ? type.elementType() : type.parameterTypes().size() == 1 ? type.parameterTypes().get(0) : null;
+
+            if (elementType == null || elementType.javaType() == Object.class) {
+                return value;
+            }
+
+            final Collection<?> values = value instanceof Collection ? (Collection<?>) value : Arrays.asList((Object[]) value);
+            // Allocated only once an element actually changes: this runs for every container property of every row read,
+            // and most containers already hold their declared element type.
+            List<Object> elements = null;
+            int index = 0;
+
+            for (final Object element : values) {
+                final Object converted = toDeclaredElement(element, elementType);
+
+                if (elements == null && converted != element) {
+                    elements = new ArrayList<>(values.size());
+                    final Iterator<?> unchanged = values.iterator();
+
+                    for (int i = 0; i < index; i++) {
+                        elements.add(unchanged.next());
+                    }
+                }
+
+                if (elements != null) {
+                    elements.add(converted);
+                }
+
+                index++;
+            }
+
+            if (elements == null) {
+                // Beans.mapToBean still converts the container itself when its class differs (e.g. a List into a Set).
+                return value;
+            } else if (type.isObjectArray()) {
+                final Object[] array = N.newArray(cls.getComponentType(), elements.size());
+
+                return elements.toArray(array);
+            } else if (cls.isAssignableFrom(ArrayList.class)) {
+                return elements;
+            } else if (cls.isAssignableFrom(LinkedHashSet.class)) {
+                return new LinkedHashSet<>(elements);
+            }
+
+            // Other declared containers (EnumSet, SortedSet, Queue, ...) are created by the regular conversion.
+            return N.convert(elements, type);
+        } else if (value instanceof final Map<?, ?> values && type.isMap() && type.parameterTypes().size() == 2) {
+            final Type<?> keyType = type.parameterTypes().get(0);
+            final Type<?> valueType = type.parameterTypes().get(1);
+
+            if (valueType.javaType() == Object.class && (keyType.javaType() == Object.class || keyType.javaType() == String.class)) {
+                return value;
+            }
+
+            // Allocated only once a key or value actually changes, as for collections above.
+            Map<Object, Object> entries = null;
+            int index = 0;
+
+            for (final Map.Entry<?, ?> item : values.entrySet()) {
+                final Object key = toDeclaredElement(item.getKey(), keyType);
+                final Object element = toDeclaredElement(item.getValue(), valueType);
+
+                if (entries == null && (key != item.getKey() || element != item.getValue())) {
+                    entries = new LinkedHashMap<>();
+                    final Iterator<? extends Map.Entry<?, ?>> unchanged = values.entrySet().iterator();
+
+                    for (int i = 0; i < index; i++) {
+                        final Map.Entry<?, ?> prior = unchanged.next();
+                        entries.put(prior.getKey(), prior.getValue());
+                    }
+                }
+
+                if (entries != null) {
+                    entries.put(key, element);
+                }
+
+                index++;
+            }
+
+            if (entries == null) {
+                return value;
+            }
+
+            return cls.isAssignableFrom(LinkedHashMap.class) ? entries : N.convert(entries, type);
+        }
+
+        return value;
+    }
+
+    /**
+     * Converts one element (or map key/value) of a decoded container to {@code type}: a bean from its Map, the same way
+     * Beans.mapToBean converts a nested bean property but honoring the type arguments of a parameterized bean type, and any
+     * other value that is not yet an instance of the type. An interface or abstract element type (other than an enum, a
+     * container or array type, or ByteBuffer) cannot be instantiated, so such an element is left as-is. {@code type} must
+     * not be primitive (a primitive class is never an instance of anything and reports itself as abstract).
+     */
+    private static Object toDeclaredElement(final Object element, final Type<?> type) throws IllegalArgumentException, RuntimeException {
+        final Class<?> cls = type.javaType();
+
+        if (element == null || cls == Object.class) {
+            return element;
+        }
+
+        // The common case: an instance of the declared type that holds no nested values needs nothing.
+        if (cls.isInstance(element) && !(element instanceof Collection || element instanceof Map || element instanceof Object[])) {
+            return element;
+        }
+
+        // Class.getModifiers reports every array class as abstract, but an array element (Integer[] of an Integer[][], byte[] of a
+        // Map<Integer, byte[]>) must still be converted: leaving one List among converted arrays failed with ArrayStoreException.
+        final boolean instantiable = cls.isEnum() || cls.isArray() || cls == ByteBuffer.class || type.isCollection() || type.isMap()
+                || !Modifier.isAbstract(cls.getModifiers());
+
+        if (element instanceof Map && type.isBean()) {
+            return instantiable
+                    ? Beans.mapToBean(normalizeDecodedProperties(normalizeBinaryProperties((Map<String, Object>) element, cls), cls, propConversions(type)),
+                            cls)
+                    : element;
+        }
+
+        final Object converted = toDeclaredType(element, type);
+
+        return converted != element || cls.isInstance(element) || !instantiable ? converted : convertBsonValue(element, cls);
+    }
+
+    /**
+     * The conversions a bean type needs beyond the regular decoded-value pass of {@link #normalizeDecodedProperties}.
+     *
+     * @param typeArgumentTypes the properties of a generic bean type whose values Beans.mapToBean would not convert to their
+     *        declared type, because that type comes from a type argument. Each is mapped from the raw class's PropInfo (the one
+     *        bean mapping and {@link #binaryPropertyInfo(Class, String)} resolve) to its type with the type arguments
+     *        substituted. Two cases:
+     *        <ul>
+     *        <li>a parameterized type such as {@code Box<Long>}: bean mapping only accepts the raw class, which types
+     *        {@code T value} or {@code List<T> items} as {@code Object} or {@code List<Object>}; the resolved types come from the
+     *        BeanInfo of the parameterized type itself.</li>
+     *        <li>a type variable bound by a superclass ({@code class LongBox extends Box<Long>}): the property is typed
+     *        {@code Long}, but its erased field or setter accepts any value, and bean mapping converts a value only when
+     *        assigning it fails.</li>
+     *        </ul>
+     *        Properties that resolve to {@code Object} (a wildcard or an {@code Object} argument) are left out: nothing can be
+     *        converted.
+     * @param convertEveryValue whether every value must be converted to its declared type: bean mapping passes the values of
+     *        an immutable bean (a record) to its constructor without any conversion
+     * @param idPropInfo for an immutable bean, its String- or ObjectId-typed id property, which receives a document's
+     *        {@code _id} in {@link #toEntity(Document, Class)}; otherwise {@code null}
+     */
+    private record PropConversions(Map<PropInfo, Type<?>> typeArgumentTypes, boolean convertEveryValue, PropInfo idPropInfo) {
+    }
+
+    /**
+     * Returns the extra conversions the decoded values of {@code beanType} need (see {@link PropConversions}).
+     *
+     * @param beanType the declared type of a bean (for any other type the result is {@code null})
+     * @return the conversions, or {@code null} when none is needed (every mutable non-generic bean)
+     */
+    private static PropConversions propConversions(final Type<?> beanType) {
+        // This runs for every bean read (each row and each bean element), so the plain-class case is a ClassValue lookup.
+        final PropConversions conversions = beanType.reflectType() instanceof ParameterizedType
+                ? (beanType.isBean() ? propConversionsPool.computeIfAbsent(beanType, k -> resolvePropConversions(k.javaType(), k.reflectType()))
+                        : NO_PROP_CONVERSIONS)
+                : classPropConversions.get(beanType.javaType());
+
+        return conversions == NO_PROP_CONVERSIONS ? null : conversions;
+    }
+
+    /**
+     * Computes {@link #propConversions(Type)} for a bean class and its (possibly parameterized) declared type.
+     */
+    @SuppressWarnings("deprecation")
+    private static PropConversions resolvePropConversions(final Class<?> beanClass, final java.lang.reflect.Type beanType) {
+        final ParserUtil.BeanInfo rawBeanInfo = ParserUtil.getBeanInfo(beanClass);
+        final ParserUtil.BeanInfo resolvedBeanInfo = beanType instanceof ParameterizedType ? ParserUtil.getBeanInfo(beanType) : rawBeanInfo;
+        // Keyed by identity: the raw BeanInfo's PropInfo instances are the ones binaryPropertyInfo returns, and two properties
+        // of different beans (e.g. reached through a dotted key) may share a name.
+        final Map<PropInfo, Type<?>> resolved = new IdentityHashMap<>();
+
+        for (final PropInfo rawPropInfo : rawBeanInfo.propInfoList) {
+            final PropInfo resolvedPropInfo = resolvedBeanInfo == rawBeanInfo ? rawPropInfo : resolvedBeanInfo.getPropInfo(rawPropInfo.name);
+
+            if (resolvedPropInfo != null && resolvedPropInfo.jsonXmlType.javaType() != Object.class
+                    && (!resolvedPropInfo.jsonXmlType.equals(rawPropInfo.jsonXmlType) || isNarrowedTypeVariable(rawPropInfo))) {
+                resolved.put(rawPropInfo, resolvedPropInfo.jsonXmlType);
+            }
+        }
+
+        if (!rawBeanInfo.isImmutable) {
+            return resolved.isEmpty() ? NO_PROP_CONVERSIONS : new PropConversions(resolved, false, null);
+        }
+
+        // The same id property rules as getObjectIdSetMethod, which finds no setter on an immutable bean.
+        final List<String> idPropNames = new ArrayList<>(QueryUtil.idPropNames(beanClass));
+        idPropNames.add(ID);
+        PropInfo idPropInfo = null;
+
+        for (final String idPropName : idPropNames) {
+            final PropInfo propInfo = rawBeanInfo.getPropInfo(idPropName);
+
+            if (propInfo != null && (String.class.isAssignableFrom(propInfo.clazz) || ObjectId.class.isAssignableFrom(propInfo.clazz))) {
+                idPropInfo = propInfo;
+                break;
+            }
+        }
+
+        return new PropConversions(resolved.isEmpty() ? Map.of() : resolved, true, idPropInfo);
+    }
+
+    /**
+     * Tells whether the property is declared as a bare type variable whose resolved type (bound by a superclass) is narrower than
+     * the erased type of its field or setter.
+     */
+    private static boolean isNarrowedTypeVariable(final PropInfo propInfo) {
+        final java.lang.reflect.Type declaredType;
+        final Class<?> erasedType;
+
+        if (propInfo.field != null) {
+            declaredType = propInfo.field.getGenericType();
+            erasedType = propInfo.field.getType();
+        } else if (propInfo.setMethod != null) {
+            declaredType = propInfo.setMethod.getGenericParameterTypes()[0];
+            erasedType = propInfo.setMethod.getParameterTypes()[0];
+        } else {
+            declaredType = propInfo.getMethod.getGenericReturnType();
+            erasedType = propInfo.getMethod.getReturnType();
+        }
+
+        return declaredType instanceof TypeVariable && erasedType != propInfo.clazz;
+    }
+
+    /**
      * Converts a BSON scalar value, preserving binary payloads for byte-array and ByteBuffer targets.
-     * Newly created buffers are ready for reading; an input buffer is never advanced.
+     * Newly created buffers are ready for reading; an input buffer is never advanced. A {@link Date} requested as
+     * {@link LocalDate}, {@link LocalDateTime} or {@link LocalTime} is read in UTC, as the driver's codecs write those types.
      *
      * @param <T> the target value type
      * @param value the decoded field value, possibly null
      * @param targetType the requested Java type
-     * @return the converted value, using the usual default conversion for non-binary values
+     * @return the converted value, using the usual default conversion for other values
      * @throws IllegalArgumentException if {@code targetType} is null or the value cannot be converted to the requested type
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
      *         while converting the selected value
@@ -1257,6 +1655,14 @@ public abstract class MongoDBBase {
             final byte[] bytes = new byte[buffer.remaining()];
             buffer.duplicate().get(bytes);
             return (T) bytes;
+        } else if (value != null && value.getClass() == Date.class
+                && (targetType == LocalDate.class || targetType == LocalDateTime.class || targetType == LocalTime.class)) {
+            // The driver's LocalDate/LocalDateTime/LocalTime codecs write a BSON date-time in UTC and read it back in UTC.
+            // N.convert would use the JVM's default time zone, shifting every value written through those codecs by the
+            // zone offset (a LocalDate came back as the previous day west of UTC).
+            final OffsetDateTime utc = Instant.ofEpochMilli(((Date) value).getTime()).atOffset(ZoneOffset.UTC);
+
+            return (T) (targetType == LocalDate.class ? utc.toLocalDate() : targetType == LocalDateTime.class ? utc.toLocalDateTime() : utc.toLocalTime());
         }
 
         return N.convert(value, targetType);
@@ -1298,7 +1704,8 @@ public abstract class MongoDBBase {
      *         for an entity {@code rowType} such a row is mapped like a {@link Document} (including the
      *         {@code _id} handling of {@link #toEntity(Document, Class)}). Scalar results whose Java type
      *         differs from a scalar {@code rowType} (e.g. {@code Integer} values requested as {@code Long})
-     *         are converted individually.
+     *         are converted individually; BSON dates requested as {@link LocalDate}, {@link LocalDateTime} or
+     *         {@link LocalTime} are read in UTC, as the driver's codecs write those types.
      * @throws IllegalArgumentException if {@code findIterable} or {@code rowType} is null, or a result document has multiple non-{@code _id} fields
      *         for a scalar target, inconsistent scalar projection fields, or cannot be converted to {@code rowType} (for example a bean,
      *         collection or array result requested as a scalar type)
@@ -1435,7 +1842,8 @@ public abstract class MongoDBBase {
      *   <li>A bean class &rarr; delegated to {@link #toEntity(Document, Class)}.</li>
      *   <li>Any other type when the row has at most one non-{@code _id} field &rarr; that field value is
      *       converted to {@code rowType}; binary payloads produce byte arrays or readable {@link ByteBuffer} values when requested,
-     *       and other values use {@code N.convert}. An {@code _id}-only row uses its id value.</li>
+     *       a {@link Date} requested as {@link LocalDate}, {@link LocalDateTime} or {@link LocalTime} is read in UTC, and other values
+     *       use {@code N.convert}. An {@code _id}-only row uses its id value.</li>
      * </ul>
      *
      * @param <T> the target type
@@ -2112,8 +2520,9 @@ public abstract class MongoDBBase {
     }
 
     /**
-     * Internal {@link CodecRegistry} that lazily creates and caches {@link GeneralCodec} instances
-     * for arbitrary Java types. Combined with the MongoDB default codec registry, this allows
+     * Internal {@link CodecRegistry} that lazily creates {@link GeneralCodec} instances for arbitrary Java
+     * types (caching those of direct {@link #get(Class)} lookups; a calling registry caches the codecs it
+     * obtains through {@link #get(Class, CodecRegistry)}). Combined with the MongoDB default codec registry, this allows
      * arbitrary bean classes (and other types) to be (de)serialized to/from BSON.
      */
     static class GeneralCodecRegistry implements CodecRegistry {
@@ -2146,32 +2555,43 @@ public abstract class MongoDBBase {
         }
 
         /**
-         * Overload accepting a {@link CodecRegistry} hint; ignored here since this implementation
-         * always uses its own {@link GeneralCodec}. Equivalent to {@link #get(Class)}.
+         * Returns a {@link GeneralCodec} for {@code clazz} that resolves the codecs of nested values (the
+         * property values of a bean) through {@code registry}, the registry performing the lookup. A
+         * {@code null} registry is equivalent to {@link #get(Class)}. The calling registry caches the result.
          *
          * @param <T> the encoded Java type
          * @param clazz the class to obtain a codec for
-         * @param registry the parent registry (ignored; may be null)
+         * @param registry the registry performing the lookup; may be null
          * @return a codec that handles {@code clazz}; never {@code null}
          * @throws IllegalArgumentException if {@code clazz} is null
          */
         @Override
         public <T> Codec<T> get(final Class<T> clazz, final CodecRegistry registry) throws IllegalArgumentException {
-            return get(clazz);
+            // A collection's registry applies the client's UuidRepresentation (and any other codec overrides) to the codecs it
+            // hands out. Resolving a bean's property values through the static registry instead ignored them, so a UUID inside
+            // a nested bean failed with "The uuidRepresentation has not been specified" although a top-level UUID was written.
+            if (registry == null) {
+                return get(clazz);
+            }
+
+            N.checkArgNotNull(clazz, cs.clazz);
+
+            return new GeneralCodec<>(clazz, registry);
         }
     }
 
     /**
      * Generic {@link Codec} that encodes bean-style entities as BSON documents (via
-     * {@link MongoDBBase#toDocument(Object)}) and other types as their {@link N#stringOf(Object)}
+     * {@link MongoDBBase#toDocument(Object)}), a {@link ByteBuffer} as BSON binary, and other types (including
+     * value types with bean accessors, such as {@code GregorianCalendar}) as their {@link N#stringOf(Object)}
      * string form. Decoding mirrors this: entity classes are read as Documents and then mapped to
      * the bean, while other types parse a BSON string via {@link N#valueOf(String, Class)} and convert
      * any other BSON value (as decoded for a {@link Document} field) to the target type.
      */
-    static class GeneralCodec<T> implements Codec<T> {
+    static class GeneralCodec<T> implements Codec<T>, OverridableUuidRepresentationCodec<T> {
 
-        /** Shared {@link DocumentCodec} used to encode/decode the BSON document representation of beans. */
-        private static final DocumentCodec documentCodec = new DocumentCodec(codecRegistry, new BsonTypeClassMap());
+        /** Default {@link DocumentCodec}, resolving nested values through {@link MongoDBBase#codecRegistry}. */
+        private static final DocumentCodec defaultDocumentCodec = new DocumentCodec(codecRegistry, new BsonTypeClassMap());
 
         /** Reads a single non-string BSON value of any type during {@link #decode(BsonReader, DecoderContext)}. */
         private static final BsonValueCodec bsonValueCodec = new BsonValueCodec();
@@ -2185,11 +2605,14 @@ public abstract class MongoDBBase {
         /** {@code true} when {@link #cls} is a bean class; encoding switches between document and string forms accordingly. */
         private final boolean isEntityClass;
 
+        /** {@link DocumentCodec} used to encode/decode the BSON document representation of beans. */
+        private final Codec<Document> documentCodec;
+
         /**
          * Creates a codec for the specified Java type.
          *
-         * <p>The codec serializes bean-style entity classes as BSON documents and serializes
-         * non-entity values as strings using {@code N.stringOf(Object)}.</p>
+         * <p>The codec serializes bean-style entity classes as BSON documents, a {@link ByteBuffer} as BSON binary,
+         * and other values as strings using {@code N.stringOf(Object)}.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2199,14 +2622,46 @@ public abstract class MongoDBBase {
          * @param cls the target Java type to encode/decode
          */
         public GeneralCodec(final Class<T> cls) {
+            this(cls, defaultDocumentCodec);
+        }
+
+        /**
+         * Creates a codec for the specified Java type that resolves nested values through {@code registry}.
+         *
+         * @param cls the target Java type to encode/decode
+         * @param registry the registry used for the codecs of a bean's property values
+         */
+        GeneralCodec(final Class<T> cls, final CodecRegistry registry) {
+            this(cls, new DocumentCodec(registry, new BsonTypeClassMap()));
+        }
+
+        private GeneralCodec(final Class<T> cls, final Codec<Document> documentCodec) {
             this.cls = cls;
-            isEntityClass = Beans.isBeanClass(cls);
+            // Beans.isBeanClass is also true for value types with getters/setters (GregorianCalendar, ByteBuffer): encoding
+            // those as a document of their bean properties dropped the value itself ({"position": 0, "limit": 3}).
+            isEntityClass = Beans.isBeanClass(cls) && N.typeOf(cls).isBean();
+            this.documentCodec = documentCodec;
+        }
+
+        /**
+         * Returns a codec that decodes BSON binary UUID values (inside a bean document, or as the value of a non-bean type such
+         * as {@code Object}) with {@code uuidRepresentation}.
+         *
+         * @param uuidRepresentation the UUID representation to use
+         * @return this codec if it already uses {@code uuidRepresentation}, otherwise a new codec for the same type
+         */
+        @Override
+        public Codec<T> withUuidRepresentation(final UuidRepresentation uuidRepresentation) {
+            final Codec<Document> codec = ((OverridableUuidRepresentationCodec<Document>) documentCodec).withUuidRepresentation(uuidRepresentation);
+
+            return codec == documentCodec ? this : new GeneralCodec<>(cls, codec);
         }
 
         /**
          * Encodes {@code value} into the supplied BSON writer. Beans are first converted with
-         * {@link MongoDBBase#toDocument(Object)} and written through the shared {@link DocumentCodec};
-         * all other types are written as their {@code N.stringOf(Object)} string representation.
+         * {@link MongoDBBase#toDocument(Object)} and written through this codec's {@link DocumentCodec}; the remaining
+         * bytes of a {@link ByteBuffer} are written as BSON binary, and all other types as their {@code N.stringOf(Object)}
+         * string representation.
          *
          * @param writer destination writer; must not be null
          * @param value the value to encode; must not be null for bean types, while null scalar values are forwarded to the writer
@@ -2228,6 +2683,12 @@ public abstract class MongoDBBase {
                 N.checkArgNotNull(encoderContext, cs.encoderContext);
 
                 documentCodec.encode(writer, toDocument(value), encoderContext);
+            } else if (value instanceof final ByteBuffer buffer) {
+                // N.stringOf does not render a buffer's remaining bytes (a freshly wrapped buffer became ""). Store them as
+                // BSON binary, like a byte[]; reads convert a Binary back into a readable ByteBuffer.
+                final byte[] bytes = new byte[buffer.remaining()];
+                buffer.duplicate().get(bytes);
+                writer.writeBinaryData(new BsonBinary(bytes));
             } else {
                 writer.writeString(N.stringOf(value));
             }
@@ -2235,7 +2696,7 @@ public abstract class MongoDBBase {
 
         /**
          * Decodes the next BSON value into an instance of {@link #cls}. Beans are read as a
-         * {@link Document} through the shared {@link DocumentCodec} and then mapped via
+         * {@link Document} through this codec's {@link DocumentCodec} and then mapped via
          * {@link MongoDBBase#readRow(Document, Class)}. For all other types a BSON string is parsed using
          * {@code N.valueOf(String, Class)}, and any other BSON value (number, document, array, null, ...) is
          * decoded to the plain Java value a {@link Document} field would hold and then converted to the target

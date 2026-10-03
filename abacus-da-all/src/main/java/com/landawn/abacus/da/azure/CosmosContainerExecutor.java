@@ -2161,7 +2161,7 @@ public class CosmosContainerExecutor {
     }
 
     /**
-     * Converts positional SQL placeholders to Cosmos parameter names.
+     * Converts positional SQL placeholders to Cosmos parameter names. A {@code ??} (the Cosmos coalesce operator) is not a placeholder.
      *
      * @throws IllegalArgumentException if the number of unquoted positional placeholders differs from the supplied parameter count
      */
@@ -2191,6 +2191,12 @@ public class CosmosContainerExecutor {
             } else if (ch == '\'' || ch == '"') {
                 quote = ch;
                 sb.append(ch);
+            } else if (ch == '?' && i + 1 < len && query.charAt(i + 1) == '?') {
+                // "??" is the Cosmos DB coalesce operator from a raw expression such as "(c.discount ?? 0) > 1", never two
+                // placeholders: SqlBuilder always separates its placeholders with an operator, keyword, or comma. Pairing left to
+                // right ("???" = "??" + one placeholder) matches how abacus-query's ParsedSql counts the user-written bindings of a
+                // raw sub-query, so both counts agree.
+                sb.append(ch).append(query.charAt(++i));
             } else if (ch == '?') {
                 totalPlaceholders++;
 
@@ -2409,8 +2415,11 @@ public class CosmosContainerExecutor {
                 final boolean functionOrObjectKey = nextChar == '(' || nextChar == ':'
                         || nextChar == '.' && "udf".equalsIgnoreCase(identifier) && isFollowedByCosmosFunctionName(query, next + 1);
                 final String normalizedIdentifier = identifier.toUpperCase(Locale.ROOT);
+                // ESCAPE is a keyword only in Cosmos DB's "x LIKE 'a!%' ESCAPE '!'" form, where a string literal follows it; elsewhere
+                // (e.g. "active AND escape") it is an ordinary property name and stays alias-qualified.
                 final boolean keywordToken = COSMOS_CONDITION_KEYWORDS.contains(normalizedIdentifier)
-                        && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previousChar, next);
+                        && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previousChar, next)
+                        || "ESCAPE".equals(normalizedIdentifier) && (nextChar == '\'' || nextChar == '"');
                 final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[') || keywordToken;
                 final boolean attachedToPreviousIdentifier = identifierStart > conditionStart
                         && Character.isJavaIdentifierPart(query.charAt(identifierStart - 1));

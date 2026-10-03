@@ -1172,6 +1172,276 @@ public class CassandraExecutor01Test extends TestBase {
 
     // ---- 2026-09-29 sliceN end ----
 
+    // ---- 2026-10-02 sliceN ----
+
+    @Test
+    public void testSliceN_singleBeanLikeValueTypeParameterIsBoundPositionally() {
+        // Beans.isBeanClass is true for value types such as GregorianCalendar (Calendar.getInstance()) and ByteBuffer, so a
+        // single such value was read as a named-parameter bean ("Missing required parameter: 'ts'"), although the same value
+        // among two or more positional parameters is converted to the column's Java type and bound.
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("bean-like-value-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "SELECT * FROM ev WHERE ts = ?";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        org.mockito.Mockito.lenient().when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ts"));
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.TIMESTAMP);
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.setTimeInMillis(1_600_000_000_000L);
+
+        assertSame(mockBoundStatement, codecExecutor.prepareStatement(query, calendar));
+
+        assertEquals(1, bound[0].length);
+        assertEquals(java.time.Instant.ofEpochMilli(1_600_000_000_000L), bound[0][0]);
+    }
+
+    @Test
+    public void testSliceN_udtCodecUnsupportedJavaTypeMessageNamesTheClass() {
+        // The message concatenated the Class object, rendering "Invalid Java class type: class java.lang.String".
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("msg_type"),
+                false, List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("v")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.INT));
+        final CassandraExecutor.UDTCodec<String> stringCodec = CassandraExecutor.UDTCodec.create(userType, String.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final ByteBuffer bytes = mapCodec.encode(Map.of("v", 1), ProtocolVersion.V4);
+
+        final IllegalArgumentException encodeError = assertThrows(IllegalArgumentException.class, () -> stringCodec.encode("x", ProtocolVersion.V4));
+        final IllegalArgumentException decodeError = assertThrows(IllegalArgumentException.class, () -> stringCodec.decode(bytes, ProtocolVersion.V4));
+
+        for (final IllegalArgumentException e : List.of(encodeError, decodeError)) {
+            assertTrue(e.getMessage().startsWith("Invalid Java class type: java.lang.String."), e.getMessage());
+        }
+    }
+
+    @Test
+    public void testSliceN_timeColumnWithFractionalSecondReadsIntoSqlTime() {
+        // A CQL time value has nanosecond precision and the driver decodes it as a LocalTime. The abacus conversion to
+        // java.sql.Time goes through the text "01:02:03.456" and rejects the fractional second, so reading such a value into
+        // a java.sql.Time property/target failed the whole row (so did a time on a whole minute, "01:02"; other whole seconds
+        // converted fine).
+        final java.time.LocalTime localTime = java.time.LocalTime.of(1, 2, 3, 456_789_000);
+        final long expectedMillis = java.sql.Time.valueOf(java.time.LocalTime.of(1, 2, 3)).getTime() + 456;
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition timeCol = mock(ColumnDefinition.class);
+        when(cols.size()).thenReturn(1);
+        when(cols.get(0)).thenReturn(timeCol);
+        when(timeCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t"));
+        when(mockRow.getColumnDefinitions()).thenReturn(cols);
+        when(mockRow.getObject(0)).thenReturn(localTime);
+
+        assertEquals(expectedMillis, CassandraExecutor.toEntity(mockRow, SliceNTimeBean.class).getT().getTime());
+
+        // Single-value targets (findFirst/gett/list/queryForSingleValue) convert through the same helper.
+        when(mockResultSet.getColumnDefinitions()).thenReturn(cols);
+        when(mockResultSet.all()).thenReturn(List.of(mockRow));
+        assertEquals(expectedMillis, CassandraExecutor.toList(mockResultSet, java.sql.Time.class).get(0).getTime());
+
+        // A UDT time field decoded into a java.sql.Time bean property.
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("time_type"),
+                false, List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.TIME));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final CassandraExecutor.UDTCodec<SliceNTimeBean> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNTimeBean.class);
+        final ByteBuffer bytes = mapCodec.encode(Map.of("t", localTime), ProtocolVersion.V4);
+
+        assertEquals(expectedMillis, beanCodec.decode(bytes, ProtocolVersion.V4).getT().getTime());
+    }
+
+    public static class SliceNTimeBean {
+        private java.sql.Time t;
+
+        public java.sql.Time getT() {
+            return t;
+        }
+
+        public void setT(final java.sql.Time t) {
+            this.t = t;
+        }
+    }
+
+    // ---- 2026-10-02 sliceN end ----
+
+    // ---- 2026-10-02 verifyCS ----
+
+    public record VerifyCSKey(Long id, String name) {
+    }
+
+    /** Stubs {@code mockSession.prepare(query)} with the given variables; element 0 of the result receives the bound values. */
+    private Object[][] verifyCSPrepare(final String query, final Object... namesAndTypes) {
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final Object[][] bound = new Object[1][];
+        org.mockito.Mockito.lenient().when(mockSession.prepare(query)).thenReturn(preparedStatement);
+        org.mockito.Mockito.lenient().when(preparedStatement.getVariableDefinitions()).thenReturn(variables);
+        org.mockito.Mockito.lenient().when(variables.size()).thenReturn(namesAndTypes.length / 2);
+
+        for (int i = 0; i < namesAndTypes.length; i += 2) {
+            final ColumnDefinition variable = mock(ColumnDefinition.class);
+            org.mockito.Mockito.lenient().when(variables.get(i / 2)).thenReturn(variable);
+            org.mockito.Mockito.lenient()
+                    .when(variable.getName())
+                    .thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal((String) namesAndTypes[i]));
+            org.mockito.Mockito.lenient().when(variable.getType()).thenReturn((DataType) namesAndTypes[i + 1]);
+        }
+
+        org.mockito.Mockito.lenient().when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+
+        return bound;
+    }
+
+    @Test
+    public void testVerifyCS_valueTypeParametersWithGettersAreBoundAsValues() {
+        when(mockSession.getContext().getCodecRegistry())
+                .thenReturn(new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("verify-cs-value-params"));
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+
+        // A Calendar subclass (abacus handles every Calendar as a value) is converted to the timestamp column's Instant.
+        final Object[][] tsBound = verifyCSPrepare("SELECT * FROM ev WHERE ts = ?", "ts", com.datastax.oss.driver.api.core.type.DataTypes.TIMESTAMP);
+        final java.util.GregorianCalendar calendarSubclass = new java.util.GregorianCalendar() {
+        };
+        calendarSubclass.setTimeInMillis(1_600_000_000_000L);
+        codecExecutor.prepareStatement("SELECT * FROM ev WHERE ts = ?", calendarSubclass);
+        assertEquals(Arrays.asList(java.time.Instant.ofEpochMilli(1_600_000_000_000L)), Arrays.asList(tsBound[0]));
+
+        // A heap or direct ByteBuffer is one positional value, not a bean of named values: too few values for two markers
+        // (it was read as a bean and failed with "Missing required parameter: 'a'").
+        final String twoBlobs = "SELECT * FROM blobs WHERE a = ? AND b = ?";
+        verifyCSPrepare(twoBlobs, "a", com.datastax.oss.driver.api.core.type.DataTypes.BLOB, "b", com.datastax.oss.driver.api.core.type.DataTypes.BLOB);
+
+        for (final ByteBuffer buffer : List.of(ByteBuffer.wrap(new byte[] { 1 }), ByteBuffer.allocateDirect(1))) {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> codecExecutor.prepareStatement(twoBlobs, buffer));
+            assertTrue(e.getMessage().startsWith("Not enough parameters for parameterized query: expected 2 but got 1"), e.getMessage());
+        }
+
+        // Beans and records still supply named values.
+        final String byKey = "SELECT * FROM t WHERE id = ? AND name = ?";
+        final Object[][] keyBound = verifyCSPrepare(byKey, "id", com.datastax.oss.driver.api.core.type.DataTypes.BIGINT, "name",
+                com.datastax.oss.driver.api.core.type.DataTypes.TEXT);
+        final TestEntity entity = new TestEntity();
+        entity.setId(7L);
+        entity.setName("n");
+        codecExecutor.prepareStatement(byKey, entity);
+        assertEquals(Arrays.asList(7L, "n"), Arrays.asList(keyBound[0]));
+        codecExecutor.prepareStatement(byKey, new VerifyCSKey(8L, "r"));
+        assertEquals(Arrays.asList(8L, "r"), Arrays.asList(keyBound[0]));
+    }
+
+    @Test
+    public void testVerifyCS_timeColumnReadsIntoSqlTimeOnEveryReadPath() {
+        // N.convert(LocalTime, java.sql.Time) parses the LocalTime's text, so it failed for a fractional second AND for a
+        // time on a whole minute ("00:00", "12:00"); every read path into a java.sql.Time target must convert it.
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition timeCol = mock(ColumnDefinition.class);
+        org.mockito.Mockito.lenient().when(cols.size()).thenReturn(1);
+        org.mockito.Mockito.lenient().when(cols.get(0)).thenReturn(timeCol);
+        org.mockito.Mockito.lenient().when(timeCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t"));
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("verify_cs_time"),
+                false, List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.TIME));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final CassandraExecutor.UDTCodec<SliceNTimeBean> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNTimeBean.class);
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+
+        for (final java.time.LocalTime localTime : List.of(java.time.LocalTime.of(1, 2, 3, 456_789_000), java.time.LocalTime.MIDNIGHT,
+                java.time.LocalTime.NOON, java.time.LocalTime.MAX, java.time.LocalTime.of(1, 2, 3))) {
+            final long expected = java.sql.Time.valueOf(localTime.withNano(0)).getTime() + localTime.getNano() / 1_000_000;
+            final Row row = mock(Row.class);
+            org.mockito.Mockito.lenient().when(row.getColumnDefinitions()).thenReturn(cols);
+            org.mockito.Mockito.lenient().when(row.getObject(0)).thenReturn(localTime);
+            final ResultSet resultSet = mock(ResultSet.class);
+            org.mockito.Mockito.lenient().when(resultSet.getColumnDefinitions()).thenReturn(cols);
+            org.mockito.Mockito.lenient().when(resultSet.all()).thenReturn(List.of(row));
+            org.mockito.Mockito.lenient().when(resultSet.one()).thenReturn(row);
+            org.mockito.Mockito.lenient().when(resultSet.iterator()).thenAnswer(invocation -> List.of(row).iterator());
+            when(mockSession.execute(any(Statement.class))).thenReturn(resultSet);
+
+            assertEquals(expected, CassandraExecutor.toEntity(row, SliceNTimeBean.class).getT().getTime(), localTime::toString); // bean property
+            assertEquals(expected, CassandraExecutor.toList(resultSet, java.sql.Time.class).get(0).getTime(), localTime::toString); // row mapper
+            assertEquals(expected, CassandraExecutor.toList(resultSet, java.sql.Time[].class).get(0)[0].getTime(), localTime::toString); // typed array
+            assertEquals(expected, executor.fetchOnlyOne(java.sql.Time.class, resultSet).getTime(), localTime::toString); // readRow
+            assertEquals(expected, executor.fetchOnlyOne(java.sql.Time[].class, resultSet)[0].getTime(), localTime::toString);
+            assertEquals(expected, ((java.sql.Time) CassandraExecutor.extractData(resultSet, SliceNTimeBean.class).getColumn("t").get(0)).getTime(),
+                    localTime::toString);
+            assertEquals(expected, executor.readFirstColumn(row, java.sql.Time.class).getTime(), localTime::toString); // async single value
+            assertEquals(expected, executor.queryForSingleValue(java.sql.Time.class, "SELECT t FROM times").get().getTime(), localTime::toString);
+            assertEquals(expected, beanCodec.decode(mapCodec.encode(Map.of("t", localTime), ProtocolVersion.V4), ProtocolVersion.V4).getT().getTime(),
+                    localTime::toString); // UDT field
+
+            // A LocalTime target keeps the driver value.
+            assertSame(localTime, CassandraExecutor.toList(resultSet, java.time.LocalTime.class).get(0));
+        }
+    }
+
+    // ---- 2026-10-02 verifyCS end ----
+
+    // ---- 2026-10-04 coverageCS ----
+
+    /** A result set over single-column {@code time} rows holding the driver's LocalTime values. */
+    private static ResultSet coverageCSTimeResultSet(final java.time.LocalTime... times) {
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition timeCol = mock(ColumnDefinition.class);
+        org.mockito.Mockito.lenient().when(cols.size()).thenReturn(1);
+        org.mockito.Mockito.lenient().when(cols.get(0)).thenReturn(timeCol);
+        org.mockito.Mockito.lenient().when(timeCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t"));
+        final List<Row> rows = new java.util.ArrayList<>();
+
+        for (final java.time.LocalTime time : times) {
+            final Row row = mock(Row.class);
+            org.mockito.Mockito.lenient().when(row.getColumnDefinitions()).thenReturn(cols);
+            org.mockito.Mockito.lenient().when(row.getObject(0)).thenReturn(time);
+            rows.add(row);
+        }
+
+        final ResultSet resultSet = mock(ResultSet.class);
+        org.mockito.Mockito.lenient().when(resultSet.getColumnDefinitions()).thenReturn(cols);
+        org.mockito.Mockito.lenient().when(resultSet.all()).thenReturn(rows);
+        org.mockito.Mockito.lenient().when(resultSet.iterator()).thenAnswer(invocation -> rows.iterator());
+        org.mockito.Mockito.lenient().when(resultSet.one()).thenReturn(rows.isEmpty() ? null : rows.get(0));
+
+        return resultSet;
+    }
+
+    @Test
+    public void testCoverageCS_sqlTimeTargetOnLaterRowsStreamFindFirstAndSingleNonNull() {
+        // N.convert(LocalTime, java.sql.Time) parses the text and rejects a fractional second or a whole minute. The single-value
+        // row mapper converts later rows (and a leading null) on a separate branch from the first row; stream, findFirst and
+        // queryForSingleNonNull are separate read paths as well.
+        final java.time.LocalTime fractional = java.time.LocalTime.of(1, 2, 3, 456_789_000);
+        final java.time.LocalTime wholeMinute = java.time.LocalTime.of(12, 30);
+        final java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss.SSS");
+        final List<String> expected = Arrays.asList(null, "01:02:03.456", "00:00:00.000", "12:30:00.000");
+        final ResultSet withLeadingNull = coverageCSTimeResultSet(null, fractional, java.time.LocalTime.MIDNIGHT, wholeMinute);
+        final ResultSet firstFractional = coverageCSTimeResultSet(fractional, wholeMinute);
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockSession.execute(any(Statement.class))).thenReturn(withLeadingNull, withLeadingNull, firstFractional, firstFractional, firstFractional);
+
+        assertEquals(expected, CassandraExecutor.toList(withLeadingNull, java.sql.Time.class).stream().map(t -> t == null ? null : timeFormat.format(t)).toList());
+        assertEquals(expected, executor.list(java.sql.Time.class, "SELECT t FROM times").stream().map(t -> t == null ? null : timeFormat.format(t)).toList());
+        assertEquals(expected, executor.stream(java.sql.Time.class, "SELECT t FROM times").map(t -> t == null ? null : timeFormat.format(t)).toList());
+        assertEquals("01:02:03.456", timeFormat.format(executor.findFirst(java.sql.Time.class, "SELECT t FROM times").get()));
+        assertEquals("01:02:03.456", timeFormat.format(executor.queryForSingleNonNull(java.sql.Time.class, "SELECT t FROM times").get()));
+        assertEquals(Arrays.asList("01:02:03.456", "12:30:00.000"),
+                executor.list(java.sql.Time.class, "SELECT t FROM times").stream().map(timeFormat::format).toList());
+    }
+
+    // ---- 2026-10-04 coverageCS end ----
+
     // Test entity class
     public static class RenamedColumnEntity {
         private Long id;

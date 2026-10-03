@@ -141,10 +141,34 @@ import com.landawn.abacus.util.stream.Stream;
  * type, {@code BYTES} cells (base64 text) are decoded for {@code byte[]}/{@link java.nio.ByteBuffer} targets and
  * {@code TIMESTAMP} cells (epoch seconds or microseconds) are decoded for date/time targets. Microsecond precision
  * is retained where the target supports it; {@code java.util.Date} and {@code Calendar} retain milliseconds.
+ * {@code TIME} cells ({@code HH:MM:SS[.ffffff]}) are decoded for {@code java.sql.Time} targets, retaining milliseconds.
  * The same decoding applies to elements of typed collection and array bean properties for {@code REPEATED}
- * columns. Other cells go through the standard abacus type conversion. {@code Map}, {@code Collection}, and
+ * columns, and a {@code REPEATED STRUCT} column mapped to a collection or array of beans maps each element
+ * like a {@code STRUCT} bean property. A {@code STRUCT} cell mapped to a {@code Map} or {@code Collection} bean property
+ * with typed elements (e.g. {@code Map<String, Long>} or {@code List<Long>}) is converted to those element types; structured
+ * values in {@code Map<String, String>} or {@code List<String>} properties become JSON text. A
+ * {@code REPEATED STRUCT} element mapped to a collection or array element type, as in {@code List<List<Long>>}, becomes
+ * the list of its field values first, like a {@code STRUCT} cell mapped to a {@code Collection} property, and a
+ * {@code STRUCT} cell or element mapped to a generic bean type (e.g. a {@code Box<Long>} property or a
+ * {@code List<Box<java.time.Instant>>} element) is mapped with its type arguments. A property declared with a type variable
+ * (e.g. {@code T value} of {@code Box<T>}, read through {@code class LongBox extends Box<Long>} or {@code Box<Long>}) is
+ * decoded and converted to the type it is bound to, like any other typed property.
+ * Scalar text that still needs property conversion uses the property's configured JSON/XML reader, including date/number
+ * formats and time zones. Native {@code BYTES}, {@code TIMESTAMP} and {@code TIME} decoding takes precedence over text formats.
+ * Other cells go through the standard abacus type conversion. {@code Map}, {@code Collection}, and
  * {@code Object[]} rows keep the raw cell values; a typed array row (e.g. {@code Long[]} or {@code byte[][]}) decodes
  * and converts each cell to the array's component type.</p>
+ * <p>A {@code REPEATED} cell is told apart from a {@code STRUCT} cell by its {@link FieldValue.Attribute#REPEATED} attribute
+ * (the BigQuery client returns both as a {@link FieldValueList}). Its element values are unwrapped into a {@code List} for
+ * {@code Map}, {@code Collection} and {@code Object[]} rows (a {@code STRUCT} element becomes a {@code Map}), and are converted
+ * as described above for typed bean properties, typed array rows and single-value reads (e.g.
+ * {@code queryForSingleValue(List.class, ...)} or {@code String[].class}); a {@link FieldValueList} target (a bean property,
+ * {@code queryForSingleValue}/{@code queryForSingleNonNull(FieldValueList.class, ...)}, or the element of a
+ * {@code FieldValueList[]} array row) receives the raw {@code REPEATED} value as the client decoded it. (A
+ * {@code FieldValueList} row type, as in {@code toList(result, FieldValueList.class)}, is not supported.) A nested
+ * {@code STRUCT} is read with the sub-schema
+ * of the enclosing column, so a {@code STRUCT} inside a {@code REPEATED} value, which carries no schema of its own, converts
+ * like any other.</p>
  *
  * <h2>Result Set Pagination</h2>
  * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
@@ -385,9 +409,14 @@ public class BigQueryExecutor {
      * {@code firstName}), then a column-to-property name map derived from the bean's annotations
      * ({@code @Column}, etc.). Columns whose names contain a period are written via
      * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
-     * no top-level property matches. Nested {@link FieldValueList} values are converted recursively
-     * into the property's declared type. {@code BYTES} and {@code TIMESTAMP} cells are decoded for binary
-     * and date/time properties as described under <i>Result Value Conversion</i> in the class documentation.
+     * no top-level property matches. Nested {@code STRUCT} values are converted recursively, with the sub-schema of
+     * their field in {@code fields}, into the property's declared type (including the element types of a {@code Map} or
+     * {@code Collection} property such as {@code Map<String, Long>}, and the type arguments of a generic bean property such as
+     * {@code Box<Long>}); {@code REPEATED} values are converted to the property's
+     * collection or array type. {@code BYTES}, {@code TIMESTAMP} and {@code TIME} cells are decoded for binary,
+     * date/time and {@code java.sql.Time} properties as described under <i>Result Value Conversion</i> in the class documentation.
+     * A property declared with a type variable that {@code targetClass} binds (e.g. {@code T value} inherited by
+     * {@code class LongBox extends Box<Long>}) is converted to the bound type.
      * A column that matches a read-only (getter-only) property is ignored.
      *
      * <p><b>Usage Examples:</b></p>
@@ -427,8 +456,18 @@ public class BigQueryExecutor {
         checkFieldCount(fields, fieldValueList);
         N.checkArgument(Beans.isBeanClass(targetClass), "{} is not a valid entity class with getter/setter method", targetClass);
 
-        final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetClass);
-        final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
+        return toEntity(fields, fieldValueList, ParserUtil.getBeanInfo(targetClass));
+    }
+
+    /**
+     * Converts a row (or STRUCT value) to the bean described by {@code entityInfo}, which may be resolved against the type
+     * arguments of a parameterized bean type (see {@link #readBean(FieldList, FieldValueList, Type)}). The caller validates
+     * the arguments.
+     *
+     * @throws RuntimeException if a field value cannot be decoded or converted, or the bean or a nested container cannot be constructed or populated
+     */
+    private static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final BeanInfo entityInfo) throws RuntimeException {
+        final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(entityInfo.clazz);
         final Object entity = entityInfo.createBeanResult();
 
         PropInfo propInfo = null;
@@ -438,8 +477,9 @@ public class BigQueryExecutor {
         String fieldName = null;
 
         for (int i = 0, size = fieldValueList.size(); i < size; i++) {
+            final FieldValue cell = fieldValueList.get(i);
             propName = fields.get(i).getName();
-            propValue = fieldValueList.get(i).getValue();
+            propValue = cell.getValue();
 
             propInfo = entityInfo.getPropInfo(propName);
 
@@ -466,44 +506,175 @@ public class BigQueryExecutor {
             }
 
             parameterType = propInfo.clazz;
+            final Object value;
 
-            if (propValue instanceof FieldValueList) {
-                // RECORD value. Note a FieldValueList IS a List, so a plain assignability check against a
-                // List-typed property would store the raw FieldValue wrappers; convert through readRow
-                // unless the property explicitly wants the raw FieldValueList.
-                if (FieldValueList.class.isAssignableFrom(parameterType)) {
-                    propInfo.setPropValue(entity, propValue);
-                } else {
-                    propInfo.setPropValue(entity, readRow((FieldValueList) propValue, parameterType));
-                }
-            } else if (propValue instanceof List) {
-                propInfo.setPropValue(entity, convertRepeatedValue(fields.get(i), (List<?>) propValue, propInfo.jsonXmlType));
+            if (isRecordCell(cell)) {
+                value = readStructProperty(fields.get(i), (FieldValueList) propValue, propInfo);
+            } else if (isRepeatedCell(cell)) {
+                // A FieldValueList-typed property takes the client's REPEATED value as is, like a STRUCT (readStructProperty).
+                value = propValue instanceof FieldValueList && FieldValueList.class.isAssignableFrom(parameterType) ? propValue
+                        : convertRepeatedValue(fields.get(i), (List<?>) propValue, propInfo.jsonXmlType);
             } else {
-                propInfo.setPropValue(entity, decodeTypedValue(fields.get(i), fieldValueList.get(i), parameterType));
+                value = decodePropertyValue(fields.get(i), cell, propInfo);
             }
+
+            // PropInfo.setPropValue converts a value only when storing it FAILS, so a value it can store as is skips the
+            // conversion: an immutable bean (e.g. a record) collects its values in a constructor-argument array (the raw
+            // cell text "5" for a long component failed the constructor call with "argument type mismatch"), and a
+            // type-variable property resolved to a concrete type (LongBox extends Box<Long>, or a Box<Long> property or
+            // element mapped with its type arguments) has an erased Object field, which took the cell text and failed
+            // with ClassCastException on read. Such values are converted up front, with the conversion setPropValue
+            // applies on failure, so the values of typed properties are unchanged. A text-typed property of a settable
+            // bean whose field/setter is itself declared as text is left to setPropValue, which stores a non-text value of
+            // an isJsonRawValue property as JSON; but a type variable bound to a text type (Box<StringBuilder>, Box<String>,
+            // SbBox extends Box<StringBuilder>) is stored in an erased Object field, which would take the String or the
+            // REPEATED List as is, so it is converted like any other type-variable property.
+            final boolean converts = value != null && (entityInfo.isImmutable
+                    || (!isInstanceOf(propInfo.clazz, value) && (!propInfo.jsonXmlType.isCharSequence() || isStoredAsIs(propInfo, value))));
+
+            propInfo.setPropValue(entity, converts ? N.convert(value, propInfo.jsonXmlType) : value);
         }
 
         return entityInfo.finishBeanResult(entity);
     }
 
+    // Reads a STRUCT cell for a bean property (toEntity and the bean-class Dataset of extractData). A FieldValueList IS a
+    // List, so a plain assignability check against a List-typed property would store the raw FieldValue wrappers; the
+    // value is converted through readRow unless the property explicitly wants the raw FieldValueList. readRow reads a
+    // STRUCT as a plain Map/List of the raw cell text, so a container property with typed elements (Map<String, Long>,
+    // List<Long>) goes through the property's JSON codec instead. This supersedes the earlier decision to leave such
+    // properties raw: REPEATED STRUCT bean elements are now mapped through toEntity rather than the JSON codec, which
+    // typed their container properties, so leaving them raw would regress those elements. A parameterized bean property
+    // (Box<Long>) is mapped with its type arguments (readBean); readRow maps by raw class, which left a type-variable
+    // property holding the raw cell text.
     /**
-     * Unwraps a REPEATED column's value (a List of FieldValue wrappers) into a List of plain values,
-     * converting nested RECORD elements via the field's sub-fields. This is the entity/array/Dataset
+     * Converts a STRUCT cell to the type of the bean property it is mapped to.
+     *
+     * @throws RuntimeException if the record cannot be read or converted to the property type
+     */
+    private static Object readStructProperty(final Field field, final FieldValueList struct, final PropInfo propInfo) throws RuntimeException {
+        if (FieldValueList.class.isAssignableFrom(propInfo.clazz)) {
+            return struct;
+        }
+
+        final Type<?> propType = propInfo.jsonXmlType;
+        final FieldList subFields = subFieldsOf(field);
+
+        if (isTypedContainer(propType)) {
+            final Object plain = !propType.isMap() ? readRow(subFields, struct, List.class)
+                    : subFields == null ? readRow(struct, Map.class) : toMap(subFields, struct, IntFunctions.ofMap());
+
+            return propType.valueOf(N.toJson(plain));
+        }
+
+        if (propType.isBean() && propType.isParameterizedType()) {
+            return readBean(subFields, struct, propType);
+        }
+
+        return readRow(subFields, struct, propInfo.clazz);
+    }
+
+    // A STRUCT value mapped to a bean type, which may be parameterized (Box<Long>, GenericValue<Instant>): the bean's
+    // properties are resolved against the type arguments (ParserUtil.getBeanInfo(Type), cached per Type), so a
+    // type-variable property is decoded and converted to its argument type like any other typed property, and the
+    // instance is of the raw class. readRow/toEntity(Class) would map by raw class only.
+    /**
+     * Converts a STRUCT value to {@code beanType} with {@code schema}, or the schema attached to the value when {@code schema} is {@code null}.
+     *
+     * @throws IllegalArgumentException if {@code schema} is null and the value has no schema attached, or the schema and value widths differ
+     * @throws RuntimeException if a field value cannot be decoded or converted, or the bean or a nested container cannot be constructed or populated
+     */
+    private static Object readBean(final FieldList schema, final FieldValueList struct, final Type<?> beanType)
+            throws IllegalArgumentException, RuntimeException {
+        final FieldList fields = schema == null ? getSchema(struct) : schema;
+        checkFieldCount(fields, struct);
+
+        return toEntity(fields, struct, ParserUtil.getBeanInfo(beanType.reflectType()));
+    }
+
+    // Whether value can be stored in a property of type cls as is (a primitive property takes its wrapper; a primitive
+    // array is matched exactly, unlike ClassUtil.wrap, which maps byte[] to Byte[]).
+    private static boolean isInstanceOf(final Class<?> cls, final Object value) {
+        return (cls.isPrimitive() ? ClassUtil.wrap(cls) : cls).isInstance(value);
+    }
+
+    // Whether PropInfo.setPropValue would store value without converting it although it is not of the property's resolved
+    // type: the property's field or setter is declared with a type the value already is (an erased type variable).
+    private static boolean isStoredAsIs(final PropInfo propInfo, final Object value) {
+        return (propInfo.field != null && propInfo.field.getType().isInstance(value))
+                || (propInfo.setMethod != null && propInfo.setMethod.getParameterTypes()[0].isInstance(value));
+    }
+
+    // The BigQuery client decodes a REPEATED cell into a FieldValueList (FieldValue.fromPb: REPEATED ->
+    // FieldValueList.fromPb(list, null)), the same class a RECORD cell holds, so `value instanceof FieldValueList` alone took
+    // every real REPEATED value for a STRUCT (and then failed on its missing schema). The cell's attribute tells them apart;
+    // a plain List value (e.g. FieldValue.of(REPEATED, list)) is REPEATED as well.
+    private static boolean isRecordCell(final FieldValue fieldValue) {
+        return fieldValue.getValue() instanceof FieldValueList && fieldValue.getAttribute() != FieldValue.Attribute.REPEATED;
+    }
+
+    private static boolean isRepeatedCell(final FieldValue fieldValue) {
+        final Object value = fieldValue.getValue();
+
+        return value instanceof List && (!(value instanceof FieldValueList) || fieldValue.getAttribute() == FieldValue.Attribute.REPEATED);
+    }
+
+    // The schema of a STRUCT cell is the sub-schema of its enclosing field. A STRUCT inside a REPEATED value (and every
+    // STRUCT nested in it) carries no schema of its own, so the schema is threaded down from the enclosing Field rather than
+    // read off the record; null (read it off the record) only where no Field is in hand.
+    private static FieldList subFieldsOf(final Field field) {
+        return field == null ? null : field.getSubFields();
+    }
+
+    // Object elements keep structured values as is. String elements still need conversion: a nested STRUCT or REPEATED
+    // value must become JSON text, not remain a Map/List inside a string-typed container. STRUCT map keys already are Strings.
+    private static boolean isTypedContainer(final Type<?> type) {
+        if (!(type.isMap() || type.isCollection())) {
+            return false;
+        }
+
+        final List<Type<?>> parameterTypes = type.parameterTypes();
+
+        for (int i = 0; i < parameterTypes.size(); i++) {
+            final Class<?> parameterClass = parameterTypes.get(i).javaType();
+
+            if (parameterClass != Object.class && !(type.isMap() && i == 0 && parameterClass == String.class)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Unwraps a REPEATED column's value (a schema-less FieldValueList, or any List, of FieldValue wrappers) into a List of
+     * plain values, converting nested RECORD elements via the field's sub-fields. This is the entity/array/Dataset
      * sibling of the map path's toMapValue.
      *
      * @throws RuntimeException if a nested record has no readable schema or its schema does not describe every field value
      */
     private static Object unwrapRepeatedValue(final Field field, final List<?> values) throws RuntimeException {
+        return unwrapRepeatedValue(field, values, false);
+    }
+
+    /**
+     * Unwraps a REPEATED column's value like {@link #unwrapRepeatedValue(Field, List)}, with each RECORD element as the List
+     * of its field values instead of a Map when {@code recordsAsValueLists} is {@code true}.
+     *
+     * @throws RuntimeException if a nested record has no readable schema or its schema does not describe every field value
+     */
+    private static Object unwrapRepeatedValue(final Field field, final List<?> values, final boolean recordsAsValueLists) throws RuntimeException {
         final List<Object> list = new ArrayList<>(values.size());
-        final FieldList subFields = field == null ? null : field.getSubFields();
+        final FieldList subFields = subFieldsOf(field);
 
         for (final Object element : values) {
             if (element instanceof final FieldValue repeatedFieldValue) {
                 final Object repeatedValue = repeatedFieldValue.getValue();
 
-                if (repeatedValue instanceof FieldValueList) {
-                    list.add(subFields == null ? readRow((FieldValueList) repeatedValue, Object[].class)
-                            : toMap(subFields, (FieldValueList) repeatedValue, IntFunctions.ofMap()));
+                if (isRecordCell(repeatedFieldValue)) {
+                    list.add(recordsAsValueLists ? readRow(subFields, (FieldValueList) repeatedValue, List.class)
+                            : subFields == null ? readRow((FieldValueList) repeatedValue, Object[].class)
+                                    : toMap(subFields, (FieldValueList) repeatedValue, IntFunctions.ofMap()));
                 } else {
                     list.add(repeatedValue);
                 }
@@ -516,8 +687,10 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a repeated field using the bean property's element type. Binary and timestamp elements use
-     * BigQuery's typed accessors before constructing the container, preserving readable buffers and timestamp precision.
+     * Converts a repeated field using the bean property's element type. Binary, timestamp and time elements use
+     * BigQuery's typed accessors before constructing the container, preserving readable buffers and timestamp precision;
+     * {@code STRUCT} elements of a bean element type (a parameterized one, such as {@code GenericValue<Long>}, with its type
+     * arguments) are mapped like a {@code STRUCT} property.
      * Other parameterized values use the property's JSON codec so their elements are converted as well.
      *
      * @param field the schema field describing the repeated elements
@@ -532,15 +705,15 @@ public class BigQueryExecutor {
         final Class<?> elementClass = targetType.isObjectArray() ? targetType.javaType().getComponentType()
                 : targetType.isCollection() && targetType.isParameterizedType() ? targetType.parameterTypes().get(0).javaType() : null;
 
-        if (elementClass != null && ((LegacySQLTypeName.BYTES.equals(field.getType()) && (elementClass == byte[].class || elementClass == ByteBuffer.class))
-                || (LegacySQLTypeName.TIMESTAMP.equals(field.getType()) && isDateTimeClass(elementClass)))) {
+        if (elementClass != null && isDecodedElementClass(field, elementClass, targetType)) {
+            final Type<?> elementType = elementTypeOf(targetType, elementClass);
             final Object[] array = targetType.isObjectArray() ? N.newArray(elementClass, values.size()) : null;
             final Collection<Object> collection = array == null ? N.newCollection((Class<Collection>) targetType.javaType()) : null;
 
             // Repeated values may use a sequential List; indexed reads would make decoding quadratic.
             int index = 0;
             for (final Object element : values) {
-                final Object decoded = element instanceof FieldValue ? decodeTypedValue(field, (FieldValue) element, elementClass) : element;
+                final Object decoded = element instanceof FieldValue ? decodeRepeatedElement(field, (FieldValue) element, elementClass, elementType) : element;
 
                 if (array == null) {
                     collection.add(decoded);
@@ -552,20 +725,76 @@ public class BigQueryExecutor {
             return array == null ? collection : array;
         }
 
-        final Object unwrapped = unwrapRepeatedValue(field, values);
+        // A STRUCT element of a Collection or array element type (List<List<Long>>, Long[][], List<Object[]>) is unwrapped as
+        // the List of its field values, as a STRUCT cell read into a Collection property or an array is (readStructProperty,
+        // readRow), and then typed by the codec. The Map that rows and other element types get was rejected by a typed
+        // element codec ("{"a": "1", "b": "2"} is not a valid Long"), turned into its JSON text for List<List<String>>, and
+        // stored as is in a List<List<Object>> / List<Object[]>, whose elements must be Lists / arrays.
+        final boolean recordsAsValueLists = elementClass != null && (Collection.class.isAssignableFrom(elementClass) || elementClass.isArray());
+        final Object unwrapped = unwrapRepeatedValue(field, values, recordsAsValueLists);
         return targetType.isParameterizedType() ? targetType.valueOf(N.toJson(unwrapped)) : unwrapped;
+    }
+
+    // Whether the elements of a REPEATED field must be decoded one by one for elementClass instead of going through the
+    // JSON codec, which would hand the raw cell text (base64, epoch seconds, fractional TIME) to the element type.
+    // RECORD elements use the same bean test as readRow's STRUCT dispatch: Beans.isBeanClass alone also accepts value
+    // types with bean accessors (GregorianCalendar, ByteBuffer), which toEntity would populate from same-named
+    // sub-fields instead of failing. A generic element bean (e.g. G<Long>) is decoded too: it is mapped with its type
+    // arguments (readBean), so its type-variable properties are converted (and TIMESTAMP/BYTES/TIME decoded) for them.
+    private static boolean isDecodedElementClass(final Field field, final Class<?> elementClass, final Type<?> containerType) {
+        if (field == null) { // single-value read of a result without a schema: nothing to decode by
+            return false;
+        }
+
+        final LegacySQLTypeName fieldType = field.getType();
+
+        if (LegacySQLTypeName.RECORD.equals(fieldType)) {
+            return elementTypeOf(containerType, elementClass).isBean();
+        }
+
+        return (LegacySQLTypeName.BYTES.equals(fieldType) && (elementClass == byte[].class || elementClass == ByteBuffer.class))
+                || (LegacySQLTypeName.TIMESTAMP.equals(fieldType) && isDateTimeClass(elementClass))
+                || (LegacySQLTypeName.TIME.equals(fieldType) && elementClass == java.sql.Time.class);
+    }
+
+    // The full type of a container's elements, including type arguments (GenericValue<Long> for List<GenericValue<Long>> or
+    // GenericValue<Long>[]).
+    private static Type<?> elementTypeOf(final Type<?> containerType, final Class<?> elementClass) {
+        final List<Type<?>> parameterTypes = containerType.parameterTypes();
+
+        return parameterTypes.isEmpty() ? N.typeOf(elementClass) : parameterTypes.get(0);
+    }
+
+    // A REPEATED STRUCT element (a FieldValueList) of a bean element type is mapped like a STRUCT property, through
+    // toEntity with the element schema and the element's full type (readBean), so its BYTES/TIMESTAMP/TIME fields are
+    // decoded and its type-variable properties converted. The JSON codec used for other element types would pass their
+    // raw text to the bean (a TIMESTAMP field's epoch seconds failed to parse).
+    /**
+     * Decodes one element of a REPEATED field for {@code elementClass}, a STRUCT element for its full type {@code elementType}.
+     *
+     * @throws RuntimeException if the element cannot be decoded, or a nested record cannot be mapped to {@code elementType}
+     */
+    private static Object decodeRepeatedElement(final Field field, final FieldValue element, final Class<?> elementClass, final Type<?> elementType)
+            throws RuntimeException {
+        if (isRecordCell(element)) {
+            return readBean(field.getSubFields(), (FieldValueList) element.getValue(), elementType);
+        }
+
+        return decodeTypedValue(field, element, elementClass);
     }
 
     // BigQuery returns a BYTES cell as base64 text and a TIMESTAMP cell as epoch seconds ("1.7189E9") or
     // epoch microseconds, none of which N.convert/setPropValue can decode (base64 -> NumberFormatException,
     // epoch seconds -> parse failure, epoch micros -> misread as millis). Decode those through FieldValue's
-    // typed accessors when the target is a binary or date/time type; every other value (including the raw
-    // String for String/Object targets) is returned unchanged for the caller's normal conversion path.
+    // typed accessors when the target is a binary or date/time type. A TIME cell is HH:MM:SS[.ffffff], whose
+    // fractional part the java.sql.Time conversion rejects, so it is parsed here for a java.sql.Time target.
+    // Every other value (including the raw String for String/Object targets) is returned unchanged for the
+    // caller's normal conversion path.
     /**
-     * Decodes a BYTES or TIMESTAMP cell for a binary or date/time target; returns any other cell value unchanged.
+     * Decodes a BYTES, TIMESTAMP or TIME cell for a binary, date/time or {@code java.sql.Time} target; returns any other cell value unchanged.
      *
      * @throws RuntimeException if a BYTES value is not valid Base64, a TIMESTAMP value cannot be parsed, or its timestamp cannot be converted to the
-     *         requested date/time type
+     *         requested date/time type, or a TIME value cannot be parsed
      */
     private static Object decodeTypedValue(final Field field, final FieldValue fieldValue, final Class<?> targetClass) throws RuntimeException {
         final Object value = fieldValue.getValue();
@@ -599,9 +828,32 @@ public class BigQueryExecutor {
             } else {
                 return N.convert(timestamp, targetClass);
             }
+        } else if (LegacySQLTypeName.TIME.equals(fieldType) && targetClass == java.sql.Time.class) {
+            // Same local-time-on-1970-01-01 value the standard conversion gives for "HH:MM:SS", plus the milliseconds.
+            final java.time.LocalTime localTime = java.time.LocalTime.parse((String) value);
+            final java.sql.Time time = java.sql.Time.valueOf(localTime);
+            time.setTime(time.getTime() + localTime.getNano() / 1_000_000);
+
+            return time;
         }
 
         return value;
+    }
+
+    /**
+     * Decodes a cell for a bean property, then parses remaining scalar text with the property's configured reader.
+     *
+     * @throws RuntimeException if BigQuery decoding or the property's configured conversion fails
+     */
+    private static Object decodePropertyValue(final Field field, final FieldValue cell, final PropInfo propInfo) throws RuntimeException {
+        final Object value = decodeTypedValue(field, cell, propInfo.clazz);
+
+        // General N.convert ignores date/number formats. Use the same reader as the JSON codec previously used for
+        // repeated beans, after native BigQuery decoding. Text properties stay on their existing assignment path so
+        // setPropValue can preserve isJsonRawValue handling; Object properties continue to keep raw text.
+        return value instanceof String && !propInfo.jsonXmlType.isCharSequence() && !isInstanceOf(propInfo.clazz, value)
+                ? propInfo.readPropValue((String) value)
+                : value;
     }
 
     private static boolean isDateTimeClass(final Class<?> cls) {
@@ -795,19 +1047,20 @@ public class BigQueryExecutor {
             throws IllegalArgumentException, RuntimeException {
         final Object value = fieldValue.getValue();
 
-        if (value instanceof FieldValueList) {
+        if (isRecordCell(fieldValue)) {
             // Use the sub-schema already in hand rather than reading it reflectively off the nested row.
             return toMap(field.getSubFields(), (FieldValueList) value, mapSupplier);
         }
 
-        if (value instanceof final List<?> values) {
+        if (isRepeatedCell(fieldValue)) {
+            final List<?> values = (List<?>) value;
             final List<Object> list = new ArrayList<>(values.size());
             final FieldList subFields = field.getSubFields();
 
             for (final Object element : values) {
                 if (element instanceof final FieldValue repeatedFieldValue) {
                     final Object repeatedValue = repeatedFieldValue.getValue();
-                    list.add(repeatedValue instanceof FieldValueList ? toMap(subFields, (FieldValueList) repeatedValue, mapSupplier) : repeatedValue);
+                    list.add(isRecordCell(repeatedFieldValue) ? toMap(subFields, (FieldValueList) repeatedValue, mapSupplier) : repeatedValue);
                 } else {
                     list.add(element);
                 }
@@ -901,14 +1154,30 @@ public class BigQueryExecutor {
      *
      * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      */
-    @SuppressWarnings({ "rawtypes", "null" })
     private static <T> T readRow(final FieldValueList row, final Class<T> rowClass) throws RuntimeException {
+        return readRow(null, row, rowClass);
+    }
+
+    /**
+     * Converts a row (or nested STRUCT value) to {@code rowClass} using {@code schema}, or the schema attached to the row when
+     * {@code schema} is {@code null}.
+     *
+     * @throws IllegalArgumentException if {@code schema} is null and the row has no schema attached, or the schema and row widths differ
+     * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
+     */
+    @SuppressWarnings({ "rawtypes", "null" })
+    private static <T> T readRow(final FieldList schema, final FieldValueList row, final Class<T> rowClass) throws IllegalArgumentException, RuntimeException {
         if (row == null) {
             return rowClass == null ? null : N.defaultValueOf(rowClass);
         }
 
         final Type<?> rowType = rowClass == null ? null : N.typeOf(rowClass);
-        final FieldList fields = getSchema(row);
+        final FieldList fields = schema == null ? getSchema(row) : schema;
+
+        if (schema != null) {
+            checkFieldCount(fields, row);
+        }
+
         final int fieldCount = fields.size();
         Object res = null;
         Object value = null;
@@ -926,11 +1195,12 @@ public class BigQueryExecutor {
             final Collection<Object> c = N.newCollection((Class<Collection>) rowClass);
 
             for (int i = 0; i < fieldCount; i++) {
-                value = row.get(i).getValue();
+                final FieldValue cell = row.get(i);
+                value = cell.getValue();
 
-                if (value instanceof FieldValueList) {
-                    c.add(readRow((FieldValueList) value, List.class));
-                } else if (value instanceof List) {
+                if (isRecordCell(cell)) {
+                    c.add(readRow(subFieldsOf(fields.get(i)), (FieldValueList) value, List.class));
+                } else if (isRepeatedCell(cell)) {
                     c.add(unwrapRepeatedValue(fields.get(i), (List<?>) value));
                 } else {
                     c.add(value);
@@ -939,18 +1209,25 @@ public class BigQueryExecutor {
 
             res = c;
         } else if (rowType.isMap()) {
-            res = toMap(row, IntFunctions.ofMap((Class<Map>) rowClass));
+            res = toMap(fields, row, IntFunctions.ofMap((Class<Map>) rowClass));
         } else if (rowType.isBean()) {
-            res = toEntity(row, rowClass);
+            res = toEntity(fields, row, rowClass);
         } else if (fieldCount == 1) {
-            value = decodeTypedValue(fields.get(0), row.get(0), rowClass);
+            final FieldValue cell = row.get(0);
 
-            if (value == null || rowClass.isAssignableFrom(value.getClass())) {
-                res = value;
+            if (isRepeatedCell(cell)) {
+                res = readRepeatedCell(fields.get(0), (List<?>) cell.getValue(), rowClass);
+            } else if (isRecordCell(cell) && !rowClass.isInstance(cell.getValue())) {
+                res = readRecordCell(fields.get(0), (FieldValueList) cell.getValue(), rowClass);
             } else {
-                res = N.convert(value, rowClass);
-            }
+                value = decodeTypedValue(fields.get(0), cell, rowClass);
 
+                if (value == null || rowClass.isAssignableFrom(value.getClass())) {
+                    res = value;
+                } else {
+                    res = N.convert(value, rowClass);
+                }
+            }
         } else {
             throw new IllegalArgumentException("Field count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)
                     + ", but the row has " + fieldCount + " columns");
@@ -970,21 +1247,56 @@ public class BigQueryExecutor {
     private static Object toArrayElement(final Field field, final FieldValue fieldValue, final Class<?> componentType) throws RuntimeException {
         final Object value = fieldValue.getValue();
 
-        if (value instanceof FieldValueList) {
+        if (isRecordCell(fieldValue)) {
             final Class<?> nestedRowClass = componentType.isAssignableFrom(Object[].class) ? Object[].class : componentType;
-            return readRow((FieldValueList) value, nestedRowClass);
-        } else if (value instanceof List) {
+            return readRow(subFieldsOf(field), (FieldValueList) value, nestedRowClass);
+        } else if (isRepeatedCell(fieldValue)) {
             // A REPEATED BYTES/TIMESTAMP cell holds base64 / epoch-seconds text per element: decode the elements by schema
             // (as for bean properties) so an array component such as Instant[] or byte[][] doesn't get the raw text.
             // Other component types (including Object) receive the unwrapped List, as before.
-            final Object values = convertRepeatedValue(field, (List<?>) value, Type.of(componentType));
-            return componentType.isInstance(values) ? values : N.convert(values, componentType);
+            return readRepeatedCell(field, (List<?>) value, componentType);
         } else if (value == null || componentType == Object.class) {
             return value;
         }
 
         final Object decoded = decodeTypedValue(field, fieldValue, componentType);
         return componentType.isInstance(decoded) ? decoded : N.convert(decoded, componentType);
+    }
+
+    // A REPEATED cell read into one target class (an array-row element, a single-value query, a single-column row or a
+    // one-field STRUCT read as a scalar): the elements are unwrapped and decoded as for a bean property of that type, then
+    // converted when the result is not already an instance (e.g. the unwrapped List for a Set or String[] target). A
+    // FieldValueList target receives the client's raw REPEATED payload.
+    /**
+     * Converts a REPEATED cell to {@code targetClass}.
+     *
+     * @throws RuntimeException if an element cannot be decoded, or the elements cannot be converted to {@code targetClass}
+     */
+    private static Object readRepeatedCell(final Field field, final List<?> values, final Class<?> targetClass) throws RuntimeException {
+        // An explicitly requested FieldValueList gets the raw REPEATED payload (the client decodes it as one), as a
+        // FieldValueList-typed bean property does; unwrapping it would try to rebuild a FieldValueList, which has no
+        // default constructor.
+        if (FieldValueList.class.isAssignableFrom(targetClass) && targetClass.isInstance(values)) {
+            return values;
+        }
+
+        final Object converted = convertRepeatedValue(field, values, Type.of(targetClass));
+
+        return targetClass.isInstance(converted) ? converted : N.convert(converted, targetClass);
+    }
+
+    // A STRUCT cell read into a target class it is not already an instance of. Does what N.convert's registered readRow
+    // converter would (including a primitive target's default value for a NULL result), but with the sub-schema of the
+    // enclosing field instead of the one attached to the record, which a STRUCT inside a REPEATED value doesn't have.
+    /**
+     * Converts a STRUCT cell to {@code targetClass}.
+     *
+     * @throws RuntimeException if the record cannot be read or converted to {@code targetClass}
+     */
+    private static Object readRecordCell(final Field field, final FieldValueList struct, final Class<?> targetClass) throws RuntimeException {
+        final Object converted = readRow(subFieldsOf(field), struct, targetClass);
+
+        return converted == null && targetClass.isPrimitive() ? N.defaultValueOf(targetClass) : converted;
     }
 
     private static <T> Function<? super FieldValueList, ? extends T> createRowMapper(final Class<T> rowClass, final FieldList fields) {
@@ -1047,11 +1359,12 @@ public class BigQueryExecutor {
                     Object value = null;
 
                     for (int i = 0; i < fieldCount; i++) {
-                        value = row.get(i).getValue();
+                        final FieldValue cell = row.get(i);
+                        value = cell.getValue();
 
-                        if (value instanceof FieldValueList) {
-                            c.add(readRow((FieldValueList) value, List.class));
-                        } else if (value instanceof List) {
+                        if (isRecordCell(cell)) {
+                            c.add(readRow(subFieldsOf(rowFields.get(i)), (FieldValueList) value, List.class));
+                        } else if (isRepeatedCell(cell)) {
                             c.add(unwrapRepeatedValue(rowFields.get(i), (List<?>) value));
                         } else {
                             c.add(value);
@@ -1129,9 +1442,18 @@ public class BigQueryExecutor {
                         }
                     }
 
+                    final Field field = fields == null ? null : fields.get(0);
+                    final FieldValue cell = row.get(0);
+
+                    if (isRepeatedCell(cell)) {
+                        return (T) readRepeatedCell(field, (List<?>) cell.getValue(), rowClass);
+                    } else if (isRecordCell(cell) && !rowClass.isInstance(cell.getValue())) {
+                        return (T) readRecordCell(field, (FieldValueList) cell.getValue(), rowClass);
+                    }
+
                     // Decode before the cached-assignability fast path: a decoded BYTES/TIMESTAMP value's class
                     // (not the raw cell String's) is what isAssignable was computed from.
-                    final Object value = decodeTypedValue(fields == null ? null : fields.get(0), row.get(0), rowClass);
+                    final Object value = decodeTypedValue(field, cell, rowClass);
 
                     if (isAssignable) {
                         return (T) value;
@@ -1254,6 +1576,8 @@ public class BigQueryExecutor {
      *       {@code STRUCT} values are converted to {@code Object[]} and primitive values are left
      *       as-is.</li>
      * </ul>
+     * In the unconverted cases a {@code REPEATED} value becomes a {@code List} of its element values (a {@code STRUCT}
+     * element as a {@code Map}).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1341,15 +1665,21 @@ public class BigQueryExecutor {
 
         for (final FieldValueList row : rows) {
             for (int i = 0; i < fieldCount; i++) {
-                // Bean-property columns decode BYTES/TIMESTAMP cells to the property type; other columns stay raw.
-                value = columnPropInfos[i] == null ? row.get(i).getValue() : decodeTypedValue(fields.get(i), row.get(i), columnClasses[i]);
+                final FieldValue cell = row.get(i);
+                // Bean-property columns share native decoding and configured text formats with toEntity; other columns stay raw.
+                value = columnPropInfos[i] == null ? cell.getValue() : decodePropertyValue(fields.get(i), cell, columnPropInfos[i]);
+                // A FieldValueList-typed property keeps the raw STRUCT or (client-decoded) REPEATED value, as in toEntity.
+                final boolean keepsRawValue = value instanceof FieldValueList && columnClasses[i] != null
+                        && FieldValueList.class.isAssignableFrom(columnClasses[i]);
 
                 // RECORD value. Note a FieldValueList IS a List, so a plain assignability check against a
                 // List-typed property would store the raw FieldValue wrappers; convert through readRow
                 // unless the property explicitly wants the raw FieldValueList (same rule as toEntity).
-                if (value instanceof FieldValueList && (columnClasses[i] == null || !FieldValueList.class.isAssignableFrom(columnClasses[i]))) {
-                    columnList.get(i).add(readRow((FieldValueList) value, columnClasses[i]));
-                } else if (value instanceof List && !(value instanceof FieldValueList)) {
+                if (!keepsRawValue && isRecordCell(cell)) {
+                    columnList.get(i)
+                            .add(columnPropInfos[i] == null ? readRow(subFieldsOf(fields.get(i)), (FieldValueList) value, columnClasses[i])
+                                    : readStructProperty(fields.get(i), (FieldValueList) value, columnPropInfos[i]));
+                } else if (!keepsRawValue && isRepeatedCell(cell)) {
                     columnList.get(i)
                             .add(columnPropInfos[i] == null ? unwrapRepeatedValue(fields.get(i), (List<?>) value)
                                     : convertRepeatedValue(fields.get(i), (List<?>) value, columnPropInfos[i].jsonXmlType));
@@ -1535,7 +1865,13 @@ public class BigQueryExecutor {
     public TableResult update(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
-        return update(entity, getKeyNameSet(entity.getClass()));
+        final Set<String> keyNames = getKeyNameSet(entity.getClass());
+
+        if (keyNames.isEmpty()) {
+            throw new IllegalArgumentException("No key names defined for entity class: " + entity.getClass().getSimpleName());
+        }
+
+        return update(entity, keyNames);
     }
 
     /**
@@ -2105,7 +2441,8 @@ public class BigQueryExecutor {
      *
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
      * query produces no rows. If a row exists but the column is {@code NULL} in BigQuery, the returned
-     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}). {@link Nullable} preserves
+     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}); a primitive {@code valueClass}
+     * (e.g. {@code long.class}) receives its default value (e.g. {@code 0L}) instead. {@link Nullable} preserves
      * the distinction between "no row matched" and "row matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2159,7 +2496,8 @@ public class BigQueryExecutor {
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
      * query produces no rows (including DML statements where BigQuery surfaces an affected-row count
      * but {@code getValues()} is empty). If a row exists but the column is {@code NULL} in BigQuery,
-     * the returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}).
+     * the returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}); a primitive
+     * {@code valueClass} (e.g. {@code long.class}) receives its default value (e.g. {@code 0L}) instead.
      * {@link Nullable} preserves the distinction between "no row matched" and "row matched but value
      * is null".</p>
      *
@@ -2228,8 +2566,9 @@ public class BigQueryExecutor {
      * query produces no rows. When a row is returned, the column value is wrapped in the {@code Optional}
      * via {@link Optional#of(Object)}, which does not accept a null payload — so if the column is
      * {@code NULL} in BigQuery (or the conversion to {@code valueClass} yields {@code null}), this
-     * method throws {@link NullPointerException} rather than returning {@code Optional.empty()}. Use
-     * {@link #queryForSingleValue(Class, Class, String, Condition)} (which returns {@link Nullable})
+     * method throws {@link NullPointerException} rather than returning {@code Optional.empty()}. (A primitive
+     * {@code valueClass} such as {@code long.class} converts {@code NULL} to its default value, e.g. {@code 0L},
+     * which is returned.) Use {@link #queryForSingleValue(Class, Class, String, Condition)} (which returns {@link Nullable})
      * when the column may legitimately be {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2286,8 +2625,9 @@ public class BigQueryExecutor {
      * query produces no rows (including DML statements where BigQuery surfaces an affected-row count
      * but {@code getValues()} is empty). When a row is returned, the column value is wrapped via
      * {@link Optional#of(Object)}, which does not accept a null payload — so a {@code NULL} column value
-     * (or a conversion yielding {@code null}) results in a {@link NullPointerException}. Use
-     * {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable}) when the
+     * (or a conversion yielding {@code null}) results in a {@link NullPointerException}. (A primitive
+     * {@code valueClass} such as {@code long.class} converts {@code NULL} to its default value, e.g. {@code 0L},
+     * which is returned.) Use {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable}) when the
      * column may legitimately be {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2344,14 +2684,20 @@ public class BigQueryExecutor {
         return Optional.of(readSingleValue(firstField(tableResult), row.get(0), valueClass));
     }
 
-    // Converts the first cell of a single-value query to valueClass. A STRUCT cell is a FieldValueList, which
-    // IS a List: since abacus-common 8.1, N.convert returns a source that is already an instance of the target
-    // unchanged instead of calling the registered readRow converter, so a List/Collection target would receive
-    // the raw FieldValue wrappers. Collection targets are therefore routed through readRow directly.
+    // Converts the first cell of a single-value query to valueClass. A REPEATED cell is unwrapped and converted like an
+    // array-row element (a FieldValueList valueClass keeps the raw payload). A STRUCT cell is a FieldValueList, which IS a List: since abacus-common 8.1, N.convert returns a
+    // source that is already an instance of the target unchanged instead of calling the registered readRow converter, so a
+    // List/Collection target would receive the raw FieldValue wrappers. A STRUCT is therefore read directly (with the
+    // column's sub-schema) for a Collection target and for any target it is not an instance of; Object keeps the record.
+    @SuppressWarnings("unchecked")
     private static <V> V readSingleValue(final Field field, final FieldValue fieldValue, final Class<V> valueClass) {
-        if (fieldValue.getValue() instanceof final FieldValueList struct && valueClass != null && Collection.class.isAssignableFrom(valueClass)
-                && !FieldValueList.class.isAssignableFrom(valueClass)) {
-            return readRow(struct, valueClass);
+        if (valueClass != null) {
+            if (isRepeatedCell(fieldValue)) {
+                return (V) readRepeatedCell(field, (List<?>) fieldValue.getValue(), valueClass);
+            } else if (isRecordCell(fieldValue) && (!valueClass.isInstance(fieldValue.getValue())
+                    || (Collection.class.isAssignableFrom(valueClass) && !FieldValueList.class.isAssignableFrom(valueClass)))) {
+                return (V) readRecordCell(field, (FieldValueList) fieldValue.getValue(), valueClass);
+            }
         }
 
         return N.convert(decodeTypedValue(field, fieldValue, valueClass), valueClass);

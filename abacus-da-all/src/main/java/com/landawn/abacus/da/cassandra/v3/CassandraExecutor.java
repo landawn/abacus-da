@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -744,7 +745,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         || columnClasses[i].isAssignableFrom(propValue.getClass())) {
                     columnList.get(i).add(propValue);
                 } else {
-                    columnList.get(i).add(convertValue(propValue, columnClasses[i]));
+                    columnList.get(i).add(convertValue(timeOfDayValue(propValue, columnClasses[i], columnDefinitions, i), columnClasses[i]));
                 }
             }
         }
@@ -918,9 +919,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             parameterType = propInfo.clazz;
 
             if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof Row)) {
-                // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
-                propInfo.setPropValue(entity,
-                        parameterType == byte[].class && propValue instanceof ByteBuffer ? convertValue(propValue, byte[].class) : propValue);
+                // BLOB -> byte[] and TIME -> LocalTime/java.sql.Time are converted here: PropInfo.setPropValue's own conversion turns
+                // a ByteBuffer into null and reads a time's nanosecond count as epoch milliseconds.
+                propInfo.setPropValue(entity, parameterType == byte[].class && propValue instanceof ByteBuffer ? convertValue(propValue, byte[].class)
+                        : timeOfDayValue(propValue, parameterType, columnDefinitions, i));
             } else {
                 propInfo.setPropValue(entity, readRow((Row) propValue, parameterType));
             }
@@ -1046,8 +1048,58 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * (e.g. {@code String[]}) otherwise rejects a driver value of another type with {@link ArrayStoreException}.
      * @throws RuntimeException if {@code value} cannot be converted to {@code componentType}
      */
-    private static Object toArrayElement(final Object value, final Class<?> componentType) throws RuntimeException {
-        return value == null || componentType.isInstance(value) ? value : convertValue(value, componentType);
+    private static Object toArrayElement(final Object value, final Class<?> componentType, final ColumnDefinitions columnDefinitions, final int index)
+            throws RuntimeException {
+        return value == null || componentType.isInstance(value) ? value
+                : convertValue(timeOfDayValue(value, componentType, columnDefinitions, index), componentType);
+    }
+
+    // Driver 3 decodes a CQL time as a Long of nanoseconds since midnight (its default codec), but N.convert and
+    // PropInfo.setPropValue read a Long as epoch milliseconds, so a java.time.LocalTime or java.sql.Time target got a wrong time
+    // of day. These helpers build the time of day from the nanosecond count for a time column/field and return any other value
+    // unchanged. The target and value are checked first, so the column type is only resolved for a Long read into a time type.
+    private static Object timeOfDayValue(final Object value, final Class<?> targetClass, final ColumnDefinitions columnDefinitions, final int index) {
+        return isTimeOfDayTarget(targetClass) && value instanceof Long ? timeOfDayValue(value, targetClass, columnDefinitions.getType(index)) : value;
+    }
+
+    private static Object timeOfDayValue(final Object value, final Class<?> targetClass, final UserType userType, final int index) {
+        if (isTimeOfDayTarget(targetClass) && value instanceof Long) {
+            int i = 0;
+
+            // Field by position (the bean decode loop reads fields by position); a linear scan, but only for a Long read into
+            // a time type.
+            for (final UserType.Field field : userType) {
+                if (i++ == index) {
+                    return timeOfDayValue(value, targetClass, field.getType());
+                }
+            }
+        }
+
+        return value;
+    }
+
+    private static boolean isTimeOfDayTarget(final Class<?> targetClass) {
+        return targetClass == LocalTime.class || targetClass == java.sql.Time.class;
+    }
+
+    private static Object timeOfDayValue(final Object value, final Class<?> targetClass, final DataType cqlType) {
+        if (cqlType == null || cqlType.getName() != DataType.Name.TIME || !(value instanceof final Long nanosOfDay)) {
+            return value;
+        }
+
+        final LocalTime localTime = LocalTime.ofNanoOfDay(nanosOfDay);
+
+        if (targetClass == java.sql.Time.class) {
+            // N.convert cannot turn a LocalTime with a fractional second ("10:15:30.123...") or on a whole minute ("10:15") into
+            // a java.sql.Time (it parses the text): same local time of day on 1970-01-01 as Time.valueOf gives, plus the
+            // milliseconds (as the 4.x executor does).
+            final java.sql.Time time = java.sql.Time.valueOf(localTime);
+            time.setTime(time.getTime() + localTime.getNano() / 1_000_000);
+
+            return time;
+        }
+
+        return localTime;
     }
 
     /**
@@ -1095,7 +1147,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 if (value instanceof Row) {
                     a[i] = readRow((Row) value, Object[].class);
                 } else {
-                    a[i] = toArrayElement(value, a.getClass().getComponentType());
+                    a[i] = toArrayElement(value, a.getClass().getComponentType(), columnDefinitions, i);
                 }
             }
 
@@ -1124,7 +1176,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             if (value == null || rowClass.isAssignableFrom(value.getClass())) {
                 res = value;
             } else {
-                res = convertValue(value, rowClass);
+                res = convertValue(timeOfDayValue(value, rowClass, columnDefinitions, 0), rowClass);
             }
 
         } else {
@@ -1167,7 +1219,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     if (value instanceof Row) {
                         a[i] = readRow((Row) value, Object[].class);
                     } else {
-                        a[i] = toArrayElement(value, a.getClass().getComponentType());
+                        a[i] = toArrayElement(value, a.getClass().getComponentType(), columnDefinitions, i);
                     }
                 }
 
@@ -1221,10 +1273,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         if (isAssignable) {
                             return (T) value;
                         } else {
-                            return convertValue(value, rowClass);
+                            return convertValue(timeOfDayValue(value, rowClass, columnDefinitions, 0), rowClass);
                         }
                     } else {
-                        return convertValue(value, rowClass);
+                        return convertValue(timeOfDayValue(value, rowClass, columnDefinitions, 0), rowClass);
                     }
                 }
             };
@@ -1324,7 +1376,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(convertValue(row.getObject(0), valueClass));
+        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(readFirstColumn(row, valueClass));
     }
 
     /**
@@ -1379,7 +1431,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Optional<V>) Optional.empty() : Optional.of(convertValue(row.getObject(0), valueClass));
+        return row == null ? (Optional<V>) Optional.empty() : Optional.of(readFirstColumn(row, valueClass));
     }
 
     /**
@@ -2055,7 +2107,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *   <li>A single {@link Map} (named parameters: keys match {@code :name} placeholders or
      *       the column names of the prepared statement variables)</li>
      *   <li>A single bean instance (named parameters resolved via bean property getters, matched by property
-     *       name or by the column name declared with {@code @Column})</li>
+     *       name or by the column name declared with {@code @Column}). A single value of a type that abacus handles
+     *       as a value although it has getters and setters (e.g. a {@code Calendar} or {@code ByteBuffer}) is one
+     *       positional value, not a bean.</li>
      * </ul>
      * <p>A codec registered for a scalar or bean value takes precedence over expanding bean properties or
      * coercing it to the column's default Java type. Positional collections and named maps retain their
@@ -2065,7 +2119,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * bind markers.</p>
      *
      * <p>Values are coerced to the column's declared Java type using the executor's
-     * {@link CodecRegistry} and {@code N.convert(...)} where applicable. If
+     * {@link CodecRegistry} and {@code N.convert(...)} where applicable. A date/time value bound to a {@code time} column
+     * (a {@link LocalTime}, {@code OffsetTime}, {@code LocalDateTime}, {@code OffsetDateTime}, {@code ZonedDateTime},
+     * {@code Instant}, {@link Date} such as {@code java.sql.Time}, or {@code Calendar}) is bound as its time of day in
+     * nanoseconds: the value's own local time, or for an {@code Instant}/{@code Date} the time in the JVM default time zone
+     * (a {@code Calendar}: in its own time zone), unless a registered codec accepts the value. If
      * {@code parameters} is empty the call is delegated to {@link #prepareStatement(String)}.
      * For queries no longer than {@link #POOLABLE_LENGTH} characters the underlying
      * {@link PreparedStatement} is cached by resolved CQL text and reused.</p>
@@ -2133,7 +2191,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         Object[] values = parameters;
 
-        if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
+        if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || isBeanParameter(parameters[0]))) {
             values = new Object[parameterCount];
             final Object parameter_0 = parameters[0];
             final boolean isCassandraNamedParameters = N.isEmpty(namedParameters);
@@ -2209,11 +2267,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         for (int i = 0; i < parameterCount; i++) {
             colType = columnDefinitions.getType(i);
             javaClazz = namedDataType.get(colType.getName().name());
+            // A time column binds a Long of nanoseconds since midnight, but N.convert turns a date/time value (e.g. a java.sql.Time
+            // or a LocalDateTime) into epoch milliseconds, which silently stored a wrong time of day, and it cannot convert a
+            // LocalTime/OffsetTime at all. Such a value is bound as its time of day instead (unless a registered codec accepts it).
+            final LocalTime timeOfDay = values[i] != null && colType.getName() == DataType.Name.TIME ? toTimeOfDay(values[i]) : null;
 
             if (values[i] == null) {
                 // Keep explicit nulls as null. The driver will bind or reject them according to the column type.
             } else if (javaClazz == null || javaClazz.isAssignableFrom(values[i].getClass()) || acceptsParameter(colType, values[i])) {
                 // continue;
+            } else if (timeOfDay != null) {
+                values[i] = timeOfDay.toNanoOfDay();
             } else {
                 try {
                     values[i] = convertValue(values[i], javaClazz);
@@ -2228,6 +2292,45 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return bind(preStmt, values);
+    }
+
+    /**
+     * Returns the local time of day of a date/time bind value for a {@code time} column, or {@code null} if {@code value} is
+     * not a date/time value.
+     */
+    private static LocalTime toTimeOfDay(final Object value) {
+        // N.convert(value, LocalTime.class) string-parses the java.time types other than LocalTime and fails, so each value's own
+        // local time is used. An Instant is read in the JVM default zone, like N.convert reads a java.util.Date (e.g. a
+        // java.sql.Time/Timestamp); a Calendar is read in its own time zone (the 4.x executor binds a Date/Calendar the same way).
+        if (value instanceof final LocalTime localTime) {
+            return localTime;
+        } else if (value instanceof final java.time.LocalDateTime localDateTime) {
+            return localDateTime.toLocalTime();
+        } else if (value instanceof final java.time.OffsetDateTime offsetDateTime) {
+            return offsetDateTime.toLocalTime();
+        } else if (value instanceof final java.time.ZonedDateTime zonedDateTime) {
+            return zonedDateTime.toLocalTime();
+        } else if (value instanceof final java.time.OffsetTime offsetTime) {
+            return offsetTime.toLocalTime();
+        } else if (value instanceof final java.time.Instant instant) {
+            return LocalTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+        } else if (value instanceof Date || value instanceof java.util.Calendar) {
+            return N.convert(value, LocalTime.class);
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns whether a single parameter is a bean whose properties supply named values, rather than one positional value.
+     */
+    private static boolean isBeanParameter(final Object parameter) {
+        final Class<?> cls = parameter.getClass();
+
+        // Beans.isBeanClass is also true for value types that merely have getters and setters, e.g. GregorianCalendar
+        // (Calendar.getInstance()) or ByteBuffer; abacus's Type for those is not a bean type, and they must be bound
+        // (converted) as a value, like they are among two or more positional parameters.
+        return Beans.isBeanClass(cls) && N.typeOf(cls).isBean();
     }
 
     /**
@@ -2523,7 +2626,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         N.checkArgNotNull(row, cs.row);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return convertValue(row.getObject(0), targetClass);
+        final Object value = row.getObject(0);
+
+        return convertValue(timeOfDayValue(value, targetClass, row.getColumnDefinitions(), 0), targetClass);
     }
 
     /**
@@ -2747,10 +2852,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             if (propInfo != null && !isReadOnlyProperty(propInfo)) {
                                 final Object fieldValue = udtValue.getObject(idx);
 
-                                // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
+                                // BLOB -> byte[] and TIME -> LocalTime/java.sql.Time are converted here: PropInfo.setPropValue's own
+                                // conversion turns a ByteBuffer into null and reads a time's nanosecond count as epoch milliseconds.
                                 propInfo.setPropValue(targetBean,
                                         byte[].class.equals(propInfo.clazz) && fieldValue instanceof ByteBuffer ? convertValue(fieldValue, byte[].class)
-                                                : fieldValue);
+                                                : timeOfDayValue(fieldValue, propInfo.clazz, userType, idx));
                             }
 
                             idx++;
@@ -2760,7 +2866,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                         return (T) targetBean;
                     } else {
-                        throw new IllegalArgumentException("Invalid Java class type: " + javaClazz + ". Expected: Collection, Map, or Bean class");
+                        throw new IllegalArgumentException(
+                                "Invalid Java class type: " + ClassUtil.getCanonicalClassName(javaClazz) + ". Expected: Collection, Map, or Bean class");
                     }
                 }
 
@@ -2818,7 +2925,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             setUdtField(udtValue, idx++, propInfo == null ? null : propInfo.getPropValue(bean));
                         }
                     } else {
-                        throw new IllegalArgumentException("Invalid Java class type: " + javaClazz + ". Expected: Collection, Map, or Bean class");
+                        throw new IllegalArgumentException(
+                                "Invalid Java class type: " + ClassUtil.getCanonicalClassName(javaClazz) + ". Expected: Collection, Map, or Bean class");
                     }
 
                     return udtValue;

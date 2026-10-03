@@ -832,9 +832,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             parameterType = propInfo.clazz;
 
             if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof Row)) {
-                // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
-                propInfo.setPropValue(entity,
-                        parameterType == byte[].class && propValue instanceof ByteBuffer ? convertValue(propValue, byte[].class) : propValue);
+                propInfo.setPropValue(entity, toPropValue(parameterType, propValue));
             } else {
                 propInfo.setPropValue(entity, readRow(parameterType, (Row) propValue));
             }
@@ -950,7 +948,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * {@link ByteBuffer} and {@code byte[]} is handled here because {@code N.convert} does not support it: it
      * converts a {@code ByteBuffer} to {@code null} for {@code byte[]}, and a {@code byte[]} to a
      * {@code ByteBuffer} whose position already equals its limit (so the driver would encode an empty blob).
-     * Every other conversion is delegated to {@code N.convert}.
+     * A {@link LocalTime} is converted to {@code java.sql.Time} here as well (keeping milliseconds), because
+     * {@code N.convert} rejects one with a fractional second or on a whole minute. Every other conversion is delegated to
+     * {@code N.convert}.
      * @throws RuntimeException if {@code value} cannot be converted to {@code targetClass}
      */
     @SuppressWarnings("unchecked")
@@ -963,9 +963,29 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             return (T) bytes;
         } else if (targetClass == ByteBuffer.class && value instanceof final byte[] bytes) {
             return (T) ByteBuffer.wrap(bytes);
+        } else if (targetClass == java.sql.Time.class && value instanceof final LocalTime localTime) {
+            // N.convert parses the LocalTime's text and rejects both a fractional second ("01:02:03.456", usual for a CQL time,
+            // which has nanosecond precision) and a whole minute ("01:02", e.g. midnight "00:00"). Same local time of day on
+            // 1970-01-01 as the standard conversion gives for whole seconds, plus the milliseconds.
+            final java.sql.Time time = java.sql.Time.valueOf(localTime);
+            time.setTime(time.getTime() + localTime.getNano() / 1_000_000);
+
+            return (T) time;
         }
 
         return N.convert(value, targetClass);
+    }
+
+    /**
+     * Converts a driver-decoded value for {@link PropInfo#setPropValue(Object, Object)} where that method's own conversion
+     * fails: it turns a BLOB {@link ByteBuffer} into {@code null} for a {@code byte[]} property, and rejects a {@link LocalTime}
+     * with a fractional second or on a whole minute for a {@code java.sql.Time} property. Any other value is returned unchanged.
+     * @throws RuntimeException if {@code value} cannot be converted to {@code propClass}
+     */
+    private static Object toPropValue(final Class<?> propClass, final Object value) throws RuntimeException {
+        return (propClass == byte[].class && value instanceof ByteBuffer) || (propClass == java.sql.Time.class && value instanceof LocalTime)
+                ? convertValue(value, propClass)
+                : value;
     }
 
     /**
@@ -1923,8 +1943,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * usual parameter-container behavior; in particular, a Map keyed by the name of a query's single named
      * marker is always read as the named-parameter container, even when that marker's column is itself a map
      * type. A bean's properties are matched to parameter names by property name (naming-policy variants
-     * included) or by the column name declared with {@code @Column}. A single empty map, collection, or array
-     * supplies no values, so it is accepted for a query without bind markers.</p>
+     * included) or by the column name declared with {@code @Column}. A single value of a type that abacus handles as a
+     * value although it has getters and setters (e.g. a {@code Calendar} or {@code ByteBuffer}) is one positional value,
+     * not a bean. A single empty map, collection, or array supplies no values, so it is accepted for a query without
+     * bind markers.</p>
      *
      * @param query the CQL text or mapper identifier
      * @param parameters positional values, a single positional array/collection, or a named map/bean
@@ -1989,7 +2011,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         Object[] values = parameters;
 
-        if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
+        if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || isBeanParameter(parameters[0]))) {
             values = new Object[parameterCount];
             final Object parameter_0 = parameters[0];
             final boolean isCassandraNamedParameters = N.isEmpty(namedParameters);
@@ -2084,6 +2106,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return bind(preStmt, values);
+    }
+
+    /**
+     * Returns whether a single parameter is a bean whose properties supply named values, rather than one positional value.
+     */
+    private static boolean isBeanParameter(final Object parameter) {
+        final Class<?> cls = parameter.getClass();
+
+        // Beans.isBeanClass is also true for value types that merely have getters and setters, e.g. GregorianCalendar
+        // (Calendar.getInstance()) or ByteBuffer; abacus's Type for those is not a bean type, and they must be bound
+        // (converted) as a value, like they are among two or more positional parameters.
+        return Beans.isBeanClass(cls) && N.typeOf(cls).isBean();
     }
 
     /**
@@ -2485,12 +2519,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                             if (propInfo != null && !isReadOnlyProperty(propInfo)) {
                                 // Read by position for the same reason as the Map branch above.
-                                final Object fieldValue = udtValue.getObject(i);
-
-                                // BLOB -> byte[] is converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null.
-                                propInfo.setPropValue(targetBean,
-                                        byte[].class.equals(propInfo.clazz) && fieldValue instanceof ByteBuffer ? convertValue(fieldValue, byte[].class)
-                                                : fieldValue);
+                                propInfo.setPropValue(targetBean, toPropValue(propInfo.clazz, udtValue.getObject(i)));
                             }
                         }
 
@@ -2498,7 +2527,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                         return (T) targetBean;
                     } else {
-                        throw new IllegalArgumentException("Invalid Java class type: " + javaClazz + ". Expected: Collection, Map, or Bean class");
+                        throw new IllegalArgumentException(
+                                "Invalid Java class type: " + ClassUtil.getCanonicalClassName(javaClazz) + ". Expected: Collection, Map, or Bean class");
                     }
                 }
 
@@ -2556,7 +2586,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             setUdtField(userType, udtValue, idx++, propInfo == null ? null : propInfo.getPropValue(bean));
                         }
                     } else {
-                        throw new IllegalArgumentException("Invalid Java class type: " + javaClazz + ". Expected: Collection, Map, or Bean class");
+                        throw new IllegalArgumentException(
+                                "Invalid Java class type: " + ClassUtil.getCanonicalClassName(javaClazz) + ". Expected: Collection, Map, or Bean class");
                     }
 
                     return udtValue;

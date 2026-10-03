@@ -702,10 +702,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkCanAppendUsingOption(optionName);
         N.checkArgument(Strings.isNotBlank(optionValue), "'" + optionName + "' can't be null or blank");
 
-        // init(true) (not init(false)): for update(entityClass) the one-shot init is what expands the
-        // implicit SET clause; consuming it with false here silently dropped the SET assignments (and
-        // their parameters) whenever USING was appended before where()/build().
-        init(true);
+        // An update(entityClass) without an explicit set(...) yet renders only "UPDATE t SET " here and keeps its
+        // implicit SET list pending: a later set(...) then replaces that list (as documented) instead of being appended
+        // to it, and otherwise init(true) expands it when where()/build() finalizes the statement (see init). Every
+        // other statement uses init(true), which also rejects an UPDATE that has no SET columns at all.
+        init(_op != OperationType.UPDATE || _setListStarted || N.isEmpty(_propOrColumnNames));
 
         final String cql = _sb.toString();
         final String option = optionName + _SPACE + optionValue;
@@ -845,7 +846,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     /**
      * Emits the leading statement keyword on first use, as the parent builder does, but rejects a column DELETE
-     * (started by {@code delete(...)}) whose {@code from(...)} has not been called yet.
+     * (started by {@code delete(...)}) whose {@code from(...)} has not been called yet. When finalizing
+     * ({@code setForUpdate == true}) an {@code update(entityClass)} statement whose USING clause was appended before any
+     * {@code set(...)} call, the pending implicit SET list is rendered here.
      *
      * @param setForUpdate see the parent builder
      * @throws IllegalStateException if this builder is closed, a DELETE statement has no table yet, or the parent
@@ -860,6 +863,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // otherwise silently drop the columns and emit "DELETE FROM null ...".
         if (_op == OperationType.DELETE && _sb.isEmpty() && Strings.isEmpty(_tableName)) {
             throw new IllegalStateException("from() must be called to specify the table before completing a DELETE statement");
+        }
+
+        // A USING clause appended to update(entityClass) before any set(...) renders "UPDATE t USING ... SET " and leaves
+        // the implicit SET list pending (see appendUsingOption); expand it now, as the parent does for an UPDATE whose
+        // prefix has not been rendered yet.
+        if (setForUpdate && _op == OperationType.UPDATE && !_sb.isEmpty() && !_setListStarted && N.notEmpty(_propOrColumnNames)) {
+            set(_propOrColumnNames);
         }
 
         super.init(setForUpdate);
@@ -1382,12 +1392,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
-     * @return {@code excludedPropNames} plus the id property names of {@code entityClass}, or {@code excludedPropNames}
-     *         itself when the class declares no id property
+     * @return {@code excludedPropNames} plus the key property names of {@code entityClass}, or {@code excludedPropNames}
+     *         itself when the class declares no key property
      * @throws IllegalArgumentException if {@code entityClass} is not an entity bean class
      */
     private static Set<String> withIdPropNames(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
-        final List<String> idPropNames = QueryUtil.idPropNames(entityClass);
+        final List<String> idPropNames = keyPropNames(entityClass);
 
         if (N.isEmpty(idPropNames)) {
             return excludedPropNames;
@@ -1988,7 +1998,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // the documented contract for delete(Class). Id props are removed as well because Cassandra
         // rejects DELETE on primary-key columns.
         final List<String> propNames = new ArrayList<>(val[2]);
-        propNames.removeAll(QueryUtil.idPropNames(entityClass));
+        propNames.removeAll(keyPropNames(entityClass));
 
         if (N.notEmpty(excludedPropNames)) {
             propNames.removeAll(excludedPropNames);
@@ -2005,9 +2015,20 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // Id props are removed from the implicit SET list because Cassandra rejects SET on primary-key columns
         // ("PRIMARY KEY part ... found in SET part"); they belong in the WHERE clause, like delete(Class).
         final List<String> propNames = new ArrayList<>(QueryUtil.updatePropNames(entityClass, excludedPropNames));
-        propNames.removeAll(QueryUtil.idPropNames(entityClass));
+        propNames.removeAll(keyPropNames(entityClass));
 
         return propNames;
+    }
+
+    /**
+     * @return the primary-key property names of {@code entityClass}: the keys registered with
+     *         {@link CassandraExecutorBase#registerKeys(Class, Collection)}, otherwise its {@code @Id} properties
+     * @throws IllegalArgumentException if {@code entityClass} is not an entity bean class
+     */
+    private static List<String> keyPropNames(final Class<?> entityClass) throws IllegalArgumentException {
+        // Same key resolution as the executor: QueryUtil.idPropNames alone misses keys declared via registerKeys(...),
+        // whose columns Cassandra rejects in SET or a column DELETE just like @Id ones.
+        return CassandraExecutorBase.getKeyNames(entityClass);
     }
 
     /**
@@ -2157,6 +2178,29 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
         private CqlBuilder createCqlBuilderInstance() {
             return new CqlBuilder(sqlDialect);
+        }
+
+        /**
+         * Runs the remaining set-up of a builder this factory has just created and returns that builder. If the set-up
+         * fails, the builder (which the caller never receives and so can never build) is built to release its pooled
+         * buffer and active-builder slot before the original failure is rethrown, as the parent {@code SqlBuilder} DSL
+         * does; otherwise every rejected factory call would permanently inflate the parent's active-builder count.
+         */
+        private static CqlBuilder setUpOrRelease(final CqlBuilder instance, final Runnable setUp) {
+            try {
+                setUp.run();
+
+                return instance;
+            } catch (final RuntimeException | Error e) {
+                try {
+                    instance.build();
+                } catch (final RuntimeException | Error cleanupFailure) {
+                    // Expected for an incomplete statement (e.g. an INSERT without a table); build() releases the
+                    // builder in its finally block regardless, so only the original failure is reported.
+                }
+
+                throw e;
+            }
         }
 
         /**
@@ -2334,12 +2378,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.ADD;
-            instance.setEntityClass(entity.getClass());
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.ADD;
+                instance.setEntityClass(entity.getClass());
 
-            parseInsertEntity(instance, entity, excludedPropNames);
-
-            return instance;
+                parseInsertEntity(instance, entity, excludedPropNames);
+            });
         }
 
         /**
@@ -2387,11 +2431,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.ADD;
-            instance.setEntityClass(entityClass);
-            instance._propOrColumnNames = QueryUtil.insertPropNames(entityClass, excludedPropNames);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.ADD;
+                instance.setEntityClass(entityClass);
+                instance._propOrColumnNames = QueryUtil.insertPropNames(entityClass, excludedPropNames);
+            });
         }
 
         /**
@@ -2434,7 +2478,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
          */
         public CqlBuilder insertInto(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
-            return insert(entityClass, excludedPropNames).into(entityClass);
+            final CqlBuilder instance = insert(entityClass, excludedPropNames);
+
+            return setUpOrRelease(instance, () -> instance.into(entityClass));
         }
 
         /**
@@ -2474,16 +2520,16 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.ADD;
-            final Optional<?> first = N.firstNonNull(propsList);
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.ADD;
+                final Optional<?> first = N.firstNonNull(propsList);
 
-            if (first.isPresent() && Beans.isBeanClass(first.get().getClass())) {
-                instance.setEntityClass(first.get().getClass());
-            }
+                if (first.isPresent() && Beans.isBeanClass(first.get().getClass())) {
+                    instance.setEntityClass(first.get().getClass());
+                }
 
-            instance._propsList = toInsertPropsList(propsList);
-
-            return instance;
+                instance._propsList = toInsertPropsList(propsList);
+            });
         }
 
         /**
@@ -2548,11 +2594,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.UPDATE;
-            instance._tableName = tableName;
-            instance.setEntityClass(entityClass);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.UPDATE;
+                instance._tableName = tableName;
+                instance.setEntityClass(entityClass);
+            });
         }
 
         /**
@@ -2608,12 +2654,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.UPDATE;
-            instance.setEntityClass(entityClass);
-            instance._tableName = getTableName(entityClass, instance._namingPolicy);
-            instance._propOrColumnNames = getUpdatePropNamesByClass(entityClass, excludedPropNames);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.UPDATE;
+                instance.setEntityClass(entityClass);
+                instance._tableName = getTableName(entityClass, instance._namingPolicy);
+                instance._propOrColumnNames = getUpdatePropNamesByClass(entityClass, excludedPropNames);
+            });
         }
 
         /**
@@ -2759,11 +2805,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.DELETE;
-            instance.setEntityClass(entityClass);
-            instance._propOrColumnNames = getDeletePropNamesByClass(entityClass, excludedPropNames);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.DELETE;
+                instance.setEntityClass(entityClass);
+                instance._propOrColumnNames = getDeletePropNamesByClass(entityClass, excludedPropNames);
+            });
         }
 
         /**
@@ -2824,11 +2870,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.DELETE;
-            instance._tableName = tableName;
-            instance.setEntityClass(entityClass);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.DELETE;
+                instance._tableName = tableName;
+                instance.setEntityClass(entityClass);
+            });
         }
 
         /**
@@ -2855,11 +2901,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.DELETE;
-            instance.setEntityClass(entityClass);
-            instance._tableName = getTableName(entityClass, instance._namingPolicy);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.DELETE;
+                instance.setEntityClass(entityClass);
+                instance._tableName = getTableName(entityClass, instance._namingPolicy);
+            });
         }
 
         /**
@@ -3099,11 +3145,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance._op = OperationType.QUERY;
-            instance.setEntityClass(entityClass);
-            instance._propOrColumnNames = QueryUtil.selectPropNames(entityClass, includeSubEntityProperties, excludedPropNames);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance._op = OperationType.QUERY;
+                instance.setEntityClass(entityClass);
+                instance._propOrColumnNames = QueryUtil.selectPropNames(entityClass, includeSubEntityProperties, excludedPropNames);
+            });
         }
 
         /**
@@ -3302,7 +3348,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 throw new IllegalArgumentException("Cassandra CQL does not support the multi-table FROM clause required by nested entity properties");
             }
 
-            return select(entityClass, includeSubEntityProperties, excludedPropNames).from(entityClass);
+            final CqlBuilder instance = select(entityClass, includeSubEntityProperties, excludedPropNames);
+
+            return setUpOrRelease(instance, () -> instance.from(entityClass));
         }
 
         /**
@@ -3327,7 +3375,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             N.checkArgNotEmpty(tableName, SELECTION_PART_MSG);
             checkCqlTableReference(tableName, cs.tableName);
 
-            return select(COUNT_ALL_LIST).from(tableName);
+            final CqlBuilder instance = select(COUNT_ALL_LIST);
+
+            return setUpOrRelease(instance, () -> instance.from(tableName));
         }
 
         /**
@@ -3352,7 +3402,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         public CqlBuilder count(final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);
 
-            return select(COUNT_ALL_LIST).from(entityClass);
+            final CqlBuilder instance = select(COUNT_ALL_LIST);
+
+            return setUpOrRelease(instance, () -> instance.from(entityClass));
         }
 
         /**
@@ -3387,12 +3439,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
-            instance.setEntityClass(entityClass);
-            instance._op = OperationType.QUERY;
-            instance._isForConditionOnly = true;
-            instance.append(cond);
-
-            return instance;
+            return setUpOrRelease(instance, () -> {
+                instance.setEntityClass(entityClass);
+                instance._op = OperationType.QUERY;
+                instance._isForConditionOnly = true;
+                instance.append(cond);
+            });
         }
     }
 

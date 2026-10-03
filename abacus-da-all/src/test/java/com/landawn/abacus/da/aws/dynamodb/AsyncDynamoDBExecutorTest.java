@@ -740,6 +740,57 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
         verify(mockAsyncExecutor, times(0)).execute(any(Callable.class));
     }
 
+    // ---- 2026-10-02 sliceB ----
+
+    // Pins that the async scan overloads delegate to the sync overloads instead of building their own ScanRequest, so they
+    // inherit the sync fix: an empty attributesToGet list means "all attributes" (null on the wire), not an invalid empty list.
+    @Test
+    public void testScanWithEmptyAttributesToGet_inheritsSyncAllAttributesHandling() throws Exception {
+        final com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient client = org.mockito.Mockito
+                .mock(com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient.class);
+        when(client.scan(any(ScanRequest.class)))
+                .thenReturn(new com.amazonaws.services.dynamodbv2.model.ScanResult().withItems(List.of(Map.of("id", new AttributeValue("1")))));
+        final AsyncDynamoDBExecutor async = new DynamoDBExecutor(client).async();
+
+        assertEquals(1, async.scan("T", new ArrayList<String>()).get().count());
+        assertEquals(1, async.scan("T", new ArrayList<String>(), (Map<String, Condition>) null).get().count());
+        assertEquals(1, async.scan("T", new ArrayList<String>(), Map.class).get().count());
+        assertEquals(1, async.scan("T", new ArrayList<String>(), (Map<String, Condition>) null, Map.class).get().count());
+
+        final org.mockito.ArgumentCaptor<ScanRequest> captor = org.mockito.ArgumentCaptor.forClass(ScanRequest.class);
+        verify(client, times(4)).scan(captor.capture());
+
+        for (final ScanRequest request : captor.getAllValues()) {
+            assertEquals("T", request.getTableName());
+            org.junit.jupiter.api.Assertions.assertNull(request.getAttributesToGet());
+        }
+    }
+
+    // Pins that typed async reads go through the sync row conversion, so a getter-only property inherited from an
+    // @Entity superclass (written by toItem) is skipped on read instead of failing the item with UnsupportedOperationException.
+    @Test
+    public void testGetItemWithTargetClass_inheritsSyncReadOnlyPropertySkip() throws Exception {
+        final DynamoDBExecutor01Test.ReadOnlyPropSubEntity source = new DynamoDBExecutor01Test.ReadOnlyPropSubEntity();
+        source.setId("id-1");
+        source.setName("n");
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(source);
+        assertEquals("computed:id-1", item.get("computed").getS());
+
+        final com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient client = org.mockito.Mockito
+                .mock(com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient.class);
+        when(client.getItem(org.mockito.ArgumentMatchers.eq("TestTable"), any()))
+                .thenReturn(new com.amazonaws.services.dynamodbv2.model.GetItemResult().withItem(item));
+        final AsyncDynamoDBExecutor async = new DynamoDBExecutor(client).async();
+
+        final DynamoDBExecutor01Test.ReadOnlyPropSubEntity result = async
+                .getItem("TestTable", DynamoDBExecutor.asKey("id", "id-1"), DynamoDBExecutor01Test.ReadOnlyPropSubEntity.class)
+                .get();
+
+        assertEquals("id-1", result.getId());
+        assertEquals("n", result.getName());
+        assertEquals("computed:id-1", result.getComputed());
+    }
+
     private static class TestEntity {
         private String id;
         private String name;

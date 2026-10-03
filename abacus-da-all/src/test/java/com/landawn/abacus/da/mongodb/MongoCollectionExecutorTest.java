@@ -2367,4 +2367,562 @@ public class MongoCollectionExecutorTest extends TestBase {
             this.count = count;
         }
     }
+
+    // ---- 2026-10-02 sliceE ----
+
+    private void stubFindRows_sliceE(final List<Document> rows) {
+        // doAnswer form: re-stubbing via when(mock.into(any())) would invoke the previous answer with a null target.
+        org.mockito.Mockito.doAnswer(invocation -> {
+            final Collection<Object> target = invocation.getArgument(0);
+            target.addAll(rows);
+            return target;
+        }).when(mockFindIterable).into(any());
+    }
+
+    @Test
+    public void testQueryWithDottedSelectPropNameFillsNestedColumn_sliceE() {
+        // Regression: the server returns a dotted projection such as "address.city" nested ({address: {city: ...}}),
+        // but the Dataset column was read by the flat key/property "address.city", so the column was all null.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("name", "n2")));
+
+        final Dataset mapRows = executor.query(Arrays.asList("name", "address.city"), new Document(), java.util.Map.class);
+        Assertions.assertEquals(Arrays.asList("name", "address.city"), mapRows.columnNames());
+        Assertions.assertEquals(Arrays.asList("n1", "n2"), mapRows.getColumn("name"));
+        Assertions.assertEquals(Arrays.asList("Paris", null), mapRows.getColumn("address.city"));
+
+        final Dataset beanRows = executor.query(Arrays.asList("name", "address.city"), new Document(), null, 0, 10, DottedRow.class);
+        Assertions.assertEquals(Arrays.asList("name", "address.city"), beanRows.columnNames());
+        Assertions.assertEquals(Arrays.asList("n1", "n2"), beanRows.getColumn("name"));
+        Assertions.assertEquals(Arrays.asList("Paris", null), beanRows.getColumn("address.city"));
+
+        final Dataset documentRows = executor.query(Arrays.asList("address.city"), new Document(), 0, 10, Document.class);
+        Assertions.assertEquals(Arrays.asList("Paris", null), documentRows.getColumn("address.city"));
+    }
+
+    @Test
+    public void testQueryWithDottedSelectPropNameEmptyAndArrayResults_sliceE() {
+        stubFindRows_sliceE(java.util.Collections.emptyList());
+        Assertions.assertEquals(0, executor.query(Arrays.asList("name", "address.city"), new Document(), java.util.Map.class).size());
+
+        // Same dotted-path rule as list/findFirst/queryForSingleValue: a path through an array is not a Document path.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("items", Arrays.asList(new Document("sku", "a")))));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(Arrays.asList("items.sku"), new Document(), java.util.Map.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testGroupByAndCountRejectsGroupFieldNamedCountForNonDocumentRows_sliceE() {
+        // Regression: the {fieldName: "$_id", count: 1} projection overwrote a group field literally named "count"
+        // with the count, silently losing the group key (live: groupByAndCount("count", Map.class) -> [{count=2}, {count=1}]).
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+        when(aggregateIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(false);
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
+
+        final String expectedMessage = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
+
+        Assertions.assertEquals(expectedMessage,
+                Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", java.util.Map.class)).getMessage());
+        Assertions.assertEquals(expectedMessage, Assertions
+                .assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("count", "cat"), GroupRow.class))
+                .getMessage());
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", Long.class));
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+
+        // Document rows keep the key in _id, so they are unaffected; groupBy (no count column) is unaffected too.
+        Assertions.assertEquals(0, executor.groupByAndCount("count").count());
+        Assertions.assertEquals(0, executor.groupByAndCount(Arrays.asList("count", "cat")).count());
+        Assertions.assertEquals(0, executor.groupBy("count", java.util.Map.class).count());
+    }
+
+    public static class DottedRow {
+        private String name;
+        private DottedAddress address;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public DottedAddress getAddress() {
+            return address;
+        }
+
+        public void setAddress(DottedAddress address) {
+            this.address = address;
+        }
+    }
+
+    public static class DottedAddress {
+        private String city;
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(String city) {
+            this.city = city;
+        }
+    }
+
+    // ---- 2026-10-02 verifyME ----
+
+    private static final String COUNT_COLUMN_CONFLICT_verifyME = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
+
+    @Test
+    public void testQueryDottedSelectNamesOnEveryOverloadKeepOrderAndRawNestedValues_verifyME() {
+        // Every Collection-projection Dataset overload resolves dotted names from the nested documents (they were all-null
+        // columns): requested column order is kept, a missing/null parent or leaf gives null, and the dotted value is the
+        // raw nested value (Integer zip although DottedAddress declares no zip), while plain columns are converted as before.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris").append("zip", 75001)),
+                new Document("_id", 2).append("name", "n2"), new Document("_id", 3).append("name", "n3").append("address", new Document("city", null)),
+                new Document("_id", 4).append("name", "n4").append("address", null)));
+        final List<String> names = Arrays.asList("address.zip", "name", "address.city");
+        final Bson sort = new Document("_id", 1);
+
+        for (final Class<?> rowType : Arrays.asList(java.util.Map.class, java.util.LinkedHashMap.class, Document.class, DottedRow.class)) {
+            for (final Dataset ds : Arrays.asList(executor.query(names, new Document(), rowType), executor.query(names, new Document(), 1, 3, rowType),
+                    executor.query(names, new Document(), sort, rowType), executor.query(names, new Document(), sort, 1, 3, rowType))) {
+                Assertions.assertEquals(names, ds.columnNames(), rowType.getName());
+                Assertions.assertEquals(Arrays.asList("n1", "n2", "n3", "n4"), ds.getColumn("name"), rowType.getName());
+                Assertions.assertEquals(Arrays.asList(75001, null, null, null), ds.getColumn("address.zip"), rowType.getName());
+                Assertions.assertEquals(Arrays.asList("Paris", null, null, null), ds.getColumn("address.city"), rowType.getName());
+                Assertions.assertFalse(ds.isFrozen());
+            }
+        }
+
+        final Dataset withId = executor.query(new java.util.LinkedHashSet<>(Arrays.asList("_id", "address.city")), new Document(), java.util.Map.class);
+        Assertions.assertEquals(Arrays.asList("_id", "address.city"), withId.columnNames());
+        Assertions.assertEquals(Arrays.asList(1, 2, 3, 4), withId.getColumn("_id"));
+        Assertions.assertEquals(Arrays.asList("Paris", null, null, null), withId.getColumn("address.city"));
+    }
+
+    @Test
+    public void testQueryDottedSelectNameThroughArrayFailsOnEveryOverload_verifyME() {
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("name", "n2").append("address", Arrays.asList(new Document("city", "Rome")))));
+        final List<String> names = Arrays.asList("name", "address.city");
+        final Bson sort = new Document("_id", 1);
+
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), java.util.Map.class));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), 0, 5, Document.class));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), sort, DottedRowWithoutAddress_verifyME.class));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), sort, 0, 5, java.util.Map.class));
+
+        // Without a dotted name the same rows load as before: the array is just a column value.
+        final Dataset plain = executor.query(Arrays.asList("name", "address"), new Document(), java.util.Map.class);
+        Assertions.assertEquals(Arrays.asList("n1", "n2"), plain.getColumn("name"));
+        Assertions.assertEquals(Arrays.asList(new Document("city", "Rome")), plain.getColumn("address").get(1));
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testGroupByAndCountCountFieldRejectedForEveryNonDocumentRowType_verifyME() {
+        // Same rule and message as the reactive executor: only Document rows (key kept under _id) accept a group field
+        // named "count"; every other row type is projected as {<field>: key, count: n}, a Document subclass included.
+        final List<List<? extends Bson>> pipelines = new java.util.ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+            when(aggregateIterable.iterator()).thenReturn(mock(MongoCursor.class));
+            return aggregateIterable;
+        });
+
+        for (final Class rowType : Arrays.<Class> asList(java.util.Map.class, java.util.LinkedHashMap.class, Object.class, Bson.class,
+                CountDocument_verifyME.class, GroupRow.class, Long.class, long.class, String.class)) {
+            Assertions.assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
+                    Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType)).getMessage(), rowType.getName());
+            Assertions.assertEquals(COUNT_COLUMN_CONFLICT_verifyME, Assertions
+                    .assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType))
+                    .getMessage(), rowType.getName());
+        }
+
+        Assertions.assertTrue(pipelines.isEmpty());
+
+        // Document rows, other field names, and groupBy (no count column) are unaffected.
+        executor.groupByAndCount("count", Document.class).count();
+        executor.groupByAndCount(Arrays.asList("department", "count"), Document.class).count();
+        executor.groupByAndCount("department", java.util.Map.class).count();
+        executor.groupBy("count", CountDocument_verifyME.class).count();
+        executor.groupBy(Arrays.asList("department", "count"), java.util.Map.class).count();
+        Assertions.assertEquals(5, pipelines.size());
+        Assertions.assertEquals(new Document("$project", new Document("_id", 0).append("department", "$_id").append("count", 1)), pipelines.get(2).get(1));
+    }
+
+    public static class DottedRowWithoutAddress_verifyME {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+    public static class CountDocument_verifyME extends Document {
+        private static final long serialVersionUID = 1L;
+    }
+
+    // ---- 2026-10-04 coverageME ----
+
+    // End-to-end coverage of the MongoDBBase read-side changes through the executors' read paths: typed container elements
+    // (int32 Integers in a List<Long>, embedded Documents in a List/Map of beans, String keys of a Map<Integer, Long>), BSON
+    // dates read into LocalDate/LocalDateTime/LocalTime in UTC (as the driver's codecs write them), the type arguments of
+    // generic beans (Box<Long>, LongBox extends Box<Long>) and records (every value converted, _id into the id component).
+    // The documents hold what the driver decodes. Each read path is asserted on its own (assertAll), so every path that
+    // bypassed the conversion is reported. The fixtures are shared with the async, mapper and reactive tests.
+
+    public static final String OID_HEX_coverageME = "65f0a1b2c3d4e5f601234567";
+    public static final Date DAY_coverageME = new Date(java.time.Instant.parse("2024-01-02T00:00:00Z").toEpochMilli());
+    public static final Date AT_coverageME = new Date(java.time.Instant.parse("2024-01-02T03:04:05.006Z").toEpochMilli());
+    public static final java.time.LocalDate LOCAL_DAY_coverageME = java.time.LocalDate.of(2024, 1, 2);
+    public static final java.time.LocalDateTime LOCAL_AT_coverageME = java.time.LocalDateTime.of(2024, 1, 2, 3, 4, 5, 6_000_000);
+    public static final java.time.LocalTime LOCAL_TIME_coverageME = java.time.LocalTime.of(3, 4, 5, 6_000_000);
+
+    public static Document entityDoc_coverageME() {
+        return new Document("_id", new ObjectId(OID_HEX_coverageME)).append("nums", new java.util.ArrayList<>(Arrays.asList(1, 2)))
+                .append("addresses", new java.util.ArrayList<>(Arrays.asList(new Document("city", "Paris"))))
+                .append("addressByName", new Document("home", new Document("city", "Rome")))
+                .append("countByYear", new Document("2024", 5))
+                .append("day", DAY_coverageME)
+                .append("at", AT_coverageME)
+                .append("time", AT_coverageME)
+                .append("days", new java.util.ArrayList<>(Arrays.asList(DAY_coverageME)))
+                .append("box", new Document("value", 7))
+                .append("boxes", new java.util.ArrayList<>(Arrays.asList(new Document("value", 8))));
+    }
+
+    public static Document recordDoc_coverageME() {
+        return new Document("_id", new ObjectId(OID_HEX_coverageME)).append("count", 3)
+                .append("nums", new java.util.ArrayList<>(Arrays.asList(4)))
+                .append("day", DAY_coverageME);
+    }
+
+    public static Document longBoxDoc_coverageME() {
+        return new Document("_id", 1).append("value", 9);
+    }
+
+    public static Document dayDoc_coverageME() {
+        return new Document("_id", 1).append("day", DAY_coverageME);
+    }
+
+    public static E2eRecord_coverageME expectedRecord_coverageME() {
+        return new E2eRecord_coverageME(OID_HEX_coverageME, 3L, Arrays.asList(4L), LOCAL_DAY_coverageME);
+    }
+
+    public static void assertEntity_coverageME(final String path, final E2eEntity_coverageME entity) {
+        Assertions.assertNotNull(entity, path);
+        Assertions.assertAll(path, () -> Assertions.assertEquals(OID_HEX_coverageME, entity.getId(), path + ": String id from _id"),
+                () -> Assertions.assertEquals(Arrays.asList(1L, 2L), entity.getNums(), path + ": List<Long>"),
+                () -> Assertions.assertEquals("Paris", entity.getAddresses().get(0).getCity(), path + ": List<Address>"),
+                () -> Assertions.assertEquals("Rome", entity.getAddressByName().get("home").getCity(), path + ": Map<String, Address>"),
+                () -> Assertions.assertEquals(java.util.Collections.singletonMap(2024, 5L), entity.getCountByYear(), path + ": Map<Integer, Long>"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, entity.getDay(), path + ": LocalDate in UTC"),
+                () -> Assertions.assertEquals(LOCAL_AT_coverageME, entity.getAt(), path + ": LocalDateTime in UTC"),
+                () -> Assertions.assertEquals(LOCAL_TIME_coverageME, entity.getTime(), path + ": LocalTime in UTC"),
+                () -> Assertions.assertEquals(Arrays.asList(LOCAL_DAY_coverageME), entity.getDays(), path + ": List<LocalDate> in UTC"),
+                () -> Assertions.assertEquals((Object) 7L, entity.getBox().getValue(), path + ": Box<Long> property"),
+                () -> Assertions.assertEquals((Object) 8L, entity.getBoxes().get(0).getValue(), path + ": List<Box<Long>> element"));
+    }
+
+    // A bean Dataset column holds the property values toEntity produced.
+    public static void assertEntityDataset_coverageME(final String path, final Dataset dataset) {
+        Assertions.assertEquals(1, dataset.size(), path);
+        Assertions.assertAll(path, () -> Assertions.assertEquals(Arrays.asList(1L, 2L), dataset.getColumn("nums").get(0), path + ": List<Long>"),
+                () -> Assertions.assertEquals("Paris", ((List<E2eAddress_coverageME>) dataset.getColumn("addresses").get(0)).get(0).getCity(),
+                        path + ": List<Address>"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dataset.getColumn("day").get(0), path + ": LocalDate in UTC"),
+                () -> Assertions.assertEquals((Object) 7L, ((E2eBox_coverageME<?>) dataset.getColumn("box").get(0)).getValue(), path + ": Box<Long>"));
+    }
+
+    @SuppressWarnings("unchecked")
+    public static MongoCursor<Document> cursorOf_coverageME(final Document... rows) {
+        final java.util.Iterator<Document> iter = Arrays.asList(rows).iterator();
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+        when(cursor.hasNext()).thenAnswer(invocation -> iter.hasNext());
+        when(cursor.next()).thenAnswer(invocation -> iter.next());
+        return cursor;
+    }
+
+    // A collection whose every read (find first/into/iterator, aggregate, findOneAndUpdate/Delete) returns the given row.
+    @SuppressWarnings("unchecked")
+    public static MongoCollection<Document> mockCollectionReturning_coverageME(final Document row) {
+        final MongoCollection<Document> collection = mock(MongoCollection.class);
+        final FindIterable<Document> findIterable = mock(FindIterable.class);
+        when(collection.find()).thenReturn(findIterable);
+        when(collection.find(any(Bson.class))).thenReturn(findIterable);
+        when(findIterable.projection(any())).thenReturn(findIterable);
+        when(findIterable.sort(any())).thenReturn(findIterable);
+        when(findIterable.skip(anyInt())).thenReturn(findIterable);
+        when(findIterable.limit(anyInt())).thenReturn(findIterable);
+        when(findIterable.first()).thenReturn(row);
+        when(findIterable.into(any())).thenAnswer(invocation -> {
+            final Collection<Object> target = invocation.getArgument(0);
+            target.add(row);
+            return target;
+        });
+        when(findIterable.iterator()).thenAnswer(invocation -> cursorOf_coverageME(row));
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        when(aggregateIterable.iterator()).thenAnswer(invocation -> cursorOf_coverageME(row));
+        when(collection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
+        when(collection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(row);
+        when(collection.findOneAndDelete(any(Bson.class))).thenReturn(row);
+        return collection;
+    }
+
+    private static <T> T firstOf_coverageME(final Stream<T> stream) {
+        try (Stream<T> s = stream) {
+            return s.toList().get(0);
+        }
+    }
+
+    @Test
+    public void testEntityReadPathsConvertDecodedValuesToDeclaredTypes_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(entityDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final Bson update = new Document("$set", new Document("x", 1));
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final Class<E2eEntity_coverageME> type = E2eEntity_coverageME.class;
+
+        Assertions.assertAll(() -> assertEntity_coverageME("list", exec.list(filter, type).get(0)),
+                () -> assertEntity_coverageME("list(Collection)", exec.list(Arrays.asList("nums", "day"), filter, type).get(0)),
+                () -> assertEntity_coverageME("findFirst", exec.findFirst(filter, type).get()),
+                () -> assertEntity_coverageME("get(ObjectId)", exec.get(new ObjectId(OID_HEX_coverageME), type).get()),
+                () -> assertEntity_coverageME("gett(String)", exec.gett(OID_HEX_coverageME, type)),
+                () -> assertEntity_coverageME("stream", firstOf_coverageME(exec.stream(filter, type))),
+                () -> assertEntity_coverageME("stream(Collection)", firstOf_coverageME(exec.stream(Arrays.asList("nums", "day"), filter, type))),
+                () -> assertEntity_coverageME("aggregate", firstOf_coverageME(exec.aggregate(pipeline, type))),
+                () -> assertEntity_coverageME("findOneAndUpdate", exec.findOneAndUpdate(filter, update, type)),
+                () -> assertEntity_coverageME("findOneAndDelete", exec.findOneAndDelete(filter, type)),
+                () -> assertEntityDataset_coverageME("query(Bson, Class)", exec.query(filter, type)));
+    }
+
+    @Test
+    public void testRecordRowsOnEveryReadPath_coverageME() {
+        // Records: every value converted to its component type (int32 -> Long, List<Integer> -> List<Long>, Date -> LocalDate
+        // in UTC) and the ObjectId _id passed as the String id component; HEAD failed with "argument type mismatch".
+        final MongoCollectionExecutor recordExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(recordDoc_coverageME()),
+                mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final Class<E2eRecord_coverageME> recordType = E2eRecord_coverageME.class;
+        final E2eRecord_coverageME expected = expectedRecord_coverageME();
+
+        Assertions.assertAll(() -> Assertions.assertEquals(expected, recordExec.list(filter, recordType).get(0), "list"),
+                () -> Assertions.assertEquals(expected, recordExec.findFirst(filter, recordType).get(), "findFirst"),
+                () -> Assertions.assertEquals(expected, recordExec.get(OID_HEX_coverageME, recordType).get(), "get(String)"),
+                () -> Assertions.assertEquals(expected, firstOf_coverageME(recordExec.stream(filter, recordType)), "stream"),
+                () -> Assertions.assertEquals(expected, firstOf_coverageME(recordExec.aggregate(pipeline, recordType)), "aggregate"),
+                () -> Assertions.assertEquals(expected, recordExec.findOneAndDelete(filter, recordType), "findOneAndDelete"),
+                () -> Assertions.assertEquals(Arrays.asList(4L), recordExec.query(filter, recordType).getColumn("nums").get(0), "query Dataset"));
+    }
+
+    @Test
+    public void testGenericSubclassRowsOnEveryReadPath_coverageME() {
+        // LongBox extends Box<Long>: the value of its erased T field is converted to the bound Long (HEAD kept the Integer).
+        final MongoCollectionExecutor boxExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(longBoxDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final Class<E2eLongBox_coverageME> boxType = E2eLongBox_coverageME.class;
+
+        Assertions.assertAll(() -> Assertions.assertEquals((Object) 9L, boxExec.list(filter, boxType).get(0).getValue(), "list"),
+                () -> Assertions.assertEquals((Object) 9L, boxExec.findFirst(filter, boxType).get().getValue(), "findFirst"),
+                () -> Assertions.assertEquals((Object) 9L, firstOf_coverageME(boxExec.stream(filter, boxType)).getValue(), "stream"),
+                () -> Assertions.assertEquals((Object) 9L, firstOf_coverageME(boxExec.aggregate(pipeline, boxType)).getValue(), "aggregate"),
+                () -> Assertions.assertEquals((Object) 9L, boxExec.findOneAndDelete(filter, boxType).getValue(), "findOneAndDelete"));
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleValuesAreReadInUtcOnEveryReadPath_coverageME() {
+        // convertBsonValue: a BSON date requested as LocalDate/LocalDateTime/LocalTime is read in UTC like the driver's codecs
+        // write it (HEAD used the JVM zone: a LocalDate came back as the previous day west of UTC). The single-field-row paths
+        // are in testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME.
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(entityDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<String> day = Arrays.asList("day");
+
+        Assertions.assertAll(
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.queryForSingleValue("day", filter, java.time.LocalDate.class).get(),
+                        "queryForSingleValue LocalDate"),
+                () -> Assertions.assertEquals(LOCAL_AT_coverageME, exec.queryForSingleValue("at", filter, java.time.LocalDateTime.class).get(),
+                        "queryForSingleValue LocalDateTime"),
+                () -> Assertions.assertEquals(LOCAL_TIME_coverageME, exec.queryForSingleValue("time", filter, java.time.LocalTime.class).get(),
+                        "queryForSingleValue LocalTime"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.queryForSingleNonNull("day", filter, java.time.LocalDate.class).get(),
+                        "queryForSingleNonNull"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.findFirst(day, filter, java.time.LocalDate.class).get(), "findFirst(Collection)"),
+                () -> Assertions.assertEquals(Arrays.asList(LOCAL_DAY_coverageME), exec.list(day, filter, java.time.LocalDate.class), "list(Collection)"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(exec.stream(day, filter, java.time.LocalDate.class)),
+                        "stream(Collection)"),
+                // Previous behavior kept: other date targets keep the instant.
+                () -> Assertions.assertEquals(DAY_coverageME, exec.queryForSingleValue("day", filter, Date.class).get(), "Date"),
+                () -> Assertions.assertEquals(DAY_coverageME.toInstant(), exec.queryForSingleValue("day", filter, java.time.Instant.class).get(), "Instant"));
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME() {
+        // A document with one non-_id field read as a single value goes through readRow/toList's scalar conversion.
+        final MongoCollectionExecutor dayExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(dayDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("day", 1)));
+
+        Assertions.assertAll(
+                () -> Assertions.assertEquals(Arrays.asList(LOCAL_DAY_coverageME), dayExec.list(filter, java.time.LocalDate.class), "list"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dayExec.findFirst(filter, java.time.LocalDate.class).get(), "findFirst"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(dayExec.stream(filter, java.time.LocalDate.class)), "stream"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(dayExec.aggregate(pipeline, java.time.LocalDate.class)), "aggregate"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dayExec.findOneAndDelete(filter, java.time.LocalDate.class), "findOneAndDelete"));
+    }
+
+    @Test
+    public void testDottedSelectNameCheckToleratesNullNames_coverageME() {
+        // Pin: the dotted-name check of query(Collection, ...) -> Dataset is null-safe, so a null select name still fails
+        // with the projection's IllegalArgumentException (as before the fix), whichever position it has.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("address", new Document("city", "Paris"))));
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList(null, "address.city"), new Document(), java.util.Map.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("address.city", null), new Document(), java.util.Map.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("name", null), new Document(), java.util.Map.class));
+    }
+
+    public static class E2eAddress_coverageME {
+        private String city;
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+    }
+
+    public static class E2eBox_coverageME<T> {
+        private T value;
+
+        public T getValue() {
+            return value;
+        }
+
+        public void setValue(final T value) {
+            this.value = value;
+        }
+    }
+
+    public static class E2eLongBox_coverageME extends E2eBox_coverageME<Long> {
+    }
+
+    public record E2eRecord_coverageME(String id, Long count, List<Long> nums, java.time.LocalDate day) {
+    }
+
+    public static class E2eEntity_coverageME {
+        private String id;
+        private List<Long> nums;
+        private List<E2eAddress_coverageME> addresses;
+        private java.util.Map<String, E2eAddress_coverageME> addressByName;
+        private java.util.Map<Integer, Long> countByYear;
+        private java.time.LocalDate day;
+        private java.time.LocalDateTime at;
+        private java.time.LocalTime time;
+        private List<java.time.LocalDate> days;
+        private E2eBox_coverageME<Long> box;
+        private List<E2eBox_coverageME<Long>> boxes;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public List<Long> getNums() {
+            return nums;
+        }
+
+        public void setNums(final List<Long> nums) {
+            this.nums = nums;
+        }
+
+        public List<E2eAddress_coverageME> getAddresses() {
+            return addresses;
+        }
+
+        public void setAddresses(final List<E2eAddress_coverageME> addresses) {
+            this.addresses = addresses;
+        }
+
+        public java.util.Map<String, E2eAddress_coverageME> getAddressByName() {
+            return addressByName;
+        }
+
+        public void setAddressByName(final java.util.Map<String, E2eAddress_coverageME> addressByName) {
+            this.addressByName = addressByName;
+        }
+
+        public java.util.Map<Integer, Long> getCountByYear() {
+            return countByYear;
+        }
+
+        public void setCountByYear(final java.util.Map<Integer, Long> countByYear) {
+            this.countByYear = countByYear;
+        }
+
+        public java.time.LocalDate getDay() {
+            return day;
+        }
+
+        public void setDay(final java.time.LocalDate day) {
+            this.day = day;
+        }
+
+        public java.time.LocalDateTime getAt() {
+            return at;
+        }
+
+        public void setAt(final java.time.LocalDateTime at) {
+            this.at = at;
+        }
+
+        public java.time.LocalTime getTime() {
+            return time;
+        }
+
+        public void setTime(final java.time.LocalTime time) {
+            this.time = time;
+        }
+
+        public List<java.time.LocalDate> getDays() {
+            return days;
+        }
+
+        public void setDays(final List<java.time.LocalDate> days) {
+            this.days = days;
+        }
+
+        public E2eBox_coverageME<Long> getBox() {
+            return box;
+        }
+
+        public void setBox(final E2eBox_coverageME<Long> box) {
+            this.box = box;
+        }
+
+        public List<E2eBox_coverageME<Long>> getBoxes() {
+            return boxes;
+        }
+
+        public void setBoxes(final List<E2eBox_coverageME<Long>> boxes) {
+            this.boxes = boxes;
+        }
+    }
+
+    // ---- end 2026-10-04 coverageME ----
 }

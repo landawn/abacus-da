@@ -709,4 +709,259 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertEquals(2, resultSet.getAvailableWithoutFetching());
         assertEquals(Arrays.asList(first, second), resultSet.map(java.util.function.Function.identity()).all());
     }
+
+    // ---- 2026-10-02 sliceO ----
+
+    /**
+     * Multi-page stand-in faithful to the driver's DefaultAsyncResultSet: currentPage() always hands out the same
+     * one-shot iterator, and remaining() counts down as rows are taken from it.
+     */
+    private static final class SliceOPage implements AsyncResultSet {
+        private final ColumnDefinitions definitions;
+        private final com.datastax.oss.driver.api.core.cql.ExecutionInfo executionInfo = mock(com.datastax.oss.driver.api.core.cql.ExecutionInfo.class);
+        private final java.util.Deque<Row> rows;
+        private final AsyncResultSet nextPage;
+        private final RuntimeException nextPageFailure;
+        private final Iterator<Row> iterator;
+
+        SliceOPage(final ColumnDefinitions definitions, final AsyncResultSet nextPage, final RuntimeException nextPageFailure, final Row... rows) {
+            this.definitions = definitions;
+            this.rows = new java.util.ArrayDeque<>(Arrays.asList(rows));
+            this.nextPage = nextPage;
+            this.nextPageFailure = nextPageFailure;
+            this.iterator = new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    return !SliceOPage.this.rows.isEmpty();
+                }
+
+                @Override
+                public Row next() {
+                    if (SliceOPage.this.rows.isEmpty()) {
+                        throw new java.util.NoSuchElementException();
+                    }
+
+                    return SliceOPage.this.rows.poll();
+                }
+            };
+        }
+
+        @Override
+        public ColumnDefinitions getColumnDefinitions() {
+            return definitions;
+        }
+
+        @Override
+        public com.datastax.oss.driver.api.core.cql.ExecutionInfo getExecutionInfo() {
+            return executionInfo;
+        }
+
+        @Override
+        public Iterable<Row> currentPage() {
+            return () -> iterator;
+        }
+
+        @Override
+        public int remaining() {
+            return rows.size();
+        }
+
+        @Override
+        public boolean hasMorePages() {
+            return nextPage != null || nextPageFailure != null;
+        }
+
+        @Override
+        public CompletionStage<AsyncResultSet> fetchNextPage() {
+            if (nextPageFailure != null) {
+                final CompletableFuture<AsyncResultSet> failed = new CompletableFuture<>();
+                failed.completeExceptionally(nextPageFailure);
+                return failed;
+            }
+
+            return completedStage(nextPage);
+        }
+
+        private static CompletionStage<AsyncResultSet> completedStage(final AsyncResultSet page) {
+            return CompletableFuture.completedFuture(page);
+        }
+
+        @Override
+        public boolean wasApplied() {
+            return true;
+        }
+    }
+
+    private static ColumnDefinitions sliceOColumns() {
+        final ColumnDefinitions columns = mock(ColumnDefinitions.class);
+        final com.datastax.oss.driver.api.core.cql.ColumnDefinition column = mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class);
+        when(columns.size()).thenReturn(1);
+        when(columns.get(0)).thenReturn(column);
+        when(column.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("v"));
+        return columns;
+    }
+
+    private static Row sliceORow(final ColumnDefinitions columns, final long value) {
+        final Row row = mock(Row.class);
+        when(row.getColumnDefinitions()).thenReturn(columns);
+        when(row.getObject(0)).thenReturn(value);
+        return row;
+    }
+
+    /** Pages [1, 2], [] (empty, more to come), [3]; the last page's fetch fails when {@code lastPageFailure} is set. */
+    private static AsyncResultSet sliceOPages(final ColumnDefinitions columns, final RuntimeException lastPageFailure) {
+        final AsyncResultSet third = lastPageFailure == null ? new SliceOPage(columns, null, null, sliceORow(columns, 3L)) : null;
+        final AsyncResultSet second = new SliceOPage(columns, third, lastPageFailure);
+        return new SliceOPage(columns, second, null, sliceORow(columns, 1L), sliceORow(columns, 2L));
+    }
+
+    /** Pins the wrapper's driver ResultSet contract across pages (one/iteration/remaining/infos/isFullyFetched/map.all). */
+    @Test
+    public void testWrappedResultSet_multiPageContract_sliceO() {
+        final ColumnDefinitions columns = sliceOColumns();
+        final ResultSet resultSet = ResultSets.wrap(sliceOPages(columns, null));
+
+        assertEquals(2, resultSet.getAvailableWithoutFetching());
+        assertTrue(!resultSet.isFullyFetched());
+        assertEquals(1L, resultSet.one().getObject(0));
+        assertEquals(1, resultSet.getAvailableWithoutFetching()); // counts down like the driver's MultiPageResultSet
+
+        final java.util.List<Object> rest = new java.util.ArrayList<>();
+        resultSet.forEach(row -> rest.add(row.getObject(0)));
+
+        assertEquals(Arrays.asList(2L, 3L), rest); // the empty middle page is skipped
+        assertTrue(resultSet.isFullyFetched());
+        assertEquals(3, resultSet.getExecutionInfos().size()); // one per fetched page
+        assertSame(resultSet.getExecutionInfos().get(2), resultSet.getExecutionInfo());
+        assertEquals(null, resultSet.one());
+
+        assertEquals(Arrays.asList(1L, 2L, 3L), ResultSets.wrap(sliceOPages(columns, null)).map(row -> row.getObject(0)).all());
+        assertEquals(3, java.util.stream.StreamSupport.stream(ResultSets.wrap(sliceOPages(columns, null)).spliterator(), false).count());
+    }
+
+    /**
+     * Pins the async facade over a real CassandraExecutor across result pages: list/findFirst/stream read every page,
+     * and a later-page fetch failure is reported by get() (list) or by the stream's terminal operation (stream) with the
+     * driver failure as the cause / exception.
+     */
+    @Test
+    public void testAsyncFacadeReadsAllPagesAndReportsPageFetchFailure_sliceO() throws Exception {
+        final CqlSession session = mock(CqlSession.class);
+        when(session.getContext()).thenReturn(mock(com.datastax.oss.driver.api.core.context.DriverContext.class));
+        when(session.getContext().getCodecRegistry()).thenReturn(mock(com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry.class));
+        final CassandraExecutor executor = new CassandraExecutor(session);
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement preparedStatement = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        final ColumnDefinitions noVariables = mock(ColumnDefinitions.class);
+        when(noVariables.size()).thenReturn(0);
+        when(preparedStatement.getVariableDefinitions()).thenReturn(noVariables);
+        when(preparedStatement.bind()).thenReturn(mockStatement);
+        when(session.prepare(anyString())).thenReturn(preparedStatement);
+
+        final ColumnDefinitions columns = sliceOColumns();
+        final IllegalStateException pageFailure = new IllegalStateException("page fetch failed");
+        final boolean[] failLastPage = { false };
+        when(session.executeAsync(any(Statement.class))).thenAnswer(inv -> completed(sliceOPages(columns, failLastPage[0] ? pageFailure : null)));
+
+        final AsyncCassandraExecutor facade = executor.async();
+        final ContinuableFuture<java.util.List<Long>> list = facade.list(Long.class, "SELECT v FROM t");
+
+        assertEquals(Arrays.asList(1L, 2L, 3L), list.get());
+        assertEquals(Arrays.asList(1L, 2L, 3L), list.get());
+        assertEquals(1L, facade.findFirst(Long.class, "SELECT v FROM t").get().orElseNull());
+        assertEquals(Arrays.asList(1L, 2L, 3L), facade.stream(Long.class, "SELECT v FROM t").get().toList());
+
+        failLastPage[0] = true;
+
+        final java.util.concurrent.ExecutionException listFailure = assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> facade.list(Long.class, "SELECT v FROM t").get());
+        assertSame(pageFailure, listFailure.getCause());
+
+        final Stream<Long> stream = facade.stream(Long.class, "SELECT v FROM t").get(); // the first page arrived normally
+        assertSame(pageFailure, assertThrows(IllegalStateException.class, stream::toList));
+    }
+
+    // ---- 2026-10-04 coverageCS ----
+
+    public static class CoverageCSTimeBean {
+        private java.sql.Time v;
+
+        public java.sql.Time getV() {
+            return v;
+        }
+
+        public void setV(final java.sql.Time v) {
+            this.v = v;
+        }
+    }
+
+    private static Row coverageCSRow(final ColumnDefinitions columns, final Object value) {
+        final Row row = mock(Row.class);
+        when(row.getColumnDefinitions()).thenReturn(columns);
+        when(row.getObject(0)).thenReturn(value);
+        return row;
+    }
+
+    @Test
+    public void testCoverageCS_asyncFacadeReadsTimeIntoSqlTimeOnEveryPathAndBindsSingleCalendarAsValue() throws Exception {
+        // The async facade maps through the executor's helpers: a driver LocalTime with a fractional second or on a whole minute
+        // (N.convert rejected both for java.sql.Time) must reach a java.sql.Time target on every async read path and page, and a
+        // single Calendar parameter must be bound as one value (it was read as a bean: "Missing required parameter: 'ts'").
+        final CqlSession session = mock(CqlSession.class);
+        when(session.getContext()).thenReturn(mock(com.datastax.oss.driver.api.core.context.DriverContext.class));
+        when(session.getContext().getCodecRegistry())
+                .thenReturn(new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("coverage-cs-async"));
+        final CassandraExecutor executor = new CassandraExecutor(session);
+        final String select = "SELECT v FROM t";
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement selectStatement = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        final ColumnDefinitions noVariables = mock(ColumnDefinitions.class);
+        when(noVariables.size()).thenReturn(0);
+        when(selectStatement.getVariableDefinitions()).thenReturn(noVariables);
+        when(selectStatement.bind()).thenReturn(mockStatement);
+        when(selectStatement.bind(any(Object[].class))).thenReturn(mockStatement);
+        when(session.prepare(select)).thenReturn(selectStatement);
+
+        final ColumnDefinitions columns = sliceOColumns();
+        final java.time.LocalTime fractional = java.time.LocalTime.of(1, 2, 3, 456_789_000);
+        final java.time.LocalTime wholeMinute = java.time.LocalTime.of(12, 30);
+        // Pages [fractional, wholeMinute], [] (more to come), [midnight].
+        when(session.executeAsync(any(Statement.class))).thenAnswer(inv -> completed(new SliceOPage(columns,
+                new SliceOPage(columns, new SliceOPage(columns, null, null, coverageCSRow(columns, java.time.LocalTime.MIDNIGHT)), null), null,
+                coverageCSRow(columns, fractional), coverageCSRow(columns, wholeMinute))));
+        final java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss.SSS");
+        final java.util.List<String> expected = Arrays.asList("01:02:03.456", "12:30:00.000", "00:00:00.000");
+        final AsyncCassandraExecutor facade = executor.async();
+
+        assertEquals(expected, facade.list(java.sql.Time.class, select).get().stream().map(timeFormat::format).toList());
+        assertEquals(expected, facade.list(java.sql.Time[].class, select).get().stream().map(a -> timeFormat.format(a[0])).toList());
+        assertEquals(expected, facade.stream(java.sql.Time.class, select).get().map(timeFormat::format).toList());
+        assertEquals(expected, facade.list(CoverageCSTimeBean.class, select).get().stream().map(b -> timeFormat.format(b.getV())).toList());
+        assertEquals(expected, facade.query(CoverageCSTimeBean.class, select).get().<java.sql.Time> getColumn("v").stream().map(timeFormat::format).toList());
+        assertEquals("01:02:03.456", timeFormat.format(facade.findFirst(java.sql.Time.class, select).get().get()));
+        assertEquals("01:02:03.456", timeFormat.format(facade.queryForSingleValue(java.sql.Time.class, select).get().get()));
+        assertEquals("01:02:03.456", timeFormat.format(facade.queryForSingleNonNull(java.sql.Time.class, select).get().get()));
+
+        final String update = "UPDATE t SET ts = ? WHERE id = 1";
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement updateStatement = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final com.datastax.oss.driver.api.core.cql.ColumnDefinition tsVariable = mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class);
+        when(variables.size()).thenReturn(1);
+        when(variables.get(0)).thenReturn(tsVariable);
+        when(tsVariable.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ts"));
+        when(tsVariable.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.TIMESTAMP);
+        when(updateStatement.getVariableDefinitions()).thenReturn(variables);
+        final Object[][] bound = new Object[1][];
+        when(updateStatement.bind(any(Object[].class))).thenAnswer(inv -> {
+            bound[0] = (Object[]) inv.getRawArguments()[0];
+            return mockStatement;
+        });
+        when(session.prepare(update)).thenReturn(updateStatement);
+        final java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.setTimeInMillis(1_600_000_000_000L);
+
+        facade.execute(update, calendar).get();
+
+        assertEquals(Arrays.asList(java.time.Instant.ofEpochMilli(1_600_000_000_000L)), Arrays.asList(bound[0]));
+    }
+
+    // ---- 2026-10-04 coverageCS end ----
 }

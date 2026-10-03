@@ -515,4 +515,109 @@ public class CqlMapperTest extends TestBase {
         assertTrue(ex.getCause() instanceof NoClassDefFoundError, String.valueOf(ex.getCause()));
         assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
     }
+
+    // ---- 2026-10-02 sliceR ----
+
+    @Test
+    public void testSaveToFile_SerializerFailure_keepsExistingFile() throws Exception {
+        // Regression: an attribute whose namespace prefix is declared only on the root element of the file it was loaded
+        // from ("p:t") passes the DOM build but fails in the XML serializer ("Namespace for prefix 'p' has not been
+        // declared"). Saving the loaded mapper back to its own file left a 0-byte file behind that exception.
+        final File file = File.createTempFile("cql-mapper-", ".xml");
+        file.deleteOnExit();
+        final String original = "<cqlMapper xmlns:p=\"urn:p\"><cql id=\"q\" p:t=\"1\">SELECT 1 FROM t</cql></cqlMapper>";
+        java.nio.file.Files.write(file.toPath(), original.getBytes(StandardCharsets.UTF_8));
+
+        final CqlMapper m = CqlMapper.loadFrom(file);
+        assertEquals("1", m.getAttributes("q").get("p:t"));
+
+        assertThrows(RuntimeException.class, () -> m.saveTo(file));
+        assertEquals(original, new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+    }
+
+    // ---- 2026-10-02 verifyPC ----
+
+    @Test
+    public void testSaveToFile_SerializerFailure_createsNoParentDirOrFile() throws Exception {
+        // The document is serialized in memory first: a serializer failure leaves neither an empty target file nor a
+        // newly created parent directory behind, and surfaces as the serializer's failure, not as an I/O failure.
+        final java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("cql-mapper-");
+        final File source = dir.resolve("source.xml").toFile();
+        dir.toFile().deleteOnExit(); // deleted after source (reverse registration order)
+        source.deleteOnExit();
+        java.nio.file.Files.write(source.toPath(),
+                "<cqlMapper xmlns:p=\"urn:p\"><cql id=\"q\" p:t=\"1\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8));
+        final CqlMapper m = CqlMapper.loadFrom(source);
+
+        final File target = dir.resolve("missing").resolve("deeper").resolve("out.xml").toFile();
+        final RuntimeException ex = assertThrows(RuntimeException.class, () -> m.saveTo(target));
+        assertFalse(ex instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(ex));
+        boolean transformerFailure = false;
+
+        for (Throwable t = ex; t != null && !transformerFailure; t = t.getCause()) {
+            transformerFailure = t instanceof javax.xml.transform.TransformerException;
+        }
+
+        assertTrue(transformerFailure, String.valueOf(ex));
+        assertFalse(target.exists());
+        assertFalse(target.getParentFile().getParentFile().exists());
+
+        // saveTo(OutputStream) reports the same failure.
+        assertThrows(ex.getClass(), () -> m.saveTo(new java.io.ByteArrayOutputStream()));
+    }
+
+    @Test
+    public void testSaveToFile_CreatesParentDirsAndReplacesLongerFile() throws Exception {
+        // Pins for the in-memory serialization: missing parent directories are still created, a longer existing file is
+        // fully replaced (truncated), and the file holds exactly the bytes saveTo(OutputStream) writes.
+        final java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("cql-mapper-");
+        final File target = dir.resolve("a").resolve("b").resolve("out.xml").toFile();
+        final CqlMapper m = new CqlMapper();
+        m.add("q", "SELECT * FROM t WHERE name = 'é中😀' AND id = :id");
+
+        m.saveTo(target);
+        final java.io.ByteArrayOutputStream expected = new java.io.ByteArrayOutputStream();
+        m.saveTo(expected);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(expected.toByteArray(), java.nio.file.Files.readAllBytes(target.toPath()));
+
+        java.nio.file.Files.write(target.toPath(), new byte[expected.size() * 4]);
+        m.saveTo(target);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(expected.toByteArray(), java.nio.file.Files.readAllBytes(target.toPath()));
+        assertEquals(m.get("q").originalCql(), CqlMapper.loadFrom(target).get("q").originalCql());
+
+        java.nio.file.Files.delete(target.toPath());
+        java.nio.file.Files.delete(target.getParentFile().toPath());
+        java.nio.file.Files.delete(target.getParentFile().getParentFile().toPath());
+        java.nio.file.Files.delete(dir);
+    }
+
+    // ---- 2026-10-04 coverageCQ ----
+
+    @Test
+    public void testSaveToFile_WriteFailure_isUncheckedIOException() throws Exception {
+        // saveTo(File) now copies the XML serialized in memory into the file, so a failure while writing the file is the
+        // documented UncheckedIOException (on HEAD the serializer wrote to the file itself and reported the I/O error as an
+        // UncheckedException wrapping a TransformerException). A byte-range lock held through a second handle makes the
+        // write fail; such locks are mandatory only on Windows.
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name", "").startsWith("Windows"), "needs mandatory byte-range locks");
+
+        final File file = File.createTempFile("cql-mapper-lock-", ".xml");
+        file.deleteOnExit();
+        final CqlMapper m = new CqlMapper();
+
+        for (int i = 0; i < 20; i++) {
+            m.add("q" + i, "SELECT * FROM t WHERE id = ?");
+        }
+
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "rw");
+                java.nio.channels.FileLock lock = raf.getChannel().lock(64, 1 << 20, false)) {
+            final RuntimeException ex = assertThrows(RuntimeException.class, () -> m.saveTo(file));
+            assertTrue(ex instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(ex));
+            assertTrue(ex.getCause() instanceof java.io.IOException, String.valueOf(ex.getCause()));
+        }
+
+        // Once the lock is gone the same file is written normally.
+        m.saveTo(file);
+        assertEquals(m.ids(), CqlMapper.loadFrom(file).ids());
+    }
 }

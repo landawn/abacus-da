@@ -1114,8 +1114,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: delete the row(s) selected by a condition.
      * async.delete(User.class, Filters.eq("id", 1L)).get(); // returns the driver result set
      *
-     * // Typical: delete then chain a continuation.
-     * async.delete(User.class, Filters.eq("status", "inactive")).thenRunAsync(() -> log.info("purged")); // runs after the DELETE completes
+     * // Typical: delete then chain a continuation (a CQL DELETE must restrict the primary key, e.g. IN on the partition key).
+     * async.delete(User.class, Filters.in("id", Arrays.asList(1L, 2L))).thenRunAsync(() -> log.info("purged")); // runs after the DELETE completes
      *
      * // Edge: a condition matching no rows still completes normally.
      * async.delete(User.class, Filters.eq("id", -1L)).get(); // returns a result set; nothing removed
@@ -1148,8 +1148,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: clear specific column(s) of the row(s) matching a condition.
      * async.delete(User.class, Arrays.asList("name"), Filters.eq("id", 1L)).get(); // returns the driver result set
      *
-     * // Typical: null propNamesToDelete removes the whole matching row(s).
-     * async.delete(User.class, null, Filters.eq("status", "inactive")).get(); // returns the driver result set
+     * // Typical: null propNamesToDelete removes the whole matching row(s); the WHERE clause must restrict the primary key.
+     * async.delete(User.class, null, Filters.in("id", Arrays.asList(1L, 2L))).get(); // returns the driver result set
      *
      * // Edge: a non-null but empty propNamesToDelete is rejected eagerly (synchronously).
      * assertThrows(IllegalArgumentException.class,
