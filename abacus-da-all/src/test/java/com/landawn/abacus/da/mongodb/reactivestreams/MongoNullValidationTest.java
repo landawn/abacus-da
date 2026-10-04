@@ -17,13 +17,14 @@ import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscriber;
 
+import com.landawn.abacus.da.TestBase;
 import com.mongodb.reactivestreams.client.FindPublisher;
 import com.mongodb.reactivestreams.client.MongoCollection;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-class MongoNullValidationTest {
+public class MongoNullValidationTest extends TestBase {
 
     @Test
     void selectedNullPropertyFailureIsDeferredUntilScalarRowIsEmitted() {

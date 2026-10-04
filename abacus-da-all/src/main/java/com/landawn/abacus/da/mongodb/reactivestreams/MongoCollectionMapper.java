@@ -26,6 +26,7 @@ import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
+import com.landawn.abacus.da.mongodb.MongoDBBase;
 import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
@@ -3554,7 +3555,7 @@ public final class MongoCollectionMapper<T> {
      *         collection has no documents (documents that lack the field produce a single
      *         entity whose field value is {@code null}, except for a single-value {@code T}, which
      *         skips that {@code null} value)
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"})
      * @see #distinct(String, Bson)
      * @see #groupBy(String)
      * @see MongoCollectionExecutor#distinct(String, Class)
@@ -3571,6 +3572,8 @@ public final class MongoCollectionMapper<T> {
     // and throws BsonInvalidOperationException for any scalar field. Mirrors the blocking
     // MongoCollectionMapper.distinct(...).
     private static List<Bson> distinctPipeline(final String fieldName, final Bson filter, final Class<?> rowType) {
+        MongoDBBase.checkGroupFieldPath(fieldName);
+
         final List<Bson> pipeline = new ArrayList<>(3);
 
         if (filter != null) {
@@ -3585,7 +3588,7 @@ public final class MongoCollectionMapper<T> {
         if (!isSingleValueRowType(rowType)) {
             final Document project = new Document("_id", 0).append(fieldName, "$_id");
 
-            pipeline.add(new Document("$project", MongoCollectionExecutor.rebuildEmbeddedIdProjection(project)));
+            pipeline.add(new Document("$project", MongoDBBase.rebuildEmbeddedIdProjection(project)));
         }
 
         return pipeline;
@@ -3609,7 +3612,10 @@ public final class MongoCollectionMapper<T> {
      * distinct value is surfaced under {@code fieldName} on an entity of the mapped type via a
      * {@code $group}/{@code $project} pipeline, so scalar values decode cleanly into {@code T} (a single-value
      * {@code T} such as {@code String} receives each value directly and skips the {@code null} value, as in
-     * {@link #distinct(String)}). As with {@link #distinct(String)}, an array-valued field is not unwound: each
+     * {@link #distinct(String)}). For Map, {@link Document} or {@code Object} results, dotted field names produce nested
+     * rows, including paths inside an embedded {@code _id} ({@code distinct("_id.part", filter)} yields
+     * {@code {_id: {part: <value>}}} rows), as in {@link #distinct(String)}. As with {@link #distinct(String)}, an
+     * array-valued field is not unwound: each
      * distinct whole array is one result. To obtain raw scalar values instead, use
      * {@link MongoCollectionExecutor#distinct(String, Bson, Class)} with an explicit value class.</p>
      *
@@ -3635,7 +3641,8 @@ public final class MongoCollectionMapper<T> {
      * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
      *         (among matching documents) surfaced on an entity of type {@code T}, then completes;
      *         completes empty when no distinct values are found
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code filter} is null
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"}),
+     *         or if {@code filter} is null
      * @see #distinct(String)
      * @see MongoCollectionExecutor#distinct(String, Bson, Class)
      */
@@ -3723,10 +3730,11 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
-     * @param fieldName the field name to group documents by
+     * @param fieldName the field name to group documents by; a dotted path such as {@code "a.b"} groups by
+     *        the nested field, and each segment must be nonempty
      * @return a cold {@code Flux} that, on subscription, emits each group result decoded as
      *         {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"})
      */
     @Beta
     public Flux<T> groupBy(final String fieldName) throws IllegalArgumentException {
@@ -3807,10 +3815,12 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
-     * @param fieldName the field name to group and count by
+     * @param fieldName the field name to group and count by; a dotted path such as {@code "a.b"} groups by
+     *        the nested field, and each segment must be nonempty
      * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
      *         as {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} or starts
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"}),
+     *         or if {@code fieldName} is {@code "count"} or starts
      *         with {@code "count."}, and {@code T} is not {@link Document} (the group key conflicts with the count column)
      */
     @Beta

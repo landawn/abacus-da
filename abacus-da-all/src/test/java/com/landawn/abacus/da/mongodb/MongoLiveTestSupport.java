@@ -46,6 +46,11 @@ public final class MongoLiveTestSupport {
         } catch (final MongoTimeoutException | MongoSocketException e) {
             assumeTrue(false, "Live MongoDB is unavailable: " + e.getMessage());
         } catch (final MongoCommandException e) {
+            // Only "unknown stage" (code 40324) downgrades to a skip. Any other command error — notably an auth
+            // failure (code 13) against an auth-enabled local server — stays a hard failure: the server is
+            // reachable and supports the stage, so the probe failure signals a misconfigured test environment,
+            // not a missing one. Developers running an auth-enabled local MongoDB must disable auth for these
+            // tests or accept the failure.
             if (e.getErrorCode() != 40324 || !e.getErrorMessage().contains("$documents")) {
                 throw e;
             }

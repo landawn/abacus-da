@@ -3385,6 +3385,15 @@ public class BigQueryExecutor {
 
     /**
      * Completes and builds an executor-owned builder, releasing it if configuration fails before build().
+     * <p>
+     * Scope boundary: the builder-creation call (e.g. {@code PSC.insert(entity)}, {@code PSC.select(props)}) is
+     * evaluated as an argument before this method executes, so a creation-time failure never reaches this wrapper.
+     * Release-on-failure for creation-time errors is the Dsl factory's responsibility: the factories validate and
+     * snapshot their arguments before acquiring the pooled StringBuilder, and release any builder they already
+     * allocated if their remaining set-up fails (pinned by {@code BigQueryExecutorTest}, so a dependency upgrade that
+     * breaks this contract fails the tests). This wrapper guarantees release for
+     * completion-time failures: {@code into}/{@code set}/{@code where}/{@code from}/{@code limit} and the terminal
+     * {@code build()}.
      *
      * @throws RuntimeException if completing or building the statement fails
      */

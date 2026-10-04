@@ -1,17 +1,22 @@
 package com.landawn.abacus.da.neo4j;
 
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import java.util.Collection;
 import java.util.Map;
 
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.neo4j.ogm.config.Configuration;
 import org.neo4j.ogm.model.Result;
 import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
-
+ 
 import com.landawn.abacus.da.neo4j.model.Actor;
 import com.landawn.abacus.da.neo4j.model.Address;
 import com.landawn.abacus.da.neo4j.model.Customer;
-import com.landawn.abacus.da.neo4j.model.Movie;
+import com.landawn.abacus.da.neo4j.model.Movie; 
 import com.landawn.abacus.da.neo4j.model.Order;
 import com.landawn.abacus.da.neo4j.model.OrderItem;
 import com.landawn.abacus.da.neo4j.model.Product;
@@ -22,7 +27,28 @@ import com.landawn.abacus.util.Strings;
 
 // http://neo4j.com/docs/ogm/java/stable/
 public class Neo4jOGMTest {
-    private static final SessionFactory sessionFactory = new SessionFactory("com.landawn.abacus.da.neo4j.model");
+    private static SessionFactory sessionFactory;
+
+    @BeforeAll
+    public static void setUpClass() {
+        final Configuration configuration = new Configuration.Builder().build();
+        try {
+            Class.forName(configuration.getDriverClassName());
+        } catch (final ClassNotFoundException e) {
+            assumeTrue(false, "Neo4j OGM integration tests require the optional driver " + configuration.getDriverClassName());
+        }
+
+        // Keep initialization in the JUnit lifecycle so a missing driver cannot poison the test class.
+        sessionFactory = new SessionFactory(configuration, "com.landawn.abacus.da.neo4j.model");
+    }
+
+    @AfterAll
+    public static void tearDownClass() {
+        if (sessionFactory != null) {
+            sessionFactory.close();
+            sessionFactory = null;
+        }
+    }
 
     /**
      * 

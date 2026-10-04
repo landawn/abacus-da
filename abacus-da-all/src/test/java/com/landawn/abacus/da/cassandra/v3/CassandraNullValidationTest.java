@@ -22,9 +22,10 @@ import com.datastax.driver.core.ProtocolVersion;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.v3.CassandraExecutor.StatementSettings;
 
-class CassandraNullValidationTest {
+public class CassandraNullValidationTest extends TestBase {
     private static CassandraExecutor executor(final Session session, final StatementSettings settings) {
         final Cluster cluster = mock(Cluster.class);
         final Configuration configuration = mock(Configuration.class);

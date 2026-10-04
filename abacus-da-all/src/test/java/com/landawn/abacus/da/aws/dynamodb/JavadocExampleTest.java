@@ -8,6 +8,8 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import com.landawn.abacus.da.TestBase;
+
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeAction;
@@ -29,7 +31,7 @@ import software.amazon.awssdk.core.retry.RetryPolicy;
  * - com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor
  * - com.landawn.abacus.da.aws.dynamodb.v2.AsyncDynamoDBExecutor
  */
-public class JavadocExampleTest {
+public class JavadocExampleTest extends TestBase {
 
     /**
      * Test examples from v2/DynamoDBExecutor.java class-level documentation (line 133)

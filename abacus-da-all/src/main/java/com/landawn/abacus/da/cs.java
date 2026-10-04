@@ -402,6 +402,11 @@ public final class cs { // NOSONAR
     public static final String gets = "gets";
 
     /**
+     * Parameter name for a MongoDB {@code $group} key document.
+     */
+    public static final String groupFields = "groupFields";
+
+    /**
      * Parameter name for an {@code HBaseExecutor} instance.
      */
     public static final String hbaseExecutor = "hbaseExecutor";
@@ -590,6 +595,11 @@ public final class cs { // NOSONAR
      * Parameter name for a prepared Cassandra statement.
      */
     public static final String preStmt = "preStmt";
+
+    /**
+     * Parameter name for a MongoDB {@code $project} stage document.
+     */
+    public static final String project = "project";
 
     /**
      * Parameter name for a single entity property name.

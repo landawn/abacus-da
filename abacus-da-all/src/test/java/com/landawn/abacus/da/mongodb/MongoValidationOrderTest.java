@@ -13,12 +13,13 @@ import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.InsertOneModel;
 
-class MongoValidationOrderTest {
+public class MongoValidationOrderTest extends TestBase {
 
     @Test
     void validatesEmptyCollectionNameBeforeResultType() {

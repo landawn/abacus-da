@@ -56,6 +56,34 @@ public class MongoGroupingPathRegressionTest extends TestBase {
     }
 
     @Test
+    public void singleFieldGroupAndDistinctRejectMalformedPaths() {
+        final MongoCollectionExecutor executor = executor(new AtomicReference<>());
+        final MongoCollectionMapper<Map> mapper = new MongoCollectionMapper<>(executor, Map.class);
+
+        // The multi-field overloads always rejected these paths; the single-field grouping and distinct
+        // pipelines validate them too (previously they reached the server, or built an empty _id projection key).
+        // Validation is eager at publisher construction, so no subscription is needed.
+        for (final String name : List.of("address..city", ".city", "address.", "_id.")) {
+            assertThrows(IllegalArgumentException.class, () -> executor.groupBy(name), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupBy(name, Map.class), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupBy(name, String.class), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(name), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(name, Map.class), name);
+            assertThrows(IllegalArgumentException.class, () -> mapper.distinct(name), name);
+            assertThrows(IllegalArgumentException.class, () -> mapper.distinct(name, new Document("active", true)), name);
+            // The mapper's single-field grouping delegates to the executor overloads above, so it is rejected eagerly too.
+            assertThrows(IllegalArgumentException.class, () -> mapper.groupBy(name), name);
+            assertThrows(IllegalArgumentException.class, () -> mapper.groupByAndCount(name), name);
+        }
+    }
+
+    @Test
+    public void countColumnNameHasSingleSource() {
+        // The reactive executor's count accumulator and the shared collision check must use the same column name.
+        assertEquals(com.landawn.abacus.da.mongodb.MongoDBBase.GROUP_COUNT_FIELD, MongoCollectionExecutor._COUNT);
+    }
+
+    @Test
     public void countColumnRejectsNestedOutputPathCollision() {
         final AtomicReference<List<? extends Bson>> pipeline = new AtomicReference<>();
         final MongoCollectionExecutor executor = executor(pipeline);
@@ -66,6 +94,10 @@ public class MongoGroupingPathRegressionTest extends TestBase {
         // Document rows retain the group key under _id, so the separate count column cannot overwrite it.
         executor.groupByAndCount("count.value", Document.class);
         assertEquals(List.of(new Document("$group", new Document("_id", "$count.value").append("count", new Document("$sum", 1)))), pipeline.get());
+        // The multi-field overload is exempt with Document rows too: the composite key stays under _id (no $project stage).
+        executor.groupByAndCount(List.of("count"), Document.class);
+        assertEquals(List.of(new Document("$group", new Document("_id", new Document("count", "$count")).append("count", new Document("$sum", 1)))),
+                pipeline.get());
         executor.groupByAndCount("counter.value", Map.class);
         assertEquals("$_id", ((Document) pipeline.get().get(1)).get("$project", Document.class).get("counter.value"));
     }

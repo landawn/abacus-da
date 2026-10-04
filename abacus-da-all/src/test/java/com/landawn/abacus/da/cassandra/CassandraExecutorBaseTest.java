@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.annotation.Id;
+import com.landawn.abacus.da.QueryBuilderLeakAssertions;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
@@ -1737,17 +1738,17 @@ public class CassandraExecutorBaseTest extends TestBase {
             assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareQuery(BadTableEntity.class, List.of("name"), null, 0));
             assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
                     () -> current.exposedPrepareDelete(BadTableEntity.class, List.of("name"), Filters.eq("id", 1)));
+            // The update and whole-row delete factories validate the derived table name up front (CqlBuilder
+            // update(Class)/deleteFrom(Class) checkCqlTableReference), so these fail at factory time too.
+            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
+                    () -> current.exposedPrepareUpdate(BadTableEntity.class, Map.of("name", "value"), Filters.eq("id", 1)));
+            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareDelete(BadTableEntity.class, null, Filters.eq("id", 1)));
         }
     }
 
-    private static void assertRejectedWithoutBuilderLeak(final Class<? extends Throwable> exceptionClass, final Runnable action) throws Exception {
-        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
-        field.setAccessible(true);
-        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
-        final int before = counter.get();
-
-        assertThrows(exceptionClass, action::run);
-        assertEquals(before, counter.get(), "A failed executor preparation must release its unreachable builder");
+    private static void assertRejectedWithoutBuilderLeak(final Class<? extends Throwable> exceptionClass, final Runnable action) {
+        QueryBuilderLeakAssertions.assertRejectedWithoutBuilderLeak(exceptionClass, action::run,
+                "A failed executor preparation must release its unreachable builder");
     }
 
     @com.landawn.abacus.annotation.Table(name = "invalid table")

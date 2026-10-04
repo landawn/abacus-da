@@ -39,6 +39,7 @@ import com.google.cloud.bigquery.QueryParameterValue;
 import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.StandardSQLTypeName;
 import com.google.cloud.bigquery.TableResult;
+import com.landawn.abacus.da.QueryBuilderLeakAssertions;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.condition.Condition;
@@ -6276,14 +6277,30 @@ public class BigQueryExecutorTest extends TestBase {
         org.mockito.Mockito.verifyNoInteractions(mockBigQuery);
     }
 
-    private static void assertRejectedWithoutBuilderLeak(final org.junit.jupiter.api.function.Executable action) throws Exception {
-        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
-        field.setAccessible(true);
-        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
-        final int before = counter.get();
+    @Test
+    public void testRejectedDslFactoryCallDoesNotLeakSqlBuilder() throws Exception {
+        // Creation-time failures: the rejection happens inside the Dsl factory (PSC/PAC/PLC.insert/select), which
+        // validates and snapshots its arguments before allocating a pooled builder (and releases an allocated builder
+        // on failure), so buildSql is never reached. These calls pin that factory contract.
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final BigQueryExecutor current = new BigQueryExecutor(mockBigQuery, policy);
+            // A blank property name is rejected inside PSC.select(...) before a builder is allocated.
+            assertRejectedWithoutBuilderLeak(() -> current.query(TestEntity.class, List.of(""), null));
+            // A blank key is rejected inside PSC.insert(props) before a builder is allocated.
+            assertRejectedWithoutBuilderLeak(() -> current.insert(TestEntity.class, Map.of("", "updated")));
+            // A bean with no insertable value is rejected inside PSC.insert(entity) before a builder is allocated.
+            assertRejectedWithoutBuilderLeak(() -> current.insert(new SqlValueEntity()));
+        }
+        org.mockito.Mockito.verifyNoInteractions(mockBigQuery);
+    }
 
-        assertThrows(IllegalArgumentException.class, action);
-        assertEquals(before, counter.get(), "A rejected query must release the executor-owned builder");
+    // The counter assertions are the empirical canary for buildSql's documented assumption that
+    // AbstractQueryBuilder.build() releases the pooled StringBuilder even for an incomplete statement (and that its
+    // closed-state guard prevents a second decrement); the Dsl factories' creation-time release discipline is pinned
+    // the same way by testRejectedDslFactoryCallDoesNotLeakSqlBuilder.
+    private static void assertRejectedWithoutBuilderLeak(final org.junit.jupiter.api.function.Executable action) {
+        QueryBuilderLeakAssertions.assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, action,
+                "A rejected query must release the executor-owned builder");
     }
 
     @lombok.Data

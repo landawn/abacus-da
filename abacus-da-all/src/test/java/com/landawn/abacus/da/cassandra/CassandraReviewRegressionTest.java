@@ -13,10 +13,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.annotation.Id;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.query.Filters;
 
 @Tag("base-test")
-class CassandraReviewRegressionTest {
+public class CassandraReviewRegressionTest extends TestBase {
 
     @Test
     void deletingAllExcludedColumnsCannotBecomeAWholeRowDelete() {

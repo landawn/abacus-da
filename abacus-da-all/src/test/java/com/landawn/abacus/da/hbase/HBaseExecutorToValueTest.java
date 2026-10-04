@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.annotation.Column;
 import com.landawn.abacus.annotation.Id;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
 import com.landawn.abacus.util.HBaseColumn;
 import com.landawn.abacus.util.N;
@@ -54,7 +55,7 @@ import lombok.NoArgsConstructor;
  * causing the entity to be (incorrectly) treated as empty and {@code null} returned instead
  * of a mapped entity.</p>
  */
-public class HBaseExecutorToValueTest {
+public class HBaseExecutorToValueTest extends TestBase {
 
     @Data
     @NoArgsConstructor

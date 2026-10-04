@@ -3463,6 +3463,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Completes and builds an executor-owned builder, releasing it if configuration fails before build().
      *
+     * <p>Scope boundary: the factory call that produces the builder (e.g. {@code NSC.insert(props)}) runs before
+     * this method's try block, so release-on-failure for a factory-time error is the factory's own responsibility.
+     * The {@code CqlBuilder.Dsl} factories either validate their arguments before creating the builder or route
+     * post-creation set-up through {@code setUpOrRelease}, which builds (and so releases) the unreachable instance
+     * before rethrowing; likewise the parent abacus-query factories validate before acquiring the pooled
+     * {@code StringBuilder}. This method itself guarantees release for completion-time failures (a throwing
+     * {@code complete} consumer) and for a failing {@code build()}.</p>
+     *
      * @throws RuntimeException if completing or building the statement fails
      */
     private static SP buildCql(final CqlBuilder builder, final Consumer<CqlBuilder> complete) throws RuntimeException {

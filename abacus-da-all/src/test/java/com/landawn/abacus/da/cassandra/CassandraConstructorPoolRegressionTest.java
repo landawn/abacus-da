@@ -13,11 +13,12 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import com.datastax.oss.driver.api.core.CqlSession;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.pool.KeyedObjectPool;
 import com.landawn.abacus.pool.PoolFactory;
 
 @Tag("base-test")
-class CassandraConstructorPoolRegressionTest {
+public class CassandraConstructorPoolRegressionTest extends TestBase {
 
     @Test
     void failedModernConstructorDoesNotRetainPool() throws Exception {

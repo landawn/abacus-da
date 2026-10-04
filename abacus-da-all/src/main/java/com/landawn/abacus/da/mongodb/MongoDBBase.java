@@ -28,6 +28,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -65,6 +66,7 @@ import org.bson.conversions.Bson;
 import org.bson.types.Binary;
 import org.bson.types.ObjectId;
 
+import com.landawn.abacus.annotation.Internal;
 import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
@@ -213,6 +215,230 @@ public abstract class MongoDBBase {
      * variant {@code com.landawn.abacus.da.mongodb.reactivestreams.MongoDB}.
      */
     protected MongoDBBase() {
+    }
+
+    /**
+     * Name of the per-group count column produced by the {@code groupByAndCount} pipelines.
+     *
+     * <p><b>Internal:</b> shared by the sync and reactive streams executors so that the count accumulator they build
+     * and the collision check in {@link #checkGroupFieldNotCountColumn(String, Class)} always agree; not part of the
+     * supported API.</p>
+     */
+    @Internal
+    public static final String GROUP_COUNT_FIELD = "count";
+
+    /**
+     * Validates a single field path used by the {@code groupBy}/{@code groupByAndCount}/{@code distinct}
+     * pipeline builders.
+     *
+     * <p><b>Internal:</b> this helper is public only so that the executors and mappers in the
+     * {@code mongodb} and {@code mongodb.reactivestreams} packages can share it; it is not part of the supported
+     * API and may change or be removed without notice.</p>
+     *
+     * <p>A grouping or projection stage treats a dotted name as a path. An empty path segment
+     * ({@code "a..b"}, {@code "a."}, {@code ".a"}) would otherwise reach the server as an invalid path
+     * expression or, under {@code "_id."}, produce an empty projection key, so it is rejected up front.
+     * This check is shared by the single-field and multi-field grouping overloads of the sync and
+     * reactive streams executors and by both mappers' {@code distinct} pipelines.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * MongoDBBase.checkGroupFieldPath("address.city"); // OK
+     * MongoDBBase.checkGroupFieldPath("address..city"); // throws IllegalArgumentException (empty segment)
+     * MongoDBBase.checkGroupFieldPath("");              // throws IllegalArgumentException (empty path)
+     * }</pre>
+     *
+     * @param fieldName the field path to validate
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment
+     */
+    @Internal
+    public static void checkGroupFieldPath(final String fieldName) throws IllegalArgumentException {
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+
+        for (final String part : fieldName.split("\\.", -1)) {
+            if (part.isEmpty()) {
+                throw new IllegalArgumentException("Group field path contains an empty segment: " + fieldName);
+            }
+        }
+    }
+
+    /**
+     * Inserts a field path into a {@code $group} key document as a nested expression object.
+     *
+     * <p><b>Internal:</b> this helper is public only so that the executors in the {@code mongodb} and
+     * {@code mongodb.reactivestreams} packages can share it; it is not part of the supported API and may change or
+     * be removed without notice.</p>
+     *
+     * <p>MongoDB rejects a literal dotted key in a {@code $group} expression object, so
+     * {@code "address.city"} must be expressed as {@code {address: {city: "$address.city"}}}.
+     * Ancestor/descendant paths cannot share this shape and are rejected, but repeated identical
+     * paths are harmless. This helper is shared by the multi-field grouping overloads of the sync
+     * and reactive streams executors.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Document groupFields = new Document();
+     * MongoDBBase.appendGroupField(groupFields, "address.city"); // {address: {city: "$address.city"}}
+     * MongoDBBase.appendGroupField(groupFields, "address");      // throws IllegalArgumentException (overlapping paths)
+     * }</pre>
+     *
+     * @param groupFields the {@code $group} key document to append to, built only by previous calls of this method
+     * @param fieldName the field path to group by; dotted paths are nested
+     * @throws IllegalArgumentException if {@code groupFields} is null, if {@code fieldName} is null, empty, or contains an
+     *         empty path segment, or if it overlaps (as ancestor or descendant) a path already present in {@code groupFields}
+     */
+    @Internal
+    public static void appendGroupField(final Document groupFields, final String fieldName) throws IllegalArgumentException {
+        N.checkArgNotNull(groupFields, cs.groupFields);
+        checkGroupFieldPath(fieldName);
+
+        final String[] path = fieldName.split("\\.", -1);
+        Document parent = groupFields;
+
+        for (int i = 0; i < path.length; i++) {
+            final Object existing = parent.get(path[i]);
+
+            if (i == path.length - 1) {
+                if (existing instanceof Document) {
+                    throw new IllegalArgumentException("Overlapping group field paths: " + fieldName);
+                }
+
+                parent.put(path[i], "$" + fieldName);
+            } else if (existing == null) {
+                final Document child = new Document();
+                parent.put(path[i], child);
+                parent = child;
+            } else if (existing instanceof final Document child) {
+                parent = child;
+            } else {
+                throw new IllegalArgumentException("Overlapping group field paths: " + fieldName);
+            }
+        }
+    }
+
+    /**
+     * Rebuilds embedded {@code _id} fields as a fresh expression object in a grouping or distinct projection.
+     *
+     * <p><b>Internal:</b> this helper is public only so that the executors and mappers in the
+     * {@code mongodb} and {@code mongodb.reactivestreams} packages can share it; it is not part of the supported
+     * API and may change or be removed without notice.</p>
+     *
+     * <p>A dotted projection traverses the previous {@code _id} when it is an array, changing the result's
+     * shape. The {@code $mergeObjects} expression wrapper forces expression evaluation (a bare nested document
+     * is still a traversing projection) and preserves the complete key value, including empty and nested arrays.
+     * This helper is shared by the grouping and {@code distinct} pipelines of the sync and reactive streams
+     * executors and mappers.</p>
+     *
+     * <p>Every {@code _id.*} key is validated before {@code project} is modified, so a rejected projection is
+     * left unchanged. A projection value that is itself a {@link Document} (an expression) is kept as-is and is
+     * never treated as the parent of another {@code _id.*} path.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Document project = new Document("_id", 0).append("_id.part", "$_id");
+     * MongoDBBase.rebuildEmbeddedIdProjection(project);
+     * // project is now {_id: {$mergeObjects: [{part: "$_id"}]}}: the _id: 0 exclusion is replaced because
+     * // mixing it with _id.* paths would be a server-side path-collision error.
+     *
+     * MongoDBBase.rebuildEmbeddedIdProjection(new Document("_id.a", "$x").append("_id.a.b", "$y"));
+     * // throws IllegalArgumentException (overlapping _id paths)
+     * }</pre>
+     *
+     * @param project the projection document to rebuild in place
+     * @return the same projection document, with any {@code _id.*} keys nested under a {@code $mergeObjects} expression
+     * @throws IllegalArgumentException if {@code project} is null, an {@code _id.*} key contains an empty path segment
+     *         (such as {@code "_id."} or {@code "_id..a"}), or two {@code _id.*} keys overlap as ancestor and descendant
+     */
+    @Internal
+    public static Document rebuildEmbeddedIdProjection(final Document project) throws IllegalArgumentException {
+        N.checkArgNotNull(project, cs.project);
+
+        final List<String> idFields = new ArrayList<>();
+
+        for (final String field : project.keySet()) {
+            if (field.startsWith(_ID + ".")) {
+                idFields.add(field);
+            }
+        }
+
+        if (idFields.isEmpty()) {
+            return project;
+        }
+
+        final Document id = new Document();
+        // Only nodes created here may be descended into: a Document-valued projection expression is a leaf, so an
+        // overlapping deeper path is rejected instead of being merged into (or, in reverse order, overwriting) it.
+        final Set<Document> createdNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        for (final String field : idFields) {
+            checkGroupFieldPath(field);
+
+            final String[] path = field.split("\\.", -1);
+            Document parent = id;
+
+            for (int i = 1; i < path.length - 1; i++) {
+                final Object existing = parent.get(path[i]);
+
+                if (existing == null && !parent.containsKey(path[i])) {
+                    final Document child = new Document();
+                    parent.append(path[i], child);
+                    createdNodes.add(child);
+                    parent = child;
+                } else if (existing instanceof final Document child && createdNodes.contains(child)) {
+                    parent = child;
+                } else {
+                    throw new IllegalArgumentException("Overlapping _id projection paths: " + field);
+                }
+            }
+
+            final String leaf = path[path.length - 1];
+
+            if (parent.containsKey(leaf)) {
+                throw new IllegalArgumentException("Overlapping _id projection paths: " + field);
+            }
+
+            parent.append(leaf, project.get(field));
+        }
+
+        // Mutate the caller's projection only after every _id.* key has been validated.
+        for (final String field : idFields) {
+            project.remove(field);
+        }
+
+        project.put(_ID, new Document("$mergeObjects", N.asList(id)));
+        return project;
+    }
+
+    /**
+     * Rejects a {@code groupByAndCount} group field that would collide with the count column.
+     *
+     * <p><b>Internal:</b> this helper is public only so that the executors in the {@code mongodb} and
+     * {@code mongodb.reactivestreams} packages can share it; it is not part of the supported API and may change or
+     * be removed without notice.</p>
+     *
+     * <p>Non-{@link Document} {@code groupByAndCount} rows are projected as
+     * {@code {<fieldName>: <key>, count: <n>}}: a group field literally named {@code "count"} (the
+     * {@link #GROUP_COUNT_FIELD}) would be overwritten by the count, while {@code "count.x"} conflicts with that
+     * parent projection. {@link Document} rows keep the group key under {@code _id}, so both names remain usable
+     * with a {@link Document} row type. This check is shared by the sync and reactive streams executors.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * MongoDBBase.checkGroupFieldNotCountColumn("count.value", Map.class);      // throws IllegalArgumentException
+     * MongoDBBase.checkGroupFieldNotCountColumn("count.value", Document.class); // OK: key stays under _id
+     * }</pre>
+     *
+     * @param fieldName the group field path to check
+     * @param rowType the requested result type
+     * @throws IllegalArgumentException if {@code fieldName} is {@code "count"} or starts with {@code "count."}
+     *         and {@code rowType} is not {@link Document}
+     */
+    @Internal
+    public static void checkGroupFieldNotCountColumn(final String fieldName, final Class<?> rowType) throws IllegalArgumentException {
+        if ((GROUP_COUNT_FIELD.equals(fieldName) || (fieldName != null && fieldName.startsWith(GROUP_COUNT_FIELD + "."))) && !Document.class.equals(rowType)) {
+            throw new IllegalArgumentException(
+                    "Group field name '" + fieldName + "' conflicts with the count column of groupByAndCount; use Document as the row type");
+        }
     }
 
     /**

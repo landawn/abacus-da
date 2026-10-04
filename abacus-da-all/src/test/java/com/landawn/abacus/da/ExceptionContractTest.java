@@ -27,7 +27,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-class ExceptionContractTest extends TestBase {
+public class ExceptionContractTest extends TestBase {
 
     @Test
     void dynamoInFiltersPropagateValueConversionFailures() {

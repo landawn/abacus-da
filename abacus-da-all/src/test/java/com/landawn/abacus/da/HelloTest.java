@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.util.N;
 
-class HelloTest {
+public class HelloTest extends TestBase {
 
     /**
      */

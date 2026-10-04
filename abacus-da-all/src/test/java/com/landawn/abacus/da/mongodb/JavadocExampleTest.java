@@ -10,6 +10,7 @@ import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.N;
 import com.mongodb.BasicDBObject;
 import com.mongodb.MongoClientSettings;
@@ -25,7 +26,7 @@ import com.mongodb.client.MongoDatabase;
  * This test class validates that all code examples in Javadoc comments
  * compile correctly and demonstrate valid usage patterns.
  */
-public class JavadocExampleTest {
+public class JavadocExampleTest extends TestBase {
 
     // Test helper class for entity mapping
     public static class User {

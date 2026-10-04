@@ -2273,6 +2273,9 @@ public class CosmosContainerExecutor {
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
         }
 
+        // The select(...) creation above sits outside the release-guarding try/catch on purpose: the Dsl factories
+        // validate their arguments before acquiring the pooled StringBuilder, so a creation-time failure owns its
+        // own cleanup. The try/catch guarantees release for failures in from/where/limit/build.
         final SP built;
         try {
             sqlBuilder.from(targetClass, COSMOS_ALIAS);

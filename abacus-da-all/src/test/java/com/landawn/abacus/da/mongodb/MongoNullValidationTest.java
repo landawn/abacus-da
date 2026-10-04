@@ -26,11 +26,12 @@ import org.bson.codecs.configuration.CodecRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 
-class MongoNullValidationTest {
+public class MongoNullValidationTest extends TestBase {
 
     @Test
     void codecRegistryRejectsNullClassAndRetainsIgnoredNullRegistry() {

@@ -3781,7 +3781,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Stream of entities containing only the distinct field values (unlike the native {@code distinct} command,
      *         documents that lack the field contribute one more entity whose field value is {@code null}, or a {@code null}
      *         element for a single-value {@code T})
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"})
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3799,6 +3799,8 @@ public final class MongoCollectionMapper<T> {
     // The driver's native distinct(fieldName, entityClass) decodes each raw VALUE with the entity codec
     // and throws BsonInvalidOperationException for any scalar field.
     private static List<Bson> distinctPipeline(final String fieldName, final Bson filter, final Class<?> rowType) {
+        MongoDBBase.checkGroupFieldPath(fieldName);
+
         final List<Bson> pipeline = new ArrayList<>(3);
 
         if (filter != null) {
@@ -3813,7 +3815,7 @@ public final class MongoCollectionMapper<T> {
         if (!isSingleValueRowType(rowType)) {
             final Document project = new Document("_id", 0).append(fieldName, "$_id");
 
-            pipeline.add(new Document("$project", MongoCollectionExecutor.rebuildEmbeddedIdProjection(project)));
+            pipeline.add(new Document("$project", MongoDBBase.rebuildEmbeddedIdProjection(project)));
         }
 
         return pipeline;
@@ -3836,7 +3838,9 @@ public final class MongoCollectionMapper<T> {
      * the filter criteria. Each distinct value is surfaced under {@code fieldName} on an entity of the
      * mapped type, and is only readable if the entity declares a matching property (a single-value {@code T}
      * such as {@code String} gets no {@code $project} stage and receives each value directly, as in
-     * {@link #distinct(String)}). This is useful for
+     * {@link #distinct(String)}). For Map, {@link Document} or {@code Object} results, dotted field names produce nested rows,
+     * including paths inside an embedded {@code _id} ({@code distinct("_id.part", filter)} yields {@code {_id: {part: <value>}}}
+     * rows), as in {@link #distinct(String)}. This is useful for
      * getting distinct values from a subset of the collection based on specific conditions. As with
      * {@link #distinct(String)}, an array-valued field is not unwound: each distinct whole array is one result.</p>
      *
@@ -3857,7 +3861,8 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities before extracting distinct values
      * @return a Stream of entities containing only the distinct field values from matching entities (matching documents that
      *         lack the field contribute one more entity whose field value is {@code null}, as in {@link #distinct(String)})
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code filter} is null
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"}),
+     *         or if {@code filter} is null
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -3936,9 +3941,10 @@ public final class MongoCollectionMapper<T> {
      * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
      * stream.</p>
      *
-     * @param fieldName the field name to group entities by
+     * @param fieldName the field name to group entities by; a dotted path such as {@code "a.b"} groups by
+     *        the nested field, and each segment must be nonempty
      * @return a Stream of entities representing grouped results
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"})
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -4010,9 +4016,11 @@ public final class MongoCollectionMapper<T> {
      * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
      * stream.</p>
      *
-     * @param fieldName the field name to group entities by
+     * @param fieldName the field name to group entities by; a dotted path such as {@code "a.b"} groups by
+     *        the nested field, and each segment must be nonempty
      * @return a Stream of entities with group information and counts
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} or starts
+     * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"}),
+     *         or if {@code fieldName} is {@code "count"} or starts
      *         with {@code "count."} (it would collide with the count column), and the mapped type is not {@link Document}
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed

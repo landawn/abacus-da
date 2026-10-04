@@ -4703,7 +4703,8 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
-     * @param fieldName the field name to group by
+     * @param fieldName the field name to group by. A path with an empty segment (such as {@code "a..b"}) is rejected
+     *        by the delegated {@code groupBy} operation and completes the returned future exceptionally
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
@@ -4786,7 +4787,8 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
      * executing the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
-     * @param fieldName the field name to group by and count
+     * @param fieldName the field name to group by and count. A path with an empty segment (such as {@code "a..b"}) is rejected
+     *        by the delegated {@code groupByAndCount} operation and completes the returned future exceptionally
      * @return a ContinuableFuture that completes with a Stream of Documents containing group keys and counts
      * @throws IllegalArgumentException if {@code fieldName} is null or empty
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission

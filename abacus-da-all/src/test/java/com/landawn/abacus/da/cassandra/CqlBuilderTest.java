@@ -28,6 +28,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import com.landawn.abacus.da.QueryBuilderLeakAssertions;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.entity.Account;
 import com.landawn.abacus.da.entity.Users;
@@ -4829,9 +4830,7 @@ public class CqlBuilderTest extends TestBase {
      */
     @Test
     public void test_sliceQ_failedDslFactory_releasesBuilder() throws Exception {
-        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
-        field.setAccessible(true);
-        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
+        final java.util.concurrent.atomic.AtomicInteger counter = QueryBuilderLeakAssertions.activeStringBuilderCounter();
         final int before = counter.get();
 
         assertThrows(IllegalArgumentException.class, () -> PSC.insert((Object) Integer.valueOf(3)));
@@ -5012,9 +5011,7 @@ public class CqlBuilderTest extends TestBase {
     /** Factories whose set-up fails in a later step (entity metadata, derived table name) release their builder too. */
     @Test
     public void test_verifyQB_failedDslFactory_releasesBuilder_afterLaterSetUpStep() throws Exception {
-        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
-        field.setAccessible(true);
-        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
+        final java.util.concurrent.atomic.AtomicInteger counter = QueryBuilderLeakAssertions.activeStringBuilderCounter();
         final int before = counter.get();
 
         assertThrows(UnsupportedOperationException.class, () -> PSC.update("t", VerifyQbLongDateEntity.class));
@@ -5027,6 +5024,14 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> PSC.insertInto(VerifyQbBadTableEntity.class));
         assertThrows(IllegalArgumentException.class, () -> PSC.selectFrom(VerifyQbBadTableEntity.class));
         assertThrows(IllegalArgumentException.class, () -> PSC.count(VerifyQbBadTableEntity.class));
+
+        // update(Class)/deleteFrom(Class) also reject the derived table "a b" up front; previously they assigned
+        // it without validation and silently rendered invalid CQL.
+        assertThrows(IllegalArgumentException.class, () -> PSC.update(VerifyQbBadTableEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update(VerifyQbBadTableEntity.class, null));
+        assertThrows(IllegalArgumentException.class, () -> PSC.deleteFrom(VerifyQbBadTableEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> NSC.update(VerifyQbBadTableEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> NSC.deleteFrom(VerifyQbBadTableEntity.class));
 
         assertEquals(before, counter.get());
 

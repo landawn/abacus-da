@@ -2625,7 +2625,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param entityClass the entity class
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or if its table name
+         *         is not exactly one CQL table reference
          */
         public CqlBuilder update(final Class<?> entityClass) throws IllegalArgumentException {
             return update(entityClass, null);
@@ -2652,7 +2653,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param entityClass the entity class
          * @param excludedPropNames properties to exclude from the update
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or if its table name
+         *         is not exactly one CQL table reference
          */
         public CqlBuilder update(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, UPDATE_PART_MSG);
@@ -2663,6 +2665,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 instance._op = OperationType.UPDATE;
                 instance.setEntityClass(entityClass);
                 instance._tableName = getTableName(entityClass, instance._namingPolicy);
+                // Match into(Class)/from(Class): reject an unrenderable @Table name up front
+                // instead of silently producing invalid CQL.
+                checkCqlTableReference(instance._tableName, cs.tableName);
                 instance._propOrColumnNames = getUpdatePropNamesByClass(entityClass, excludedPropNames);
             });
         }
@@ -2903,7 +2908,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param entityClass the entity class
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or if its table name
+         *         is not exactly one CQL table reference
          */
         public CqlBuilder deleteFrom(final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, DELETION_PART_MSG);
@@ -2914,6 +2920,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 instance._op = OperationType.DELETE;
                 instance.setEntityClass(entityClass);
                 instance._tableName = getTableName(entityClass, instance._namingPolicy);
+                // Match into(Class)/from(Class): reject an unrenderable @Table name up front
+                // instead of silently producing invalid CQL.
+                checkCqlTableReference(instance._tableName, cs.tableName);
             });
         }
 

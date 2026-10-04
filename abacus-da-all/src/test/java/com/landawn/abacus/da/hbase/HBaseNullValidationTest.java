@@ -17,9 +17,10 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.junit.jupiter.api.Test;
 
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.NamingPolicy;
 
-class HBaseNullValidationTest {
+public class HBaseNullValidationTest extends TestBase {
 
     @Test
     void requiredConversionArgumentsUseArgumentValidationInSignatureOrder() {

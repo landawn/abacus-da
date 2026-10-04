@@ -36,6 +36,7 @@ import com.azure.cosmos.models.FeedResponse;
 import com.azure.cosmos.models.PartitionKey;
 import com.azure.cosmos.models.SqlQuerySpec;
 import com.azure.cosmos.util.CosmosPagedIterable;
+import com.landawn.abacus.da.QueryBuilderLeakAssertions;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.azure.CosmosContainerExecutor;
 import com.landawn.abacus.query.Filters;
@@ -1323,14 +1324,22 @@ public class CosmosContainerExecutorTest extends TestBase {
         verifyNoInteractions(mockCosmosContainer);
     }
 
-    private static void assertRejectedWithoutBuilderLeak(final Runnable action) throws Exception {
-        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
-        field.setAccessible(true);
-        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
-        final int before = counter.get();
+    @Test
+    public void testRejectedDslFactoryCallDoesNotLeakSqlBuilder() throws Exception {
+        // Creation-time failures: prepareQuery calls PSC/PAC/PLC.select(...) outside its release-guarding try/catch,
+        // relying on the Dsl factory validating its arguments before allocating a pooled builder. A blank selected
+        // property is rejected inside select(...), so this pins that factory contract for every naming policy.
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final CosmosContainerExecutor current = new CosmosContainerExecutor(mockCosmosContainer, policy);
+            assertRejectedWithoutBuilderLeak(() -> current.streamItems(List.of(""), null, TestItem.class));
+            assertRejectedWithoutBuilderLeak(() -> current.streamItems(List.of("id", " "), null, TestItem.class));
+        }
+        verifyNoInteractions(mockCosmosContainer);
+    }
 
-        assertThrows(IllegalArgumentException.class, action::run);
-        assertEquals(before, counter.get(), "A rejected query must release the executor-owned builder");
+    private static void assertRejectedWithoutBuilderLeak(final Runnable action) {
+        QueryBuilderLeakAssertions.assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, action::run,
+                "A rejected query must release the executor-owned builder");
     }
 
     // Test data class

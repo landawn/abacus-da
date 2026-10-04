@@ -22,9 +22,10 @@ import org.junit.jupiter.api.Test;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.landawn.abacus.annotation.Id;
+import com.landawn.abacus.da.TestBase;
 
 /** Regression coverage for validation precedence without a Cassandra server. */
-class CassandraValidationOrderTest {
+public class CassandraValidationOrderTest extends TestBase {
 
     @Test
     void closedBuilderStatePrecedesInvalidArgumentsAndTimestampOverflow() {

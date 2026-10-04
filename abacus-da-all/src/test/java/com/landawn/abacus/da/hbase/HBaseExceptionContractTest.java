@@ -40,11 +40,12 @@ import org.junit.jupiter.api.Test;
 
 import com.google.protobuf.Service;
 import com.landawn.abacus.annotation.Id;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.HBaseColumn;
 
-class HBaseExceptionContractTest {
+public class HBaseExceptionContractTest extends TestBase {
 
     @Test
     void mapperValidatesEntityMetadataBeforeLaterParameters() {

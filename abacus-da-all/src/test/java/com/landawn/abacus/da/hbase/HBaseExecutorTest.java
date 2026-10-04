@@ -7,8 +7,13 @@ package com.landawn.abacus.da.hbase;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
@@ -21,14 +26,16 @@ import org.apache.hadoop.hbase.client.ColumnFamilyDescriptorBuilder;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.client.TableDescriptorBuilder;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.annotation.Column;
 import com.landawn.abacus.annotation.Id;
 import com.landawn.abacus.annotation.Table;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.hbase.HBaseExecutor.HBaseMapper;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
-import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.util.Dates;
 import com.landawn.abacus.util.HBaseColumn;
 import com.landawn.abacus.util.N;
@@ -45,35 +52,51 @@ public class HBaseExecutorTest {
     // create 'account', 'id', 'gui', 'name', 'emailAddress', 'lastUpdateTime', 'createTime', 'contact'
     // create 'contact', 'id', 'accountId', 'telephone', 'city', 'state', 'zipCode', 'status', 'lastUpdateTime', 'createTime'
 
-    static final HBaseExecutor hbaseExecutor;
+    private static HBaseExecutor hbaseExecutor;
 
-    static final HBaseMapper<Account, String> accountMapper;
+    private static HBaseMapper<Account, String> accountMapper;
 
-    static {
+    @BeforeAll
+    public static void setUpClass() throws IOException {
+        // Check the local prerequisite before creating a client or changing any tables.
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("localhost", 2181), 1000);
+        } catch (final ConnectException | SocketTimeoutException e) {
+            assumeTrue(false, "Live HBase requires ZooKeeper at localhost:2181: " + e.getMessage());
+        }
+
         Configuration config = HBaseConfiguration.create();
         config.setInt("timeout", 120000);
         config.set("hbase.master", "localhost:9000");
         config.set("hbase.zookeeper.quorum", "localhost");
         config.set("hbase.zookeeper.property.clientPort", "2181");
-        try {
-            hbaseExecutor = new HBaseExecutor(ConnectionFactory.createConnection(config));
-            final TableName tableName = TableName.valueOf("account");
+        hbaseExecutor = new HBaseExecutor(ConnectionFactory.createConnection(config));
+        final TableName tableName = TableName.valueOf("account");
 
-            final List<ColumnFamilyDescriptor> families = Stream.of("id", "gui", "fullName", "emailAddress", //
-                    "time", "createTime", "contact", "columnFamily2B").map(it -> ColumnFamilyDescriptorBuilder.newBuilder(it.getBytes()).build()).toList();
+        final List<ColumnFamilyDescriptor> families = Stream.of("id", "gui", "fullName", "emailAddress", //
+                "time", "createTime", "contact", "columnFamily2B").map(it -> ColumnFamilyDescriptorBuilder.newBuilder(it.getBytes()).build()).toList();
 
-            hbaseExecutor.admin().disableTable(tableName);
-            hbaseExecutor.admin().deleteTable(tableName);
+        hbaseExecutor.admin().disableTable(tableName);
+        hbaseExecutor.admin().deleteTable(tableName);
 
-            final TableDescriptor desc = TableDescriptorBuilder.newBuilder(tableName).setColumnFamilies(families).build();
-            hbaseExecutor.admin().createTable(desc);
+        final TableDescriptor desc = TableDescriptorBuilder.newBuilder(tableName).setColumnFamilies(families).build();
+        hbaseExecutor.admin().createTable(desc);
 
-            accountMapper = hbaseExecutor.mapper(Account.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        accountMapper = hbaseExecutor.mapper(Account.class);
 
         // HBaseExecutor.registerRowKeyProperty(Account.class, "id");
+    }
+
+    @AfterAll
+    public static void tearDownClass() throws IOException {
+        if (hbaseExecutor != null) {
+            try {
+                hbaseExecutor.close();
+            } finally {
+                hbaseExecutor = null;
+                accountMapper = null;
+            }
+        }
     }
 
     @Builder

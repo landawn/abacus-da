@@ -22,9 +22,10 @@ import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.type.UserDefinedType;
 import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CassandraExecutor.StatementSettings;
 
-class CassandraNullValidationTest {
+public class CassandraNullValidationTest extends TestBase {
     private static CassandraExecutor executor(final CqlSession session, final StatementSettings settings) {
         final DriverContext context = mock(DriverContext.class);
         when(session.getContext()).thenReturn(context);

@@ -23,9 +23,10 @@ import com.google.cloud.bigquery.QueryJobConfiguration;
 import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.StandardSQLTypeName;
 import com.google.cloud.bigquery.TableResult;
+import com.landawn.abacus.da.TestBase;
 
 @Tag("base-test")
-class BigQueryScalarMappingRegressionTest {
+public class BigQueryScalarMappingRegressionTest extends TestBase {
 
     @Test
     void binaryScalarWithBeanAccessorsIsDecodedForListsAndStreams() throws Exception {

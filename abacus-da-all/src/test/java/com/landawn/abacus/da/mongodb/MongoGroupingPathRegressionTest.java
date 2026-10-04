@@ -2,6 +2,8 @@ package com.landawn.abacus.da.mongodb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.lang.reflect.Proxy;
@@ -10,6 +12,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.bson.Document;
@@ -18,6 +21,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.util.ContinuableFuture;
+import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -54,6 +59,140 @@ public class MongoGroupingPathRegressionTest extends TestBase {
     }
 
     @Test
+    public void singleFieldGroupAndDistinctRejectMalformedPaths() {
+        final MongoCollectionExecutor executor = executor(new AtomicReference<>());
+        final MongoCollectionMapper<Map> mapper = new MongoCollectionMapper<>(executor, Map.class);
+
+        // The multi-field overloads always rejected these paths; the single-field grouping and distinct
+        // pipelines validate them too (previously they reached the server, or built an empty _id projection key).
+        for (final String name : List.of("address..city", ".city", "address.", "_id.")) {
+            assertThrows(IllegalArgumentException.class, () -> executor.groupBy(name), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupBy(name, Map.class), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupBy(name, String.class), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(name), name);
+            assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(name, Map.class), name);
+            assertThrows(IllegalArgumentException.class, () -> mapper.distinct(name), name);
+            assertThrows(IllegalArgumentException.class, () -> mapper.distinct(name, new Document("active", true)), name);
+            // The mapper's single-field grouping delegates to the executor overloads above, so it is rejected eagerly too.
+            assertThrows(IllegalArgumentException.class, () -> mapper.groupBy(name), name);
+            assertThrows(IllegalArgumentException.class, () -> mapper.groupByAndCount(name), name);
+        }
+    }
+
+    @Test
+    public void asyncSingleFieldGroupRejectsMalformedPathThroughFuture() {
+        final AsyncMongoCollectionExecutor async = executor(new AtomicReference<>()).async();
+
+        // The async overloads only check null/empty eagerly; the delegated sync call rejects the malformed path inside
+        // the task, so the documented outcome is an exceptionally completed future carrying the IllegalArgumentException.
+        for (final String name : List.of("address..city", ".city", "address.", "_id.")) {
+            for (final ContinuableFuture<Stream<Document>> future : List.of(async.groupBy(name), async.groupByAndCount(name))) {
+                final ExecutionException e = assertThrows(ExecutionException.class, future::get, name);
+                assertInstanceOf(IllegalArgumentException.class, e.getCause(), name);
+            }
+        }
+
+        assertThrows(IllegalArgumentException.class, () -> async.groupBy(""));
+        assertThrows(IllegalArgumentException.class, () -> async.groupByAndCount((String) null));
+    }
+
+    @Test
+    public void sharedGroupingHelpersValidateAndBuildPaths() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.checkGroupFieldPath(null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.checkGroupFieldPath(""));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.checkGroupFieldPath("a..b"));
+        MongoDBBase.checkGroupFieldPath("a.b");
+
+        final Document groupFields = new Document();
+        MongoDBBase.appendGroupField(groupFields, "address.city");
+        assertEquals(new Document("address", new Document("city", "$address.city")), groupFields);
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.appendGroupField(groupFields, "address"));
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.checkGroupFieldNotCountColumn("count.value", Map.class));
+        MongoDBBase.checkGroupFieldNotCountColumn("count.value", Document.class);
+
+        final Document project = new Document("_id", 0).append("_id.part", "$_id");
+        assertEquals(new Document("_id", new Document("$mergeObjects", List.of(new Document("part", "$_id")))),
+                MongoDBBase.rebuildEmbeddedIdProjection(project));
+    }
+
+    @Test
+    public void sharedGroupingHelpersRejectNullDocuments() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.appendGroupField(null, "status"));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.rebuildEmbeddedIdProjection(null));
+    }
+
+    @Test
+    public void embeddedIdProjectionRejectsOverlappingPathsWithoutModifyingProjection() {
+        // Previously "_id.a" then "_id.a.b" failed with a ClassCastException, and the reverse order silently
+        // overwrote the nested {b: ...} document with the "_id.a" value.
+        for (final List<String> keys : List.of(List.of("_id.a", "_id.a.b"), List.of("_id.a.b", "_id.a"), List.of("_id.a.b.c", "_id.a"),
+                List.of("_id.a", "_id.a.b.c"))) {
+            final Document project = new Document("_id", 0);
+            keys.forEach(key -> project.append(key, "$" + key));
+            final Document original = new Document(project);
+
+            assertThrows(IllegalArgumentException.class, () -> MongoDBBase.rebuildEmbeddedIdProjection(project), keys.toString());
+            assertEquals(original, project, keys.toString());
+        }
+    }
+
+    @Test
+    public void embeddedIdProjectionRejectsEmptySegmentsWithoutModifyingProjection() {
+        // Previously "_id." produced an empty projection key and "_id..a" an empty intermediate key.
+        for (final String key : List.of("_id.", "_id..a", "_id.a.", "_id.a..b")) {
+            final Document project = new Document("_id", 0).append("status", "$status").append(key, "$x");
+            final Document original = new Document(project);
+
+            assertThrows(IllegalArgumentException.class, () -> MongoDBBase.rebuildEmbeddedIdProjection(project), key);
+            assertEquals(original, project, key);
+        }
+    }
+
+    @Test
+    public void embeddedIdProjectionKeepsDocumentExpressionsAsLeaves() {
+        final Document expression = new Document("$toUpper", "$x");
+
+        final Document single = new Document("_id.a", expression);
+        assertEquals(new Document("_id", new Document("$mergeObjects", List.of(new Document("a", expression)))),
+                MongoDBBase.rebuildEmbeddedIdProjection(single));
+
+        // A deeper path must not be merged into the user's expression document (in either order).
+        for (final boolean expressionFirst : new boolean[] { true, false }) {
+            final Document project = expressionFirst ? new Document("_id.a", new Document("$toUpper", "$x")).append("_id.a.b", "$y")
+                    : new Document("_id.a.b", "$y").append("_id.a", new Document("$toUpper", "$x"));
+            final Document original = new Document(project);
+
+            assertThrows(IllegalArgumentException.class, () -> MongoDBBase.rebuildEmbeddedIdProjection(project), String.valueOf(expressionFirst));
+            assertEquals(original, project);
+            assertEquals(new Document("$toUpper", "$x"), project.get("_id.a"));
+        }
+    }
+
+    @Test
+    public void embeddedIdProjectionNestsSiblingsAndLeavesOtherKeys() {
+        final Document project = new Document("_id", 0).append("_id.n.a", "$p").append("status", "$s").append("_id.n.b", "$q").append("_id.c", "$r");
+
+        assertEquals(new Document("_id", new Document("$mergeObjects", List.of(new Document("n", new Document("a", "$p").append("b", "$q")).append("c", "$r"))))
+                .append("status", "$s"), MongoDBBase.rebuildEmbeddedIdProjection(project));
+
+        final Document withoutIdPaths = new Document("_id", 0).append("status", "$s");
+        assertSame(withoutIdPaths, MongoDBBase.rebuildEmbeddedIdProjection(withoutIdPaths));
+        assertEquals(new Document("_id", 0).append("status", "$s"), withoutIdPaths);
+    }
+
+    @Test
+    public void countColumnNameHasSingleSource() {
+        // The executor's count accumulator and the shared collision check must use the same column name.
+        assertEquals(MongoDBBase.GROUP_COUNT_FIELD, MongoCollectionExecutor._COUNT);
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.checkGroupFieldNotCountColumn(MongoDBBase.GROUP_COUNT_FIELD, Map.class));
+        assertThrows(IllegalArgumentException.class,
+                () -> MongoDBBase.checkGroupFieldNotCountColumn(MongoDBBase.GROUP_COUNT_FIELD + ".value", Object.class));
+        MongoDBBase.checkGroupFieldNotCountColumn(MongoDBBase.GROUP_COUNT_FIELD + "er", Map.class);
+        MongoDBBase.checkGroupFieldNotCountColumn(MongoDBBase.GROUP_COUNT_FIELD, Document.class);
+    }
+
+    @Test
     public void countColumnRejectsNestedOutputPathCollision() {
         final AtomicReference<List<? extends Bson>> pipeline = new AtomicReference<>();
         final MongoCollectionExecutor executor = executor(pipeline);
@@ -64,6 +203,10 @@ public class MongoGroupingPathRegressionTest extends TestBase {
         // Document rows retain the group key under _id, so the separate count column cannot overwrite it.
         executor.groupByAndCount("count.value", Document.class).close();
         assertEquals(List.of(new Document("$group", new Document("_id", "$count.value").append("count", new Document("$sum", 1)))), pipeline.get());
+        // The multi-field overload is exempt with Document rows too: the composite key stays under _id (no $project stage).
+        executor.groupByAndCount(List.of("count"), Document.class).close();
+        assertEquals(List.of(new Document("$group", new Document("_id", new Document("count", "$count")).append("count", new Document("$sum", 1)))),
+                pipeline.get());
         executor.groupByAndCount("counter.value", Map.class).close();
         assertEquals("$_id", ((Document) pipeline.get().get(1)).get("$project", Document.class).get("counter.value"));
     }
