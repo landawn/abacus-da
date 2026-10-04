@@ -304,7 +304,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         namedDataType.put(DataType.Name.CUSTOM.name(), ByteBuffer.class);
     }
 
-    private final KeyedObjectPool<String, PoolableAdapter<PreparedStatement>> preparedStatementPool = PoolFactory.createKeyedObjectPool(1024, 3000);
+    private final KeyedObjectPool<String, PoolableAdapter<PreparedStatement>> preparedStatementPool;
 
     private final Cluster cluster;
 
@@ -463,6 +463,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         asyncCassandraExecutor = new AsyncCassandraExecutor(this);
+
+        // The pool registers eviction and shutdown tasks. Allocate it last so failed session/mapper initialization
+        // cannot leave an unreachable pool whose tasks keep it alive.
+        preparedStatementPool = PoolFactory.createKeyedObjectPool(1024, 3000);
     }
 
     /**
@@ -2071,7 +2075,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Returns an executable {@link Statement} for a parameterless CQL query.
      *
-     * <p>For queries no longer than {@link #POOLABLE_LENGTH} characters, the immutable
+     * <p>For queries no longer than {@link #POOLABLE_LENGTH} characters, the
      * {@link PreparedStatement} is cached by resolved CQL text. A fresh {@link BoundStatement}
      * is created for every call because Driver 3.x bound statements are mutable and must not
      * be shared between concurrent operations.</p>
@@ -2397,18 +2401,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Calls {@link Session#prepare(String)} on the underlying session and applies the
-     * subset of this executor's {@link StatementSettings} that can be set on a
-     * {@link PreparedStatement} (consistency, serial consistency, retry policy, tracing).
+     * Calls {@link Session#prepare(String)} on the underlying session without changing
+     * the returned prepared statement's settings.
      *
-     * <p>Read-timeout and fetch size are not propagated here; they are applied when the
-     * resulting bound statement is configured via {@link #configStatement(Statement)}.</p>
+     * <p>The driver shares prepared statements for repeated queries. All executor-specific
+     * settings are applied to fresh bound statements via {@link #configStatement(Statement)},
+     * so they cannot affect another executor or a caller binding the shared prepared statement.</p>
      *
      * @param query the CQL query to prepare; must be non-null
-     * @return a {@link PreparedStatement} bound to this executor's settings, ready for
+     * @return a shared {@link PreparedStatement}, ready for
      *         {@link #bind(PreparedStatement, Object...)}
-     * @throws IllegalArgumentException if {@code query} is null or the configured serial consistency is not a serial level
-     *         ({@code SERIAL} or {@code LOCAL_SERIAL})
+     * @throws IllegalArgumentException if {@code query} is null
      * @throws RuntimeException if the driver cannot prepare {@code query} (for example, invalid CQL, no reachable
      *         host, or a closed session)
      */
@@ -2420,31 +2423,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             logger.debug("Preparing CQL: {}", query);
         }
 
-        final PreparedStatement preStat = session.prepare(query);
-
-        if (settings != null) {
-            if (settings.consistency() != null) {
-                preStat.setConsistencyLevel(settings.consistency());
-            }
-
-            if (settings.serialConsistency() != null) {
-                preStat.setSerialConsistencyLevel(settings.serialConsistency());
-            }
-
-            if (settings.retryPolicy() != null) {
-                preStat.setRetryPolicy(settings.retryPolicy());
-            }
-
-            if (settings.traceQuery() != null) {
-                if (settings.traceQuery()) {
-                    preStat.enableTracing();
-                } else {
-                    preStat.disableTracing();
-                }
-            }
-        }
-
-        return preStat;
+        // Driver 3 caches this mutable object across callers. Configure only the fresh BoundStatement in bind().
+        return session.prepare(query);
     }
 
     /**

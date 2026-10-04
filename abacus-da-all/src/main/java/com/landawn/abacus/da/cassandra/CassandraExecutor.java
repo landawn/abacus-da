@@ -308,7 +308,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     private static final Logger logger = LoggerFactory.getLogger(CassandraExecutor.class);
 
-    private final KeyedObjectPool<String, PoolableAdapter<PreparedStatement>> preparedStatementPool = PoolFactory.createKeyedObjectPool(1024, 3000);
+    private final KeyedObjectPool<String, PoolableAdapter<PreparedStatement>> preparedStatementPool;
 
     private final CqlSession session;
 
@@ -454,6 +454,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         asyncCassandraExecutor = new AsyncCassandraExecutor(this);
+
+        // The pool registers eviction and shutdown tasks. Allocate it last so failed session initialization
+        // cannot leave an unreachable pool whose tasks keep it alive.
+        preparedStatementPool = PoolFactory.createKeyedObjectPool(1024, 3000);
     }
 
     /**

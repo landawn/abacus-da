@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.landawn.abacus.annotation.Beta;
@@ -3460,6 +3461,29 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     }
 
     /**
+     * Completes and builds an executor-owned builder, releasing it if configuration fails before build().
+     *
+     * @throws RuntimeException if completing or building the statement fails
+     */
+    private static SP buildCql(final CqlBuilder builder, final Consumer<CqlBuilder> complete) throws RuntimeException {
+        try {
+            complete.accept(builder);
+            return builder.build();
+        } catch (final RuntimeException | Error e) {
+            try {
+                // The caller never receives this builder. build() releases its buffer/counter in finally even for
+                // incomplete statements; if the first build already released it, the closed-state guard prevents
+                // another decrement. Preserve the original validation/getter failure over any cleanup failure.
+                builder.build();
+            } catch (final RuntimeException | Error cleanupFailure) {
+                // Expected for an incomplete or already closed builder.
+            }
+
+            throw e;
+        }
+    }
+
+    /**
      * Prepares an INSERT statement for the given entity.
      *
      * @param entity the entity to insert
@@ -3491,7 +3515,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         }
 
         try {
-            return cqlBuilder.into(targetClass).build();
+            return buildCql(cqlBuilder, builder -> builder.into(targetClass));
         } catch (final IllegalStateException e) {
             // A freshly created INSERT builder only fails into() with IllegalStateException when no column was
             // staged, i.e. the entity has no non-null insertable property: report the documented argument error.
@@ -3511,13 +3535,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         N.checkArgNotNull(targetClass, cs.targetClass);
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.insert(props).into(targetClass).build();
+                return buildCql(NSC.insert(props), builder -> builder.into(targetClass));
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.insert(props).into(targetClass).build();
+                return buildCql(NAC.insert(props), builder -> builder.into(targetClass));
 
             case CAMEL_CASE:
-                return NLC.insert(props).into(targetClass).build();
+                return buildCql(NLC.insert(props), builder -> builder.into(targetClass));
 
             default:
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
@@ -3582,13 +3606,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond).build();
+                return buildCql(NSC.update(targetClass), builder -> builder.set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond).build();
+                return buildCql(NAC.update(targetClass), builder -> builder.set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
 
             case CAMEL_CASE:
-                return NLC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond).build();
+                return buildCql(NLC.update(targetClass), builder -> builder.set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
 
             default:
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
@@ -3628,13 +3652,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.update(targetClass).set(props).where(whereClause).build();
+                return buildCql(NSC.update(targetClass), builder -> builder.set(props).where(whereClause));
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.update(targetClass).set(props).where(whereClause).build();
+                return buildCql(NAC.update(targetClass), builder -> builder.set(props).where(whereClause));
 
             case CAMEL_CASE:
-                return NLC.update(targetClass).set(props).where(whereClause).build();
+                return buildCql(NLC.update(targetClass), builder -> builder.set(props).where(whereClause));
 
             default:
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
@@ -3753,23 +3777,23 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         switch (namingPolicy) {
             case SNAKE_CASE:
                 if (N.isEmpty(propNamesToDelete)) {
-                    return NSC.deleteFrom(targetClass).where(whereClause).build();
+                    return buildCql(NSC.deleteFrom(targetClass), builder -> builder.where(whereClause));
                 } else {
-                    return NSC.delete(propNamesToDelete).from(targetClass).where(whereClause).build();
+                    return buildCql(NSC.delete(propNamesToDelete), builder -> builder.from(targetClass).where(whereClause));
                 }
 
             case SCREAMING_SNAKE_CASE:
                 if (N.isEmpty(propNamesToDelete)) {
-                    return NAC.deleteFrom(targetClass).where(whereClause).build();
+                    return buildCql(NAC.deleteFrom(targetClass), builder -> builder.where(whereClause));
                 } else {
-                    return NAC.delete(propNamesToDelete).from(targetClass).where(whereClause).build();
+                    return buildCql(NAC.delete(propNamesToDelete), builder -> builder.from(targetClass).where(whereClause));
                 }
 
             case CAMEL_CASE:
                 if (N.isEmpty(propNamesToDelete)) {
-                    return NLC.deleteFrom(targetClass).where(whereClause).build();
+                    return buildCql(NLC.deleteFrom(targetClass), builder -> builder.where(whereClause));
                 } else {
-                    return NLC.delete(propNamesToDelete).from(targetClass).where(whereClause).build();
+                    return buildCql(NLC.delete(propNamesToDelete), builder -> builder.from(targetClass).where(whereClause));
                 }
 
             default:
@@ -3830,33 +3854,22 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
             throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         final boolean isNonNullCond = whereClause != null;
-        CqlBuilder cqlBuilder = null;
+        final boolean selectAll = N.isEmpty(selectPropNames);
+        final CqlBuilder cqlBuilder;
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                if (N.isEmpty(selectPropNames)) {
-                    cqlBuilder = NSC.selectFrom(targetClass).appendIf(isNonNullCond, whereClause);
-                } else {
-                    cqlBuilder = NSC.select(selectPropNames).from(targetClass).appendIf(isNonNullCond, whereClause);
-                }
+                cqlBuilder = selectAll ? NSC.selectFrom(targetClass) : NSC.select(selectPropNames);
 
                 break;
 
             case SCREAMING_SNAKE_CASE:
-                if (N.isEmpty(selectPropNames)) {
-                    cqlBuilder = NAC.selectFrom(targetClass).appendIf(isNonNullCond, whereClause);
-                } else {
-                    cqlBuilder = NAC.select(selectPropNames).from(targetClass).appendIf(isNonNullCond, whereClause);
-                }
+                cqlBuilder = selectAll ? NAC.selectFrom(targetClass) : NAC.select(selectPropNames);
 
                 break;
 
             case CAMEL_CASE:
-                if (N.isEmpty(selectPropNames)) {
-                    cqlBuilder = NLC.selectFrom(targetClass).appendIf(isNonNullCond, whereClause);
-                } else {
-                    cqlBuilder = NLC.select(selectPropNames).from(targetClass).appendIf(isNonNullCond, whereClause);
-                }
+                cqlBuilder = selectAll ? NLC.selectFrom(targetClass) : NLC.select(selectPropNames);
 
                 break;
 
@@ -3864,11 +3877,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
         }
 
-        if (count > 0) {
-            cqlBuilder.limit(count);
-        }
+        return buildCql(cqlBuilder, builder -> {
+            if (!selectAll) {
+                builder.from(targetClass);
+            }
 
-        return cqlBuilder.build();
+            builder.appendIf(isNonNullCond, whereClause);
+            if (count > 0) {
+                builder.limit(count);
+            }
+        });
     }
 
     /**

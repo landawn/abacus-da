@@ -5535,15 +5535,16 @@ public final class DynamoDBExecutor {
         /**
          * Creates a begins-with condition filter for prefix matching.
          *
-         * <p>This filter matches items where the specified string attribute begins with the given prefix.</p>
+         * <p>This filter matches items where the specified String or Binary attribute begins with the given prefix.
+         * Binary prefixes may be supplied as {@code byte[]} or {@link ByteBuffer} values.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.beginsWith("email", "admin@"); // {email -> BEGINS_WITH "admin@"}, size 1
          * }</pre>
          *
-         * @param attrName the name of the string attribute to check
-         * @param attrValue the prefix to match
+         * @param attrName the name of the String or Binary attribute to check
+         * @param attrValue the String or Binary prefix to match
          * @return a map containing the begins-with condition
          * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN},
          *         {@code Double.NaN}, or a floating-point infinity
@@ -6065,15 +6066,16 @@ public final class DynamoDBExecutor {
         /**
          * Adds a begins-with condition to the filter for prefix matching.
          *
-         * <p>The condition will match items where the specified string attribute begins with the given prefix.</p>
+         * <p>The condition will match items where the specified String or Binary attribute begins with the given prefix.
+         * Binary prefixes may be supplied as {@code byte[]} or {@link ByteBuffer} values.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.beginsWith("email", "admin@"); // adds {email -> BEGINS_WITH "admin@"}; returns this builder
          * }</pre>
          *
-         * @param attrName the name of the string attribute to check
-         * @param attrValue the prefix to match
+         * @param attrName the name of the String or Binary attribute to check
+         * @param attrValue the String or Binary prefix to match
          * @return this builder instance for method chaining
          * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
          * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity

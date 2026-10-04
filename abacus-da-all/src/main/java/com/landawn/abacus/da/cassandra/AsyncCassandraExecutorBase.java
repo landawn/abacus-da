@@ -712,8 +712,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: update multiple columns at once.
      * async.update(User.class, N.asMap("name", "x", "status", "active"), Filters.eq("id", 2L)).get(); // returns the driver result set
      *
-     * // Edge: a condition matching no rows still completes normally (no row changed).
-     * async.update(User.class, props, Filters.eq("id", -1L)).get(); // returns a result set; no row updated
+     * // Edge: an UPDATE without IF EXISTS creates the row when its primary key is absent.
+     * async.update(User.class, props, Filters.eq("id", -1L)).get(); // creates id=-1 with the supplied properties if absent
      *
      * // Edge: the statement is prepared synchronously before the async call is issued, so a
      * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
@@ -751,8 +751,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: this overload also runs INSERT/DELETE-style statements.
      * async.update("DELETE FROM users WHERE id = ?", 2L).get();
      *
-     * // Edge: a statement affecting no rows still completes normally.
-     * async.update("UPDATE users SET name = ? WHERE id = ?", "x", -1L).get(); // returns a result set; no row changed
+     * // Edge: an UPDATE without IF EXISTS creates the row when its primary key is absent.
+     * async.update("UPDATE users SET name = ? WHERE id = ?", "x", -1L).get(); // creates id=-1 with name="x" if absent
      *
      * // Edge: the statement is prepared synchronously before the async call is issued, so a
      * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
@@ -3213,8 +3213,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: run a parameterized write.
      * async.execute("UPDATE users SET name = ? WHERE id = ?", "Alice", 1L).get();
      *
-     * // Edge: a statement affecting no rows still completes normally.
-     * async.execute("UPDATE users SET name = ? WHERE id = ?", "x", -1L).get(); // returns a result set; no row changed
+     * // Edge: an UPDATE without IF EXISTS creates the row when its primary key is absent.
+     * async.execute("UPDATE users SET name = ? WHERE id = ?", "x", -1L).get(); // creates id=-1 with name="x" if absent
      *
      * // Edge: the statement is prepared synchronously before the async call is issued, so a
      * // malformed statement throws directly from the call site (no future is created).

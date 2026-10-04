@@ -2572,7 +2572,7 @@ public final class MongoCollectionMapper<T> {
      * this path. Use a driver-built {@link Bson} update (e.g. {@code Updates.set(field, null)})
      * when you need to explicitly write {@code null}. If nothing updatable remains (every property
      * is {@code null} or only {@code _id} was set), an {@link IllegalArgumentException} is thrown —
-     * the server rejects an empty {@code $set}.</p>
+     * this executor requires at least one updatable field.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3756,6 +3756,9 @@ public final class MongoCollectionMapper<T> {
      * {@code String}) gets no {@code $project} stage and receives each value directly, converted to {@code T}.
      * This is useful for getting distinct field values for analysis or dropdown populations.</p>
      *
+     * <p>For Map, {@link Document} or {@code Object} results, dotted field names produce nested rows, including paths
+     * inside an embedded {@code _id}: {@code distinct("_id.part")} yields {@code {_id: {part: <value>}}} rows.</p>
+     *
      * <p>The values are computed with a {@code $group} aggregation rather than the driver's native
      * {@code distinct} command, so an array-valued field is <i>not</i> unwound: each distinct whole array
      * is one result (the native command, used by {@link MongoCollectionExecutor#distinct(String, Class)},
@@ -3808,7 +3811,9 @@ public final class MongoCollectionMapper<T> {
         // uses an _id-only row's id). Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName
         // ("a.b" -> {a: {b: value}}), and the scalar conversion would then receive the embedded document.
         if (!isSingleValueRowType(rowType)) {
-            pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+            final Document project = new Document("_id", 0).append(fieldName, "$_id");
+
+            pipeline.add(new Document("$project", MongoCollectionExecutor.rebuildEmbeddedIdProjection(project)));
         }
 
         return pipeline;
@@ -3966,9 +3971,11 @@ public final class MongoCollectionMapper<T> {
      * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
      * stream.</p>
      *
-     * @param fieldNames collection of field names to group entities by
+     * @param fieldNames collection of field names to group entities by.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @return a Stream of entities representing grouped results
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -4005,8 +4012,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param fieldName the field name to group entities by
      * @return a Stream of entities with group information and counts
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} (it would
-     *         collide with the count column) and the mapped type is not {@link Document}
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} or starts
+     *         with {@code "count."} (it would collide with the count column), and the mapped type is not {@link Document}
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -4043,10 +4050,12 @@ public final class MongoCollectionMapper<T> {
      * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
      * stream.</p>
      *
-     * @param fieldNames collection of field names to group entities by
+     * @param fieldNames collection of field names to group entities by.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @return a Stream of entities with group information and counts
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code fieldNames} contains {@code "count"} (it
-     *         would collide with the count column) and the mapped type is not {@link Document}
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths, or if {@code fieldNames} contains {@code "count"} or
+     *         a path starting with {@code "count."} (either would collide with the count column), and the mapped type is not {@link Document}
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error

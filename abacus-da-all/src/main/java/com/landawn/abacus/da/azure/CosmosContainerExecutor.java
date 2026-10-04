@@ -2230,6 +2230,7 @@ public class CosmosContainerExecutor {
 
     /**
      * Builds the Cosmos query using the configured naming policy and mapped properties.
+     * Releases the internal builder on both successful construction and configuration failure.
      *
      * @throws IllegalArgumentException if {@code targetClass} is null or the selected properties or condition cannot be represented by the SQL builder
      * @throws IllegalStateException if a requested projection is not emitted in the expected SELECT and quoted-alias format
@@ -2238,33 +2239,32 @@ public class CosmosContainerExecutor {
             throws IllegalArgumentException, IllegalStateException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final boolean isNonNullCond = whereClause != null;
         SqlBuilder sqlBuilder = null;
 
         switch (namingPolicy) {
             case SNAKE_CASE:
                 if (N.isEmpty(selectPropNames)) {
-                    sqlBuilder = PSC.select("*").from(targetClass, COSMOS_ALIAS);
+                    sqlBuilder = PSC.select("*");
                 } else {
-                    sqlBuilder = PSC.select(selectPropNames).from(targetClass, COSMOS_ALIAS);
+                    sqlBuilder = PSC.select(selectPropNames);
                 }
 
                 break;
 
             case SCREAMING_SNAKE_CASE:
                 if (N.isEmpty(selectPropNames)) {
-                    sqlBuilder = PAC.select("*").from(targetClass, COSMOS_ALIAS);
+                    sqlBuilder = PAC.select("*");
                 } else {
-                    sqlBuilder = PAC.select(selectPropNames).from(targetClass, COSMOS_ALIAS);
+                    sqlBuilder = PAC.select(selectPropNames);
                 }
 
                 break;
 
             case CAMEL_CASE:
                 if (N.isEmpty(selectPropNames)) {
-                    sqlBuilder = PLC.select("*").from(targetClass, COSMOS_ALIAS);
+                    sqlBuilder = PLC.select("*");
                 } else {
-                    sqlBuilder = PLC.select(selectPropNames).from(targetClass, COSMOS_ALIAS);
+                    sqlBuilder = PLC.select(selectPropNames);
                 }
 
                 break;
@@ -2273,15 +2273,32 @@ public class CosmosContainerExecutor {
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
         }
 
-        if (isNonNullCond) {
-            sqlBuilder = sqlBuilder.where(whereClause);
+        final SP built;
+        try {
+            sqlBuilder.from(targetClass, COSMOS_ALIAS);
+
+            if (whereClause != null) {
+                sqlBuilder.where(whereClause);
+            }
+
+            if (count > 0) {
+                sqlBuilder.limit(count);
+            }
+
+            built = sqlBuilder.build();
+        } catch (final RuntimeException | Error e) {
+            try {
+                // Callers never receive this builder. Its terminal build releases the pooled buffer even if
+                // incomplete; if already released, its closed-state guard prevents another decrement.
+                sqlBuilder.build();
+            } catch (final RuntimeException | Error cleanupFailure) {
+                // Preserve the original configuration/build failure over an incomplete or closed-builder failure.
+            }
+
+            throw e;
         }
 
-        if (count > 0) {
-            sqlBuilder.limit(count);
-        }
-
-        final SP sp = toCosmosConditionSyntax(sqlBuilder.build());
+        final SP sp = toCosmosConditionSyntax(built);
 
         return N.isEmpty(selectPropNames) ? sp : toCosmosProjection(sp);
     }
@@ -2418,7 +2435,7 @@ public class CosmosContainerExecutor {
                 // ESCAPE is a keyword only in Cosmos DB's "x LIKE 'a!%' ESCAPE '!'" form, where a string literal follows it; elsewhere
                 // (e.g. "active AND escape") it is an ordinary property name and stays alias-qualified.
                 final boolean keywordToken = COSMOS_CONDITION_KEYWORDS.contains(normalizedIdentifier)
-                        && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previousChar, next)
+                        && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previous, next, conditionStart)
                         || "ESCAPE".equals(normalizedIdentifier) && (nextChar == '\'' || nextChar == '"');
                 final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[') || keywordToken;
                 final boolean attachedToPreviousIdentifier = identifierStart > conditionStart
@@ -2445,7 +2462,14 @@ public class CosmosContainerExecutor {
         return qualifiedQuery.equals(query) ? sp : new SP(qualifiedQuery, sp.parameters());
     }
 
-    private static boolean isCosmosKeywordPropertyReference(final String query, final String identifier, final char previousChar, final int next) {
+    /**
+     * Recognizes keyword-named properties from their operand context. Logical tokens, BETWEEN, and paired coalesce operators
+     * also delimit operands; literal keywords retain their existing meaning in these otherwise ambiguous positions.
+     */
+    private static boolean isCosmosKeywordPropertyReference(final String query, final String identifier, final int previous, final int next,
+            final int conditionStart) {
+        final char previousChar = previous < conditionStart ? 0 : query.charAt(previous);
+
         if (next < query.length()) {
             final char nextChar = query.charAt(next);
 
@@ -2462,11 +2486,25 @@ public class CosmosContainerExecutor {
         }
 
         // A keyword spelling can also be a value/property when it occupies a complete operand
-        // position, such as IS_DEFINED(order), IIF(flag, order, false), or order AND active.
+        // position, such as IS_DEFINED(order), IIF(flag, order, false), or active AND order.
         // Literal keywords remain literals in these ambiguous positions.
-        final boolean operandPosition = previousChar == 0 || previousChar == '(' || previousChar == ',' || "=<>!+-*/%".indexOf(previousChar) >= 0;
+        int previousTokenStart = previous + 1;
+
+        while (previousTokenStart > conditionStart && Character.isJavaIdentifierPart(query.charAt(previousTokenStart - 1))) {
+            previousTokenStart--;
+        }
+
+        // Logical operators and BETWEEN introduce an operand; inspect the whole token rather than its final character.
+        final String previousToken = query.substring(previousTokenStart, previous + 1);
+        final boolean followsOperandKeyword = "AND".equalsIgnoreCase(previousToken) || "OR".equalsIgnoreCase(previousToken)
+                || "NOT".equalsIgnoreCase(previousToken) || "BETWEEN".equalsIgnoreCase(previousToken);
+        // Only ?? is coalesce; a single ? may be a placeholder and is not added as a general operand boundary.
+        final boolean followsCoalesceOperator = previous > conditionStart && previousChar == '?' && query.charAt(previous - 1) == '?';
+        final boolean precedesCoalesceOperator = next + 1 < query.length() && query.charAt(next) == '?' && query.charAt(next + 1) == '?';
+        final boolean operandPosition = previousChar == 0 || previousChar == '(' || previousChar == ',' || "=<>!+-*/%".indexOf(previousChar) >= 0
+                || followsOperandKeyword || followsCoalesceOperator;
         final boolean followedByValueBoundary = next >= query.length() || query.charAt(next) == ')' || query.charAt(next) == ','
-                || startsWithCosmosKeyword(query, next, "AND") || startsWithCosmosKeyword(query, next, "OR");
+                || startsWithCosmosKeyword(query, next, "AND") || startsWithCosmosKeyword(query, next, "OR") || precedesCoalesceOperator;
 
         if (operandPosition && followedByValueBoundary && !isCosmosLiteralKeyword(identifier)) {
             return true;

@@ -1680,6 +1680,97 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareInsert(new TestEntity()));
     }
 
+    @Test
+    public void test_failedInsertReleasesInternalBuilder() throws Exception {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
+            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareInsert(new TestEntity()));
+        }
+    }
+
+    @Test
+    public void test_failedQueryReleasesInternalBuilder() throws Exception {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
+            for (final Collection<String> properties : Arrays.asList(null, List.of("name"))) {
+                assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
+                        () -> current.exposedPrepareQuery(TestEntity.class, properties, Filters.or(Filters.eq("id", 1), Filters.eq("id", 2)), 1));
+            }
+        }
+    }
+
+    @Test
+    public void test_failedUpdateConditionReleasesInternalBuilder() throws Exception {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
+            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
+                    () -> current.exposedPrepareUpdate(TestEntity.class, Map.of("name", "value"), Filters.or(Filters.eq("id", 1), Filters.eq("id", 2))));
+        }
+    }
+
+    @Test
+    public void test_failedDeleteConditionReleasesInternalBuilder() throws Exception {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
+            for (final Collection<String> properties : Arrays.asList(null, List.of("name"))) {
+                assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
+                        () -> current.exposedPrepareDelete(TestEntity.class, properties, Filters.or(Filters.eq("id", 1), Filters.eq("id", 2))));
+            }
+        }
+    }
+
+    @Test
+    public void test_failedUpdateGetterReleasesInternalBuilder() throws Exception {
+        final ThrowingUpdateEntity entity = new ThrowingUpdateEntity();
+        entity.setId(1L);
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
+            assertRejectedWithoutBuilderLeak(RuntimeException.class, () -> current.exposedPrepareUpdate(entity, List.of("name")));
+        }
+    }
+
+    @Test
+    public void test_failedTableMappingReleasesInternalBuilder() throws Exception {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
+            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareInsert(BadTableEntity.class, Map.of("name", "value")));
+            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareQuery(BadTableEntity.class, List.of("name"), null, 0));
+            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
+                    () -> current.exposedPrepareDelete(BadTableEntity.class, List.of("name"), Filters.eq("id", 1)));
+        }
+    }
+
+    private static void assertRejectedWithoutBuilderLeak(final Class<? extends Throwable> exceptionClass, final Runnable action) throws Exception {
+        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
+        field.setAccessible(true);
+        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
+        final int before = counter.get();
+
+        assertThrows(exceptionClass, action::run);
+        assertEquals(before, counter.get(), "A failed executor preparation must release its unreachable builder");
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "invalid table")
+    public static class BadTableEntity extends TestEntity {
+    }
+
+    public static class ThrowingUpdateEntity {
+        @Id
+        private Long id;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            throw new IllegalStateException("bad update getter");
+        }
+    }
+
     // A keyless class must not be reported as having the key "[id]".
     @Test
     public void testSliceN_idsToCondition_keylessClass_messageDoesNotInventIdKey() {

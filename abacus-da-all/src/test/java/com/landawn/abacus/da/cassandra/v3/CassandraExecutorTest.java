@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -35,12 +36,15 @@ import com.datastax.driver.core.CodecRegistry;
 import com.datastax.driver.core.ConsistencyLevel;
 import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.ProtocolVersion;
+import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
+import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.TypeCodec;
 import com.datastax.driver.core.UserType;
 import com.datastax.driver.core.policies.DefaultRetryPolicy;
+import com.datastax.driver.core.policies.FallthroughRetryPolicy;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CqlMapper;
 import com.landawn.abacus.da.cassandra.ParsedCql;
@@ -105,6 +109,75 @@ public class CassandraExecutorTest extends TestBase {
     @Test
     public void test_constructor_rejectsNullSession() {
         assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null));
+    }
+
+    @Test
+    public void test_executorSettingsDoNotMutateSharedPreparedStatement() {
+        // Own the cluster so even a failing old implementation cannot contaminate other tests' prepared statements.
+        try (Cluster reviewCluster = Cluster.builder().addContactPoint("127.0.0.1").build(); Session reviewSession = reviewCluster.connect()) {
+            final CassandraExecutor defaults = new CassandraExecutor(reviewSession);
+            try {
+                final CassandraExecutor configured = new CassandraExecutor(reviewSession, new StatementSettings().consistency(ConsistencyLevel.QUORUM)
+                        .serialConsistency(ConsistencyLevel.LOCAL_SERIAL).retryPolicy(FallthroughRetryPolicy.INSTANCE).traceQuery(true));
+                try {
+                    for (final boolean primeDefaultCache : new boolean[] { false, true }) {
+                        final String query = "SELECT key AS review_shared_settings_" + primeDefaultCache + " FROM system.local LIMIT 1";
+                        final PreparedStatement shared = reviewSession.prepare(query);
+                        final BoundStatement original = shared.bind();
+                        if (primeDefaultCache) {
+                            defaults.prepareStatement(query);
+                        }
+
+                        final Statement configuredStatement = configured.prepareStatement(query);
+                        assertEquals(ConsistencyLevel.QUORUM, configuredStatement.getConsistencyLevel());
+                        assertEquals(ConsistencyLevel.LOCAL_SERIAL, configuredStatement.getSerialConsistencyLevel());
+                        assertSame(FallthroughRetryPolicy.INSTANCE, configuredStatement.getRetryPolicy());
+                        assertTrue(configuredStatement.isTracing());
+
+                        // Driver 3 shares this prepared object; settings belong only to each executor's fresh bound statement.
+                        assertSame(shared, reviewSession.prepare(query));
+                        for (final Statement unaffected : List.of(shared.bind(), defaults.prepareStatement(query))) {
+                            assertEquals(original.getConsistencyLevel(), unaffected.getConsistencyLevel());
+                            assertEquals(original.getSerialConsistencyLevel(), unaffected.getSerialConsistencyLevel());
+                            assertSame(original.getRetryPolicy(), unaffected.getRetryPolicy());
+                            assertEquals(original.isTracing(), unaffected.isTracing());
+                        }
+                    }
+                } finally {
+                    configured.close();
+                }
+            } finally {
+                defaults.close();
+            }
+        }
+    }
+
+    @Test
+    public void test_asyncUnconditionalUpdateCreatesMissingRow() throws Exception {
+        // Contract coverage for the three corrected async UPDATE examples; the implementation already upserts.
+        for (int mode = 0; mode < 3; mode++) {
+            final UUID id = UUID.randomUUID();
+            final List<Byte> bytes = List.of((byte) (mode + 1));
+
+            try {
+                assertFalse(cassandraExecutor.exists("SELECT id FROM simplex.users WHERE id = ?", id));
+
+                if (mode == 0) {
+                    cassandraExecutor.async().update(Users.class, Map.of("bytes", bytes), Filters.eq("id", id)).get();
+                } else if (mode == 1) {
+                    cassandraExecutor.async().update("UPDATE simplex.users SET bytes = ? WHERE id = ?", bytes, id).get();
+                } else {
+                    cassandraExecutor.async().execute("UPDATE simplex.users SET bytes = ? WHERE id = ?", bytes, id).get();
+                }
+
+                final Row row = cassandraExecutor.execute("SELECT id, bytes FROM simplex.users WHERE id = ?", id).one();
+                assertNotNull(row, "Unconditional UPDATE must create the absent row for mode " + mode);
+                assertEquals(id, row.getUUID("id"));
+                assertEquals(bytes, row.getList("bytes", Byte.class));
+            } finally {
+                cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id);
+            }
+        }
     }
 
     @Test

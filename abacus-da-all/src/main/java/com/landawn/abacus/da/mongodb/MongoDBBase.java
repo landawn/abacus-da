@@ -1066,7 +1066,10 @@ public abstract class MongoDBBase {
      * receives a {@code Long} value (and a {@code Box<Address>} an {@code Address} bean), as does a {@code LongBox extends Box<Long>},
      * whether it is an element, a property or {@code rowType} itself. BSON dates read into {@link LocalDate},
      * {@link LocalDateTime} or {@link LocalTime} properties are interpreted in UTC, matching how the driver's codecs write
-     * those types.</p>
+     * those types. Embedded bean and record documents, including typed container elements, support the same String/ObjectId
+     * identifier mapping as the outer document, but an embedded document's own id field (including an alias or explicit null)
+     * takes precedence over {@code _id}. When that mapping does not apply, embedded documents retain {@code _id}
+     * for ordinary bean-property mapping, including numeric and UUID identifiers. Source maps are not modified.</p>
      *
      * <p>Immutable beans such as records, at the top level, as property values and as container elements, receive every
      * value converted to its declared component type the way a bean setter's value is (for example an {@code int32}
@@ -1112,24 +1115,33 @@ public abstract class MongoDBBase {
             return null;
         }
 
+        return toEntity(doc, rowType, propConversions(N.typeOf(rowType)), false);
+    }
+
+    /**
+     * Maps an outer or embedded document, retaining embedded _id fields for ordinary bean mapping when no specialized
+     * identifier mapping applies. The caller supplies the declared type's conversions so a nested parameterized bean
+     * keeps its type arguments instead of being reduced to its raw class.
+     */
+    private static <T> T toEntity(final Map<String, Object> doc, final Class<T> rowType, final PropConversions propConversions, final boolean embedded)
+            throws IllegalArgumentException, RuntimeException {
         final Method idSetMethod = getObjectIdSetMethod(rowType);
         final Class<?> parameterType = idSetMethod == null ? null : idSetMethod.getParameterTypes()[0];
+        final PropInfo idPropInfo = idSetMethod != null ? ParserUtil.getBeanInfo(rowType).getPropInfo(Beans.getPropNameByMethod(idSetMethod))
+                : propConversions == null ? null : propConversions.idPropInfo();
         final Object objectId = doc.get(_ID);
-        final PropConversions propConversions = propConversions(N.typeOf(rowType));
-        final Document beanProperties;
+        final Map<String, Object> beanProperties;
 
-        if (doc.containsKey(_ID)) {
+        if (doc.containsKey(_ID) && (!embedded || idSetMethod != null || idPropInfo != null)) {
             // Do not temporarily remove _id from the caller's Document. Apart from surprising callers,
             // that made this otherwise stateless converter unsafe when the same Document was observed
             // by another thread while Beans.mapToBean was running.
-            beanProperties = new Document(doc);
+            beanProperties = new LinkedHashMap<>(doc);
             beanProperties.remove(_ID);
 
             // A record (immutable bean) has no id setter to receive _id once it is built, so _id is passed as its id
             // component, converted like a setter's value would be (an ObjectId into a String id becomes its hex string).
             // A record written by this class stores the component under its own field, which then takes precedence.
-            final PropInfo idPropInfo = propConversions == null ? null : propConversions.idPropInfo();
-
             if (objectId != null && idSetMethod == null && idPropInfo != null && !containsProperty(beanProperties, rowType, idPropInfo)) {
                 beanProperties.put(idPropInfo.name,
                         idPropInfo.clazz.isAssignableFrom(objectId.getClass()) || !idPropInfo.clazz.isAssignableFrom(String.class) ? objectId
@@ -1141,7 +1153,10 @@ public abstract class MongoDBBase {
 
         final T entity = Beans.mapToBean(normalizeDecodedProperties(normalizeBinaryProperties(beanProperties, rowType), rowType, propConversions), rowType);
 
-        if (objectId != null && parameterType != null && entity != null) {
+        // An embedded document's own id property wins, including aliases and explicit nulls. Check the map after removing
+        // _id so its implicit alias for id cannot suppress the fallback. Outer documents retain their existing _id precedence.
+        if (objectId != null && parameterType != null && entity != null
+                && (!embedded || idPropInfo == null || !containsProperty(beanProperties, rowType, idPropInfo))) {
             if (parameterType.isAssignableFrom(objectId.getClass()) || !parameterType.isAssignableFrom(String.class)) {
                 Beans.setPropValue(entity, idSetMethod, objectId);
             } else {
@@ -1367,10 +1382,9 @@ public abstract class MongoDBBase {
             } else if (!(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date)) {
                 continue;
             } else if (value instanceof Map && Beans.isBeanClass(propInfo.clazz)) {
-                // A nested bean property stays a Map: Beans.mapToBean builds the bean from it. It builds it from the raw class
-                // without these extra conversions, though, so a bean property that needs them (Box<Long>, LongBox, a record) is
-                // built here instead.
-                converted = propInfo.jsonXmlType.isBean() && propConversions(propInfo.jsonXmlType) != null ? toDeclaredElement(value, propInfo.jsonXmlType)
+                // Beans.mapToBean alone does not apply MongoDB's _id mapping to an embedded document. Build nested beans
+                // through the same path as outer documents, retaining generic type arguments and immutable-bean conversions.
+                converted = propInfo.jsonXmlType.isBean() ? toDeclaredElement(value, propInfo.jsonXmlType)
                         : normalizeDecodedProperties((Map<String, Object>) value, propInfo.clazz, null);
             } else {
                 converted = toDeclaredType(value, propInfo.jsonXmlType);
@@ -1396,7 +1410,6 @@ public abstract class MongoDBBase {
      *
      * @return {@code value} itself when nothing needs converting
      */
-    @SuppressWarnings("rawtypes")
     private static Object toDeclaredType(final Object value, final Type<?> type) throws IllegalArgumentException, RuntimeException {
         final Class<?> cls = type.javaType();
 
@@ -1518,10 +1531,7 @@ public abstract class MongoDBBase {
                 || !Modifier.isAbstract(cls.getModifiers());
 
         if (element instanceof Map && type.isBean()) {
-            return instantiable
-                    ? Beans.mapToBean(normalizeDecodedProperties(normalizeBinaryProperties((Map<String, Object>) element, cls), cls, propConversions(type)),
-                            cls)
-                    : element;
+            return instantiable ? toEntity((Map<String, Object>) element, cls, propConversions(type), true) : element;
         }
 
         final Object converted = toDeclaredType(element, type);
@@ -1573,7 +1583,6 @@ public abstract class MongoDBBase {
     /**
      * Computes {@link #propConversions(Type)} for a bean class and its (possibly parameterized) declared type.
      */
-    @SuppressWarnings("deprecation")
     private static PropConversions resolvePropConversions(final Class<?> beanClass, final java.lang.reflect.Type beanType) {
         final ParserUtil.BeanInfo rawBeanInfo = ParserUtil.getBeanInfo(beanClass);
         final ParserUtil.BeanInfo resolvedBeanInfo = beanType instanceof ParameterizedType ? ParserUtil.getBeanInfo(beanType) : rawBeanInfo;
@@ -1698,7 +1707,8 @@ public abstract class MongoDBBase {
      * @param <T> the target type for list elements
      * @param findIterable the MongoDB query result to convert; must not be {@code null}
      * @param rowType the target class - can be an entity class with getter/setter methods, Map.class, or basic single value type (Primitive/String/Date...)
-     * @return a List containing all results converted to the specified type (empty list if no results).
+     * @return a List containing all results converted to the specified type (empty list if no results). Null rows retain
+     *         their positions, including when every result is null.
      *         When a result is a non-{@link Document} {@link Map} and a different concrete map type is
      *         requested, its entries are copied directly rather than being interpreted as bean properties;
      *         for an entity {@code rowType} such a row is mapped like a {@link Document} (including the
@@ -1826,7 +1836,8 @@ public abstract class MongoDBBase {
                 return (List<T>) resultList;
             }
         } else {
-            return new ArrayList<>();
+            // No non-null sample can mean an all-null result, not just an empty iterable. Preserve its cardinality.
+            return (List<T>) rowList;
         }
     }
 

@@ -112,6 +112,34 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
+    public void test_asyncUnconditionalUpdateCreatesMissingRow() throws Exception {
+        // Contract coverage for the three corrected async UPDATE examples; the implementation already upserts.
+        for (int mode = 0; mode < 3; mode++) {
+            final UUID id = UUID.randomUUID();
+            final List<Byte> bytes = List.of((byte) (mode + 1));
+
+            try {
+                assertFalse(cassandraExecutor.exists("SELECT id FROM simplex.users WHERE id = ?", id));
+
+                if (mode == 0) {
+                    cassandraExecutor.async().update(Users.class, Map.of("bytes", bytes), Filters.eq("id", id)).get();
+                } else if (mode == 1) {
+                    cassandraExecutor.async().update("UPDATE simplex.users SET bytes = ? WHERE id = ?", bytes, id).get();
+                } else {
+                    cassandraExecutor.async().execute("UPDATE simplex.users SET bytes = ? WHERE id = ?", bytes, id).get();
+                }
+
+                final Row row = cassandraExecutor.execute("SELECT id, bytes FROM simplex.users WHERE id = ?", id).one();
+                assertNotNull(row, "Unconditional UPDATE must create the absent row for mode " + mode);
+                assertEquals(id, row.getUuid("id"));
+                assertEquals(bytes, row.getList("bytes", Byte.class));
+            } finally {
+                cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id);
+            }
+        }
+    }
+
+    @Test
     public void test_sync() {
         Users user = createUser();
 

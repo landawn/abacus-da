@@ -3515,6 +3515,9 @@ public final class MongoCollectionMapper<T> {
      * field is not emitted, because Reactive Streams forbids {@code null} elements. To obtain raw scalar values
      * instead, use {@link MongoCollectionExecutor#distinct(String, Class)} with an explicit value class.</p>
      *
+     * <p>For Map, {@link Document} or {@code Object} results, dotted field names produce nested rows, including paths
+     * inside an embedded {@code _id}: {@code distinct("_id.part")} yields {@code {_id: {part: <value>}}} rows.</p>
+     *
      * <p>Because the values come from a {@code $group} stage rather than the driver's native {@code distinct}
      * command, an array-valued field is <i>not</i> unwound: each distinct whole array is one result (the native
      * command, used by {@link MongoCollectionExecutor#distinct(String, Class)}, returns each array element
@@ -3580,7 +3583,9 @@ public final class MongoCollectionMapper<T> {
         // uses an _id-only row's id). Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName
         // ("a.b" -> {a: {b: value}}), and the scalar conversion would then receive the embedded document.
         if (!isSingleValueRowType(rowType)) {
-            pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+            final Document project = new Document("_id", 0).append(fieldName, "$_id");
+
+            pipeline.add(new Document("$project", MongoCollectionExecutor.rebuildEmbeddedIdProjection(project)));
         }
 
         return pipeline;
@@ -3757,10 +3762,12 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
-     * @param fieldNames collection of field names to compose the group key
+     * @param fieldNames collection of field names to compose the group key.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @return a cold {@code Flux} that, on subscription, emits each group result decoded as
      *         {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths
      */
     @Beta
     public Flux<T> groupBy(final Collection<String> fieldNames) throws IllegalArgumentException {
@@ -3803,8 +3810,8 @@ public final class MongoCollectionMapper<T> {
      * @param fieldName the field name to group and count by
      * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
      *         as {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} and {@code T}
-     *         is not {@link Document} (the group key would be overwritten by the count column)
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code fieldName} is {@code "count"} or starts
+     *         with {@code "count."}, and {@code T} is not {@link Document} (the group key conflicts with the count column)
      */
     @Beta
     public Flux<T> groupByAndCount(final String fieldName) throws IllegalArgumentException {
@@ -3840,11 +3847,13 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
-     * @param fieldNames collection of field names to compose the group key
+     * @param fieldNames collection of field names to compose the group key.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
      *         as {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code fieldNames} contains {@code "count"} and
-     *         {@code T} is not {@link Document} (that group key would be overwritten by the count column)
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths, or if {@code fieldNames} contains {@code "count"} or
+     *         a path starting with {@code "count."}, and {@code T} is not {@link Document} (the group key conflicts with the count column)
      */
     @Beta
     public Flux<T> groupByAndCount(final Collection<String> fieldNames) throws IllegalArgumentException {

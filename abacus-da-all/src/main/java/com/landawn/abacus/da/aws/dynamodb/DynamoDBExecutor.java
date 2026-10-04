@@ -5428,8 +5428,8 @@ public final class DynamoDBExecutor {
 
         /**
          * Creates a begins-with condition for the specified attribute.
-         * Matches items where the string attribute value begins with the specified prefix.
-         * Only applicable to String attributes.
+         * Matches items where a String or Binary attribute value begins with the specified prefix.
+         * Use a {@link ByteBuffer} for a binary prefix.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -5927,8 +5927,8 @@ public final class DynamoDBExecutor {
 
         /**
          * Adds a begins-with condition for the specified attribute.
-         * Matches items where the string attribute value begins with the specified prefix.
-         * Only applicable to String attributes.
+         * Matches items where a String or Binary attribute value begins with the specified prefix.
+         * Use a {@link ByteBuffer} for a binary prefix.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

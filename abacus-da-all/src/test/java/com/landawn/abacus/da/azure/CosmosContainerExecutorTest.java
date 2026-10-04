@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -1215,6 +1216,121 @@ public class CosmosContainerExecutorTest extends TestBase {
 
         final SqlQuerySpec spec = specCaptor.getValue();
         return spec.getQueryText() + " " + spec.getParameters().stream().map(p -> p.getValue(Object.class)).toList();
+    }
+
+    /** Regression: a keyword-named Boolean property also needs its alias after a logical operator. */
+    @Test
+    @Tag("base-test")
+    public void testKeywordBooleanPropertiesAfterLogicalOperators() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("active AND order"), Filters.expr("active OR group"),
+                Filters.expr("NOT having"));
+
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND c.order", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.active OR c.group", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE NOT c.having", queries.get(2));
+    }
+
+    /** Logical token recognition is case-insensitive and applies at each operand in a compound expression. */
+    @Test
+    @Tag("base-test")
+    public void testKeywordBooleanPropertiesInMixedCaseAndNestedExpressions() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("active And order"), Filters.expr("Not group"),
+                Filters.expr("order AND group OR NOT having"), Filters.expr("active AND NOT (order OR group)"));
+
+        assertEquals("SELECT * FROM test_item c WHERE c.active and c.order", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE not c.group", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE c.order AND c.group OR NOT c.having", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND NOT (c.order OR c.group)", queries.get(3));
+    }
+
+    /** Property spelling follows the selected naming policy while logical operators retain their role. */
+    @Test
+    @Tag("base-test")
+    public void testKeywordBooleanPropertiesUnderEveryNamingPolicy() {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final CosmosContainerExecutor current = new CosmosContainerExecutor(mockCosmosContainer, policy);
+            final List<String> queries = captureConditionQueries(current, Filters.expr("active AND order OR NOT group"));
+            final String table = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "TEST_ITEM" : policy == NamingPolicy.CAMEL_CASE ? "testItem" : "test_item";
+            final String predicate = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "c.ACTIVE AND c.ORDER OR NOT c.GROUP"
+                    : "c.active AND c.order OR NOT c.group";
+
+            assertEquals("SELECT * FROM " + table + " c WHERE " + predicate, queries.get(0), policy.toString());
+        }
+    }
+
+    /** Adding logical operand positions must preserve literals, real operators, existing aliases, and quoted text. */
+    @Test
+    @Tag("base-test")
+    public void testLogicalOperandQualificationPreservesOtherExpressionTokens() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("active AND true OR NOT false"),
+                Filters.expr("active AND null OR undefined"), Filters.expr("order NOT IN (1, 2) AND group IS NOT NULL"),
+                Filters.expr("active AND c.order"), Filters.expr("name = 'AND order OR group NOT having' AND active"));
+
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND true OR NOT false", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND null OR undefined", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE c.order NOT IN (1, 2) AND NOT IS_NULL(c.group)", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND c.order", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE c.name = 'AND order OR group NOT having' AND c.active", queries.get(4));
+    }
+
+    /** Regression: the coalesce operator creates operand positions on both sides without changing literal semantics. */
+    @Test
+    @Tag("base-test")
+    public void testKeywordPropertiesAroundCoalesceOperators() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("order ?? false"), Filters.expr("active ?? group"),
+                Filters.expr("(order ?? group) ?? having"), Filters.expr("active AND (order ?? false) OR (group ?? having)"),
+                Filters.expr("null ?? undefined ?? true ?? false"));
+
+        assertEquals("SELECT * FROM test_item c WHERE c.order ?? false", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.active ?? c.group", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE (c.order ?? c.group) ?? c.having", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND (c.order ?? false) OR (c.group ?? c.having)", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE null ?? undefined ?? true ?? false", queries.get(4));
+    }
+
+    /** Regression: BETWEEN accepts property expressions for both bounds, including keyword-named properties. */
+    @Test
+    @Tag("base-test")
+    public void testKeywordPropertiesAsBetweenBounds() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("score BETWEEN order AND group"),
+                Filters.expr("score NOT BETWEEN order AND group"), Filters.expr("score Between order And group"),
+                Filters.expr("score BETWEEN 1 AND 10"));
+
+        assertEquals("SELECT * FROM test_item c WHERE c.score BETWEEN c.order AND c.group", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.score NOT BETWEEN c.order AND c.group", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE c.score between c.order and c.group", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.score BETWEEN 1 AND 10", queries.get(3));
+    }
+
+    @Test
+    public void testRejectedConditionReleasesInternalSqlBuilder() throws Exception {
+        final com.landawn.abacus.query.condition.Condition invalidCondition = Filters.expr("/* only a comment */");
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final CosmosContainerExecutor current = new CosmosContainerExecutor(mockCosmosContainer, policy);
+            for (final Collection<String> properties : Arrays.asList(null, List.of("id"))) {
+                assertRejectedWithoutBuilderLeak(() -> current.streamItems(properties, invalidCondition, TestItem.class));
+            }
+        }
+        verifyNoInteractions(mockCosmosContainer);
+    }
+
+    @Test
+    public void testRejectedProjectionReleasesInternalSqlBuilder() throws Exception {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final CosmosContainerExecutor current = new CosmosContainerExecutor(mockCosmosContainer, policy);
+            assertRejectedWithoutBuilderLeak(() -> current.streamItems(List.of("id /* invalid column */"), null, TestItem.class));
+        }
+        verifyNoInteractions(mockCosmosContainer);
+    }
+
+    private static void assertRejectedWithoutBuilderLeak(final Runnable action) throws Exception {
+        final java.lang.reflect.Field field = com.landawn.abacus.query.AbstractQueryBuilder.class.getDeclaredField("activeStringBuilderCounter");
+        field.setAccessible(true);
+        final java.util.concurrent.atomic.AtomicInteger counter = (java.util.concurrent.atomic.AtomicInteger) field.get(null);
+        final int before = counter.get();
+
+        assertThrows(IllegalArgumentException.class, action::run);
+        assertEquals(before, counter.get(), "A rejected query must release the executor-owned builder");
     }
 
     // Test data class

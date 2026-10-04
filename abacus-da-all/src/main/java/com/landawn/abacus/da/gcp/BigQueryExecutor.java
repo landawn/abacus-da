@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.IntFunction;
 
 import com.google.cloud.bigquery.BigQuery;
@@ -1396,7 +1397,8 @@ public class BigQueryExecutor {
                     return (T) toMap(rowFields, row, IntFunctions.ofMap((Class<Map>) rowClass));
                 }
             };
-        } else if (Beans.isBeanClass(rowClass)) {
+        } else if (rowType.isBean()) {
+            // Scalar types such as Calendar and ByteBuffer also expose bean accessors; keep them on the scalar decoding path.
             mapper = new Function<>() {
                 private FieldList rowFields = fields;
 
@@ -1491,9 +1493,9 @@ public class BigQueryExecutor {
      *       array class (e.g. {@code Long[].class}) converts each cell to its component type.</li>
      *   <li>A {@link Collection} subclass &rarr; each row becomes a collection of values in column
      *       order.</li>
-     *   <li>Any other class &rarr; the result is treated as a single-column scalar; the first
-     *       column's value is converted to {@code targetClass}. Rows with more than one column
-     *       raise {@link IllegalArgumentException} during iteration.</li>
+     *   <li>Any other class, including recognized scalar types such as {@link java.util.Calendar} and {@link ByteBuffer},
+     *       &rarr; the result is treated as a single-column scalar; the first column's value is converted to {@code targetClass}.
+     *       Rows with more than one column raise {@link IllegalArgumentException} during iteration.</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1631,7 +1633,7 @@ public class BigQueryExecutor {
         final List<List<Object>> columnList = new ArrayList<>(fieldCount);
         final Class<?>[] columnClasses = new Class<?>[fieldCount];
         final PropInfo[] columnPropInfos = new PropInfo[fieldCount];
-        final boolean isEntity = Beans.isBeanClass(targetClass);
+        final boolean isEntity = targetClass != null && N.typeOf(targetClass).isBean();
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
         final Map<String, String> column2FieldNameMap = isEntity ? QueryUtil.columnToPropNameMap(targetClass) : null;
         final BeanInfo entityInfo = isEntity ? ParserUtil.getBeanInfo(targetClass) : null;
@@ -1751,13 +1753,13 @@ public class BigQueryExecutor {
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.insert(entity).into(targetClass).build();
+                return buildSql(PSC.insert(entity), builder -> builder.into(targetClass));
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.insert(entity).into(targetClass).build();
+                return buildSql(PAC.insert(entity), builder -> builder.into(targetClass));
 
             case CAMEL_CASE:
-                return PLC.insert(entity).into(targetClass).build();
+                return buildSql(PLC.insert(entity), builder -> builder.into(targetClass));
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1809,13 +1811,13 @@ public class BigQueryExecutor {
     private SP prepareInsert(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException {
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.insert(props).into(targetClass).build();
+                return buildSql(PSC.insert(props), builder -> builder.into(targetClass));
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.insert(props).into(targetClass).build();
+                return buildSql(PAC.insert(props), builder -> builder.into(targetClass));
 
             case CAMEL_CASE:
-                return PLC.insert(props).into(targetClass).build();
+                return buildSql(PLC.insert(props), builder -> builder.into(targetClass));
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1972,13 +1974,13 @@ public class BigQueryExecutor {
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.update(targetClass).set(entity, excludedPropNames).where(Filters.and(conds)).build();
+                return buildSql(PSC.update(targetClass), builder -> builder.set(entity, excludedPropNames).where(Filters.and(conds)));
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.update(targetClass).set(entity, excludedPropNames).where(Filters.and(conds)).build();
+                return buildSql(PAC.update(targetClass), builder -> builder.set(entity, excludedPropNames).where(Filters.and(conds)));
 
             case CAMEL_CASE:
-                return PLC.update(targetClass).set(entity, excludedPropNames).where(Filters.and(conds)).build();
+                return buildSql(PLC.update(targetClass), builder -> builder.set(entity, excludedPropNames).where(Filters.and(conds)));
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -2048,13 +2050,13 @@ public class BigQueryExecutor {
     private SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) throws IllegalArgumentException {
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.update(targetClass).set(props).where(whereClause).build();
+                return buildSql(PSC.update(targetClass), builder -> builder.set(props).where(whereClause));
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.update(targetClass).set(props).where(whereClause).build();
+                return buildSql(PAC.update(targetClass), builder -> builder.set(props).where(whereClause));
 
             case CAMEL_CASE:
-                return PLC.update(targetClass).set(props).where(whereClause).build();
+                return buildSql(PLC.update(targetClass), builder -> builder.set(props).where(whereClause));
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -2195,13 +2197,13 @@ public class BigQueryExecutor {
     private SP prepareDelete(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException {
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.deleteFrom(targetClass).where(whereClause).build();
+                return buildSql(PSC.deleteFrom(targetClass), builder -> builder.where(whereClause));
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.deleteFrom(targetClass).where(whereClause).build();
+                return buildSql(PAC.deleteFrom(targetClass), builder -> builder.where(whereClause));
 
             case CAMEL_CASE:
-                return PLC.deleteFrom(targetClass).where(whereClause).build();
+                return buildSql(PLC.deleteFrom(targetClass), builder -> builder.where(whereClause));
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -3327,32 +3329,33 @@ public class BigQueryExecutor {
             throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
         final boolean isNonNullCond = whereClause != null;
+        final boolean hasSelectedProperties = N.notEmpty(selectPropNames);
         SqlBuilder sqlBuilder = null;
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                if (N.isEmpty(selectPropNames)) {
+                if (!hasSelectedProperties) {
                     sqlBuilder = PSC.selectFrom(targetClass);
                 } else {
-                    sqlBuilder = PSC.select(selectPropNames).from(targetClass);
+                    sqlBuilder = PSC.select(selectPropNames);
                 }
 
                 break;
 
             case SCREAMING_SNAKE_CASE:
-                if (N.isEmpty(selectPropNames)) {
+                if (!hasSelectedProperties) {
                     sqlBuilder = PAC.selectFrom(targetClass);
                 } else {
-                    sqlBuilder = PAC.select(selectPropNames).from(targetClass);
+                    sqlBuilder = PAC.select(selectPropNames);
                 }
 
                 break;
 
             case CAMEL_CASE:
-                if (N.isEmpty(selectPropNames)) {
+                if (!hasSelectedProperties) {
                     sqlBuilder = PLC.selectFrom(targetClass);
                 } else {
-                    sqlBuilder = PLC.select(selectPropNames).from(targetClass);
+                    sqlBuilder = PLC.select(selectPropNames);
                 }
 
                 break;
@@ -3361,19 +3364,45 @@ public class BigQueryExecutor {
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
         }
 
-        if (isNonNullCond) {
-            sqlBuilder.where(whereClause);
-        }
+        final SP sp = buildSql(sqlBuilder, builder -> {
+            if (hasSelectedProperties) {
+                builder.from(targetClass);
+            }
 
-        if (count > 0) {
-            sqlBuilder.limit(count);
-        }
+            if (isNonNullCond) {
+                builder.where(whereClause);
+            }
 
-        final SP sp = sqlBuilder.build();
+            if (count > 0) {
+                builder.limit(count);
+            }
+        });
 
         // PSC/PAC/PLC are configured with IdentifierQuote.BACKTICK, so generated aliases already
         // use GoogleSQL syntax while quote characters inside caller-supplied expressions are untouched.
         return sp;
+    }
+
+    /**
+     * Completes and builds an executor-owned builder, releasing it if configuration fails before build().
+     *
+     * @throws RuntimeException if completing or building the statement fails
+     */
+    private static SP buildSql(final SqlBuilder builder, final Consumer<SqlBuilder> complete) throws RuntimeException {
+        try {
+            complete.accept(builder);
+            return builder.build();
+        } catch (final RuntimeException | Error e) {
+            try {
+                // Callers never receive this builder. Its terminal build releases the pooled buffer even if
+                // incomplete; if already released, its closed-state guard prevents another decrement.
+                builder.build();
+            } catch (final RuntimeException | Error cleanupFailure) {
+                // Preserve the original configuration/build failure over an incomplete or closed-builder failure.
+            }
+
+            throw e;
+        }
     }
 
     private static final Function<Object, QueryParameterValue> defaultQueryParameterCreator = value -> {

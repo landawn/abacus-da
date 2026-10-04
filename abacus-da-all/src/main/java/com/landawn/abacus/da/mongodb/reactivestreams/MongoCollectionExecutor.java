@@ -3091,10 +3091,10 @@ public final class MongoCollectionExecutor {
 
         // _id was stripped above: it is immutable server-side, and {$set: {_id: ...}} fails for every
         // matched document whose _id differs — breaking the common "fetch entity, modify a field,
-        // update by filter" pattern. The server also rejects an empty $set; fail fast instead.
+        // update by filter" pattern. This executor requires at least one remaining updatable field.
         if (bsonToUse instanceof final Document doc && doc.isEmpty() || bsonToUse instanceof final BasicDBObject dbObject && dbObject.isEmpty()) {
             throw new IllegalArgumentException(
-                    "The update payload is empty (no non-null updatable properties besides the immutable _id). MongoDB rejects an empty $set");
+                    "The update payload is empty (no non-null updatable properties besides the immutable _id). This executor requires at least one updatable field");
         }
 
         return new Document(_$SET, bsonToUse);
@@ -4812,6 +4812,9 @@ public final class MongoCollectionExecutor {
      * elements; a primitive {@code rowType} (such as {@code int.class}) emits its default value for it
      * instead.</p>
      *
+     * <p>Paths inside an embedded {@code _id} are supported: grouping {@code "_id.part"} with {@code Map.class} or
+     * {@code Object.class} yields {@code {_id: {part: <key>}}} rows.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Flux<CategoryGroup> groups = executor.groupBy("category", CategoryGroup.class);
@@ -4850,9 +4853,11 @@ public final class MongoCollectionExecutor {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
-     * @param fieldNames collection of field names to group by; must not be null or empty
+     * @param fieldNames collection of field names to group by; must not be null or empty.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @return a Flux that emits documents grouped by the specified fields
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths
      * @see #groupBy(Collection, Class)
      */
     @Beta
@@ -4876,10 +4881,12 @@ public final class MongoCollectionExecutor {
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the grouped results
-     * @param fieldNames collection of field names to group by; must not be null or empty
+     * @param fieldNames collection of field names to group by; must not be null or empty.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @param rowType the class to deserialize results into; must not be null
      * @return a Flux that emits grouped documents mapped to the specified type
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths, or if {@code rowType} is null
      */
     @Beta
     public <T> Flux<T> groupBy(final Collection<String> fieldNames, final Class<T> rowType) throws IllegalArgumentException {
@@ -4944,7 +4951,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to deserialize results into; must not be null
      * @return a Flux that emits grouped and counted documents mapped to the specified type
      * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null, or if {@code fieldName} is
-     *         {@code "count"} and {@code rowType} is not {@link Document} (the group key would be overwritten by the count column)
+     *         {@code "count"} or starts with {@code "count."}, and {@code rowType} is not {@link Document} (the group key conflicts with the count column)
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final String fieldName, final Class<T> rowType) throws IllegalArgumentException {
@@ -4968,9 +4975,11 @@ public final class MongoCollectionExecutor {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
-     * @param fieldNames collection of field names to group by; must not be null or empty
+     * @param fieldNames collection of field names to group by; must not be null or empty.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @return a Flux that emits documents with composite _id and count fields
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths
      * @see #groupByAndCount(Collection, Class)
      */
     @Beta
@@ -4996,11 +5005,14 @@ public final class MongoCollectionExecutor {
      * Document decoding or result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type of the grouped and counted results
-     * @param fieldNames collection of field names to group by; must not be null or empty
+     * @param fieldNames collection of field names to group by; must not be null or empty.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @param rowType the class to deserialize results into; must not be null
      * @return a Flux that emits grouped and counted documents mapped to the specified type
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code rowType} is null, or if {@code fieldNames}
-     *         contains {@code "count"} and {@code rowType} is not {@link Document} (that group key would be overwritten by the count column)
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths, or if {@code rowType} is null, or if {@code fieldNames}
+     *         contains {@code "count"} or a path starting with {@code "count."}, and {@code rowType} is not {@link Document}
+     *         (the group key conflicts with the count column)
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) throws IllegalArgumentException {
@@ -5034,18 +5046,20 @@ public final class MongoCollectionExecutor {
             project.append(_COUNT, 1);
         }
 
-        return N.asList(new Document(_$GROUP, group), new Document("$project", project));
+        return N.asList(new Document(_$GROUP, group), new Document("$project", rebuildEmbeddedIdProjection(project)));
     }
 
     /**
      * Builds the grouping pipeline and its optional count projection.
      *
-     * @param fieldNames the fields to group by
+     * @param fieldNames the fields to group by.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      * @param count whether to include the group count
      * @param rowType the requested result type
      * @return the aggregation stages
-     * @throws IllegalArgumentException if {@code fieldNames} is null or empty, or if {@code count} is set, {@code rowType} is not
-     *         {@link Document}, and {@code fieldNames} contains {@code "count"}
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty,
+     *         contains a null path, an empty path segment or overlapping paths, or if {@code count} is set, {@code rowType} is not
+     *         {@link Document}, and {@code fieldNames} contains {@code "count"} or a path starting with {@code "count."}
      */
     private static List<Document> groupByPipeline(final Collection<String> fieldNames, final boolean count, final Class<?> rowType)
             throws IllegalArgumentException {
@@ -5054,7 +5068,7 @@ public final class MongoCollectionExecutor {
         final Document groupFields = new Document();
 
         for (final String fieldName : fieldNames) {
-            groupFields.put(fieldName, _$ + fieldName);
+            appendGroupField(groupFields, fieldName);
         }
 
         final Document group = new Document(MongoDBBase._ID, groupFields);
@@ -5081,15 +5095,96 @@ public final class MongoCollectionExecutor {
             project.append(_COUNT, 1);
         }
 
-        return N.asList(new Document(_$GROUP, group), new Document("$project", project));
+        return N.asList(new Document(_$GROUP, group), new Document("$project", rebuildEmbeddedIdProjection(project)));
+    }
+
+    /**
+     * Rebuilds embedded _id fields as a fresh expression object in a grouping or distinct projection.
+     * A dotted projection traverses the previous _id when it is an array, changing the result's shape.
+     * The expression wrapper preserves the complete key value, including empty and nested arrays.
+     */
+    static Document rebuildEmbeddedIdProjection(final Document project) {
+        final List<String> idFields = new ArrayList<>();
+
+        for (final String field : project.keySet()) {
+            if (field.startsWith(MongoDBBase._ID + ".")) {
+                idFields.add(field);
+            }
+        }
+
+        if (idFields.isEmpty()) {
+            return project;
+        }
+
+        final Document id = new Document();
+
+        for (final String field : idFields) {
+            final String[] path = field.split("\\.", -1);
+            Document parent = id;
+
+            for (int i = 1; i < path.length - 1; i++) {
+                Document child = parent.get(path[i], Document.class);
+
+                if (child == null) {
+                    child = new Document();
+                    parent.append(path[i], child);
+                }
+
+                parent = child;
+            }
+
+            parent.append(path[path.length - 1], project.remove(field));
+        }
+
+        // $mergeObjects forces expression evaluation; a bare nested document is still a traversing projection.
+        project.put(MongoDBBase._ID, new Document("$mergeObjects", N.asList(id)));
+        return project;
+    }
+
+    /**
+     * Inserts a path as a nested expression object: MongoDB rejects a literal dotted key in a $group expression.
+     * Ancestor/descendant paths cannot share this shape, but repeated identical paths are harmless.
+     */
+    private static void appendGroupField(final Document groupFields, final String fieldName) throws IllegalArgumentException {
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+
+        final String[] path = fieldName.split("\\.", -1);
+
+        for (final String part : path) {
+            if (part.isEmpty()) {
+                throw new IllegalArgumentException("Group field path contains an empty segment: " + fieldName);
+            }
+        }
+
+        Document parent = groupFields;
+
+        for (int i = 0; i < path.length; i++) {
+            final Object existing = parent.get(path[i]);
+
+            if (i == path.length - 1) {
+                if (existing instanceof Document) {
+                    throw new IllegalArgumentException("Overlapping group field paths: " + fieldName);
+                }
+
+                parent.put(path[i], _$ + fieldName);
+            } else if (existing == null) {
+                final Document child = new Document();
+                parent.put(path[i], child);
+                parent = child;
+            } else if (existing instanceof final Document child) {
+                parent = child;
+            } else {
+                throw new IllegalArgumentException("Overlapping group field paths: " + fieldName);
+            }
+        }
     }
 
     // The non-Document groupByAndCount row is {<fieldName>: key, count: n}: a group field named "count" would be
-    // overwritten by the count column, silently dropping the group key, so no correct row shape exists for it.
+    // overwritten by the count column, while "count.x" conflicts with that parent projection, so no correct row shape exists for either.
     private static void checkGroupFieldNotCountColumn(final String fieldName) throws IllegalArgumentException {
-        if (_COUNT.equals(fieldName)) {
+        if (_COUNT.equals(fieldName) || (fieldName != null && fieldName.startsWith(_COUNT + "."))) {
             throw new IllegalArgumentException(
-                    "Group field name '" + _COUNT + "' conflicts with the count column of groupByAndCount; use Document as the row type");
+                    "Group field name '" + fieldName + "' conflicts with the count column of groupByAndCount; use Document as the row type");
         }
     }
 

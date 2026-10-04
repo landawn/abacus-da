@@ -4738,7 +4738,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
-     * @param fieldNames the collection of field names to group by
+     * @param fieldNames the collection of field names to group by.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
+     *        Invalid or overlapping member paths complete the returned future exceptionally.
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
@@ -4834,7 +4836,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
      * executing the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
-     * @param fieldNames the collection of field names to group by and count
+     * @param fieldNames the collection of field names to group by and count.
+     *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
+     *        Invalid or overlapping member paths complete the returned future exceptionally.
      * @return a ContinuableFuture that completes with a Stream of Documents containing composite group keys and counts
      * @throws IllegalArgumentException if {@code fieldNames} is null or empty
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission

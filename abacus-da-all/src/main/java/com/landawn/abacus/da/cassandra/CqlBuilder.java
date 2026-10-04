@@ -1989,7 +1989,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
-     * @throws IllegalArgumentException if {@code entityClass} is null or is not an entity bean class
+     * @throws IllegalArgumentException if {@code entityClass} is null, is not an entity bean class, or has no deletable
+     *         non-key property after exclusions
      */
     private static Collection<String> getDeletePropNamesByClass(final Class<?> entityClass, final Set<String> excludedPropNames)
             throws IllegalArgumentException {
@@ -2003,6 +2004,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         if (N.notEmpty(excludedPropNames)) {
             propNames.removeAll(excludedPropNames);
         }
+
+        // An empty column list changes DELETE's meaning to deletion of the entire row. A column-delete factory
+        // must reject that case; callers who intend to remove rows use deleteFrom(...) explicitly.
+        N.checkArgument(N.notEmpty(propNames), "No deletable non-key properties remain after exclusions for: {}", entityClass.getName());
 
         return propNames;
     }
@@ -2758,7 +2763,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Properties marked with @ReadOnly, @ReadOnlyId, or @Transient are automatically excluded.
          * Primary-key properties (via {@code @Id} / registered keys) are also excluded, because
          * Cassandra rejects DELETE of partition/clustering key columns.
-         * This is useful for creating templates for partial row deletion.</p>
+         * This is useful for creating templates for partial row deletion. If no deletable non-key property remains,
+         * this method rejects the request; use {@link #deleteFrom(Class)} to delete entire rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2771,7 +2777,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param entityClass the entity class
          * @return a new CqlBuilder instance configured for DELETE operation
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null, is not an entity bean class, or has no deletable
+         *         non-key property
          */
         public CqlBuilder delete(final Class<?> entityClass) throws IllegalArgumentException {
             return delete(entityClass, null);
@@ -2783,7 +2790,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * <p>This method generates a DELETE statement excluding annotation-based exclusions
          * ({@code @ReadOnly}, {@code @ReadOnlyId}, {@code @Transient}), primary-key properties
          * (Cassandra rejects DELETE of key columns), and the specified extra properties. Useful for
-         * selective column deletion where certain fields should be preserved.</p>
+         * selective column deletion where certain fields should be preserved. If no deletable non-key property
+         * remains, this method rejects the request; use {@link #deleteFrom(Class)} to delete entire rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2798,7 +2806,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param entityClass the entity class
          * @param excludedPropNames properties to exclude from the delete
          * @return a new CqlBuilder instance configured for DELETE operation
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null, is not an entity bean class, or has no deletable
+         *         non-key property after exclusions
          */
         public CqlBuilder delete(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, DELETION_PART_MSG);

@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -276,7 +277,7 @@ public final class CqlMapper {
      * Creates a new {@code CqlMapper} by loading CQL definitions from the supplied input stream.
      * The stream content must contain a {@code <cqlMapper>} root element. The caller opens the stream
      * and remains responsible for closing it (typically via try-with-resources); this method does not
-     * close it.
+     * close it, including when parsing fails.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -348,7 +349,7 @@ public final class CqlMapper {
 
     /**
      * Parses the XML read from {@code is} and merges its {@code <cql>} definitions into this mapper.
-     * The stream is not closed by this method; the caller owns and closes it.
+     * The stream is not closed by this method, including when parsing fails; the caller owns and closes it.
      *
      * @param is the input stream to read the XML CQL definitions from
      * @param sourceLabel a human-readable label identifying the source, used in error messages
@@ -362,7 +363,14 @@ public final class CqlMapper {
     private void loadStream(final InputStream is, final String sourceLabel)
             throws RuntimeException, UncheckedIOException, ParsingException, IllegalArgumentException {
         try {
-            final Document doc = XmlUtil.createDOMParser(true, true).parse(is);
+            // DOM parsers may close the stream on success or failure. Shield caller-owned input; loadFile's
+            // try-with-resources still closes the original stream when this class opened it.
+            final Document doc = XmlUtil.createDOMParser(true, true).parse(new FilterInputStream(is) {
+                @Override
+                public void close() {
+                    // The caller owns the underlying stream.
+                }
+            });
             final Element cqlMapperElement = requireCqlMapperRoot(doc, sourceLabel);
 
             final List<Element> cqlElementList = XmlUtil.getElementsByTagName(cqlMapperElement, CQL);

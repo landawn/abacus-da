@@ -2033,9 +2033,8 @@ public class MongoCollectionExecutorTest extends TestBase {
 
     @Test
     public void testUpdateOneWithEmptyMapPayloadThrowsIAE() {
-        // Regression: {$set: {}} is rejected by the server ("'$set' is empty"); the executor now fails
-        // fast with IllegalArgumentException instead of sending the no-op update. The driver must NOT
-        // be invoked.
+        // This executor rejects an empty plain-object update before calling the driver, even though
+        // MongoDB 5.0+ accepts an empty $set operand as a no-op.
         Document filter = new Document("status", "active");
 
         IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class,
