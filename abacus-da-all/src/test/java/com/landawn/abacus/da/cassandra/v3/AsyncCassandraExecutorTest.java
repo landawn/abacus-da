@@ -46,10 +46,10 @@ import com.datastax.driver.core.Statement;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CqlMapper;
 import com.landawn.abacus.util.ContinuableFuture;
-import com.landawn.abacus.util.function.Function;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
+import com.landawn.abacus.util.function.Function;
+import com.landawn.abacus.util.stream.Stream;
 
 /**
  * Mockito-based tests for the v3 (Cassandra Driver 3.x) {@link AsyncCassandraExecutor}.
@@ -163,7 +163,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertEquals("MONDAY", bound[0][0]);
 
         final java.util.concurrent.atomic.AtomicReference<RuntimeException> acceptanceFailure = new java.util.concurrent.atomic.AtomicReference<>();
-        registry.register(new CassandraExecutor.StringCodec<java.time.DayOfWeek>(java.time.DayOfWeek.class) {
+        registry.register(new CassandraExecutor.StringCodec<>(java.time.DayOfWeek.class) {
             @Override
             public boolean accepts(final Object candidate) {
                 if (candidate instanceof java.time.DayOfWeek && acceptanceFailure.get() != null) {
@@ -340,7 +340,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, String> mapper = (Function) (Function<Row, String>) row -> "v";
+        final Function<Row, String> mapper = (Function<Row, String>) row -> "v";
         when(mockExecutor.createRowMapper(eq(String.class))).thenReturn(mapper);
 
         ContinuableFuture<Optional<String>> future = async.findFirst(String.class, "SELECT * FROM t WHERE id = ?", 1);
@@ -460,7 +460,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, String> mapper = (Function) (Function<Row, String>) r -> "hello";
+        final Function<Row, String> mapper = (Function<Row, String>) r -> "hello";
         when(mockExecutor.createRowMapper(eq(String.class))).thenReturn(mapper);
 
         Optional<String> result = async.findFirst(String.class, "SELECT name FROM t WHERE id = ?", 1).get();
@@ -475,7 +475,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) row -> 42;
+        final Function<Row, Integer> mapper = (Function<Row, Integer>) row -> 42;
         when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
 
         Optional<Integer> result = async.queryForSingleNonNull(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
@@ -519,7 +519,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) row -> 42;
+        final Function<Row, Integer> mapper = (Function<Row, Integer>) row -> 42;
         when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
 
         Nullable<Integer> result = async.queryForSingleValue(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
@@ -600,7 +600,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(variables.size()).thenReturn(0);
         when(preparedStatement.bind(any(Object[].class))).thenReturn(boundStatement);
 
-        assertSame(boundStatement, executor.prepareStatement(query, new HashMap<String, Object>()));
+        assertSame(boundStatement, executor.prepareStatement(query, new HashMap<>()));
         assertSame(boundStatement, executor.prepareStatement(query, List.of()));
         assertSame(boundStatement, executor.prepareStatement(query, (Object) new Object[0]));
 
@@ -746,7 +746,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Object[]> mapper = (Function) (Function<Row, Object[]>) row -> new Object[] {};
+        final Function<Row, Object[]> mapper = (Function<Row, Object[]>) row -> new Object[] {};
         when(mockExecutor.createRowMapper(eq(Object[].class))).thenReturn(mapper);
 
         ContinuableFuture<Stream<Object[]>> future = async.stream("SELECT * FROM t WHERE id = ?", 1);
@@ -763,7 +763,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Object[]> mapper = (Function) (Function<Row, Object[]>) row -> new Object[] {};
+        final Function<Row, Object[]> mapper = (Function<Row, Object[]>) row -> new Object[] {};
         when(mockExecutor.createRowMapper(eq(Object[].class))).thenReturn(mapper);
 
         ContinuableFuture<Stream<Object[]>> future = async.stream("SELECT * FROM t");
@@ -863,7 +863,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertNull(beanCodec.deserialize(beanCodec.serialize(new SlicePBlobEntity(), ProtocolVersion.V4), ProtocolVersion.V4).getData());
 
         final java.util.concurrent.atomic.AtomicReference<RuntimeException> codecFailure = new java.util.concurrent.atomic.AtomicReference<>();
-        registry.register(new com.datastax.driver.core.TypeCodec<byte[]>(com.datastax.driver.core.DataType.blob(), byte[].class) {
+        registry.register(new com.datastax.driver.core.TypeCodec<>(com.datastax.driver.core.DataType.blob(), byte[].class) {
             @Override
             public java.nio.ByteBuffer serialize(final byte[] value, final ProtocolVersion version) {
                 if (codecFailure.get() != null) {
@@ -1415,7 +1415,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
         // A codec registered for the value's type still takes precedence: the value is bound as is.
         final CodecRegistry registry = new CodecRegistry()
-                .register(new com.datastax.driver.core.TypeCodec<java.time.LocalTime>(com.datastax.driver.core.DataType.time(), java.time.LocalTime.class) {
+                .register(new com.datastax.driver.core.TypeCodec<>(com.datastax.driver.core.DataType.time(), java.time.LocalTime.class) {
                     @Override
                     public java.nio.ByteBuffer serialize(final java.time.LocalTime value, final ProtocolVersion protocolVersion) {
                         return bigint().serialize(value == null ? null : value.toNanoOfDay(), protocolVersion);
@@ -1604,7 +1604,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         final List<com.datastax.driver.core.UserType.Field> fields = new java.util.ArrayList<>();
 
         for (int i = 0; i < namesAndTypes.length; i += 2) {
-            fields.add(fieldConstructor.newInstance((String) namesAndTypes[i], (com.datastax.driver.core.DataType) namesAndTypes[i + 1]));
+            fields.add(fieldConstructor.newInstance(namesAndTypes[i], namesAndTypes[i + 1]));
         }
 
         final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,

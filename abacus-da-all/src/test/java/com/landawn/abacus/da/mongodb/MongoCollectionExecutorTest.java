@@ -28,7 +28,6 @@ import org.mockito.Mock;
 import com.landawn.abacus.da.MockitoTestBase;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.Dataset;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -39,6 +38,7 @@ import com.landawn.abacus.util.u.OptionalFloat;
 import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
+import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.ChangeStreamIterable;
@@ -776,7 +776,7 @@ public class MongoCollectionExecutorTest extends MockitoTestBase {
         com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
         UpdateResult ur = mock(UpdateResult.class);
         when(mockCollection.updateMany(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
-        UpdateResult result = executor.updateMany(filter, (Object) update, opts);
+        UpdateResult result = executor.updateMany(filter, update, opts);
         Assertions.assertNotNull(result);
         verify(mockCollection).updateMany(any(Bson.class), any(Bson.class), eq(opts));
     }
@@ -850,8 +850,7 @@ public class MongoCollectionExecutorTest extends MockitoTestBase {
         // MongoDB 5.0+ accepts an empty $set operand as a no-op.
         Document filter = new Document("status", "active");
 
-        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> executor.updateOne(filter, new java.util.HashMap<String, Object>()));
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, new java.util.HashMap<>()));
 
         Assertions.assertTrue(ex.getMessage().contains("empty"));
         verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
@@ -924,7 +923,7 @@ public class MongoCollectionExecutorTest extends MockitoTestBase {
         com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
         UpdateResult ur = mock(UpdateResult.class);
         when(mockCollection.updateOne(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
-        UpdateResult result = executor.updateOne(filter, (Object) update, opts);
+        UpdateResult result = executor.updateOne(filter, update, opts);
         Assertions.assertNotNull(result);
         verify(mockCollection).updateOne(any(Bson.class), any(Bson.class), eq(opts));
     }
@@ -2738,7 +2737,7 @@ public class MongoCollectionExecutorTest extends MockitoTestBase {
                 () -> Assertions.assertEquals("Paris", ((List<E2eAddress_coverageME>) dataset.getColumn("addresses").get(0)).get(0).getCity(),
                         path + ": List<Address>"),
                 () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dataset.getColumn("day").get(0), path + ": LocalDate in UTC"),
-                () -> Assertions.assertEquals((Object) 7L, ((E2eBox_coverageME<?>) dataset.getColumn("box").get(0)).getValue(), path + ": Box<Long>"));
+                () -> Assertions.assertEquals(7L, ((E2eBox_coverageME<?>) dataset.getColumn("box").get(0)).getValue(), path + ": Box<Long>"));
     }
 
     @SuppressWarnings("unchecked")

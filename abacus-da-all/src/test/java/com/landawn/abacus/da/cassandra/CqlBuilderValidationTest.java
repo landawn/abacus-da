@@ -135,7 +135,7 @@ public class CqlBuilderValidationTest extends TestBase {
         final java.util.concurrent.atomic.AtomicInteger counter = QueryBuilderLeakAssertions.activeStringBuilderCounter();
         final int before = counter.get();
 
-        assertThrows(IllegalArgumentException.class, () -> PSC.insert((Object) Integer.valueOf(3)));
+        assertThrows(IllegalArgumentException.class, () -> PSC.insert(Integer.valueOf(3)));
         assertThrows(IllegalArgumentException.class, () -> PSC.insert(Integer.class));
         assertThrows(IllegalArgumentException.class, () -> PSC.insertInto(Integer.class));
         assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(N.asList(N.asMap("a", 1), N.asMap("b", 2))));

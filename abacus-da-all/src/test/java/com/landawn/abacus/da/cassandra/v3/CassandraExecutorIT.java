@@ -938,7 +938,7 @@ public class CassandraExecutorIT extends TestBase {
         try {
             // Prepare a statement via the live session so we can stream over it.
             BoundStatement bs = cassandraExecutor.session().prepare("SELECT * FROM simplex.songs WHERE id = ?").bind(id);
-            long count = cassandraExecutor.stream((Statement) bs, (cds, r) -> r.getString("title")).count();
+            long count = cassandraExecutor.stream(bs, (cds, r) -> r.getString("title")).count();
             assertEquals(1L, count);
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
@@ -1236,7 +1236,7 @@ public class CassandraExecutorIT extends TestBase {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "lc");
         try {
-            List<List> rows = (List) cassandraExecutor.list(List.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
+            List<List> rows = cassandraExecutor.list(List.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
             assertEquals(1, rows.size());
             assertEquals(2, rows.get(0).size());
         } finally {

@@ -1,6 +1,5 @@
 package com.landawn.abacus.da.aws.dynamodb.v2;
 
-import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;

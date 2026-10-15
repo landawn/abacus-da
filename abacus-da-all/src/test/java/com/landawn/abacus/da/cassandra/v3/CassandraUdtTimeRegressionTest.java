@@ -90,7 +90,7 @@ public class CassandraUdtTimeRegressionTest extends TestBase {
     void registeredTimeFieldCodecTakesPrecedenceOverFallback() throws Exception {
         final LocalTime time = LocalTime.of(12, 34, 56, 123);
         final AtomicReference<RuntimeException> serializerFailure = new AtomicReference<>();
-        final CodecRegistry registry = new CodecRegistry().register(new TypeCodec<LocalTime>(DataType.time(), LocalTime.class) {
+        final CodecRegistry registry = new CodecRegistry().register(new TypeCodec<>(DataType.time(), LocalTime.class) {
             @Override
             public ByteBuffer serialize(final LocalTime value, final ProtocolVersion protocolVersion) {
                 if (serializerFailure.get() != null) {

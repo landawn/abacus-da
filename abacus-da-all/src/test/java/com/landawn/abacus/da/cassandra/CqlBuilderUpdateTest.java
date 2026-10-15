@@ -369,14 +369,14 @@ public class CqlBuilderUpdateTest extends TestBase {
 
         assertThrows(IllegalStateException.class, () -> closed.set((Class<?>) null));
         assertThrows(IllegalStateException.class, () -> closed.set(Integer.class));
-        assertThrows(IllegalStateException.class, () -> closed.set((Object) 3));
+        assertThrows(IllegalStateException.class, () -> closed.set(3));
         assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set(Integer.class));
-        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set((Object) 3));
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").set(3));
 
         // Argument errors on a valid UPDATE builder are unchanged.
         assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Class<?>) null));
         assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set(Integer.class));
-        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set((Object) 3));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set(3));
     }
 
     /**

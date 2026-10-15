@@ -30,8 +30,8 @@ class HBaseWrapperBoundaryTest {
     @Test
     void objectRowKeySliceFactoriesUseOnlyTheSelectedBytes() {
         final byte[] expected = "row".getBytes(StandardCharsets.UTF_8);
-        assertArrayEquals(expected, AnyAppend.of((Object) "xxrowyy", 2, 3).getRow());
-        assertArrayEquals(expected, AnyIncrement.of((Object) "xxrowyy", 2, 3).getRow());
+        assertArrayEquals(expected, AnyAppend.of("xxrowyy", 2, 3).getRow());
+        assertArrayEquals(expected, AnyIncrement.of("xxrowyy", 2, 3).getRow());
         assertFalse(AnyAppend.of("row").equals(AnyAppend.of("another")));
         assertFalse(AnyIncrement.of("row").equals(AnyIncrement.of("another")));
     }

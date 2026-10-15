@@ -32,8 +32,8 @@ import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
+import com.landawn.abacus.util.stream.Stream;
 
 /**
  * BigQuery emulator round trips. Requires the test-project emulator at localhost:9050 and creates a separate dataset for each run. Static mapping and validation contracts live in the BigQuery unit suites.

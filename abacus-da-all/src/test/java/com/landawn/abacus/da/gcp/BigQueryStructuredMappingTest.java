@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -67,7 +66,7 @@ public class BigQueryStructuredMappingTest extends BigQueryExecutorTestSupport {
     public void testGetterOnlyPropertyColumnIsSkippedOnRead() throws Exception {
         when(mockTableResult.getSchema()).thenReturn(null);
         when(mockTableResult.getTotalRows()).thenReturn(0L);
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
         executor.list(ComputedSubEntity.class, Filters.eq("id", "1"));
         assertTrue(captureGeneratedSql().contains("computed"), "the generated SELECT projects the getter-only column");

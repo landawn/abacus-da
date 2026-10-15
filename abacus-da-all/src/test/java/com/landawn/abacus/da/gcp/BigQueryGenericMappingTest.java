@@ -213,7 +213,7 @@ public class BigQueryGenericMappingTest extends BigQueryExecutorTestSupport {
         final FieldValueList row = FieldValueList.of(Arrays.asList(series, fixBqRepeated(series), nested, fixBqRepeated(nested)), fields);
 
         final java.util.function.Consumer<FixBq2Series<?>> checkSeries = s -> {
-            assertEquals(Arrays.asList(1L, 2L), new ArrayList<Object>(s.getItems()));
+            assertEquals(Arrays.asList(1L, 2L), new ArrayList<>(s.getItems()));
             final Object byKey = ((Map<?, ?>) s.getByKey()).get("x");
             assertEquals(11L, byKey);
             final Object first = s.getFirst();
@@ -260,7 +260,7 @@ public class BigQueryGenericMappingTest extends BigQueryExecutorTestSupport {
         assertEquals("5", fixBq2ValueOf(holder.getWild()));
         assertEquals("5", fixBq2ValueOf(holder.getObject()));
         assertEquals("5", fixBq2ValueOf(holder.getText()));
-        assertEquals("5", fixBq2ValueOf((FixBq2Box<?>) holder.getRaws().get(0)));
+        assertEquals("5", fixBq2ValueOf(holder.getRaws().get(0)));
         assertEquals("5", fixBq2ValueOf(holder.getWilds().get(0)));
         assertEquals("5", fixBq2ValueOf(holder.getObjects().get(0)));
         assertEquals("5", fixBq2ValueOf(BigQueryExecutor.toEntity(sub, (FieldValueList) struct.getValue(), FixBq2Box.class)));

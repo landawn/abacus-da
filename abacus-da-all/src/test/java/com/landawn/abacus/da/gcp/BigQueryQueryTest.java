@@ -19,7 +19,6 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import com.google.cloud.bigquery.BigQuery;
 import com.google.cloud.bigquery.Field;
 import com.google.cloud.bigquery.FieldList;
 import com.google.cloud.bigquery.FieldValue;
@@ -32,8 +31,8 @@ import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.NamingPolicy;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
+import com.landawn.abacus.util.stream.Stream;
 
 public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
 
@@ -120,7 +119,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
 
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(schema);
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         List<TestEntity> list = executor.list(TestEntity.class, Filters.eq("id", -1));
@@ -177,7 +176,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
 
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(schema);
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         Dataset ds = executor.query(TestEntity.class, (Condition) null);
@@ -192,7 +191,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
 
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(schema);
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         Dataset ds = exec.query(TestEntity.class, Filters.eq("id", 1));
@@ -207,7 +206,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
 
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(schema);
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         Dataset ds = exec.query(TestEntity.class, Filters.eq("id", 1));
@@ -222,7 +221,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
 
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(schema);
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         Dataset ds = exec.query(TestEntity.class, Arrays.asList("name"), null);
@@ -237,7 +236,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
 
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(schema);
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         Dataset ds = exec.query(TestEntity.class, Arrays.asList("name"), null);
@@ -248,7 +247,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
     public void testQueryDoesNotRewriteAliasLikeTextInsideLiteral() throws Exception {
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(Schema.of(FieldList.of(Field.of("id", StandardSQLTypeName.INT64))));
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         executor.query(TestEntity.class, Filters.expr("note = 'AS \"not_an_alias\"'"));
@@ -370,7 +369,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
     public void testQueryGeneratesBacktickQuotedAliasesNotDoubleQuotes() throws Exception {
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(Schema.of(FieldList.of(Field.of("id", StandardSQLTypeName.INT64))));
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         executor.query(TestEntity.class, Filters.eq("id", 1));
@@ -388,7 +387,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
     public void testQueryPreservesDoubleQuotedLiteralInRawCondition() throws Exception {
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockTableResult.getSchema()).thenReturn(Schema.of(FieldList.of(Field.of("id", StandardSQLTypeName.INT64))));
-        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         executor.query(TestEntity.class, Filters.expr("name = \"Alice\""));

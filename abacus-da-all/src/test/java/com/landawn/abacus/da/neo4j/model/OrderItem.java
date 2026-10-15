@@ -18,19 +18,19 @@ public class OrderItem {
     private double amount;
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public OrderItem setId(Long id) {
         this.id = id;
@@ -38,19 +38,19 @@ public class OrderItem {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Product getProduct() {
         return product;
     }
 
     /**
-     * 
      *
-     * @param product 
-     * @return 
+     *
+     * @param product
+     * @return
      */
     public OrderItem setProduct(Product product) {
         this.product = product;
@@ -58,19 +58,19 @@ public class OrderItem {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public int getQuantity() {
         return quantity;
     }
 
     /**
-     * 
      *
-     * @param quantity 
-     * @return 
+     *
+     * @param quantity
+     * @return
      */
     public OrderItem setQuantity(int quantity) {
         this.quantity = quantity;
@@ -78,19 +78,19 @@ public class OrderItem {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public double getAmount() {
         return amount;
     }
 
     /**
-     * 
      *
-     * @param amount 
-     * @return 
+     *
+     * @param amount
+     * @return
      */
     public OrderItem setAmount(double amount) {
         this.amount = amount;
@@ -98,9 +98,9 @@ public class OrderItem {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -108,10 +108,10 @@ public class OrderItem {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -122,25 +122,17 @@ public class OrderItem {
             return false;
         }
         OrderItem other = (OrderItem) obj;
-        if (Double.doubleToLongBits(amount) != Double.doubleToLongBits(other.amount)) {
-            return false;
-        }
-        if (!Objects.equals(id, other.id)) {
-            return false;
-        }
-        if (!Objects.equals(product, other.product)) {
-            return false;
-        }
-        if (quantity != other.quantity) {
+        if ((Double.doubleToLongBits(amount) != Double.doubleToLongBits(other.amount)) || !Objects.equals(id, other.id)
+                || !Objects.equals(product, other.product) || (quantity != other.quantity)) {
             return false;
         }
         return true;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

@@ -31,7 +31,6 @@ import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.ImmutableList;
 import com.landawn.abacus.util.NamingPolicy;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -42,6 +41,7 @@ import com.landawn.abacus.util.u.OptionalFloat;
 import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
+import com.landawn.abacus.util.stream.Stream;
 
 public class CassandraExecutorBaseTest extends TestBase {
 
@@ -639,280 +639,326 @@ public class CassandraExecutorBaseTest extends TestBase {
 
         final Map<String, java.util.function.Consumer<Boolean>> ops = new LinkedHashMap<>();
         ops.put("count(cond)", a -> {
-            if (a)
+            if (a) {
                 async.count(TestEntity.class, cond);
-            else
+            } else {
                 sync.count(TestEntity.class, cond);
+            }
         });
         ops.put("count(null cond)", a -> {
-            if (a)
+            if (a) {
                 async.count(TestEntity.class, null);
-            else
+            } else {
                 sync.count(TestEntity.class, null);
+            }
         });
         ops.put("count(query)", a -> {
-            if (a)
+            if (a) {
                 async.count("SELECT count(*) FROM t WHERE id = ?", 1L);
-            else
+            } else {
                 sync.count("SELECT count(*) FROM t WHERE id = ?", 1L);
+            }
         });
         ops.put("exists(ids)", a -> {
-            if (a)
+            if (a) {
                 async.exists(TestEntity.class, 5L);
-            else
+            } else {
                 sync.exists(TestEntity.class, 5L);
+            }
         });
         ops.put("exists(cond)", a -> {
-            if (a)
+            if (a) {
                 async.exists(TestEntity.class, cond);
-            else
+            } else {
                 sync.exists(TestEntity.class, cond);
+            }
         });
         ops.put("exists(null cond)", a -> {
-            if (a)
+            if (a) {
                 async.exists(TestEntity.class, (Condition) null);
-            else
+            } else {
                 sync.exists(TestEntity.class, (Condition) null);
+            }
         });
         ops.put("findFirst(cond)", a -> {
-            if (a)
+            if (a) {
                 async.findFirst(TestEntity.class, cond);
-            else
+            } else {
                 sync.findFirst(TestEntity.class, cond);
+            }
         });
         ops.put("findFirst(props, cond)", a -> {
-            if (a)
+            if (a) {
                 async.findFirst(TestEntity.class, Arrays.asList("name"), cond);
-            else
+            } else {
                 sync.findFirst(TestEntity.class, Arrays.asList("name"), cond);
+            }
         });
         ops.put("list(cond)", a -> {
-            if (a)
+            if (a) {
                 async.list(TestEntity.class, cond);
-            else
+            } else {
                 sync.list(TestEntity.class, cond);
+            }
         });
         ops.put("list(props, cond)", a -> {
-            if (a)
+            if (a) {
                 async.list(TestEntity.class, Arrays.asList("name"), cond);
-            else
+            } else {
                 sync.list(TestEntity.class, Arrays.asList("name"), cond);
+            }
         });
         ops.put("query(cond)", a -> {
-            if (a)
+            if (a) {
                 async.query(TestEntity.class, cond);
-            else
+            } else {
                 sync.query(TestEntity.class, cond);
+            }
         });
         ops.put("query(props, cond)", a -> {
-            if (a)
+            if (a) {
                 async.query(TestEntity.class, Arrays.asList("name"), cond);
-            else
+            } else {
                 sync.query(TestEntity.class, Arrays.asList("name"), cond);
+            }
         });
         ops.put("stream(cond)", a -> {
-            if (a)
+            if (a) {
                 async.stream(TestEntity.class, cond);
-            else
+            } else {
                 sync.stream(TestEntity.class, cond);
+            }
         });
         ops.put("stream(props, cond)", a -> {
-            if (a)
+            if (a) {
                 async.stream(TestEntity.class, Arrays.asList("name"), cond);
-            else
+            } else {
                 sync.stream(TestEntity.class, Arrays.asList("name"), cond);
+            }
         });
         ops.put("queryForBoolean", a -> {
-            if (a)
+            if (a) {
                 async.queryForBoolean(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForBoolean(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForChar", a -> {
-            if (a)
+            if (a) {
                 async.queryForChar(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForChar(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForByte", a -> {
-            if (a)
+            if (a) {
                 async.queryForByte(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForByte(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForShort", a -> {
-            if (a)
+            if (a) {
                 async.queryForShort(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForShort(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForInt", a -> {
-            if (a)
+            if (a) {
                 async.queryForInt(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForInt(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForLong", a -> {
-            if (a)
+            if (a) {
                 async.queryForLong(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForLong(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForFloat", a -> {
-            if (a)
+            if (a) {
                 async.queryForFloat(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForFloat(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForDouble", a -> {
-            if (a)
+            if (a) {
                 async.queryForDouble(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForDouble(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForString", a -> {
-            if (a)
+            if (a) {
                 async.queryForString(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForString(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForDate", a -> {
-            if (a)
+            if (a) {
                 async.queryForDate(TestEntity.class, "name", cond);
-            else
+            } else {
                 sync.queryForDate(TestEntity.class, "name", cond);
+            }
         });
         ops.put("queryForDate(valueClass)", a -> {
-            if (a)
+            if (a) {
                 async.queryForDate(TestEntity.class, java.sql.Timestamp.class, "name", cond);
-            else
+            } else {
                 sync.queryForDate(TestEntity.class, java.sql.Timestamp.class, "name", cond);
+            }
         });
         ops.put("queryForSingleValue", a -> {
-            if (a)
+            if (a) {
                 async.queryForSingleValue(TestEntity.class, String.class, "name", cond);
-            else
+            } else {
                 sync.queryForSingleValue(TestEntity.class, String.class, "name", cond);
+            }
         });
         ops.put("queryForSingleNonNull", a -> {
-            if (a)
+            if (a) {
                 async.queryForSingleNonNull(TestEntity.class, String.class, "name", cond);
-            else
+            } else {
                 sync.queryForSingleNonNull(TestEntity.class, String.class, "name", cond);
+            }
         });
         ops.put("insert(entity)", a -> {
-            if (a)
+            if (a) {
                 async.insert(entity);
-            else
+            } else {
                 sync.insert(entity);
+            }
         });
         ops.put("insert(class, props)", a -> {
-            if (a)
+            if (a) {
                 async.insert(TestEntity.class, props);
-            else
+            } else {
                 sync.insert(TestEntity.class, props);
+            }
         });
         ops.put("update(entity)", a -> {
-            if (a)
+            if (a) {
                 async.update(entity);
-            else
+            } else {
                 sync.update(entity);
+            }
         });
         ops.put("update(entity, props)", a -> {
-            if (a)
+            if (a) {
                 async.update(entity, Arrays.asList("name"));
-            else
+            } else {
                 sync.update(entity, Arrays.asList("name"));
+            }
         });
         ops.put("update(class, props, cond)", a -> {
-            if (a)
+            if (a) {
                 async.update(TestEntity.class, props, cond);
-            else
+            } else {
                 sync.update(TestEntity.class, props, cond);
+            }
         });
         ops.put("update(query)", a -> {
-            if (a)
+            if (a) {
                 async.update("UPDATE t SET name = ? WHERE id = ?", "x", 1L);
-            else
+            } else {
                 sync.update("UPDATE t SET name = ? WHERE id = ?", "x", 1L);
+            }
         });
         ops.put("delete(entity)", a -> {
-            if (a)
+            if (a) {
                 async.delete(entity);
-            else
+            } else {
                 sync.delete(entity);
+            }
         });
         ops.put("delete(entity, props)", a -> {
-            if (a)
+            if (a) {
                 async.delete(entity, Arrays.asList("name"));
-            else
+            } else {
                 sync.delete(entity, Arrays.asList("name"));
+            }
         });
         ops.put("delete(class, ids)", a -> {
-            if (a)
+            if (a) {
                 async.delete(TestEntity.class, 5L);
-            else
+            } else {
                 sync.delete(TestEntity.class, 5L);
+            }
         });
         ops.put("delete(class, props, ids)", a -> {
-            if (a)
+            if (a) {
                 async.delete(TestEntity.class, Arrays.asList("name"), 5L);
-            else
+            } else {
                 sync.delete(TestEntity.class, Arrays.asList("name"), 5L);
+            }
         });
         ops.put("delete(class, cond)", a -> {
-            if (a)
+            if (a) {
                 async.delete(TestEntity.class, cond);
-            else
+            } else {
                 sync.delete(TestEntity.class, cond);
+            }
         });
         ops.put("delete(class, props, cond)", a -> {
-            if (a)
+            if (a) {
                 async.delete(TestEntity.class, Arrays.asList("name"), cond);
-            else
+            } else {
                 sync.delete(TestEntity.class, Arrays.asList("name"), cond);
+            }
         });
         ops.put("batchDelete(entities)", a -> {
-            if (a)
+            if (a) {
                 async.batchDelete(entities);
-            else
+            } else {
                 sync.batchDelete(entities);
+            }
         });
         ops.put("batchDelete(entities, props)", a -> {
-            if (a)
+            if (a) {
                 async.batchDelete(entities, Arrays.asList("name"));
-            else
+            } else {
                 sync.batchDelete(entities, Arrays.asList("name"));
+            }
         });
         ops.put("exists(query)", a -> {
-            if (a)
+            if (a) {
                 async.exists("SELECT id FROM t WHERE id = ? LIMIT 1", 1L);
-            else
+            } else {
                 sync.exists("SELECT id FROM t WHERE id = ? LIMIT 1", 1L);
+            }
         });
         ops.put("list(query)", a -> {
-            if (a)
+            if (a) {
                 async.list("SELECT * FROM t WHERE id = ?", 1L);
-            else
+            } else {
                 sync.list("SELECT * FROM t WHERE id = ?", 1L);
+            }
         });
         ops.put("query(query)", a -> {
-            if (a)
+            if (a) {
                 async.query("SELECT * FROM t WHERE id = ?", 1L);
-            else
+            } else {
                 sync.query("SELECT * FROM t WHERE id = ?", 1L);
+            }
         });
         ops.put("stream(query)", a -> {
-            if (a)
+            if (a) {
                 async.stream("SELECT * FROM t WHERE id = ?", 1L);
-            else
+            } else {
                 sync.stream("SELECT * FROM t WHERE id = ?", 1L);
+            }
         });
         ops.put("findFirst(query)", a -> {
-            if (a)
+            if (a) {
                 async.findFirst("SELECT * FROM t WHERE id = ?", 1L);
-            else
+            } else {
                 sync.findFirst("SELECT * FROM t WHERE id = ?", 1L);
+            }
         });
 
         for (final Map.Entry<String, java.util.function.Consumer<Boolean>> op : ops.entrySet()) {

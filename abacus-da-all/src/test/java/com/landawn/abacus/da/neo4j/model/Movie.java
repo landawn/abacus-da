@@ -26,10 +26,10 @@ public class Movie {
     }
 
     /**
-     * 
      *
-     * @param title 
-     * @param year 
+     *
+     * @param title
+     * @param year
      */
     public Movie(String title, int year) {
         this.title = title;
@@ -37,72 +37,72 @@ public class Movie {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
+     *
+     * @param id
      */
     public void setId(Long id) {
         this.id = id;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getTitle() {
         return title;
     }
 
     /**
-     * 
      *
-     * @param title 
+     *
+     * @param title
      */
     public void setTitle(String title) {
         this.title = title;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public int getReleased() {
         return released;
     }
 
     /**
-     * 
      *
-     * @param released 
+     *
+     * @param released
      */
     public void setReleased(int released) {
         this.released = released;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Set<Actor> getActors() {
         return actors;
     }
 
     /**
-     * 
      *
-     * @param actors 
+     *
+     * @param actors
      */
     public void setActors(Set<Actor> actors) {
         this.actors = actors;

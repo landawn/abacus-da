@@ -363,10 +363,10 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
     public void testToItemToUpdateItemToEntity_NullArgsThrowIAE() {
         assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem((Object) null));
         assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem((Object) null, NamingPolicy.CAMEL_CASE));
-        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem((Object) new TestEntity(), null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem(new TestEntity(), null));
         assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem((Object) null));
         assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem((Object) null, NamingPolicy.CAMEL_CASE));
-        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem((Object) new TestEntity(), null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem(new TestEntity(), null));
         assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity((GetItemResult) null, (Class<TestEntity>) null));
         assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity((Map<String, AttributeValue>) null, (Class<TestEntity>) null));
     }

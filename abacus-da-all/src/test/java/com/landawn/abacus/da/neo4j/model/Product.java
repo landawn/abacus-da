@@ -19,19 +19,19 @@ public class Product {
     private Vendor vendor;
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public Product setId(Long id) {
         this.id = id;
@@ -39,19 +39,19 @@ public class Product {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getName() {
         return name;
     }
 
     /**
-     * 
      *
-     * @param name 
-     * @return 
+     *
+     * @param name
+     * @return
      */
     public Product setName(String name) {
         this.name = name;
@@ -59,19 +59,19 @@ public class Product {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public double getPrice() {
         return price;
     }
 
     /**
-     * 
      *
-     * @param price 
-     * @return 
+     *
+     * @param price
+     * @return
      */
     public Product setPrice(double price) {
         this.price = price;
@@ -79,19 +79,19 @@ public class Product {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getCategory() {
         return category;
     }
 
     /**
-     * 
      *
-     * @param category 
-     * @return 
+     *
+     * @param category
+     * @return
      */
     public Product setCategory(String category) {
         this.category = category;
@@ -99,19 +99,19 @@ public class Product {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Vendor getVendor() {
         return vendor;
     }
 
     /**
-     * 
      *
-     * @param vendor 
-     * @return 
+     *
+     * @param vendor
+     * @return
      */
     public Product setVendor(Vendor vendor) {
         this.vendor = vendor;
@@ -119,9 +119,9 @@ public class Product {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -129,10 +129,10 @@ public class Product {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -143,16 +143,8 @@ public class Product {
             return false;
         }
         Product other = (Product) obj;
-        if (!Objects.equals(category, other.category)) {
-            return false;
-        }
-        if (!Objects.equals(id, other.id)) {
-            return false;
-        }
-        if (!Objects.equals(name, other.name)) {
-            return false;
-        }
-        if (Double.doubleToLongBits(price) != Double.doubleToLongBits(other.price)) {
+        if (!Objects.equals(category, other.category) || !Objects.equals(id, other.id) || !Objects.equals(name, other.name)
+                || (Double.doubleToLongBits(price) != Double.doubleToLongBits(other.price))) {
             return false;
         }
         if (!Objects.equals(vendor, other.vendor)) {
@@ -162,9 +154,9 @@ public class Product {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

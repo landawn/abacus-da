@@ -25,7 +25,6 @@ import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -36,6 +35,7 @@ import com.landawn.abacus.util.u.OptionalFloat;
 import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
+import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoCollection;
@@ -465,7 +465,7 @@ public class AsyncMongoCollectionExecutorTest extends MockitoTestBase {
         Document filter = new Document();
         Document update = new Document("$set", new Document("a", 1));
         Document doc = new Document();
-        when(mockCollExecutor.findOneAndUpdate(filter, (Object) update)).thenReturn(doc);
+        when(mockCollExecutor.findOneAndUpdate(filter, update)).thenReturn(doc);
         Assertions.assertSame(doc, asyncExecutor.findOneAndUpdate(filter, update).get());
     }
 
@@ -844,7 +844,7 @@ public class AsyncMongoCollectionExecutorTest extends MockitoTestBase {
         Document filter = new Document();
         Document update = new Document("$set", new Document("a", 1));
         UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollExecutor.updateMany(filter, (Object) update)).thenReturn(ur);
+        when(mockCollExecutor.updateMany(filter, update)).thenReturn(ur);
         Assertions.assertSame(ur, asyncExecutor.updateMany(filter, update).get());
     }
 
@@ -935,7 +935,7 @@ public class AsyncMongoCollectionExecutorTest extends MockitoTestBase {
         Document filter = new Document();
         Document update = new Document("$set", new Document("a", 1));
         UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollExecutor.updateOne(filter, (Object) update)).thenReturn(ur);
+        when(mockCollExecutor.updateOne(filter, update)).thenReturn(ur);
         Assertions.assertSame(ur, asyncExecutor.updateOne(filter, update).get());
     }
 
@@ -945,7 +945,7 @@ public class AsyncMongoCollectionExecutorTest extends MockitoTestBase {
         ObjectId oid = new ObjectId();
         Document update = new Document("$set", new Document("a", 1));
         UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollExecutor.updateOne(oid, (Object) update)).thenReturn(ur);
+        when(mockCollExecutor.updateOne(oid, update)).thenReturn(ur);
         Assertions.assertSame(ur, asyncExecutor.updateOne(oid, update).get());
     }
 
@@ -954,7 +954,7 @@ public class AsyncMongoCollectionExecutorTest extends MockitoTestBase {
         stubRunCallable();
         Document update = new Document("$set", new Document("a", 1));
         UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollExecutor.updateOne("id1", (Object) update)).thenReturn(ur);
+        when(mockCollExecutor.updateOne("id1", update)).thenReturn(ur);
         Assertions.assertSame(ur, asyncExecutor.updateOne("id1", update).get());
     }
 
@@ -999,7 +999,7 @@ public class AsyncMongoCollectionExecutorTest extends MockitoTestBase {
         UpdateResult updateResult = mock(UpdateResult.class);
         when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(updateResult));
 
-        ContinuableFuture<UpdateResult> result = asyncExecutor.updateOne(filter, (Object) update);
+        ContinuableFuture<UpdateResult> result = asyncExecutor.updateOne(filter, update);
         Assertions.assertNotNull(result.get());
     }
 

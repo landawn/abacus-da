@@ -22,19 +22,19 @@ public class Order {
     private Date date;
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public Order setId(Long id) {
         this.id = id;
@@ -42,19 +42,19 @@ public class Order {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public List<OrderItem> getOrderItemList() {
         return orderItemList;
     }
 
     /**
-     * 
      *
-     * @param orderItemList 
-     * @return 
+     *
+     * @param orderItemList
+     * @return
      */
     public Order setOrderItemList(List<OrderItem> orderItemList) {
         this.orderItemList = orderItemList;
@@ -62,19 +62,19 @@ public class Order {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public double getAmount() {
         return amount;
     }
 
     /**
-     * 
      *
-     * @param amount 
-     * @return 
+     *
+     * @param amount
+     * @return
      */
     public Order setAmount(double amount) {
         this.amount = amount;
@@ -82,19 +82,19 @@ public class Order {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Address getShippingAddress() {
         return shippingAddress;
     }
 
     /**
-     * 
      *
-     * @param shippingAddress 
-     * @return 
+     *
+     * @param shippingAddress
+     * @return
      */
     public Order setShippingAddress(Address shippingAddress) {
         this.shippingAddress = shippingAddress;
@@ -102,19 +102,19 @@ public class Order {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Date getDate() {
         return date;
     }
 
     /**
-     * 
      *
-     * @param date 
-     * @return 
+     *
+     * @param date
+     * @return
      */
     public Order setDate(Date date) {
         this.date = date;
@@ -122,9 +122,9 @@ public class Order {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -132,10 +132,10 @@ public class Order {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -146,16 +146,8 @@ public class Order {
             return false;
         }
         Order other = (Order) obj;
-        if (Double.doubleToLongBits(amount) != Double.doubleToLongBits(other.amount)) {
-            return false;
-        }
-        if (!Objects.equals(date, other.date)) {
-            return false;
-        }
-        if (!Objects.equals(id, other.id)) {
-            return false;
-        }
-        if (!Objects.equals(orderItemList, other.orderItemList)) {
+        if ((Double.doubleToLongBits(amount) != Double.doubleToLongBits(other.amount)) || !Objects.equals(date, other.date) || !Objects.equals(id, other.id)
+                || !Objects.equals(orderItemList, other.orderItemList)) {
             return false;
         }
         if (!Objects.equals(shippingAddress, other.shippingAddress)) {
@@ -165,9 +157,9 @@ public class Order {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

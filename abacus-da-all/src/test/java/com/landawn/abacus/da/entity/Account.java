@@ -33,9 +33,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param id 
+     *
+     * @param id
      */
     public Account(long id) {
         this();
@@ -44,19 +44,19 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param gui 
-     * @param emailAddress 
-     * @param firstName 
-     * @param middleName 
-     * @param lastName 
-     * @param birthDate 
-     * @param status 
-     * @param lastUpdateTime 
-     * @param createTime 
-     * @param contact 
-     * @param devices 
+     *
+     * @param gui
+     * @param emailAddress
+     * @param firstName
+     * @param middleName
+     * @param lastName
+     * @param birthDate
+     * @param status
+     * @param lastUpdateTime
+     * @param createTime
+     * @param contact
+     * @param devices
      */
     public Account(String gui, String emailAddress, String firstName, String middleName, String lastName, Timestamp birthDate, int status,
             Timestamp lastUpdateTime, Timestamp createTime, AccountContact contact, List<AccountDevice> devices) {
@@ -76,20 +76,20 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @param gui 
-     * @param emailAddress 
-     * @param firstName 
-     * @param middleName 
-     * @param lastName 
-     * @param birthDate 
-     * @param status 
-     * @param lastUpdateTime 
-     * @param createTime 
-     * @param contact 
-     * @param devices 
+     *
+     * @param id
+     * @param gui
+     * @param emailAddress
+     * @param firstName
+     * @param middleName
+     * @param lastName
+     * @param birthDate
+     * @param status
+     * @param lastUpdateTime
+     * @param createTime
+     * @param contact
+     * @param devices
      */
     public Account(long id, String gui, String emailAddress, String firstName, String middleName, String lastName, Timestamp birthDate, int status,
             Timestamp lastUpdateTime, Timestamp createTime, AccountContact contact, List<AccountDevice> devices) {
@@ -110,9 +110,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("long")
     public long getId() {
@@ -120,10 +120,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public Account setId(long id) {
         this.id = id;
@@ -132,9 +132,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getGUI() {
@@ -142,10 +142,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param gui 
-     * @return 
+     *
+     * @param gui
+     * @return
      */
     public Account setGUI(String gui) {
         this.gui = gui;
@@ -154,9 +154,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getEmailAddress() {
@@ -164,10 +164,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param emailAddress 
-     * @return 
+     *
+     * @param emailAddress
+     * @return
      */
     public Account setEmailAddress(String emailAddress) {
         this.emailAddress = emailAddress;
@@ -176,9 +176,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getFirstName() {
@@ -186,10 +186,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param firstName 
-     * @return 
+     *
+     * @param firstName
+     * @return
      */
     public Account setFirstName(String firstName) {
         this.firstName = firstName;
@@ -198,9 +198,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getMiddleName() {
@@ -208,10 +208,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param middleName 
-     * @return 
+     *
+     * @param middleName
+     * @return
      */
     public Account setMiddleName(String middleName) {
         this.middleName = middleName;
@@ -220,9 +220,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getLastName() {
@@ -230,10 +230,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param lastName 
-     * @return 
+     *
+     * @param lastName
+     * @return
      */
     public Account setLastName(String lastName) {
         this.lastName = lastName;
@@ -242,9 +242,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("Timestamp")
     public Timestamp getBirthDate() {
@@ -252,10 +252,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param birthDate 
-     * @return 
+     *
+     * @param birthDate
+     * @return
      */
     public Account setBirthDate(Timestamp birthDate) {
         this.birthDate = birthDate;
@@ -264,9 +264,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("int")
     public int getStatus() {
@@ -274,10 +274,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param status 
-     * @return 
+     *
+     * @param status
+     * @return
      */
     public Account setStatus(int status) {
         this.status = status;
@@ -286,9 +286,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("Timestamp")
     public Timestamp getLastUpdateTime() {
@@ -296,10 +296,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param lastUpdateTime 
-     * @return 
+     *
+     * @param lastUpdateTime
+     * @return
      */
     public Account setLastUpdateTime(Timestamp lastUpdateTime) {
         this.lastUpdateTime = lastUpdateTime;
@@ -308,9 +308,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("Timestamp")
     public Timestamp getCreateTime() {
@@ -318,10 +318,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param createTime 
-     * @return 
+     *
+     * @param createTime
+     * @return
      */
     public Account setCreateTime(Timestamp createTime) {
         this.createTime = createTime;
@@ -330,9 +330,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("com.landawn.abacus.entity.extendDirty.basic.AccountContact")
     public AccountContact getContact() {
@@ -340,10 +340,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param contact 
-     * @return 
+     *
+     * @param contact
+     * @return
      */
     public Account setContact(AccountContact contact) {
         this.contact = contact;
@@ -352,9 +352,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("List<com.landawn.abacus.entity.extendDirty.basic.AccountDevice>")
     public List<AccountDevice> getDevices() {
@@ -362,10 +362,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param devices 
-     * @return 
+     *
+     * @param devices
+     * @return
      */
     public Account setDevices(List<AccountDevice> devices) {
         this.devices = devices;
@@ -374,9 +374,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -396,10 +396,10 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -419,9 +419,9 @@ public class Account implements ExtendDirtyBasicPNL.AccountPNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

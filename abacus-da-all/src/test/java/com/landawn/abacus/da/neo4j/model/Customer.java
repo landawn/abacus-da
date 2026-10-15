@@ -23,19 +23,19 @@ public class Customer {
     private List<Order> orderList;
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public Customer setId(Long id) {
         this.id = id;
@@ -43,19 +43,19 @@ public class Customer {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getFirstName() {
         return firstName;
     }
 
     /**
-     * 
      *
-     * @param firstName 
-     * @return 
+     *
+     * @param firstName
+     * @return
      */
     public Customer setFirstName(String firstName) {
         this.firstName = firstName;
@@ -63,19 +63,19 @@ public class Customer {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getLastName() {
         return lastName;
     }
 
     /**
-     * 
      *
-     * @param lastName 
-     * @return 
+     *
+     * @param lastName
+     * @return
      */
     public Customer setLastName(String lastName) {
         this.lastName = lastName;
@@ -83,19 +83,19 @@ public class Customer {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Address getAddress() {
         return address;
     }
 
     /**
-     * 
      *
-     * @param address 
-     * @return 
+     *
+     * @param address
+     * @return
      */
     public Customer setAddress(Address address) {
         this.address = address;
@@ -103,19 +103,19 @@ public class Customer {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public List<Order> getOrderList() {
         return orderList;
     }
 
     /**
-     * 
      *
-     * @param orderList 
-     * @return 
+     *
+     * @param orderList
+     * @return
      */
     public Customer setOrderList(List<Order> orderList) {
         this.orderList = orderList;
@@ -123,9 +123,9 @@ public class Customer {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -133,10 +133,10 @@ public class Customer {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -147,16 +147,8 @@ public class Customer {
             return false;
         }
         Customer other = (Customer) obj;
-        if (!Objects.equals(address, other.address)) {
-            return false;
-        }
-        if (!Objects.equals(firstName, other.firstName)) {
-            return false;
-        }
-        if (!Objects.equals(id, other.id)) {
-            return false;
-        }
-        if (!Objects.equals(lastName, other.lastName)) {
+        if (!Objects.equals(address, other.address) || !Objects.equals(firstName, other.firstName) || !Objects.equals(id, other.id)
+                || !Objects.equals(lastName, other.lastName)) {
             return false;
         }
         if (!Objects.equals(orderList, other.orderList)) {
@@ -166,9 +158,9 @@ public class Customer {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

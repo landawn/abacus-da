@@ -83,16 +83,16 @@ class HBaseDriverFailureTest {
         try {
             final UncheckedIOException actual = assertThrows(UncheckedIOException.class, () -> {
                 switch (operation) {
-                    case EXISTS_ROW -> executor.exists("items", (Object) ROW);
+                    case EXISTS_ROW -> executor.exists("items", ROW);
                     case EXISTS_GET -> executor.exists("items", new Get(ROW));
                     case EXISTS_BATCH -> executor.exists("items", List.of(new Get(ROW)));
-                    case GET_ROW -> executor.get("items", (Object) ROW);
+                    case GET_ROW -> executor.get("items", ROW);
                     case GET_GET -> executor.get("items", new Get(ROW));
                     case GET_BATCH -> executor.get("items", List.of(new Get(ROW)));
-                    case GET_TYPED_ROW -> executor.get("items", (Object) ROW, String.class);
+                    case GET_TYPED_ROW -> executor.get("items", ROW, String.class);
                     case PUT -> executor.put("items", new Put(ROW));
                     case PUT_BATCH -> executor.put("items", List.of(new Put(ROW)));
-                    case DELETE_ROW -> executor.delete("items", (Object) ROW);
+                    case DELETE_ROW -> executor.delete("items", ROW);
                     case DELETE -> executor.delete("items", new Delete(ROW));
                     case DELETE_BATCH -> executor.delete("items", List.of(new Delete(ROW)));
                     case MUTATE -> executor.mutateRow("items", new RowMutations(ROW));

@@ -533,10 +533,10 @@ public class AsyncDynamoDBExecutorTest extends MockitoTestBase {
                 .thenReturn(new com.amazonaws.services.dynamodbv2.model.ScanResult().withItems(List.of(Map.of("id", new AttributeValue("1")))));
         final AsyncDynamoDBExecutor async = new DynamoDBExecutor(client).async();
 
-        assertEquals(1, async.scan("T", new ArrayList<String>()).get().count());
-        assertEquals(1, async.scan("T", new ArrayList<String>(), (Map<String, Condition>) null).get().count());
-        assertEquals(1, async.scan("T", new ArrayList<String>(), Map.class).get().count());
-        assertEquals(1, async.scan("T", new ArrayList<String>(), (Map<String, Condition>) null, Map.class).get().count());
+        assertEquals(1, async.scan("T", new ArrayList<>()).get().count());
+        assertEquals(1, async.scan("T", new ArrayList<>(), (Map<String, Condition>) null).get().count());
+        assertEquals(1, async.scan("T", new ArrayList<>(), Map.class).get().count());
+        assertEquals(1, async.scan("T", new ArrayList<>(), (Map<String, Condition>) null, Map.class).get().count());
 
         final org.mockito.ArgumentCaptor<ScanRequest> captor = org.mockito.ArgumentCaptor.forClass(ScanRequest.class);
         verify(client, times(4)).scan(captor.capture());

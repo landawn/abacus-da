@@ -35,7 +35,6 @@ import com.datastax.oss.driver.api.core.cql.BatchType;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
-import com.datastax.oss.driver.api.core.cql.Statement;
 import com.datastax.oss.driver.api.core.type.UserDefinedType;
 import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
 import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry;
@@ -835,7 +834,7 @@ public class CassandraExecutorIT extends TestBase {
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stmtT");
         try {
             BoundStatement bs = cassandraExecutor.session().prepare("SELECT * FROM simplex.songs WHERE id = ?").bind(id);
-            long count = cassandraExecutor.stream((Statement<?>) bs, (cds, r) -> r.getString("title")).count();
+            long count = cassandraExecutor.stream(bs, (cds, r) -> r.getString("title")).count();
             assertEquals(1L, count);
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
@@ -1220,7 +1219,7 @@ public class CassandraExecutorIT extends TestBase {
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "lc");
         try {
             // Use list(List.class, ...) which exercises the isCollection branch.
-            List<List> rows = (List) cassandraExecutor.list(List.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
+            List<List> rows = cassandraExecutor.list(List.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
             assertEquals(1, rows.size());
             assertEquals(2, rows.get(0).size());
         } finally {

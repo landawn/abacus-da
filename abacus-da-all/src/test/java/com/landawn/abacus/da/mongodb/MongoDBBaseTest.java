@@ -471,14 +471,10 @@ public class MongoDBBaseTest extends MockitoTestBase {
             for (final MxKind kind : kinds) {
                 // Excluded by design: a type argument cannot be primitive, and a primitive container element or array component is a
                 // different declaration (long[] is not Long[]), so the primitive kind is only read as a plain, nested-bean or record one.
-                if ("prim".equals(kind.name()) && !position.primitiveAllowed()) {
-                    continue;
-                }
-
                 // Excluded, pre-existing upstream (abacus-common 8.1.0; identical on HEAD): ParserUtil resolves a java.util.Date[] property by
                 // its simple type name "Date[]", i.e. as java.sql.Date[] (its PropInfo.clazz included), so bean mapping fills the array with
                 // java.sql.Date elements. Not a MongoDBBase conversion; reported upstream rather than worked around here.
-                if ("date".equals(kind.name()) && "X[] element".equals(position.name())) {
+                if (("prim".equals(kind.name()) && !position.primitiveAllowed()) || ("date".equals(kind.name()) && "X[] element".equals(position.name()))) {
                     continue;
                 }
 
@@ -593,7 +589,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         assertEquals("c2", entity.getNested().get(0).get(0).getId());
         assertEquals("bob", entity.getChildArray()[0].getName());
         assertEquals(Arrays.asList(1L, 2L), entity.getLongs());
-        assertEquals(Long.class, ((Object) entity.getLongs().get(0)).getClass());
+        assertEquals(Long.class, entity.getLongs().get(0).getClass());
         assertEquals(Arrays.asList(Color.GREEN), entity.getColors());
         assertEquals(new java.math.BigDecimal("1.25"), entity.getDecimals().get(0));
         assertEquals(Long.valueOf(1L), entity.getCountByName().get("a"));
@@ -636,7 +632,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         // assigns without any conversion (a record with a LocalDate or List<Long> component could not be read at all).
         final ColumnNamedEntity named = MongoDBBase.toEntity(new Document("child_nums", new ArrayList<>(Arrays.asList(1))), ColumnNamedEntity.class);
 
-        assertEquals(Long.class, ((Object) named.getChildNums().get(0)).getClass());
+        assertEquals(Long.class, named.getChildNums().get(0).getClass());
 
         final Document tree = new Document("name", "root")
                 .append("children",
@@ -807,7 +803,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         final ContainerEntity converted = MongoDBBase.toEntity(new Document("longs", longs).append("countByName", counts), ContainerEntity.class);
 
         assertEquals(Arrays.asList(1L, 2L, 3L, 4L), converted.getLongs());
-        assertEquals(Long.class, ((Object) converted.getLongs().get(2)).getClass());
+        assertEquals(Long.class, converted.getLongs().get(2).getClass());
         assertEquals(Arrays.asList("a", "b", "c"), new ArrayList<>(converted.getCountByName().keySet()));
         assertEquals(Long.valueOf(3L), converted.getCountByName().get("c"));
         assertEquals(Integer.valueOf(3), longs.get(2));
@@ -1055,7 +1051,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
 
         assertEquals(3, result.size());
         assertEquals(Long.valueOf(1L), result.get(0));
-        assertEquals(Long.class, ((Object) result.get(1)).getClass());
+        assertEquals(Long.class, result.get(1).getClass());
         assertEquals(Long.valueOf(2L), result.get(1));
         assertNull(result.get(2));
     }
@@ -1092,7 +1088,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         assertEquals(3, result.size());
         assertEquals(Long.valueOf(1L), result.get(0));
         assertNull(result.get(1));
-        assertEquals(Long.class, ((Object) result.get(2)).getClass());
+        assertEquals(Long.class, result.get(2).getClass());
         assertEquals(Long.valueOf(2L), result.get(2));
 
         // Rows that all have the requested type are still returned as-is (no copy).
@@ -1567,9 +1563,9 @@ public class MongoDBBaseTest extends MockitoTestBase {
 
         // toList: Document rows and non-Document Map rows are both mapped through toEntity.
         when(iterable.into(any())).thenReturn(Arrays.asList(new Document("longs", new ArrayList<>(Arrays.asList(1)))));
-        assertEquals(Long.class, ((Object) MongoDBBase.toList(iterable, ContainerEntity.class).get(0).getLongs().get(0)).getClass());
+        assertEquals(Long.class, MongoDBBase.toList(iterable, ContainerEntity.class).get(0).getLongs().get(0).getClass());
         when(iterable.into(any())).thenReturn(Arrays.asList(new BasicDBObject("longs", new ArrayList<>(Arrays.asList(2)))));
-        assertEquals(Long.class, ((Object) MongoDBBase.toList(iterable, ContainerEntity.class).get(0).getLongs().get(0)).getClass());
+        assertEquals(Long.class, MongoDBBase.toList(iterable, ContainerEntity.class).get(0).getLongs().get(0).getClass());
 
         // toList: scalar rows and single-field projections requested as LocalDate are read in UTC.
         when(iterable.into(any())).thenReturn(Arrays.asList(day, null));
@@ -1584,7 +1580,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         final ContainerEntity decoded = MongoDBBase.codecRegistry.get(ContainerEntity.class)
                 .decode(new org.bson.BsonDocumentReader(stored), org.bson.codecs.DecoderContext.builder().build());
 
-        assertEquals(Long.class, ((Object) decoded.getLongs().get(0)).getClass());
+        assertEquals(Long.class, decoded.getLongs().get(0).getClass());
         assertEquals("bob", decoded.getChildMap().get("k").getName());
     }
 
@@ -1938,7 +1934,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     public void testToJsonWithBsonMapBranch() {
         // Document is a Map, so toJson(Bson) takes the Map branch
         Document doc = new Document("k", "v");
-        String json = MongoDBBase.toJson((Bson) doc);
+        String json = MongoDBBase.toJson(doc);
         assertNotNull(json);
         assertTrue(json.contains("\"k\""));
     }

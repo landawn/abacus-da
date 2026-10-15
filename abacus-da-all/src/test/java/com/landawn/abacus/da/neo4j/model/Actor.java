@@ -24,72 +24,72 @@ public class Actor {
     }
 
     /**
-     * 
      *
-     * @param name 
+     *
+     * @param name
      */
     public Actor(String name) {
         this.name = name;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
+     *
+     * @param id
      */
     public void setId(Long id) {
         this.id = id;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getName() {
         return name;
     }
 
     /**
-     * 
      *
-     * @param name 
+     *
+     * @param name
      */
     public void setName(String name) {
         this.name = name;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Set<Movie> getMovies() {
         return movies;
     }
 
     /**
-     * 
      *
-     * @param movies 
+     *
+     * @param movies
      */
     public void setMovies(Set<Movie> movies) {
         this.movies = movies;
     }
 
     /**
-     * 
      *
-     * @param movie 
+     *
+     * @param movie
      */
     public void actsIn(Movie movie) {
         movies.add(movie);

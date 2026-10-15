@@ -18,19 +18,19 @@ public class Address {
     private int zipCode;
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public Address setId(Long id) {
         this.id = id;
@@ -38,19 +38,19 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getStreet() {
         return street;
     }
 
     /**
-     * 
      *
-     * @param street 
-     * @return 
+     *
+     * @param street
+     * @return
      */
     public Address setStreet(String street) {
         this.street = street;
@@ -58,19 +58,19 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getCity() {
         return city;
     }
 
     /**
-     * 
      *
-     * @param city 
-     * @return 
+     *
+     * @param city
+     * @return
      */
     public Address setCity(String city) {
         this.city = city;
@@ -78,19 +78,19 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getState() {
         return state;
     }
 
     /**
-     * 
      *
-     * @param state 
-     * @return 
+     *
+     * @param state
+     * @return
      */
     public Address setState(String state) {
         this.state = state;
@@ -98,19 +98,19 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getCountry() {
         return country;
     }
 
     /**
-     * 
      *
-     * @param country 
-     * @return 
+     *
+     * @param country
+     * @return
      */
     public Address setCountry(String country) {
         this.country = country;
@@ -118,19 +118,19 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public int getZipCode() {
         return zipCode;
     }
 
     /**
-     * 
      *
-     * @param zipCode 
-     * @return 
+     *
+     * @param zipCode
+     * @return
      */
     public Address setZipCode(int zipCode) {
         this.zipCode = zipCode;
@@ -138,9 +138,9 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -148,10 +148,10 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -162,16 +162,8 @@ public class Address {
             return false;
         }
         Address other = (Address) obj;
-        if (!Objects.equals(city, other.city)) {
-            return false;
-        }
-        if (!Objects.equals(country, other.country)) {
-            return false;
-        }
-        if (!Objects.equals(id, other.id)) {
-            return false;
-        }
-        if (!Objects.equals(state, other.state)) {
+        if (!Objects.equals(city, other.city) || !Objects.equals(country, other.country) || !Objects.equals(id, other.id)
+                || !Objects.equals(state, other.state)) {
             return false;
         }
         if (!Objects.equals(street, other.street)) {
@@ -184,9 +176,9 @@ public class Address {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

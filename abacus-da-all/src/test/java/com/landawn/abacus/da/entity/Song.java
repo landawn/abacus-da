@@ -17,117 +17,117 @@ public class Song {
     private java.nio.ByteBuffer data;
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public UUID getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
+     *
+     * @param id
      */
     public void setId(UUID id) {
         this.id = id;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getTitle() {
         return title;
     }
 
     /**
-     * 
      *
-     * @param title 
+     *
+     * @param title
      */
     public void setTitle(String title) {
         this.title = title;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getAlbum() {
         return album;
     }
 
     /**
-     * 
      *
-     * @param album 
+     *
+     * @param album
      */
     public void setAlbum(String album) {
         this.album = album;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getArtist() {
         return artist;
     }
 
     /**
-     * 
      *
-     * @param artist 
+     *
+     * @param artist
      */
     public void setArtist(String artist) {
         this.artist = artist;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Set<String> getTags() {
         return tags;
     }
 
     /**
-     * 
      *
-     * @param tags 
+     *
+     * @param tags
      */
     public void setTags(Set<String> tags) {
         this.tags = tags;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public java.nio.ByteBuffer getData() {
         return data;
     }
 
     /**
-     * 
      *
-     * @param data 
+     *
+     * @param data
      */
     public void setData(java.nio.ByteBuffer data) {
         this.data = data;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -135,10 +135,10 @@ public class Song {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -149,16 +149,8 @@ public class Song {
             return false;
         }
         Song other = (Song) obj;
-        if (!Objects.equals(album, other.album)) {
-            return false;
-        }
-        if (!Objects.equals(artist, other.artist)) {
-            return false;
-        }
-        if (!Objects.equals(data, other.data)) {
-            return false;
-        }
-        if (!Objects.equals(id, other.id)) {
+        if (!Objects.equals(album, other.album) || !Objects.equals(artist, other.artist) || !Objects.equals(data, other.data)
+                || !Objects.equals(id, other.id)) {
             return false;
         }
         if (!Objects.equals(tags, other.tags)) {
@@ -171,9 +163,9 @@ public class Song {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

@@ -1,6 +1,5 @@
 package com.landawn.abacus.da.aws.dynamodb;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -279,7 +278,7 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
         entity.setId("po1");
         when(mockDynamoDBClient.putItem(eq("TestTable"), any(Map.class))).thenReturn(new PutItemResult());
 
-        PutItemResult result = executor.putItem("TestTable", (Object) entity);
+        PutItemResult result = executor.putItem("TestTable", entity);
         assertNotNull(result);
     }
 
@@ -289,7 +288,7 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
         entity.setId("po2");
         when(mockDynamoDBClient.putItem(eq("TestTable"), any(Map.class), eq("ALL_OLD"))).thenReturn(new PutItemResult());
 
-        PutItemResult result = executor.putItem("TestTable", (Object) entity, "ALL_OLD");
+        PutItemResult result = executor.putItem("TestTable", entity, "ALL_OLD");
         assertNotNull(result);
     }
 

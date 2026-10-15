@@ -33,9 +33,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param id 
+     *
+     * @param id
      */
     public AccountDevice(long id) {
         this();
@@ -44,20 +44,20 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param accountId 
-     * @param name 
-     * @param udid 
-     * @param platform 
-     * @param model 
-     * @param manufacturer 
-     * @param produceTime 
-     * @param category 
-     * @param description 
-     * @param status 
-     * @param lastUpdateTime 
-     * @param createTime 
+     *
+     * @param accountId
+     * @param name
+     * @param udid
+     * @param platform
+     * @param model
+     * @param manufacturer
+     * @param produceTime
+     * @param category
+     * @param description
+     * @param status
+     * @param lastUpdateTime
+     * @param createTime
      */
     public AccountDevice(long accountId, String name, String udid, String platform, String model, String manufacturer, Timestamp produceTime, String category,
             String description, int status, Timestamp lastUpdateTime, Timestamp createTime) {
@@ -78,21 +78,21 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @param accountId 
-     * @param name 
-     * @param udid 
-     * @param platform 
-     * @param model 
-     * @param manufacturer 
-     * @param produceTime 
-     * @param category 
-     * @param description 
-     * @param status 
-     * @param lastUpdateTime 
-     * @param createTime 
+     *
+     * @param id
+     * @param accountId
+     * @param name
+     * @param udid
+     * @param platform
+     * @param model
+     * @param manufacturer
+     * @param produceTime
+     * @param category
+     * @param description
+     * @param status
+     * @param lastUpdateTime
+     * @param createTime
      */
     public AccountDevice(long id, long accountId, String name, String udid, String platform, String model, String manufacturer, Timestamp produceTime,
             String category, String description, int status, Timestamp lastUpdateTime, Timestamp createTime) {
@@ -114,9 +114,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("long")
     public long getId() {
@@ -124,10 +124,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public AccountDevice setId(long id) {
         this.id = id;
@@ -136,9 +136,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("long")
     public long getAccountId() {
@@ -146,10 +146,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param accountId 
-     * @return 
+     *
+     * @param accountId
+     * @return
      */
     public AccountDevice setAccountId(long accountId) {
         this.accountId = accountId;
@@ -158,9 +158,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getName() {
@@ -168,10 +168,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param name 
-     * @return 
+     *
+     * @param name
+     * @return
      */
     public AccountDevice setName(String name) {
         this.name = name;
@@ -180,9 +180,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getUDID() {
@@ -190,10 +190,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param udid 
-     * @return 
+     *
+     * @param udid
+     * @return
      */
     public AccountDevice setUDID(String udid) {
         this.udid = udid;
@@ -202,9 +202,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getPlatform() {
@@ -212,10 +212,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param platform 
-     * @return 
+     *
+     * @param platform
+     * @return
      */
     public AccountDevice setPlatform(String platform) {
         this.platform = platform;
@@ -224,9 +224,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getModel() {
@@ -234,10 +234,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param model 
-     * @return 
+     *
+     * @param model
+     * @return
      */
     public AccountDevice setModel(String model) {
         this.model = model;
@@ -246,9 +246,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getManufacturer() {
@@ -256,10 +256,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param manufacturer 
-     * @return 
+     *
+     * @param manufacturer
+     * @return
      */
     public AccountDevice setManufacturer(String manufacturer) {
         this.manufacturer = manufacturer;
@@ -268,9 +268,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("Timestamp")
     public Timestamp getProduceTime() {
@@ -278,10 +278,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param produceTime 
-     * @return 
+     *
+     * @param produceTime
+     * @return
      */
     public AccountDevice setProduceTime(Timestamp produceTime) {
         this.produceTime = produceTime;
@@ -290,9 +290,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getCategory() {
@@ -300,10 +300,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param category 
-     * @return 
+     *
+     * @param category
+     * @return
      */
     public AccountDevice setCategory(String category) {
         this.category = category;
@@ -312,9 +312,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("String")
     public String getDescription() {
@@ -322,10 +322,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param description 
-     * @return 
+     *
+     * @param description
+     * @return
      */
     public AccountDevice setDescription(String description) {
         this.description = description;
@@ -334,9 +334,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("int")
     public int getStatus() {
@@ -344,10 +344,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param status 
-     * @return 
+     *
+     * @param status
+     * @return
      */
     public AccountDevice setStatus(int status) {
         this.status = status;
@@ -356,9 +356,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("Timestamp")
     public Timestamp getLastUpdateTime() {
@@ -366,10 +366,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param lastUpdateTime 
-     * @return 
+     *
+     * @param lastUpdateTime
+     * @return
      */
     public AccountDevice setLastUpdateTime(Timestamp lastUpdateTime) {
         this.lastUpdateTime = lastUpdateTime;
@@ -378,9 +378,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Type("Timestamp")
     public Timestamp getCreateTime() {
@@ -388,10 +388,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param createTime 
-     * @return 
+     *
+     * @param createTime
+     * @return
      */
     public AccountDevice setCreateTime(Timestamp createTime) {
         this.createTime = createTime;
@@ -400,9 +400,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -423,10 +423,10 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -446,9 +446,9 @@ public class AccountDevice implements ExtendDirtyBasicPNL.AccountDevicePNL {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

@@ -37,10 +37,10 @@ import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.Statement;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.ContinuableFuture;
-import com.landawn.abacus.util.function.Function;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
+import com.landawn.abacus.util.function.Function;
+import com.landawn.abacus.util.stream.Stream;
 
 /**
  * Mockito-based tests for the v4 driver (DataStax OSS) {@link AsyncCassandraExecutor}.
@@ -99,7 +99,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Map<String, Object>> mapper = (Function) (Function<Row, Map<String, Object>>) r -> new HashMap<>();
+        final Function<Row, Map<String, Object>> mapper = (Function<Row, Map<String, Object>>) r -> new HashMap<>();
         when(mockExecutor.createRowMapper(any(Class.class))).thenReturn(mapper);
 
         Optional<Map<String, Object>> result = async.findFirst("SELECT * FROM t WHERE id = ?", 1).get();
@@ -158,7 +158,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, String> mapper = (Function) (Function<Row, String>) row -> "v";
+        final Function<Row, String> mapper = (Function<Row, String>) row -> "v";
         when(mockExecutor.createRowMapper(eq(String.class))).thenReturn(mapper);
 
         Optional<String> result = async.findFirst(String.class, "SELECT * FROM t WHERE id = ?", 1).get();
@@ -263,7 +263,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Long> mapper = (Function) (Function<Row, Long>) row -> 0L;
+        final Function<Row, Long> mapper = (Function<Row, Long>) row -> 0L;
         when(mockExecutor.createRowMapper(eq(Long.class))).thenReturn(mapper);
 
         @SuppressWarnings("deprecation")
@@ -293,7 +293,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, String> mapper = (Function) (Function<Row, String>) r -> "hello";
+        final Function<Row, String> mapper = (Function<Row, String>) r -> "hello";
         when(mockExecutor.createRowMapper(eq(String.class))).thenReturn(mapper);
 
         Optional<String> result = async.findFirst(String.class, "SELECT name FROM t WHERE id = ?", 1).get();
@@ -318,7 +318,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Boolean> mapper = (Function) (Function<Row, Boolean>) r -> true;
+        final Function<Row, Boolean> mapper = (Function<Row, Boolean>) r -> true;
         when(mockExecutor.createRowMapper(eq(Boolean.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForBoolean("SELECT b FROM t WHERE id = ?", 1).get());
@@ -329,7 +329,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Byte> mapper = (Function) (Function<Row, Byte>) r -> (byte) 1;
+        final Function<Row, Byte> mapper = (Function<Row, Byte>) r -> (byte) 1;
         when(mockExecutor.createRowMapper(eq(Byte.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForByte("SELECT v FROM t WHERE id = ?", 1).get());
@@ -340,7 +340,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Character> mapper = (Function) (Function<Row, Character>) r -> 'a';
+        final Function<Row, Character> mapper = (Function<Row, Character>) r -> 'a';
         when(mockExecutor.createRowMapper(eq(Character.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForChar("SELECT v FROM t WHERE id = ?", 1).get());
@@ -351,7 +351,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Double> mapper = (Function) (Function<Row, Double>) r -> 1.0;
+        final Function<Row, Double> mapper = (Function<Row, Double>) r -> 1.0;
         when(mockExecutor.createRowMapper(eq(Double.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForDouble("SELECT v FROM t WHERE id = ?", 1).get());
@@ -362,7 +362,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Float> mapper = (Function) (Function<Row, Float>) r -> 1.0f;
+        final Function<Row, Float> mapper = (Function<Row, Float>) r -> 1.0f;
         when(mockExecutor.createRowMapper(eq(Float.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForFloat("SELECT v FROM t WHERE id = ?", 1).get());
@@ -373,7 +373,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) r -> 1;
+        final Function<Row, Integer> mapper = (Function<Row, Integer>) r -> 1;
         when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForInt("SELECT v FROM t WHERE id = ?", 1).get());
@@ -384,7 +384,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Long> mapper = (Function) (Function<Row, Long>) r -> 1L;
+        final Function<Row, Long> mapper = (Function<Row, Long>) r -> 1L;
         when(mockExecutor.createRowMapper(eq(Long.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForLong("SELECT v FROM t WHERE id = ?", 1).get());
@@ -395,7 +395,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Short> mapper = (Function) (Function<Row, Short>) r -> (short) 1;
+        final Function<Row, Short> mapper = (Function<Row, Short>) r -> (short) 1;
         when(mockExecutor.createRowMapper(eq(Short.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForShort("SELECT v FROM t WHERE id = ?", 1).get());
@@ -406,7 +406,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) row -> 42;
+        final Function<Row, Integer> mapper = (Function<Row, Integer>) row -> 42;
         when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
 
         Optional<Integer> result = async.queryForSingleNonNull(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
@@ -431,7 +431,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) row -> 42;
+        final Function<Row, Integer> mapper = (Function<Row, Integer>) row -> 42;
         when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
 
         Nullable<Integer> result = async.queryForSingleValue(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
@@ -475,7 +475,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, String> mapper = (Function) (Function<Row, String>) r -> "x";
+        final Function<Row, String> mapper = (Function<Row, String>) r -> "x";
         when(mockExecutor.createRowMapper(eq(String.class))).thenReturn(mapper);
 
         assertNotNull(async.queryForString("SELECT v FROM t WHERE id = ?", 1).get());
@@ -547,7 +547,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         stubOneRowPerExecution();
         when(mockExecutor.readFirstColumn(any(Row.class), eq(String.class))).thenReturn("v");
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, String> mapper = (Function) (Function<Row, String>) r -> "v";
+        final Function<Row, String> mapper = (Function<Row, String>) r -> "v";
         when(mockExecutor.createRowMapper(eq(String.class))).thenReturn(mapper);
 
         final ContinuableFuture<Nullable<String>> value = async.queryForSingleValue(String.class, "SELECT v FROM t WHERE id = ?", 1);
@@ -591,7 +591,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Object[]> mapper = (Function) (Function<Row, Object[]>) row -> new Object[] {};
+        final Function<Row, Object[]> mapper = (Function<Row, Object[]>) row -> new Object[] {};
         when(mockExecutor.createRowMapper(eq(Object[].class))).thenReturn(mapper);
 
         ContinuableFuture<Stream<Object[]>> future = async.stream("SELECT * FROM t WHERE id = ?", 1);
@@ -604,7 +604,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
         @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Object[]> mapper = (Function) (Function<Row, Object[]>) row -> new Object[] {};
+        final Function<Row, Object[]> mapper = (Function<Row, Object[]>) row -> new Object[] {};
         when(mockExecutor.createRowMapper(eq(Object[].class))).thenReturn(mapper);
 
         ContinuableFuture<Stream<Object[]>> future = async.stream("SELECT * FROM t");
@@ -780,7 +780,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         ContinuableFuture<ResultSet> future = async.execute("SELECT * FROM t WHERE id = :id", params);
 
         assertNotNull(future);
-        verify(mockSession).executeAsync((Statement<?>) mockStatement);
+        verify(mockSession).executeAsync(mockStatement);
     }
 
     @Test
@@ -791,7 +791,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         ContinuableFuture<ResultSet> future = async.execute("SELECT * FROM t WHERE id = ?", 1);
 
         assertNotNull(future);
-        verify(mockSession).executeAsync((Statement<?>) mockStatement);
+        verify(mockSession).executeAsync(mockStatement);
     }
 
     @Test

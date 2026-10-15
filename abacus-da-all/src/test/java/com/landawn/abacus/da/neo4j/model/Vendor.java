@@ -18,19 +18,19 @@ public class Vendor {
     private Address address;
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Long getId() {
         return id;
     }
 
     /**
-     * 
      *
-     * @param id 
-     * @return 
+     *
+     * @param id
+     * @return
      */
     public Vendor setId(Long id) {
         this.id = id;
@@ -38,19 +38,19 @@ public class Vendor {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public String getName() {
         return name;
     }
 
     /**
-     * 
      *
-     * @param name 
-     * @return 
+     *
+     * @param name
+     * @return
      */
     public Vendor setName(String name) {
         this.name = name;
@@ -58,19 +58,19 @@ public class Vendor {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     public Address getAddress() {
         return address;
     }
 
     /**
-     * 
      *
-     * @param address 
-     * @return 
+     *
+     * @param address
+     * @return
      */
     public Vendor setAddress(Address address) {
         this.address = address;
@@ -78,9 +78,9 @@ public class Vendor {
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public int hashCode() {
@@ -88,10 +88,10 @@ public class Vendor {
     }
 
     /**
-     * 
      *
-     * @param obj 
-     * @return 
+     *
+     * @param obj
+     * @return
      */
     @Override
     public boolean equals(Object obj) {
@@ -102,22 +102,16 @@ public class Vendor {
             return false;
         }
         Vendor other = (Vendor) obj;
-        if (!Objects.equals(address, other.address)) {
-            return false;
-        }
-        if (!Objects.equals(id, other.id)) {
-            return false;
-        }
-        if (!Objects.equals(name, other.name)) {
+        if (!Objects.equals(address, other.address) || !Objects.equals(id, other.id) || !Objects.equals(name, other.name)) {
             return false;
         }
         return true;
     }
 
     /**
-     * 
      *
-     * @return 
+     *
+     * @return
      */
     @Override
     public String toString() {

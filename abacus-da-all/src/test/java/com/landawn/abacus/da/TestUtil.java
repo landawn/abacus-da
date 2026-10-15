@@ -60,23 +60,23 @@ public final class TestUtil {
     }
 
     /**
-     * 
      *
-     * @param <T> 
-     * @param entityClass 
-     * @return 
+     *
+     * @param <T>
+     * @param entityClass
+     * @return
      */
     public static <T> T createEntity(Class<T> entityClass) {
         return createEntity(entityClass, false);
     }
 
     /**
-     * 
      *
-     * @param <T> 
-     * @param entityClass 
-     * @param withFixedValues 
-     * @return 
+     *
+     * @param <T>
+     * @param entityClass
+     * @param withFixedValues
+     * @return
      */
     public static <T> T createEntity(Class<T> entityClass, boolean withFixedValues) {
         if (!Beans.isBeanClass(entityClass)) {
@@ -97,25 +97,25 @@ public final class TestUtil {
     }
 
     /**
-     * 
      *
-     * @param <T> 
-     * @param entityClass 
-     * @param size 
-     * @return 
+     *
+     * @param <T>
+     * @param entityClass
+     * @param size
+     * @return
      */
     public static <T> List<T> createEntityList(Class<T> entityClass, int size) {
         return createEntityList(entityClass, size, false);
     }
 
     /**
-     * 
      *
-     * @param <T> 
-     * @param entityClass 
-     * @param size 
-     * @param withFixedValues 
-     * @return 
+     *
+     * @param <T>
+     * @param entityClass
+     * @param size
+     * @param withFixedValues
+     * @return
      */
     public static <T> List<T> createEntityList(Class<T> entityClass, int size, boolean withFixedValues) {
         final List<T> list = N.newArrayList(size);
@@ -128,25 +128,25 @@ public final class TestUtil {
     }
 
     /**
-     * 
      *
-     * @param <T> 
-     * @param entityClass 
-     * @param size 
-     * @return 
+     *
+     * @param <T>
+     * @param entityClass
+     * @param size
+     * @return
      */
     public static <T> T[] createEntityArray(Class<T> entityClass, int size) {
         return createEntityArray(entityClass, size, false);
     }
 
     /**
-     * 
      *
-     * @param <T> 
-     * @param entityClass 
-     * @param size 
-     * @param withFixedValues 
-     * @return 
+     *
+     * @param <T>
+     * @param entityClass
+     * @param size
+     * @param withFixedValues
+     * @return
      */
     public static <T> T[] createEntityArray(Class<T> entityClass, int size, boolean withFixedValues) {
         final T[] a = N.newArray(entityClass, size);
@@ -159,11 +159,11 @@ public final class TestUtil {
     }
 
     /**
-     * 
      *
-     * @param instance 
-     * @param parameters 
-     * @return 
+     *
+     * @param instance
+     * @param parameters
+     * @return
      */
     public static List<Object> executeMethod(Object instance, List<Object[]> parameters) {
         Class<?> cls = instance.getClass();
@@ -179,12 +179,12 @@ public final class TestUtil {
     }
 
     /**
-     * 
      *
-     * @param instance 
-     * @param methodList 
-     * @param parametersList 
-     * @return 
+     *
+     * @param instance
+     * @param methodList
+     * @param parametersList
+     * @return
      */
     public static List<Object> executeMethod(Object instance, List<Method> methodList, List<Object[]> parametersList) {
         if (N.notEmpty(parametersList) && (parametersList.size() != methodList.size())) {
@@ -240,10 +240,10 @@ public final class TestUtil {
     }
 
     /**
-     * 
      *
-     * @param cls 
-     * @param inFail 
+     *
+     * @param cls
+     * @param inFail
      */
     public static void generateUnitTest(Class<?> cls, boolean inFail) {
         String simpleClassName = cls.getSimpleName();

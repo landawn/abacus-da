@@ -53,9 +53,9 @@ import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.NamingPolicy;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
+import com.landawn.abacus.util.stream.Stream;
 
 @ExtendWith(MockitoExtension.class)
 public class CassandraExecutorTest extends TestBase {
@@ -205,7 +205,7 @@ public class CassandraExecutorTest extends TestBase {
         assertEquals("MONDAY", bound[0][0]);
 
         final java.util.concurrent.atomic.AtomicReference<RuntimeException> acceptanceFailure = new java.util.concurrent.atomic.AtomicReference<>();
-        registry.register(new CassandraExecutor.StringCodec<java.time.DayOfWeek>(java.time.DayOfWeek.class) {
+        registry.register(new CassandraExecutor.StringCodec<>(java.time.DayOfWeek.class) {
             @Override
             public boolean accepts(final Object candidate) {
                 if (candidate instanceof java.time.DayOfWeek && acceptanceFailure.get() != null) {
