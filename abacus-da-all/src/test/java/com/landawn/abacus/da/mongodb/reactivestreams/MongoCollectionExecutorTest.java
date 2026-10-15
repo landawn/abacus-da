@@ -96,108 +96,19 @@ public class MongoCollectionExecutorTest extends TestBase {
         executor = new MongoCollectionExecutor(mockCollection);
     }
 
+    // ---- 2026-10-02 verifyME ----
+
+    private static final String COUNT_COLUMN_CONFLICT_verifyME = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
+
+    // Construction and configuration
+
+    // Confirms executor created via constructor with a non-null collection is usable.
     @Test
-    public void testColl() {
-        MongoCollection<Document> result = executor.coll();
-        assertSame(mockCollection, result);
-    }
-
-    @Test
-    public void testExistsWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Publisher<Long> countPublisher = Mono.just(1L);
-        when(mockCollection.countDocuments(any(Bson.class), any(CountOptions.class))).thenReturn(countPublisher);
-
-        Mono<Boolean> result = executor.exists(objectId);
-
-        StepVerifier.create(result).expectNext(true).verifyComplete();
-    }
-
-    @Test
-    public void testExistsWithObjectId() {
-        ObjectId objectId = new ObjectId();
-        Publisher<Long> countPublisher = Mono.just(0L);
-        when(mockCollection.countDocuments(any(Bson.class), any(CountOptions.class))).thenReturn(countPublisher);
-
-        Mono<Boolean> result = executor.exists(objectId);
-
-        StepVerifier.create(result).expectNext(false).verifyComplete();
-    }
-
-    @Test
-    public void testExistsWithFilter() {
-        Bson filter = new Document("name", "test");
-        Publisher<Long> countPublisher = Mono.just(2L);
-        when(mockCollection.countDocuments(any(Bson.class), any(CountOptions.class))).thenReturn(countPublisher);
-
-        Mono<Boolean> result = executor.exists(filter);
-
-        StepVerifier.create(result).expectNext(true).verifyComplete();
-    }
-
-    @Test
-    public void testCount() {
-        Publisher<Long> countPublisher = Mono.just(100L);
-        when(mockCollection.countDocuments()).thenReturn(countPublisher);
-
-        Mono<Long> result = executor.count();
-
-        StepVerifier.create(result).expectNext(100L).verifyComplete();
-    }
-
-    @Test
-    public void testCountWithFilter() {
-        Bson filter = new Document("status", "active");
-        Publisher<Long> countPublisher = Mono.just(50L);
-        when(mockCollection.countDocuments(filter)).thenReturn(countPublisher);
-
-        Mono<Long> result = executor.count(filter);
-
-        StepVerifier.create(result).expectNext(50L).verifyComplete();
-    }
-
-    @Test
-    public void testCountWithFilterAndOptions() {
-        Bson filter = new Document("status", "active");
-        CountOptions options = new CountOptions().limit(10);
-        Publisher<Long> countPublisher = Mono.just(10L);
-        when(mockCollection.countDocuments(filter, options)).thenReturn(countPublisher);
-
-        Mono<Long> result = executor.count(filter, options);
-
-        StepVerifier.create(result).expectNext(10L).verifyComplete();
-    }
-
-    @Test
-    public void testCountWithFilterAndNullOptions() {
-        Bson filter = new Document("status", "active");
-        Publisher<Long> countPublisher = Mono.just(25L);
-        when(mockCollection.countDocuments(filter)).thenReturn(countPublisher);
-
-        Mono<Long> result = executor.count(filter, null);
-
-        StepVerifier.create(result).expectNext(25L).verifyComplete();
-    }
-
-    @Test
-    public void testEstimatedDocumentCount() {
-        Publisher<Long> countPublisher = Mono.just(1000L);
-        when(mockCollection.estimatedDocumentCount()).thenReturn(countPublisher);
-
-        Mono<Long> result = executor.estimatedDocumentCount();
-
-        StepVerifier.create(result).expectNext(1000L).verifyComplete();
-    }
-
-    @Test
-    public void testEstimatedDocumentCountWithOptions() {
-        EstimatedDocumentCountOptions options = new EstimatedDocumentCountOptions();
-        Publisher<Long> countPublisher = Mono.just(2000L);
-        when(mockCollection.estimatedDocumentCount(options)).thenReturn(countPublisher);
-
-        Mono<Long> result = executor.estimatedDocumentCount(options);
-
-        StepVerifier.create(result).expectNext(2000L).verifyComplete();
+    public void testConstructorAcceptsCollection() {
+        MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollection);
+        assertNotNull(exec);
+        assertSame(mockCollection, exec.coll());
+        assertTrue(exec.coll() == mockCollection);
     }
 
     @Test
@@ -212,662 +123,140 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNext(42L).verifyComplete();
     }
 
+    // Row and entity mapping
+
     @Test
-    public void testGetWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
+    public void testEntityReadPathsConvertDecodedValuesToDeclaredTypes_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.entityDoc_coverageME()));
+        final Bson filter = new Document();
+        final Bson update = new Document("$set", new Document("x", 1));
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eEntity_coverageME.class;
+        final String oid = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.OID_HEX_coverageME;
 
-        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.get(objectId);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list", exec.list(filter, type).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list(Collection)",
+                        exec.list(Arrays.asList("nums", "day"), filter, type).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findFirst", exec.findFirst(filter, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("get(ObjectId)",
+                        exec.get(new ObjectId(oid), type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("get(String)", exec.get(oid, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("aggregate",
+                        exec.aggregate(pipeline, type).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndUpdate",
+                        exec.findOneAndUpdate(filter, update, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndDelete",
+                        exec.findOneAndDelete(filter, type).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntityDataset_coverageME("query(Bson, Class)",
+                        exec.query(filter, type).block()));
     }
 
     @Test
-    public void testGetWithObjectId() {
-        ObjectId objectId = new ObjectId();
-        Document doc = new Document("_id", objectId).append("name", "test");
+    public void testGenericSubclassRowsOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.longBoxDoc_coverageME()));
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eLongBox_coverageME.class;
 
-        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.get(objectId);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals((Object) 9L, exec.list(filter, type).blockFirst().getValue(), "list"),
+                () -> assertEquals((Object) 9L, exec.findFirst(filter, type).block().getValue(), "findFirst"),
+                () -> assertEquals((Object) 9L, exec.aggregate(pipeline, type).blockFirst().getValue(), "aggregate"),
+                () -> assertEquals((Object) 9L, exec.findOneAndDelete(filter, type).block().getValue(), "findOneAndDelete"));
     }
 
+    // Pins the documented "write-value conversion happens while the publisher is built" contract:
+    // an entity is converted to a Document exactly once, at call time, and that Document is what
+    // every subscription re-submits.
     @Test
-    public void testGetWithStringObjectIdAndRowType() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document doc = new Document("_id", new ObjectId(objectId)).append("value", "test");
-
-        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<String> result = executor.get(objectId, String.class);
-
-        StepVerifier.create(result).expectNext("test").verifyComplete();
-    }
-
-    @Test
-    public void testGetWithObjectIdAndRowType() {
-        ObjectId objectId = new ObjectId();
-        Map<String, Object> data = new HashMap<>();
-        data.put("name", "test");
-
-        Document doc = new Document("_id", objectId).append("name", "test");
-
-        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Map> result = executor.get(objectId, Map.class);
-
-        StepVerifier.create(result).expectNextMatches(map -> map.get("name").equals("test")).verifyComplete();
-    }
-
-    @Test
-    public void testGetWithStringObjectIdSelectPropNamesAndRowType() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Collection<String> selectPropNames = Arrays.asList("name", "status");
-        Document doc = new Document("name", "test").append("status", "active");
-
-        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.get(objectId, selectPropNames, Document.class);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
-    }
-
-    @Test
-    public void testGetWithObjectIdSelectPropNamesAndRowType() {
-        ObjectId objectId = new ObjectId();
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Document doc = new Document("name", "test");
-
-        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.get(objectId, selectPropNames, Document.class);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstWithFilter() {
-        Bson filter = new Document("name", "test");
-        Document doc = new Document("name", "test");
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.findFirst(filter);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstWithFilterAndRowType() {
-        Bson filter = new Document("value", 123);
-        Document doc = new Document("value", 123);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Integer> result = executor.findFirst(filter, Integer.class);
-
-        StepVerifier.create(result).expectNext(123).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstWithSelectPropNamesFilterAndRowType() {
-        Collection<String> selectPropNames = Arrays.asList("name", "age");
-        Bson filter = new Document("active", true);
-        Document doc = new Document("name", "John").append("age", 30);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.findFirst(selectPropNames, filter, Document.class);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstSingleScalarProjectionDoesNotFallBackToObjectId() {
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Bson filter = new Document("active", true);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()));
-
-        StepVerifier.create(executor.findFirst(selectPropNames, filter, String.class)).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstSingleDottedScalarProjectionReadsNestedValue() {
-        Collection<String> selectPropNames = Arrays.asList("address.city");
-        Bson filter = new Document("active", true);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()).append("address", new Document("city", "Paris")));
-
-        StepVerifier.create(executor.findFirst(selectPropNames, filter, String.class)).expectNext("Paris").verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstSingleProjectionObjectRowTypeReturnsRawDocument() {
-        Collection<String> selectPropNames = Arrays.asList("email");
-        Bson filter = new Document("active", true);
-        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c");
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        StepVerifier.create(executor.findFirst(selectPropNames, filter, Object.class)).expectNext(doc).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstBsonProjectionObjectRowTypeReturnsRawDocument() {
-        Bson projection = Projections.include("email");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
-        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c").append("name", "John");
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        StepVerifier.create(executor.findFirst(projection, filter, sort, Object.class)).expectNext(doc).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstWithAllParameters() {
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("createdAt", -1);
-        Document doc = new Document("name", "test");
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.findFirst(selectPropNames, filter, sort, Document.class);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
-    }
-
-    @Test
-    public void testFindFirstWithProjection() {
-        Bson projection = Projections.include("name", "status");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
-        Document doc = new Document("name", "test").append("status", "active");
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Document> result = executor.findFirst(projection, filter, sort, Document.class);
-
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
-    }
-
-    // Regression: an empty document (e.g. from an all-excluding projection) is still a matching
-    // MongoDB document for Document.class and must not be treated as "no document".
-    @Test
-    public void testFindFirstWithEmptyDocumentReturnsDocument() {
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Bson filter = new Document("active", true);
-        Document emptyDoc = new Document();
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, emptyDoc);
-
-        Mono<Document> result = executor.findFirst(selectPropNames, filter, Document.class);
-
-        StepVerifier.create(result).expectNext(emptyDoc).verifyComplete();
-    }
-
-    // Regression: a field-less document in a multi-result stream is still a Document.class result.
-    @Test
-    public void testListIncludesEmptyDocumentForDocumentRowType() {
-        Bson filter = new Document("active", true);
-        int offset = 10;
-        int count = 5;
-        Document populated = new Document("name", "doc1");
-        Document emptyDoc = new Document();
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, populated, emptyDoc);
-
-        Flux<Document> result = executor.list(filter, offset, count, Document.class);
-
-        StepVerifier.create(result).expectNext(populated).expectNext(emptyDoc).verifyComplete();
-    }
-
-    @Test
-    public void testListWithFilter() {
-        Bson filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
-
-        Flux<Document> result = executor.list(filter);
-
-        StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
-    }
-
-    @Test
-    public void testListWithFilterAndRowType() {
-        Bson filter = new Document("type", "number");
-        List<Document> docs = Arrays.asList(new Document("value", 1), new Document("value", 2));
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
-
-        Flux<Integer> result = executor.list(filter, Integer.class);
-
-        StepVerifier.create(result).expectNext(1).expectNext(2).verifyComplete();
-    }
-
-    @Test
-    public void testListWithFilterOffsetCountAndRowType() {
-        Bson filter = new Document("active", true);
-        int offset = 10;
-        int count = 5;
-        List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
-
-        Flux<Document> result = executor.list(filter, offset, count, Document.class);
-
-        StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
-    }
-
-    @Test
-    public void testListWithSelectPropNamesFilterAndRowType() {
-        Collection<String> selectPropNames = Arrays.asList("name", "email");
-        Bson filter = new Document("active", true);
-        List<Document> docs = Arrays.asList(new Document("name", "John").append("email", "john@example.com"),
-                new Document("name", "Jane").append("email", "jane@example.com"));
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
-
-        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
-
-        StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
-    }
-
-    @Test
-    public void testListWithAllParameters() {
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("createdAt", -1);
-        int offset = 5;
-        int count = 10;
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
-
-        Flux<Document> result = executor.list(selectPropNames, filter, sort, offset, count, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testListWithProjection() {
-        Bson projection = Projections.include("name", "status");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-
-        Flux<Document> result = executor.list(projection, filter, sort, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testQueryForBoolean() {
-        String propName = "isActive";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, true);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Boolean> result = executor.queryForBoolean(propName, filter);
-
-        StepVerifier.create(result).expectNext(true).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForChar() {
-        String propName = "grade";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, 'A');
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Character> result = executor.queryForChar(propName, filter);
-
-        StepVerifier.create(result).expectNext('A').verifyComplete();
-    }
-
-    @Test
-    public void testQueryForByte() {
-        String propName = "level";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, (byte) 5);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Byte> result = executor.queryForByte(propName, filter);
-
-        StepVerifier.create(result).expectNext((byte) 5).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForShort() {
-        String propName = "count";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, (short) 100);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Short> result = executor.queryForShort(propName, filter);
-
-        StepVerifier.create(result).expectNext((short) 100).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForInt() {
-        String propName = "age";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, 25);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Integer> result = executor.queryForInt(propName, filter);
-
-        StepVerifier.create(result).expectNext(25).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForLong() {
-        String propName = "timestamp";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, 1234567890L);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Long> result = executor.queryForLong(propName, filter);
-
-        StepVerifier.create(result).expectNext(1234567890L).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForFloat() {
-        String propName = "score";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, 98.5f);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Float> result = executor.queryForFloat(propName, filter);
-
-        StepVerifier.create(result).expectNext(98.5f).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForDouble() {
-        String propName = "price";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, 19.99);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Double> result = executor.queryForDouble(propName, filter);
-
-        StepVerifier.create(result).expectNext(19.99).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForString() {
-        String propName = "name";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, "John Doe");
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<String> result = executor.queryForString(propName, filter);
-
-        StepVerifier.create(result).expectNext("John Doe").verifyComplete();
-    }
-
-    @Test
-    public void testQueryForDate() {
-        String propName = "createdAt";
-        Bson filter = new Document("id", 1);
-        Date date = new Date();
-        Document doc = new Document(propName, date);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Date> result = executor.queryForDate(propName, filter);
-
-        StepVerifier.create(result).expectNext(date).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForDateWithRowType() {
-        String propName = "timestamp";
-        Bson filter = new Document("id", 1);
-        Date date = new Date();
-        Document doc = new Document(propName, date);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Date> result = executor.queryForDate(propName, filter, Date.class);
-
-        StepVerifier.create(result).expectNext(date).verifyComplete();
-    }
-
-    @Test
-    public void testqueryForSingleValue() {
-        String propName = "value";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document(propName, 42);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Integer> result = executor.queryForSingleValue(propName, filter, Integer.class);
-
-        StepVerifier.create(result).expectNext(42).verifyComplete();
-    }
-
-    @Test
-    public void testQueryWithFilter() {
-        Bson filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-
-        Mono<Dataset> result = executor.query(filter);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testQueryWithFilterAndRowType() {
-        Bson filter = new Document("type", "test");
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-
-        Mono<Dataset> result = executor.query(filter, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testQueryWithAllParametersForDataset() {
-        Collection<String> selectPropNames = Arrays.asList("name", "value");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("createdAt", -1);
-        int offset = 10;
-        int count = 20;
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
-
-        Mono<Dataset> result = executor.query(selectPropNames, filter, sort, offset, count, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testWatch() {
-        when(mockCollection.watch()).thenReturn(mockChangeStreamPublisher);
-
-        ChangeStreamPublisher<Document> result = executor.watch();
-
-        assertSame(mockChangeStreamPublisher, result);
-    }
-
-    @Test
-    public void testWatchWithRowType() {
-        ChangeStreamPublisher<String> mockStringPublisher = mock(ChangeStreamPublisher.class);
-        when(mockCollection.watch(String.class)).thenReturn(mockStringPublisher);
-
-        ChangeStreamPublisher<String> result = executor.watch(String.class);
-
-        assertSame(mockStringPublisher, result);
-    }
-
-    @Test
-    public void testWatchWithPipeline() {
-        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("operationType", "insert")));
-        when(mockCollection.watch(pipeline)).thenReturn(mockChangeStreamPublisher);
-
-        ChangeStreamPublisher<Document> result = executor.watch(pipeline);
-
-        assertSame(mockChangeStreamPublisher, result);
-    }
-
-    @Test
-    public void testWatchWithPipelineAndRowType() {
-        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("operationType", "update")));
-        ChangeStreamPublisher<Map> mockMapPublisher = mock(ChangeStreamPublisher.class);
-        when(mockCollection.watch(pipeline, Map.class)).thenReturn(mockMapPublisher);
-
-        ChangeStreamPublisher<Map> result = executor.watch(pipeline, Map.class);
-
-        assertSame(mockMapPublisher, result);
-    }
-
-    @Test
-    public void testInsertOne() {
-        Document doc = new Document("name", "test");
-        InsertOneResult insertResult = mock(InsertOneResult.class);
-        Publisher<InsertOneResult> publisher = Mono.just(insertResult);
-        when(mockCollection.insertOne(doc)).thenReturn(publisher);
-
-        Mono<InsertOneResult> result = executor.insertOne(doc);
+    public void testInsertOneConvertsEntityOnceAtCallTimeNotPerSubscription() {
+        final CountingBean bean = new CountingBean();
+        final InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollection.insertOne(any(Document.class))).thenReturn(Mono.just(insertResult));
+
+        final Mono<InsertOneResult> result = executor.insertOne(bean);
+
+        assertTrue(bean.readCount > 0);
+        final int readsAfterBuild = bean.readCount;
 
         StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+
+        assertEquals(readsAfterBuild, bean.readCount);
+        final org.mockito.ArgumentCaptor<Document> captor = org.mockito.ArgumentCaptor.forClass(Document.class);
+        verify(mockCollection).insertOne(captor.capture());
+        assertEquals("counted", captor.getValue().getString("name"));
+    }
+
+    // Factories and insert operations
+
+    @Test
+    public void testBulkInsert() {
+        List<Document> entities = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
+        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
+        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
+        when(mockCollection.bulkWrite(anyList())).thenReturn(publisher);
+
+        Mono<BulkWriteResult> result = executor.bulkInsert(entities);
+
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
     }
 
     @Test
-    public void testInsertOneWithOptions() {
-        Document doc = new Document("name", "test");
-        InsertOneOptions options = new InsertOneOptions();
-        InsertOneResult insertResult = mock(InsertOneResult.class);
-        Publisher<InsertOneResult> publisher = Mono.just(insertResult);
-        when(mockCollection.insertOne(doc, options)).thenReturn(publisher);
+    public void testBulkInsertRejectsEmptyEntities() {
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(List.of()));
+    }
 
-        Mono<InsertOneResult> result = executor.insertOne(doc, options);
+    @Test
+    public void testBulkInsertRejectsNullEntities() {
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(null));
+    }
 
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+    @Test
+    public void testBulkInsertWithNonDocumentEntities() {
+        List<Map<String, Object>> entities = new ArrayList<>();
+        Map<String, Object> entity1 = new HashMap<>();
+        entity1.put("name", "entity1");
+        Map<String, Object> entity2 = new HashMap<>();
+        entity2.put("name", "entity2");
+        entities.add(entity1);
+        entities.add(entity2);
+
+        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
+        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
+        when(mockCollection.bulkWrite(anyList())).thenReturn(publisher);
+
+        Mono<BulkWriteResult> result = executor.bulkInsert(entities);
+
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
+    }
+
+    @Test
+    public void testBulkInsertWithOptions() {
+        List<Document> entities = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
+        BulkWriteOptions options = new BulkWriteOptions();
+        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
+        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
+        when(mockCollection.bulkWrite(anyList(), eq(options))).thenReturn(publisher);
+
+        Mono<BulkWriteResult> result = executor.bulkInsert(entities, options);
+
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
+    }
+
+    @Test
+    public void testInsertNullElementIsIllegalArgument() {
+        // A null element is rejected eagerly (MongoDBBase.toDocument), before the driver is called.
+        final List<Document> docs = Arrays.asList(new Document("id", 1), null);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs));
+        assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs, new InsertManyOptions()));
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs));
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs, new BulkWriteOptions()));
+        verify(mockCollection, org.mockito.Mockito.never()).insertMany(anyList());
+        verify(mockCollection, org.mockito.Mockito.never()).bulkWrite(anyList());
     }
 
     @Test
@@ -878,6 +267,54 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.insertMany(docs)).thenReturn(publisher);
 
         Mono<InsertManyResult> result = executor.insertMany(docs);
+
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    public void testInsertManyPreservesDocumentInstancesInHeterogeneousBatch() {
+        Document callerDocument = new Document("name", "document-row");
+        List<Object> rows = Arrays.asList(callerDocument, Map.of("name", "map-row"));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
+        when(mockCollection.insertMany(anyList())).thenReturn(Mono.just(insertResult));
+
+        executor.insertMany(rows);
+
+        verify(mockCollection).insertMany(captor.capture());
+        assertSame(callerDocument, captor.getValue().get(0));
+        assertTrue(captor.getValue().get(1) instanceof Document);
+    }
+
+    // Covers toDocument(Collection) all-Document path for a non-List collection.
+    @Test
+    public void testInsertManyWithAllDocumentsNonListCollection() {
+        Collection<Document> docs = new java.util.LinkedHashSet<>(Arrays.asList(new Document("name", "a"), new Document("name", "b")));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        Publisher<InsertManyResult> publisher = Mono.just(insertResult);
+        when(mockCollection.insertMany(anyList())).thenReturn(publisher);
+
+        Mono<InsertManyResult> result = executor.insertMany(docs);
+
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+    }
+
+    @Test
+    public void testInsertManyWithNonDocumentObjects() {
+        List<Map<String, Object>> mapList = new ArrayList<>();
+        Map<String, Object> map1 = new HashMap<>();
+        map1.put("name", "test1");
+        Map<String, Object> map2 = new HashMap<>();
+        map2.put("name", "test2");
+        mapList.add(map1);
+        mapList.add(map2);
+
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        Publisher<InsertManyResult> publisher = Mono.just(insertResult);
+        when(mockCollection.insertMany(anyList())).thenReturn(publisher);
+
+        Mono<InsertManyResult> result = executor.insertMany(mapList);
 
         StepVerifier.create(result).expectNext(insertResult).verifyComplete();
     }
@@ -896,239 +333,140 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testUpdateOneWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document update = new Document("status", "updated");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(publisher);
+    public void testInsertOne() {
+        Document doc = new Document("name", "test");
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        Publisher<InsertOneResult> publisher = Mono.just(insertResult);
+        when(mockCollection.insertOne(doc)).thenReturn(publisher);
 
-        Mono<UpdateResult> result = executor.updateOne(objectId, update);
+        Mono<InsertOneResult> result = executor.insertOne(doc);
 
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+    }
+
+    // Pins the documented cold-publisher contract of insertOne: building the Mono creates the driver
+    // publisher once (no insert yet), and every subscription re-issues that same insert with the SAME
+    // Document instance rather than building a fresh write.
+    @Test
+    public void testInsertOneResubscriptionReissuesInsertWithSameDocument() {
+        final Document doc = new Document("name", "dup");
+        final InsertOneResult insertResult = mock(InsertOneResult.class);
+        final java.util.concurrent.atomic.AtomicInteger executions = new java.util.concurrent.atomic.AtomicInteger();
+        final Publisher<InsertOneResult> publisher = Mono.fromSupplier(() -> {
+            executions.incrementAndGet();
+            return insertResult;
+        });
+        when(mockCollection.insertOne(doc)).thenReturn(publisher);
+
+        final Mono<InsertOneResult> result = executor.insertOne(doc);
+
+        verify(mockCollection).insertOne(org.mockito.ArgumentMatchers.same(doc));
+        assertEquals(0, executions.get());
+
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+
+        assertEquals(2, executions.get());
+        verify(mockCollection, org.mockito.Mockito.times(1)).insertOne(any(Document.class));
     }
 
     @Test
-    public void testUpdateOneWithObjectId() {
-        ObjectId objectId = new ObjectId();
-        Document update = new Document("status", "updated");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(publisher);
+    public void testInsertOneWithNullObjectAndOptionsThrowsIAESynchronously() {
+        InsertOneOptions options = new InsertOneOptions();
 
-        Mono<UpdateResult> result = executor.updateOne(objectId, update);
+        assertThrows(IllegalArgumentException.class, () -> executor.insertOne(null, options));
 
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        verify(mockCollection, org.mockito.Mockito.never()).insertOne(any(Document.class), any(InsertOneOptions.class));
     }
 
     @Test
-    public void testUpdateOneWithFilter() {
-        Bson filter = new Document("name", "test");
-        Document update = new Document("status", "updated");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), any(Bson.class))).thenReturn(publisher);
+    public void testInsertOneWithNullObjectThrowsIAESynchronously() {
+        // Regression: insertOne(null) converted the payload eagerly and surfaced a raw NPE. It must
+        // throw IllegalArgumentException synchronously, before any Mono is built or the driver touched.
+        assertThrows(IllegalArgumentException.class, () -> executor.insertOne((Object) null));
 
-        Mono<UpdateResult> result = executor.updateOne(filter, update);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        verify(mockCollection, org.mockito.Mockito.never()).insertOne(any(Document.class));
     }
 
     @Test
-    public void testUpdateOneDoesNotMutateCallerDocument() {
-        // Regression: toBson stripped _id from the CALLER's Document in place on the
-        // non-$-operator path; the $set payload must be built from a copy.
-        Bson filter = new Document("name", "test");
-        ObjectId id = new ObjectId();
-        Document callerUpdate = new Document("_id", id).append("name", "updated");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockCollection.updateOne(eq(filter), any(Bson.class))).thenReturn(publisher);
+    public void testInsertOneWithNonDocumentObject() {
+        Map<String, Object> map = new HashMap<>();
+        map.put("name", "test");
+        map.put("value", 123);
 
-        StepVerifier.create(executor.updateOne(filter, callerUpdate)).expectNext(updateResult).verifyComplete();
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        Publisher<InsertOneResult> publisher = Mono.just(insertResult);
+        when(mockCollection.insertOne(any(Document.class))).thenReturn(publisher);
 
-        // The caller's Document must be untouched.
-        assertEquals(id, callerUpdate.get("_id"));
-        assertEquals(2, callerUpdate.size());
-        // The sent update is {$set: {...}} without _id.
-        verify(mockCollection).updateOne(eq(filter), updateCaptor.capture());
-        Document sent = (Document) updateCaptor.getValue();
-        Document setPayload = (Document) sent.get("$set");
-        assertTrue(!setPayload.containsKey("_id"));
-        assertEquals("updated", setPayload.get("name"));
+        Mono<InsertOneResult> result = executor.insertOne(map);
+
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
     }
 
     @Test
-    public void testUpdateOneWithFilterAndOptions() {
-        Bson filter = new Document("name", "test");
-        Document update = new Document("status", "updated");
-        UpdateOptions options = new UpdateOptions();
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
+    public void testInsertOneWithOptions() {
+        Document doc = new Document("name", "test");
+        InsertOneOptions options = new InsertOneOptions();
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        Publisher<InsertOneResult> publisher = Mono.just(insertResult);
+        when(mockCollection.insertOne(doc, options)).thenReturn(publisher);
 
-        Mono<UpdateResult> result = executor.updateOne(filter, update, options);
+        Mono<InsertOneResult> result = executor.insertOne(doc, options);
 
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
     }
 
-    @Test
-    public void testUpdateOneWithFilterAndList() {
-        Bson filter = new Document("name", "test");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")), new Document("$inc", new Document("count", 1)));
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), eq(updates))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateOne(filter, updates);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
+    // Updates and deletes
 
     @Test
-    public void testUpdateOneWithFilterListAndOptions() {
-        Bson filter = new Document("name", "test");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
-        UpdateOptions options = new UpdateOptions();
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateOne(filter, updates, options);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testUpdateMany() {
-        Bson filter = new Document("status", "pending");
-        Document update = new Document("status", "processed");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateMany(eq(filter), any(Bson.class))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateMany(filter, update);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testUpdateManyWithOptions() {
-        Bson filter = new Document("status", "pending");
-        Document update = new Document("status", "processed");
-        UpdateOptions options = new UpdateOptions();
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateMany(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateMany(filter, update, options);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testUpdateManyWithList() {
-        Bson filter = new Document("status", "pending");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "processed")));
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateMany(eq(filter), eq(updates))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateMany(filter, updates);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testUpdateManyWithListAndOptions() {
-        Bson filter = new Document("status", "pending");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "processed")));
-        UpdateOptions options = new UpdateOptions();
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateMany(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateMany(filter, updates, options);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testReplaceOneWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document replacement = new Document("name", "new name").append("status", "active");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.replaceOne(any(Bson.class), eq(replacement))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.replaceOne(objectId, replacement);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testReplaceOneWithObjectId() {
-        ObjectId objectId = new ObjectId();
-        Document replacement = new Document("name", "new name").append("status", "active");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.replaceOne(any(Bson.class), eq(replacement))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.replaceOne(objectId, replacement);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testReplaceOneWithFilter() {
-        Bson filter = new Document("name", "old name");
-        Document replacement = new Document("name", "new name").append("status", "active");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.replaceOne(eq(filter), eq(replacement))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.replaceOne(filter, replacement);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testReplaceOneWithFilterAndOptions() {
-        Bson filter = new Document("name", "old name");
-        Document replacement = new Document("name", "new name").append("status", "active");
-        ReplaceOptions options = new ReplaceOptions();
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.replaceOne(eq(filter), eq(replacement), eq(options))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.replaceOne(filter, replacement, options);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testDeleteOneWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
+    public void testDeleteMany() {
+        Bson filter = new Document("status", "deleted");
         DeleteResult deleteResult = mock(DeleteResult.class);
         Publisher<DeleteResult> publisher = Mono.just(deleteResult);
-        when(mockCollection.deleteOne(any(Bson.class))).thenReturn(publisher);
+        when(mockCollection.deleteMany(filter)).thenReturn(publisher);
 
-        Mono<DeleteResult> result = executor.deleteOne(objectId);
+        Mono<DeleteResult> result = executor.deleteMany(filter);
 
         StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
     }
 
     @Test
-    public void testDeleteOneWithObjectId() {
-        ObjectId objectId = new ObjectId();
+    public void testDeleteManyWithNullOptionsUsesDefaultOverload() {
+        Bson filter = new Document("status", "deleted");
         DeleteResult deleteResult = mock(DeleteResult.class);
         Publisher<DeleteResult> publisher = Mono.just(deleteResult);
-        when(mockCollection.deleteOne(any(Bson.class))).thenReturn(publisher);
+        when(mockCollection.deleteMany(filter)).thenReturn(publisher);
 
-        Mono<DeleteResult> result = executor.deleteOne(objectId);
+        Mono<DeleteResult> result = executor.deleteMany(filter, null);
 
         StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
+        verify(mockCollection).deleteMany(filter);
+    }
+
+    @Test
+    public void testDeleteManyWithOptions() {
+        Bson filter = new Document("status", "deleted");
+        DeleteOptions options = new DeleteOptions();
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        Publisher<DeleteResult> publisher = Mono.just(deleteResult);
+        when(mockCollection.deleteMany(filter, options)).thenReturn(publisher);
+
+        Mono<DeleteResult> result = executor.deleteMany(filter, options);
+
+        StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
+    }
+
+    @Test
+    public void testDeleteOneWithNullOptionsUsesDefaultOverload() {
+        Bson filter = new Document("name", "test");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        Publisher<DeleteResult> publisher = Mono.just(deleteResult);
+        when(mockCollection.deleteOne(filter)).thenReturn(publisher);
+
+        Mono<DeleteResult> result = executor.deleteOne(filter, null);
+
+        StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
+        verify(mockCollection).deleteOne(filter);
     }
 
     @Test
@@ -1157,309 +495,27 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testDeleteOneWithNullOptionsUsesDefaultOverload() {
-        Bson filter = new Document("name", "test");
+    public void testDeleteOneWithObjectId() {
+        ObjectId objectId = new ObjectId();
         DeleteResult deleteResult = mock(DeleteResult.class);
         Publisher<DeleteResult> publisher = Mono.just(deleteResult);
-        when(mockCollection.deleteOne(filter)).thenReturn(publisher);
+        when(mockCollection.deleteOne(any(Bson.class))).thenReturn(publisher);
 
-        Mono<DeleteResult> result = executor.deleteOne(filter, null);
-
-        StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
-        verify(mockCollection).deleteOne(filter);
-    }
-
-    @Test
-    public void testDeleteMany() {
-        Bson filter = new Document("status", "deleted");
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        Publisher<DeleteResult> publisher = Mono.just(deleteResult);
-        when(mockCollection.deleteMany(filter)).thenReturn(publisher);
-
-        Mono<DeleteResult> result = executor.deleteMany(filter);
+        Mono<DeleteResult> result = executor.deleteOne(objectId);
 
         StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
     }
 
     @Test
-    public void testDeleteManyWithOptions() {
-        Bson filter = new Document("status", "deleted");
-        DeleteOptions options = new DeleteOptions();
+    public void testDeleteOneWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
         DeleteResult deleteResult = mock(DeleteResult.class);
         Publisher<DeleteResult> publisher = Mono.just(deleteResult);
-        when(mockCollection.deleteMany(filter, options)).thenReturn(publisher);
+        when(mockCollection.deleteOne(any(Bson.class))).thenReturn(publisher);
 
-        Mono<DeleteResult> result = executor.deleteMany(filter, options);
-
-        StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
-    }
-
-    @Test
-    public void testDeleteManyWithNullOptionsUsesDefaultOverload() {
-        Bson filter = new Document("status", "deleted");
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        Publisher<DeleteResult> publisher = Mono.just(deleteResult);
-        when(mockCollection.deleteMany(filter)).thenReturn(publisher);
-
-        Mono<DeleteResult> result = executor.deleteMany(filter, null);
+        Mono<DeleteResult> result = executor.deleteOne(objectId);
 
         StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
-        verify(mockCollection).deleteMany(filter);
-    }
-
-    @Test
-    public void testBulkInsert() {
-        List<Document> entities = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
-        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
-        when(mockCollection.bulkWrite(anyList())).thenReturn(publisher);
-
-        Mono<BulkWriteResult> result = executor.bulkInsert(entities);
-
-        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
-    }
-
-    @Test
-    public void testBulkInsertWithOptions() {
-        List<Document> entities = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
-        BulkWriteOptions options = new BulkWriteOptions();
-        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
-        when(mockCollection.bulkWrite(anyList(), eq(options))).thenReturn(publisher);
-
-        Mono<BulkWriteResult> result = executor.bulkInsert(entities, options);
-
-        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
-    }
-
-    @Test
-    public void testBulkInsertRejectsNullEntities() {
-        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(null));
-    }
-
-    @Test
-    public void testInsertNullElementIsIllegalArgument() {
-        // A null element is rejected eagerly (MongoDBBase.toDocument), before the driver is called.
-        final List<Document> docs = Arrays.asList(new Document("id", 1), null);
-
-        assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs));
-        assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs, new InsertManyOptions()));
-        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs));
-        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs, new BulkWriteOptions()));
-        verify(mockCollection, org.mockito.Mockito.never()).insertMany(anyList());
-        verify(mockCollection, org.mockito.Mockito.never()).bulkWrite(anyList());
-    }
-
-    @Test
-    public void testBulkInsertRejectsEmptyEntities() {
-        assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(List.of()));
-    }
-
-    @Test
-    public void testBulkWrite() {
-        List<WriteModel<Document>> requests = Arrays.asList(new InsertOneModel<>(new Document("name", "doc1")));
-        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
-        when(mockCollection.bulkWrite(requests)).thenReturn(publisher);
-
-        Mono<BulkWriteResult> result = executor.bulkWrite(requests);
-
-        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
-    }
-
-    @Test
-    public void testBulkWriteWithOptions() {
-        List<WriteModel<Document>> requests = Arrays.asList(new InsertOneModel<>(new Document("name", "doc1")));
-        BulkWriteOptions options = new BulkWriteOptions();
-        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
-        when(mockCollection.bulkWrite(requests, options)).thenReturn(publisher);
-
-        Mono<BulkWriteResult> result = executor.bulkWrite(requests, options);
-
-        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
-    }
-
-    @Test
-    public void testBulkWriteRejectsNullRequests() {
-        assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(null));
-    }
-
-    @Test
-    public void testBulkWriteRejectsEmptyRequests() {
-        assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(List.of()));
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilter() {
-        Bson filter = new Document("name", "test");
-        Document update = new Document("status", "updated");
-        Document resultDoc = new Document("name", "test").append("status", "updated");
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class))).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndUpdate(filter, update);
-
-        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterAndRowType() {
-        Bson filter = new Document("name", "test");
-        Document update = new Document("value", 123);
-        Document resultDoc = new Document("value", 123);
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class))).thenReturn(publisher);
-
-        Mono<Integer> result = executor.findOneAndUpdate(filter, update, Integer.class);
-
-        StepVerifier.create(result).expectNext(123).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterUpdateAndOptions() {
-        Bson filter = new Document("name", "test");
-        Document update = new Document("status", "updated");
-        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
-        Document resultDoc = new Document("name", "test").append("status", "updated");
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndUpdate(filter, update, options);
-
-        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithAllParameters() {
-        Bson filter = new Document("name", "test");
-        Document update = new Document("status", "updated");
-        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
-        Document resultDoc = new Document("name", "test").append("status", "updated");
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndUpdate(filter, update, options, Document.class);
-
-        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterAndList() {
-        Bson filter = new Document("name", "test");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
-        Document resultDoc = new Document("name", "test").append("status", "active");
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates))).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndUpdate(filter, updates);
-
-        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterAndListRejectsNullFilter() {
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
-
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(null, updates));
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterAndListRejectsEmptyUpdates() {
-        Bson filter = new Document("name", "test");
-
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, List.of()));
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterListAndRowType() {
-        Bson filter = new Document("name", "test");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
-        Document resultDoc = new Document("name", "test").append("status", "active");
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates))).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndUpdate(filter, updates, Document.class);
-
-        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterListAndOptions() {
-        Bson filter = new Document("name", "test");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
-        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
-        Document resultDoc = new Document("name", "test").append("status", "active");
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndUpdate(filter, updates, options);
-
-        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithFilterListOptionsAndRowType() {
-        Bson filter = new Document("name", "test");
-        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
-        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
-        Document resultDoc = new Document("name", "test").append("status", "active");
-        Publisher<Document> publisher = Mono.just(resultDoc);
-        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndUpdate(filter, updates, options, Document.class);
-
-        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndReplace() {
-        Bson filter = new Document("name", "oldName");
-        Document replacement = new Document("name", "newName");
-        Publisher<Document> publisher = Mono.just(replacement);
-        when(mockCollection.findOneAndReplace(filter, replacement)).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndReplace(filter, replacement);
-
-        StepVerifier.create(result).expectNext(replacement).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndReplaceWithRowType() {
-        Bson filter = new Document("name", "oldName");
-        Document replacement = new Document("name", "newName");
-        Publisher<Document> publisher = Mono.just(replacement);
-        when(mockCollection.findOneAndReplace(filter, replacement)).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndReplace(filter, replacement, Document.class);
-
-        StepVerifier.create(result).expectNext(replacement).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndReplaceWithOptions() {
-        Bson filter = new Document("name", "oldName");
-        Document replacement = new Document("name", "newName");
-        FindOneAndReplaceOptions options = new FindOneAndReplaceOptions();
-        Publisher<Document> publisher = Mono.just(replacement);
-        when(mockCollection.findOneAndReplace(filter, replacement, options)).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndReplace(filter, replacement, options);
-
-        StepVerifier.create(result).expectNext(replacement).verifyComplete();
-    }
-
-    @Test
-    public void testFindOneAndReplaceWithOptionsAndRowType() {
-        Bson filter = new Document("name", "oldName");
-        Document replacement = new Document("name", "newName");
-        FindOneAndReplaceOptions options = new FindOneAndReplaceOptions();
-        Publisher<Document> publisher = Mono.just(replacement);
-        when(mockCollection.findOneAndReplace(filter, replacement, options)).thenReturn(publisher);
-
-        Mono<Document> result = executor.findOneAndReplace(filter, replacement, options, Document.class);
-
-        StepVerifier.create(result).expectNext(replacement).verifyComplete();
     }
 
     @Test
@@ -1475,15 +531,16 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testFindOneAndDeleteWithRowType() {
-        Bson filter = new Document("value", 123);
-        Document deletedDoc = new Document("value", 123);
-        Publisher<Document> publisher = Mono.just(deletedDoc);
-        when(mockCollection.findOneAndDelete(filter)).thenReturn(publisher);
+    public void testFindOneAndDeleteWithNullFilterThrowsIAE() {
+        // Regression: a null filter must be rejected eagerly with IllegalArgumentException at the call site (before a
+        // Mono is built), matching every sibling deleteOne/findOneAndUpdate/findOneAndReplace. Before the fix the null
+        // filter reached the driver, which silently deletes an arbitrary document.
+        final com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
 
-        Mono<Integer> result = executor.findOneAndDelete(filter, Integer.class);
-
-        StepVerifier.create(result).expectNext(123).verifyComplete();
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options, Document.class));
     }
 
     @Test
@@ -1513,484 +570,143 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testDistinct() {
-        String fieldName = "category";
-        when(mockCollection.distinct(fieldName, String.class)).thenReturn(mockDistinctPublisher);
+    public void testFindOneAndDeleteWithRowType() {
+        Bson filter = new Document("value", 123);
+        Document deletedDoc = new Document("value", 123);
+        Publisher<Document> publisher = Mono.just(deletedDoc);
+        when(mockCollection.findOneAndDelete(filter)).thenReturn(publisher);
 
-        Flux<String> result = executor.distinct(fieldName, String.class);
+        Mono<Integer> result = executor.findOneAndDelete(filter, Integer.class);
 
-        assertNotNull(result);
-        verify(mockCollection).distinct(fieldName, String.class);
+        StepVerifier.create(result).expectNext(123).verifyComplete();
     }
 
     @Test
-    public void testDistinctWithFilter() {
-        String fieldName = "category";
-        Bson filter = new Document("active", true);
-        when(mockCollection.distinct(fieldName, filter, String.class)).thenReturn(mockDistinctPublisher);
-
-        Flux<String> result = executor.distinct(fieldName, filter, String.class);
-
-        assertNotNull(result);
-        verify(mockCollection).distinct(fieldName, filter, String.class);
+    public void testFindOneAndUpdateWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, (Object) null));
     }
 
     @Test
-    public void testAggregate() {
-        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")), new Document("$group", new Document("_id", "$category")));
-        List<Document> aggregateResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
-        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(aggregateResults.iterator());
-
-        Flux<Document> result = executor.aggregate(pipeline);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testAggregateWithRowType() {
-        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")), new Document("$group", new Document("_id", "$category")));
-        List<Document> aggregateResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
-        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(aggregateResults.iterator());
-
-        Flux<Document> result = executor.aggregate(pipeline, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testAggregateWithNullRowTypeThrowsIAE() {
-        // Regression: aggregate(List, Class) documents "@throws IAE if pipeline or rowType is null"
-        // (matching the sync executor) but previously had no rowType guard and silently produced
-        // Object[] rows for a null rowType. The guard now throws eagerly at the call site.
-        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
-        assertThrows(IllegalArgumentException.class, () -> executor.aggregate(pipeline, null));
-    }
-
-    @Test
-    public void testFindOneAndXxxTypedWithNullRowTypeThrowsIAE() {
-        // Regression: the typed findOneAndUpdate/findOneAndReplace/findOneAndDelete overloads all
-        // document "@throws IAE ... rowType is null" but had no guard — a null rowType silently
-        // emitted Object[] rows (same defect class as aggregate(List, Class) above). The guard at
-        // the four typed chokepoints now throws eagerly at the call site.
-        final Bson filter = new Document("_id", "x");
-        final Document update = new Document("$set", new Document("a", 1));
-
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, update, (FindOneAndUpdateOptions) null, null));
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, Arrays.asList(update), (FindOneAndUpdateOptions) null, null));
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, new Document("a", 1), (FindOneAndReplaceOptions) null, null));
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (FindOneAndDeleteOptions) null, null));
-
-        // The delegating no-options typed overloads inherit the guard.
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (Class<Document>) null));
-    }
-
-    @Test
-    public void testFindFirstWithNullRowTypeThrowsIAE() {
-        // Regression: the two terminal reactive findFirst overloads previously had no rowType guard, so a
-        // null rowType silently produced an empty Mono instead of the eager IllegalArgumentException thrown
-        // by the synchronous sibling (and by every other reactive read). The guard now throws at the call site.
-        final Bson filter = new Document("_id", "x");
-
-        // findFirst(Collection, Bson, Bson, Class) terminal (routes through query(...)).
-        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(Arrays.asList("name"), filter, (Bson) null, (Class<Document>) null));
-        // findFirst(Bson, Bson, Bson, Class) terminal (routes through executeQuery(...)).
-        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Bson) new Document(), filter, (Bson) null, (Class<Document>) null));
-        // The delegating convenience overload inherits the guard.
-        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(filter, (Class<Document>) null));
-    }
-
-    @Test
-    public void testListWithNullRowTypeThrowsIAE() {
-        final Bson filter = new Document("active", true);
-
-        assertThrows(IllegalArgumentException.class, () -> executor.list(filter, (Class<Document>) null));
-        assertThrows(IllegalArgumentException.class, () -> executor.list(Arrays.asList("name"), filter, null, 0, 1, (Class<Document>) null));
-        assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) new Document("name", 1), filter, null, 0, 1, (Class<Document>) null));
-    }
-
-    @Test
-    public void testGroupByWithFieldName() {
-        String fieldName = "category";
-        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupBy(fieldName);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByWithFieldNameAndRowType() {
-        String fieldName = "category";
-        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupBy(fieldName, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByWithFieldNames() {
-        Collection<String> fieldNames = Arrays.asList("category", "brand");
-        List<Document> groupResults = Arrays.asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupBy(fieldNames);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByWithFieldNamesAndRowType() {
-        Collection<String> fieldNames = Arrays.asList("category", "brand");
-        List<Document> groupResults = Arrays.asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupBy(fieldNames, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByAndCountWithFieldName() {
-        String fieldName = "category";
-        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics").append("count", 10), new Document("_id", "books").append("count", 5));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupByAndCount(fieldName);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByAndCountWithFieldNameAndRowType() {
-        String fieldName = "category";
-        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics").append("count", 10), new Document("_id", "books").append("count", 5));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupByAndCount(fieldName, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByAndCountTypedMapsSingleGroupKey() {
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
-            final List<?> pipeline = invocation.getArgument(0);
-            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2) : new Document("_id", "sales").append("count", 2);
-
-            stubEmits(mockAggregatePublisher, row);
-            return mockAggregatePublisher;
-        });
-
-        StepVerifier.create(executor.groupByAndCount("department", GroupRow.class))
-                .expectNextMatches(row -> "sales".equals(row.getDepartment()) && row.getCount() == 2)
-                .verifyComplete();
-    }
-
-    @Test
-    public void testGroupByAndCountWithFieldNames() {
-        Collection<String> fieldNames = Arrays.asList("category", "brand");
-        List<Document> groupResults = Arrays
-                .asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")).append("count", 10));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupByAndCount(fieldNames);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByAndCountWithFieldNamesAndRowType() {
-        Collection<String> fieldNames = Arrays.asList("category", "brand");
-        List<Document> groupResults = Arrays
-                .asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")).append("count", 10));
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
-        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
-
-        Flux<Document> result = executor.groupByAndCount(fieldNames, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testMapReduce() {
-        String mapFunction = "function() { emit(this.category, 1); }";
-        String reduceFunction = "function(key, values) { return Array.sum(values); }";
-        List<Document> mapReduceResults = Arrays.asList(new Document("_id", "electronics").append("value", 10),
-                new Document("_id", "books").append("value", 5));
-        when(mockCollection.mapReduce(mapFunction, reduceFunction, Document.class)).thenReturn(mockMapReducePublisher);
-        // when(mockMapReducePublisher.iterator()).thenReturn(mapReduceResults.iterator());
-
-        Flux<Document> result = executor.mapReduce(mapFunction, reduceFunction);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testMapReduceWithRowType() {
-        String mapFunction = "function() { emit(this.category, 1); }";
-        String reduceFunction = "function(key, values) { return Array.sum(values); }";
-        List<Document> mapReduceResults = Arrays.asList(new Document("_id", "electronics").append("value", 10),
-                new Document("_id", "books").append("value", 5));
-        when(mockCollection.mapReduce(mapFunction, reduceFunction, Document.class)).thenReturn(mockMapReducePublisher);
-        // when(mockMapReducePublisher.iterator()).thenReturn(mapReduceResults.iterator());
-
-        Flux<Document> result = executor.mapReduce(mapFunction, reduceFunction, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testMapReduceWithNullRowTypeThrowsIAE() {
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.mapReduce("function() { emit(this.category, 1); }", "function(key, values) { return Array.sum(values); }", null));
-    }
-
-    @Test
-    public void testExistsWithNullStringObjectId() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.exists((String) null);
-        });
-    }
-
-    @Test
-    public void testExistsWithEmptyStringObjectId() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.exists("");
-        });
-    }
-
-    @Test
-    public void testGetWithInvalidObjectIdString() {
-        String invalidObjectId = "invalid";
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.get(invalidObjectId);
-        });
-    }
-
-    @Test
-    public void testListWithNegativeOffset() {
+    public void testFindOneAndUpdateWithAllParameters() {
         Bson filter = new Document("name", "test");
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.list(filter, -1, 10, Document.class);
-        });
+        Document update = new Document("status", "updated");
+        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
+        Document resultDoc = new Document("name", "test").append("status", "updated");
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndUpdate(filter, update, options, Document.class);
+
+        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
     }
 
     @Test
-    public void testListWithNegativeCount() {
+    public void testFindOneAndUpdateWithFilter() {
         Bson filter = new Document("name", "test");
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.list(filter, 0, -1, Document.class);
-        });
+        Document update = new Document("status", "updated");
+        Document resultDoc = new Document("name", "test").append("status", "updated");
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class))).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndUpdate(filter, update);
+
+        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
     }
 
     @Test
-    public void testQueryWithNegativeOffset() {
-        Bson filter = new Document("name", "test");
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.query(filter, -1, 10, Document.class);
-        });
-    }
-
-    @Test
-    public void testQueryWithNegativeCount() {
-        Bson filter = new Document("name", "test");
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.query(filter, 0, -1, Document.class);
-        });
-    }
-
-    @Test
-    public void testqueryForSingleValueWithEmptyDocument() {
-        String propName = "value";
-        Bson filter = new Document("id", 999);
-        Document emptyDoc = new Document();
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, emptyDoc);
-
-        Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
-
-        StepVerifier.create(result).verifyComplete();
-    }
-
-    @Test
-    public void testInsertOneWithNonDocumentObject() {
-        Map<String, Object> map = new HashMap<>();
-        map.put("name", "test");
-        map.put("value", 123);
-
-        InsertOneResult insertResult = mock(InsertOneResult.class);
-        Publisher<InsertOneResult> publisher = Mono.just(insertResult);
-        when(mockCollection.insertOne(any(Document.class))).thenReturn(publisher);
-
-        Mono<InsertOneResult> result = executor.insertOne(map);
-
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
-    }
-
-    @Test
-    public void testInsertManyWithNonDocumentObjects() {
-        List<Map<String, Object>> mapList = new ArrayList<>();
-        Map<String, Object> map1 = new HashMap<>();
-        map1.put("name", "test1");
-        Map<String, Object> map2 = new HashMap<>();
-        map2.put("name", "test2");
-        mapList.add(map1);
-        mapList.add(map2);
-
-        InsertManyResult insertResult = mock(InsertManyResult.class);
-        Publisher<InsertManyResult> publisher = Mono.just(insertResult);
-        when(mockCollection.insertMany(anyList())).thenReturn(publisher);
-
-        Mono<InsertManyResult> result = executor.insertMany(mapList);
-
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
-    }
-
-    @Test
-    public void testUpdateOneWithBsonUpdate() {
-        Bson filter = new Document("name", "test");
-        Bson update = new Document("$set", new Document("status", "updated"));
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateOne(filter, update);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testUpdateOneWithBasicDBObject() {
-        Bson filter = new Document("name", "test");
-        BasicDBObject update = new BasicDBObject("$set", new BasicDBObject("status", "updated"));
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateOne(filter, update);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testReplaceOneWithNonDocumentObject() {
-        Bson filter = new Document("name", "oldName");
-        Map<String, Object> replacement = new HashMap<>();
-        replacement.put("name", "newName");
-        replacement.put("status", "active");
-
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.replaceOne(eq(filter), any(Document.class))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.replaceOne(filter, replacement);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testBulkInsertWithNonDocumentEntities() {
-        List<Map<String, Object>> entities = new ArrayList<>();
-        Map<String, Object> entity1 = new HashMap<>();
-        entity1.put("name", "entity1");
-        Map<String, Object> entity2 = new HashMap<>();
-        entity2.put("name", "entity2");
-        entities.add(entity1);
-        entities.add(entity2);
-
-        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
-        when(mockCollection.bulkWrite(anyList())).thenReturn(publisher);
-
-        Mono<BulkWriteResult> result = executor.bulkInsert(entities);
-
-        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
-    }
-
-    @Test
-    public void testListWithEmptySelectPropNames() {
-        Collection<String> selectPropNames = Collections.emptyList();
-        Bson filter = new Document("active", true);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-
-        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testListWithSelectPropNamesAsList() {
-        List<String> selectPropNames = Arrays.asList("name", "value");
-        Bson filter = new Document("active", true);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-
-        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
-
-        assertNotNull(result);
-    }
-
-    @Test
-    public void testUpdateOneWithCollectionAsList() {
+    public void testFindOneAndUpdateWithFilterAndList() {
         Bson filter = new Document("name", "test");
         List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), eq(updates))).thenReturn(publisher);
+        Document resultDoc = new Document("name", "test").append("status", "active");
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates))).thenReturn(publisher);
 
-        Mono<UpdateResult> result = executor.updateOne(filter, updates);
+        Mono<Document> result = executor.findOneAndUpdate(filter, updates);
 
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
     }
 
     @Test
-    public void testUpdateOneNormalizesPlainBsonDocumentInPipeline() {
+    public void testFindOneAndUpdateWithFilterAndListRejectsEmptyUpdates() {
         Bson filter = new Document("name", "test");
-        Document plainUpdate = new Document("status", "active");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateOne(eq(filter), anyList())).thenReturn(Mono.just(updateResult));
 
-        StepVerifier.create(executor.updateOne(filter, Arrays.asList(plainUpdate))).expectNext(updateResult).verifyComplete();
-
-        @SuppressWarnings("rawtypes")
-        org.mockito.ArgumentCaptor<List> updatesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
-        verify(mockCollection).updateOne(eq(filter), updatesCaptor.capture());
-        assertEquals(Arrays.asList(new Document("$set", new Document("status", "active"))), updatesCaptor.getValue());
-        assertEquals(new Document("status", "active"), plainUpdate, "The caller's update document must remain unchanged");
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, List.of()));
     }
 
     @Test
-    public void testUpdateManyWithNonBsonCollection() {
-        Bson filter = new Document("status", "pending");
-        List<Map<String, Object>> updates = new ArrayList<>();
-        Map<String, Object> update = new HashMap<>();
-        update.put("$set", new Document("status", "active"));
-        updates.add(update);
+    public void testFindOneAndUpdateWithFilterAndListRejectsNullFilter() {
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
 
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateMany(eq(filter), anyList())).thenReturn(publisher);
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(null, updates));
+    }
 
-        Mono<UpdateResult> result = executor.updateMany(filter, updates);
+    @Test
+    public void testFindOneAndUpdateWithFilterAndRowType() {
+        Bson filter = new Document("name", "test");
+        Document update = new Document("value", 123);
+        Document resultDoc = new Document("value", 123);
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class))).thenReturn(publisher);
 
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        Mono<Integer> result = executor.findOneAndUpdate(filter, update, Integer.class);
+
+        StepVerifier.create(result).expectNext(123).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithFilterListAndOptions() {
+        Bson filter = new Document("name", "test");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
+        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
+        Document resultDoc = new Document("name", "test").append("status", "active");
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndUpdate(filter, updates, options);
+
+        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithFilterListAndRowType() {
+        Bson filter = new Document("name", "test");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
+        Document resultDoc = new Document("name", "test").append("status", "active");
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates))).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndUpdate(filter, updates, Document.class);
+
+        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithFilterListOptionsAndRowType() {
+        Bson filter = new Document("name", "test");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
+        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
+        Document resultDoc = new Document("name", "test").append("status", "active");
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndUpdate(filter, updates, options, Document.class);
+
+        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithFilterUpdateAndOptions() {
+        Bson filter = new Document("name", "test");
+        Document update = new Document("status", "updated");
+        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions();
+        Document resultDoc = new Document("name", "test").append("status", "updated");
+        Publisher<Document> publisher = Mono.just(resultDoc);
+        when(mockCollection.findOneAndUpdate(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndUpdate(filter, update, options);
+
+        StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
     }
 
     @Test
@@ -2010,117 +726,29 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
     }
 
-    /**
-     * Regression test for empty scalar projections in the private {@code toEntity(Class)}
-     * mapper. Document.class keeps an empty document as a real result, but scalar row types
-     * must still treat a field-less document as no projected value.
-     *
-     * <p>{@code toEntity(Class)} maps an empty Document to {@code null}. The reactive
-     * pipeline uses {@code mapNotNull(...)} (not {@code map(...)}), so a {@code null}
-     * mapped value completes the {@code Mono} empty — matching the documented "empty if
-     * no match" contract and the synchronous sibling — rather than emitting a fabricated
-     * {@code 0} or surfacing a {@link NullPointerException}.</p>
-     */
     @Test
-    public void testFindFirstTypedWithEmptyDocumentDoesNotProduceDefaultValue() {
-        Bson filter = new Document("id", 999);
-        Document emptyDoc = new Document();
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, emptyDoc);
-
-        Mono<Integer> result = executor.findFirst(filter, Integer.class);
-
-        // An empty document produces neither a bogus 0 (default value of Integer) nor an
-        // error: mapNotNull completes the Mono empty.
-        StepVerifier.create(result).verifyComplete();
-    }
-
-    /**
-     * Companion positive test: a non-empty document is still mapped correctly after
-     * adding the {@code N.isEmpty(doc)} guard to {@code toEntity(Class)}.
-     */
-    @Test
-    public void testFindFirstTypedWithNonEmptyDocumentStillMaps() {
-        Bson filter = new Document("id", 1);
-        Document doc = new Document("value", 42);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<Integer> result = executor.findFirst(filter, Integer.class);
-
-        StepVerifier.create(result).expectNext(42).verifyComplete();
-    }
-
-    @Test
-    public void testListWithZeroCountReturnsEmptyAndDoesNotUseLimitZero() {
-        // Regression: limit(0) is treated by the MongoDB driver as "no limit" (return ALL docs).
-        // A user-supplied count of 0 must yield zero results, not the whole collection.
-        Bson filter = new Document("status", "active");
-        Document alwaysFalse = new Document("$expr", false);
-        when(mockCollection.find(eq(alwaysFalse))).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher);
-
-        Flux<Document> result = executor.list(filter, 0, 0, Document.class);
-
-        StepVerifier.create(result).verifyComplete();
-        verify(mockCollection).find(eq(alwaysFalse));
-        verify(mockFindPublisher, org.mockito.Mockito.never()).limit(0);
-    }
-
-    @Test
-    public void testUpdateOneWithDriverBuiltBsonNotWrappedInSet() {
-        // Regression: a driver-built Bson (Updates.set(...)) is neither Document nor BasicDBObject.
-        // It must be passed through as-is, not re-wrapped in {$set: ...} which corrupts the update.
-        Bson filter = new Document("name", "test");
-        Bson update = com.mongodb.client.model.Updates.set("verified", true);
-        UpdateResult updateResult = mock(UpdateResult.class);
-        Publisher<UpdateResult> publisher = Mono.just(updateResult);
-        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
-
-        Mono<UpdateResult> result = executor.updateOne(filter, update);
-
-        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
-    }
-
-    @Test
-    public void testQueryForSingleValueWithFoundDocumentButNullPropertyCompletesEmpty() {
-        // Regression: a matching document is found but the requested property is absent/null.
-        // N.convert(null, String.class) returns null and Mono.just(null) throws NPE.
-        // The reactive contract requires completing empty (no value) instead.
-        String propName = "name";
-        Bson filter = new Document("id", 1);
-        Document doc = new Document("otherField", "value"); // no "name" property
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
-
-        Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
-
-        StepVerifier.create(result).verifyComplete();
-    }
-
-    // Cover list(Collection, Bson, Bson, Class) overload (with sort and projection collection).
-    @Test
-    public void testListWithSelectPropNamesFilterSortAndRowType() {
-        Collection<String> selectPropNames = Arrays.asList("name", "score");
+    public void testListWithFilterOffsetCountAndRowType() {
         Bson filter = new Document("active", true);
-        Bson sort = new Document("score", -1);
-        List<Document> docs = Arrays.asList(new Document("name", "a").append("score", 10), new Document("name", "b").append("score", 5));
+        int offset = 10;
+        int count = 5;
+        List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
         stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
 
-        Flux<Document> result = executor.list(selectPropNames, filter, sort, Document.class);
+        Flux<Document> result = executor.list(filter, offset, count, Document.class);
 
         StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
+    }
+
+    @Test
+    public void testListWithNegativeOffset() {
+        Bson filter = new Document("name", "test");
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.list(filter, -1, 10, Document.class);
+        });
     }
 
     // Covers list(Bson projection, Bson filter, Bson sort, int offset, int count, Class) overload.
@@ -2145,6 +773,119 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNext(doc).verifyComplete();
     }
 
+    @Test
+    public void testQueryDatasetDottedSelectNamesOnEveryOverloadKeepOrderAndRawNestedValues_verifyME() {
+        // Every Collection-projection Dataset overload resolves dotted names from the nested documents (they were all-null
+        // columns): requested order kept, null for a missing/null parent or leaf, raw nested value (Integer zip although
+        // GroupRow declares no address), plain columns converted as before; an empty result still emits an empty Dataset.
+        final Bson filter = new Document("status", "active");
+        final Bson sort = new Document("_id", 1);
+        stubFindChain_verifyME(filter);
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris").append("zip", 75001)),
+                new Document("_id", 2).append("department", "ops"),
+                new Document("_id", 3).append("department", "hr").append("address", new Document("city", null)),
+                new Document("_id", 4).append("department", "qa").append("address", null));
+        final List<String> names = Arrays.asList("address.zip", "department", "address.city");
+
+        for (final Class<?> rowType : Arrays.asList(Map.class, java.util.LinkedHashMap.class, Document.class, GroupRow.class)) {
+            for (final Mono<Dataset> mono : Arrays.asList(executor.query(names, filter, rowType), executor.query(names, filter, 1, 3, rowType),
+                    executor.query(names, filter, sort, rowType), executor.query(names, filter, sort, 1, 3, rowType))) {
+                final Dataset ds = mono.block();
+                assertEquals(names, ds.columnNames(), rowType.getName());
+                assertEquals(Arrays.asList("eng", "ops", "hr", "qa"), ds.getColumn("department"), rowType.getName());
+                assertEquals(Arrays.asList(75001, null, null, null), ds.getColumn("address.zip"), rowType.getName());
+                assertEquals(Arrays.asList("Paris", null, null, null), ds.getColumn("address.city"), rowType.getName());
+            }
+        }
+
+        final Dataset withId = executor.query(new java.util.LinkedHashSet<>(Arrays.asList("_id", "address.city")), filter, Map.class).block();
+        assertEquals(Arrays.asList("_id", "address.city"), withId.columnNames());
+        assertEquals(Arrays.asList(1, 2, 3, 4), withId.getColumn("_id"));
+
+        stubEmits(mockFindPublisher);
+        assertEquals(0, executor.query(names, filter, sort, 0, 10, Map.class).block().size());
+    }
+
+    @Test
+    public void testQueryDatasetDottedSelectNameThroughArrayFailsOnEveryOverload_verifyME() {
+        final Bson filter = new Document("status", "active");
+        final Bson sort = new Document("_id", 1);
+        stubFindChain_verifyME(filter);
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("department", "ops").append("address", Arrays.asList(new Document("city", "Rome"))));
+        final List<String> names = Arrays.asList("department", "address.city");
+
+        StepVerifier.create(executor.query(names, filter, Map.class)).expectError(ClassCastException.class).verify();
+        StepVerifier.create(executor.query(names, filter, 0, 5, Document.class)).expectError(ClassCastException.class).verify();
+        StepVerifier.create(executor.query(names, filter, sort, GroupRow.class)).expectError(ClassCastException.class).verify();
+        StepVerifier.create(executor.query(names, filter, sort, 1, 5, Map.class)).expectError(ClassCastException.class).verify();
+
+        // Without a dotted name the same rows load as before: the array is just a column value.
+        final Dataset plain = executor.query(Arrays.asList("department", "address"), filter, Map.class).block();
+        assertEquals(Arrays.asList("eng", "ops"), plain.getColumn("department"));
+        assertEquals(Arrays.asList(new Document("city", "Rome")), plain.getColumn("address").get(1));
+    }
+
+    // Regression: a dotted select name such as "address.city" is a valid projection, but MongoDB returns it nested
+    // ({address: {city: ...}}) while Dataset columns are read by flat map key / bean property, so the column was all null.
+    @Test
+    public void testQueryDatasetResolvesDottedSelectNamesFromNestedDocuments_sliceF() {
+        final Bson filter = new Document("status", "active");
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("department", "ops"));
+
+        final List<String> selectPropNames = Arrays.asList("department", "address.city");
+
+        for (final Class<?> rowType : Arrays.asList(Map.class, Document.class, GroupRow.class)) {
+            final Dataset dataset = executor.query(selectPropNames, filter, rowType).block();
+
+            assertEquals(selectPropNames, dataset.columnNames());
+            assertEquals(Arrays.asList("eng", "ops"), dataset.getColumn("department"));
+            assertEquals(Arrays.asList("Paris", null), dataset.getColumn("address.city"));
+        }
+
+        // A dotted path through a non-Document value fails through the publisher, as for list/findFirst.
+        stubEmits(mockFindPublisher, new Document("_id", 3).append("department", "x").append("address", Arrays.asList(new Document("city", "Rome"))));
+        StepVerifier.create(executor.query(selectPropNames, filter, Map.class)).expectError(ClassCastException.class).verify();
+    }
+
+    @Test
+    public void testQueryDatasetWithInvalidRowTypeThrowsIAESynchronously() {
+        // Regression: an invalid rowType (not a bean / Map / Document) is rejected synchronously at the
+        // call site (checkResultClass), mirroring the sync executor, instead of producing a malformed
+        // Dataset on subscription.
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson projection = Projections.include("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, filter, sort, 0, 10, String.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.query(projection, filter, sort, 0, 10, String.class));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+    }
+
+    @Test
+    public void testQueryWithAllParametersForDataset() {
+        Collection<String> selectPropNames = Arrays.asList("name", "value");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("createdAt", -1);
+        int offset = 10;
+        int count = 20;
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(selectPropNames, filter, sort, offset, count, Document.class);
+
+        assertNotNull(result);
+    }
+
     // Covers query(Bson filter, int offset, int count, Class) -> Dataset overload.
     @Test
     public void testQueryWithFilterOffsetCountForDataset() {
@@ -2158,6 +899,54 @@ public class MongoCollectionExecutorTest extends TestBase {
         stubEmits(mockFindPublisher, doc);
 
         Mono<Dataset> result = executor.query(filter, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    @Test
+    public void testQueryWithNegativeOffset() {
+        Bson filter = new Document("name", "test");
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.query(filter, -1, 10, Document.class);
+        });
+    }
+
+    // Covers query(Bson projection, Bson filter, Bson sort, int offset, int count, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithProjectionAllParametersForDataset() {
+        Bson projection = Projections.include("name", "value");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        int offset = 2;
+        int count = 8;
+        Document doc = new Document("name", "x").append("value", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(projection, filter, sort, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    // Covers query(Bson projection, Bson filter, Bson sort, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithProjectionFilterSortForDataset() {
+        Bson projection = Projections.include("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        Document doc = new Document("name", "x");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(projection, filter, sort, Document.class);
 
         StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
     }
@@ -2215,91 +1004,150 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
     }
 
-    // Covers query(Bson projection, Bson filter, Bson sort, Class) -> Dataset overload.
     @Test
-    public void testQueryWithProjectionFilterSortForDataset() {
-        Bson projection = Projections.include("name");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
-        Document doc = new Document("name", "x");
+    public void testUpdateRejectsMixedOperatorAndOrdinaryFieldsBeforePublisherCreation() {
+        Document filter = new Document("active", true);
+        Document invalidUpdate = new Document("$set", new Document("name", "alice")).append("status", "active");
+        BasicDBObject reversedInvalidUpdate = new BasicDBObject("status", "active").append("$set", new BasicDBObject("name", "alice"));
 
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, invalidUpdate));
 
-        Mono<Dataset> result = executor.query(projection, filter, sort, Document.class);
-
-        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+        assertTrue(ex.getMessage().contains("cannot mix"));
+        assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, reversedInvalidUpdate));
+        verify(mockCollection, org.mockito.Mockito.never()).updateOne(any(Bson.class), any(Bson.class));
     }
 
-    // Covers query(Bson projection, Bson filter, Bson sort, int offset, int count, Class) -> Dataset overload.
     @Test
-    public void testQueryWithProjectionAllParametersForDataset() {
-        Bson projection = Projections.include("name", "value");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
-        int offset = 2;
-        int count = 8;
-        Document doc = new Document("name", "x").append("value", 1);
+    public void testUpdateMany() {
+        Bson filter = new Document("status", "pending");
+        Document update = new Document("status", "processed");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateMany(eq(filter), any(Bson.class))).thenReturn(publisher);
 
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
+        Mono<UpdateResult> result = executor.updateMany(filter, update);
 
-        Mono<Dataset> result = executor.query(projection, filter, sort, offset, count, Document.class);
-
-        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
-    // Covers the empty-results path: extractData on an empty rowList yields an empty Dataset.
     @Test
-    public void testQueryWithSelectPropNamesEmptyResults() {
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Bson filter = new Document("active", true);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher);
-
-        Mono<Dataset> result = executor.query(selectPropNames, filter, Document.class);
-
-        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+    public void testUpdateManyWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, (Object) null));
     }
 
-    // Covers the empty-results path for query(Bson projection, ...) -> Dataset.
     @Test
-    public void testQueryWithProjectionEmptyResults() {
-        Bson projection = Projections.include("name");
-        Bson filter = new Document("active", true);
+    public void testUpdateManyWithList() {
+        Bson filter = new Document("status", "pending");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "processed")));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateMany(eq(filter), eq(updates))).thenReturn(publisher);
 
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher);
+        Mono<UpdateResult> result = executor.updateMany(filter, updates);
 
-        Mono<Dataset> result = executor.query(projection, filter, null, Document.class);
-
-        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
-    // Covers the private query(Collection,...) -> executeQuery(Projections.include(List)) branch
-    // by passing selectPropNames as a non-List Collection (Set).
     @Test
-    public void testListWithSelectPropNamesAsNonListCollection() {
-        Collection<String> selectPropNames = new java.util.LinkedHashSet<>(Arrays.asList("name", "value"));
-        Bson filter = new Document("active", true);
-        Document doc = new Document("name", "x").append("value", 1);
+    public void testUpdateManyWithListAndOptions() {
+        Bson filter = new Document("status", "pending");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "processed")));
+        UpdateOptions options = new UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateMany(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
 
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc);
+        Mono<UpdateResult> result = executor.updateMany(filter, updates, options);
 
-        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
 
-        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    @Test
+    public void testUpdateManyWithNonBsonCollection() {
+        Bson filter = new Document("status", "pending");
+        List<Map<String, Object>> updates = new ArrayList<>();
+        Map<String, Object> update = new HashMap<>();
+        update.put("$set", new Document("status", "active"));
+        updates.add(update);
+
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateMany(eq(filter), anyList())).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateMany(filter, updates);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateManyWithOptions() {
+        Bson filter = new Document("status", "pending");
+        Document update = new Document("status", "processed");
+        UpdateOptions options = new UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateMany(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateMany(filter, update, options);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateOneDoesNotMutateCallerDocument() {
+        // Regression: toBson stripped _id from the CALLER's Document in place on the
+        // non-$-operator path; the $set payload must be built from a copy.
+        Bson filter = new Document("name", "test");
+        ObjectId id = new ObjectId();
+        Document callerUpdate = new Document("_id", id).append("name", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(eq(filter), any(Bson.class))).thenReturn(publisher);
+
+        StepVerifier.create(executor.updateOne(filter, callerUpdate)).expectNext(updateResult).verifyComplete();
+
+        // The caller's Document must be untouched.
+        assertEquals(id, callerUpdate.get("_id"));
+        assertEquals(2, callerUpdate.size());
+        // The sent update is {$set: {...}} without _id.
+        verify(mockCollection).updateOne(eq(filter), updateCaptor.capture());
+        Document sent = (Document) updateCaptor.getValue();
+        Document setPayload = (Document) sent.get("$set");
+        assertTrue(!setPayload.containsKey("_id"));
+        assertEquals("updated", setPayload.get("name"));
+    }
+
+    @Test
+    public void testUpdateOneNormalizesPlainBsonDocumentInPipeline() {
+        Bson filter = new Document("name", "test");
+        Document plainUpdate = new Document("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(eq(filter), anyList())).thenReturn(Mono.just(updateResult));
+
+        StepVerifier.create(executor.updateOne(filter, Arrays.asList(plainUpdate))).expectNext(updateResult).verifyComplete();
+
+        @SuppressWarnings("rawtypes")
+        org.mockito.ArgumentCaptor<List> updatesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mockCollection).updateOne(eq(filter), updatesCaptor.capture());
+        assertEquals(Arrays.asList(new Document("$set", new Document("status", "active"))), updatesCaptor.getValue());
+        assertEquals(new Document("status", "active"), plainUpdate, "The caller's update document must remain unchanged");
+    }
+
+    // Covers toBson(Collection) empty-collection guard: must throw IllegalArgumentException.
+    @Test
+    public void testUpdateOneWithEmptyCollection_EdgeCase() {
+        Bson filter = new Document("name", "test");
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.updateOne(filter, Collections.emptyList());
+        });
+    }
+
+    @Test
+    public void testUpdateOneWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, (Object) null));
     }
 
     // Operator Documents are already complete pipeline stages, so per-element normalization
@@ -2334,57 +1182,58 @@ public class MongoCollectionExecutorTest extends TestBase {
         verify(mockCollection).updateOne(eq(filter), anyList());
     }
 
-    // Covers toBson(Collection) empty-collection guard: must throw IllegalArgumentException.
     @Test
-    public void testUpdateOneWithEmptyCollection_EdgeCase() {
+    public void testUpdateOneWithBasicDBObject() {
         Bson filter = new Document("name", "test");
-        assertThrows(IllegalArgumentException.class, () -> {
-            executor.updateOne(filter, Collections.emptyList());
-        });
+        BasicDBObject update = new BasicDBObject("$set", new BasicDBObject("status", "updated"));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, update);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
-    // Covers toDocument(Collection) all-Document path for a non-List collection.
     @Test
-    public void testInsertManyWithAllDocumentsNonListCollection() {
-        Collection<Document> docs = new java.util.LinkedHashSet<>(Arrays.asList(new Document("name", "a"), new Document("name", "b")));
-        InsertManyResult insertResult = mock(InsertManyResult.class);
-        Publisher<InsertManyResult> publisher = Mono.just(insertResult);
-        when(mockCollection.insertMany(anyList())).thenReturn(publisher);
+    public void testUpdateOneWithBsonUpdate() {
+        Bson filter = new Document("name", "test");
+        Bson update = new Document("$set", new Document("status", "updated"));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
 
-        Mono<InsertManyResult> result = executor.insertMany(docs);
+        Mono<UpdateResult> result = executor.updateOne(filter, update);
 
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
-    // Sanity: executor.coll() returns the wrapped collection (additional assertion form).
     @Test
-    public void testCollReturnsWrappedCollection() {
-        assertNotNull(executor.coll());
-        assertEquals(mockCollection, executor.coll());
+    public void testUpdateOneWithCollectionAsList() {
+        Bson filter = new Document("name", "test");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(updates))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, updates);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
-    // Confirms executor created via constructor with a non-null collection is usable.
     @Test
-    public void testConstructorAcceptsCollection() {
-        MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollection);
-        assertNotNull(exec);
-        assertSame(mockCollection, exec.coll());
-        assertTrue(exec.coll() == mockCollection);
-    }
+    public void testUpdateOneWithDriverBuiltBsonNotWrappedInSet() {
+        // Regression: a driver-built Bson (Updates.set(...)) is neither Document nor BasicDBObject.
+        // It must be passed through as-is, not re-wrapped in {$set: ...} which corrupts the update.
+        Bson filter = new Document("name", "test");
+        Bson update = com.mongodb.client.model.Updates.set("verified", true);
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
 
-    // Covers executeQuery(projection, filter, sort, offset, 0) zero-count path which
-    // uses an always-false {$expr: false} filter instead of limit(0).
-    @Test
-    public void testQueryWithZeroCount_ReturnsEmpty() {
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
+        Mono<UpdateResult> result = executor.updateOne(filter, update);
 
-        when(mockCollection.find(any(Document.class))).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher);
-
-        Mono<Dataset> result = executor.query(Projections.include("name"), filter, sort, 0, 0, Document.class);
-
-        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
     // Covers toBson(Object) for a driver-built update Bson (e.g. com.mongodb.client.model.Updates).
@@ -2402,43 +1251,532 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
+    @Test
+    public void testUpdateOneWithFilter() {
+        Bson filter = new Document("name", "test");
+        Document update = new Document("status", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), any(Bson.class))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, update);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateOneWithFilterAndList() {
+        Bson filter = new Document("name", "test");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")), new Document("$inc", new Document("count", 1)));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(updates))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, updates);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateOneWithFilterAndOptions() {
+        Bson filter = new Document("name", "test");
+        Document update = new Document("status", "updated");
+        UpdateOptions options = new UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), any(Bson.class), eq(options))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, update, options);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateOneWithFilterListAndOptions() {
+        Bson filter = new Document("name", "test");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("status", "active")));
+        UpdateOptions options = new UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(updates), eq(options))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, updates, options);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateOneWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        Document update = new Document("status", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(objectId, update);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateOneWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document update = new Document("status", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(objectId, update);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    // Queries and results
+
+    @Test
+    public void testAggregate() {
+        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")), new Document("$group", new Document("_id", "$category")));
+        List<Document> aggregateResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
+        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(aggregateResults.iterator());
+
+        Flux<Document> result = executor.aggregate(pipeline);
+
+        assertNotNull(result);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
-    @SafeVarargs
-    private static <T> void stubEmits(final Publisher<T> publisher, final T... items) {
-        // The executor consumes these publishers via Flux.from(publisher), which calls
-        // publisher.subscribe(...). Stubbing publisher.first()/limit()/etc. is useless —
-        // those are never invoked. We must stub subscribe() itself so the subscriber
-        // actually receives signals, otherwise StepVerifier hangs forever.
+    public void testAggregateSingleValueRowTypeSkipsDocumentsWithoutAValue_coverageME() {
+        // Pins the behavior documented on aggregate(List, Class) (and the mapper's aggregate) this round: for a single-value
+        // rowType an output document that yields no value (an empty document, or BSON null for a non-primitive rowType) is
+        // skipped, as Reactive Streams forbids null elements; a primitive rowType receives its default for BSON null.
+        final org.mockito.MockSettings lenient = org.mockito.Mockito.withSettings().strictness(org.mockito.quality.Strictness.LENIENT);
+        final MongoCollection<Document> collection = mock(MongoCollection.class, lenient);
+        final AggregatePublisher<Document> publisher = mock(AggregatePublisher.class, lenient);
+        when(collection.aggregate(anyList(), eq(Document.class))).thenReturn(publisher);
         doAnswer(invocation -> {
-            Flux.fromArray(items).subscribe((Subscriber<? super T>) invocation.getArgument(0));
+            Flux.just(new Document(), new Document("v", null), new Document("_id", 1).append("v", 5))
+                    .subscribe((Subscriber<? super Document>) invocation.getArgument(0));
             return null;
         }).when(publisher).subscribe(any());
-    }
 
-    // ========= Regression: null update/replacement must throw IllegalArgumentException eagerly, not NPE =========
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(collection);
+        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("v", 1)));
 
-    @Test
-    public void testUpdateOneWithNullUpdateThrowsIAE() {
-        Document filter = new Document("id", 1);
-        assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, (Object) null));
-    }
-
-    @Test
-    public void testUpdateManyWithNullUpdateThrowsIAE() {
-        Document filter = new Document("id", 1);
-        assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, (Object) null));
+        assertEquals(Arrays.asList(5L), exec.aggregate(pipeline, Long.class).collectList().block());
+        assertEquals(Arrays.asList("5"), exec.aggregate(pipeline, String.class).collectList().block());
+        assertEquals(Arrays.asList(0L, 5L), exec.aggregate(pipeline, long.class).collectList().block());
     }
 
     @Test
-    public void testReplaceOneWithNullReplacementThrowsIAE() {
-        Document filter = new Document("id", 1);
-        assertThrows(IllegalArgumentException.class, () -> executor.replaceOne(filter, (Object) null));
+    public void testAggregateWithNullRowTypeThrowsIAE() {
+        // Regression: aggregate(List, Class) documents "@throws IAE if pipeline or rowType is null"
+        // (matching the sync executor) but previously had no rowType guard and silently produced
+        // Object[] rows for a null rowType. The guard now throws eagerly at the call site.
+        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
+        assertThrows(IllegalArgumentException.class, () -> executor.aggregate(pipeline, null));
+    }
+
+    // Regression: a multi-field aggregation output requested as Object.class must be emitted as the raw
+    // Document (same short-circuit as list/findFirst), not rejected by readRow's scalar fallback.
+    @Test
+    public void testAggregateWithObjectRowTypeReturnsRawMultiFieldDocument() {
+        final List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
+        final Document wideDoc = new Document("_id", new ObjectId()).append("name", "John").append("age", 30);
+
+        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mockAggregatePublisher);
+        stubEmits(mockAggregatePublisher, wideDoc);
+
+        StepVerifier.create(executor.aggregate(pipeline, Object.class)).expectNext(wideDoc).verifyComplete();
+        StepVerifier.create(executor.aggregate(pipeline, Bson.class)).expectNext(wideDoc).verifyComplete();
     }
 
     @Test
-    public void testFindOneAndUpdateWithNullUpdateThrowsIAE() {
-        Document filter = new Document("id", 1);
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, (Object) null));
+    public void testAggregateWithRowType() {
+        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")), new Document("$group", new Document("_id", "$category")));
+        List<Document> aggregateResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
+        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(aggregateResults.iterator());
+
+        Flux<Document> result = executor.aggregate(pipeline, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testCount() {
+        Publisher<Long> countPublisher = Mono.just(100L);
+        when(mockCollection.countDocuments()).thenReturn(countPublisher);
+
+        Mono<Long> result = executor.count();
+
+        StepVerifier.create(result).expectNext(100L).verifyComplete();
+    }
+
+    @Test
+    public void testCountWithFilter() {
+        Bson filter = new Document("status", "active");
+        Publisher<Long> countPublisher = Mono.just(50L);
+        when(mockCollection.countDocuments(filter)).thenReturn(countPublisher);
+
+        Mono<Long> result = executor.count(filter);
+
+        StepVerifier.create(result).expectNext(50L).verifyComplete();
+    }
+
+    @Test
+    public void testCountWithFilterAndNullOptions() {
+        Bson filter = new Document("status", "active");
+        Publisher<Long> countPublisher = Mono.just(25L);
+        when(mockCollection.countDocuments(filter)).thenReturn(countPublisher);
+
+        Mono<Long> result = executor.count(filter, null);
+
+        StepVerifier.create(result).expectNext(25L).verifyComplete();
+    }
+
+    @Test
+    public void testCountWithFilterAndOptions() {
+        Bson filter = new Document("status", "active");
+        CountOptions options = new CountOptions().limit(10);
+        Publisher<Long> countPublisher = Mono.just(10L);
+        when(mockCollection.countDocuments(filter, options)).thenReturn(countPublisher);
+
+        Mono<Long> result = executor.count(filter, options);
+
+        StepVerifier.create(result).expectNext(10L).verifyComplete();
+    }
+
+    @Test
+    public void testDistinct() {
+        String fieldName = "category";
+        when(mockCollection.distinct(fieldName, String.class)).thenReturn(mockDistinctPublisher);
+
+        Flux<String> result = executor.distinct(fieldName, String.class);
+
+        assertNotNull(result);
+        verify(mockCollection).distinct(fieldName, String.class);
+    }
+
+    @Test
+    public void testDistinctWithFilter() {
+        String fieldName = "category";
+        Bson filter = new Document("active", true);
+        when(mockCollection.distinct(fieldName, filter, String.class)).thenReturn(mockDistinctPublisher);
+
+        Flux<String> result = executor.distinct(fieldName, filter, String.class);
+
+        assertNotNull(result);
+        verify(mockCollection).distinct(fieldName, filter, String.class);
+    }
+
+    @Test
+    public void testDottedSelectNameCheckToleratesNullNames_coverageME() {
+        // Pin: the dotted-name check runs when the Mono is assembled, so it must be null-safe: a null select name still fails
+        // through the publisher with the Dataset's IllegalArgumentException (as before the fix), whichever position it has.
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(new Document("_id", 1).append("address", new Document("city", "Paris"))));
+        final Bson filter = new Document();
+
+        for (final List<String> names : Arrays.asList(Arrays.asList(null, "address.city"), Arrays.asList("address.city", null),
+                Arrays.asList("department", null))) {
+            StepVerifier.create(exec.query(names, filter, Map.class)).expectError(IllegalArgumentException.class).verify();
+        }
+    }
+
+    @Test
+    public void testEstimatedDocumentCount() {
+        Publisher<Long> countPublisher = Mono.just(1000L);
+        when(mockCollection.estimatedDocumentCount()).thenReturn(countPublisher);
+
+        Mono<Long> result = executor.estimatedDocumentCount();
+
+        StepVerifier.create(result).expectNext(1000L).verifyComplete();
+    }
+
+    @Test
+    public void testEstimatedDocumentCountWithOptions() {
+        EstimatedDocumentCountOptions options = new EstimatedDocumentCountOptions();
+        Publisher<Long> countPublisher = Mono.just(2000L);
+        when(mockCollection.estimatedDocumentCount(options)).thenReturn(countPublisher);
+
+        Mono<Long> result = executor.estimatedDocumentCount(options);
+
+        StepVerifier.create(result).expectNext(2000L).verifyComplete();
+    }
+
+    @Test
+    public void testExistsWithEmptyStringObjectId() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.exists("");
+        });
+    }
+
+    @Test
+    public void testExistsWithNullStringObjectId() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.exists((String) null);
+        });
+    }
+
+    @Test
+    public void testExistsWithFilter() {
+        Bson filter = new Document("name", "test");
+        Publisher<Long> countPublisher = Mono.just(2L);
+        when(mockCollection.countDocuments(any(Bson.class), any(CountOptions.class))).thenReturn(countPublisher);
+
+        Mono<Boolean> result = executor.exists(filter);
+
+        StepVerifier.create(result).expectNext(true).verifyComplete();
+    }
+
+    @Test
+    public void testExistsWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        Publisher<Long> countPublisher = Mono.just(0L);
+        when(mockCollection.countDocuments(any(Bson.class), any(CountOptions.class))).thenReturn(countPublisher);
+
+        Mono<Boolean> result = executor.exists(objectId);
+
+        StepVerifier.create(result).expectNext(false).verifyComplete();
+    }
+
+    @Test
+    public void testExistsWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Publisher<Long> countPublisher = Mono.just(1L);
+        when(mockCollection.countDocuments(any(Bson.class), any(CountOptions.class))).thenReturn(countPublisher);
+
+        Mono<Boolean> result = executor.exists(objectId);
+
+        StepVerifier.create(result).expectNext(true).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstBsonProjectionObjectRowTypeReturnsRawDocument() {
+        Bson projection = Projections.include("email");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c").append("name", "John");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        StepVerifier.create(executor.findFirst(projection, filter, sort, Object.class)).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstSingleDottedScalarProjectionReadsNestedValue() {
+        Collection<String> selectPropNames = Arrays.asList("address.city");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()).append("address", new Document("city", "Paris")));
+
+        StepVerifier.create(executor.findFirst(selectPropNames, filter, String.class)).expectNext("Paris").verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstSingleProjectionObjectRowTypeReturnsRawDocument() {
+        Collection<String> selectPropNames = Arrays.asList("email");
+        Bson filter = new Document("active", true);
+        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        StepVerifier.create(executor.findFirst(selectPropNames, filter, Object.class)).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstSingleScalarProjectionDoesNotFallBackToObjectId() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()));
+
+        StepVerifier.create(executor.findFirst(selectPropNames, filter, String.class)).verifyComplete();
+    }
+
+    /**
+     * Regression test for empty scalar projections in the private {@code toEntity(Class)}
+     * mapper. Document.class keeps an empty document as a real result, but scalar row types
+     * must still treat a field-less document as no projected value.
+     *
+     * <p>{@code toEntity(Class)} maps an empty Document to {@code null}. The reactive
+     * pipeline uses {@code mapNotNull(...)} (not {@code map(...)}), so a {@code null}
+     * mapped value completes the {@code Mono} empty — matching the documented "empty if
+     * no match" contract and the synchronous sibling — rather than emitting a fabricated
+     * {@code 0} or surfacing a {@link NullPointerException}.</p>
+     */
+    @Test
+    public void testFindFirstTypedWithEmptyDocumentDoesNotProduceDefaultValue() {
+        Bson filter = new Document("id", 999);
+        Document emptyDoc = new Document();
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, emptyDoc);
+
+        Mono<Integer> result = executor.findFirst(filter, Integer.class);
+
+        // An empty document produces neither a bogus 0 (default value of Integer) nor an
+        // error: mapNotNull completes the Mono empty.
+        StepVerifier.create(result).verifyComplete();
+    }
+
+    /**
+     * Companion positive test: a non-empty document is still mapped correctly after
+     * adding the {@code N.isEmpty(doc)} guard to {@code toEntity(Class)}.
+     */
+    @Test
+    public void testFindFirstTypedWithNonEmptyDocumentStillMaps() {
+        Bson filter = new Document("id", 1);
+        Document doc = new Document("value", 42);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Integer> result = executor.findFirst(filter, Integer.class);
+
+        StepVerifier.create(result).expectNext(42).verifyComplete();
+    }
+
+    // Regression: an empty document (e.g. from an all-excluding projection) is still a matching
+    // MongoDB document for Document.class and must not be treated as "no document".
+    @Test
+    public void testFindFirstWithEmptyDocumentReturnsDocument() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        Document emptyDoc = new Document();
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, emptyDoc);
+
+        Mono<Document> result = executor.findFirst(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNext(emptyDoc).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstWithNullRowTypeThrowsIAE() {
+        // Regression: the two terminal reactive findFirst overloads previously had no rowType guard, so a
+        // null rowType silently produced an empty Mono instead of the eager IllegalArgumentException thrown
+        // by the synchronous sibling (and by every other reactive read). The guard now throws at the call site.
+        final Bson filter = new Document("_id", "x");
+
+        // findFirst(Collection, Bson, Bson, Class) terminal (routes through query(...)).
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(Arrays.asList("name"), filter, (Bson) null, (Class<Document>) null));
+        // findFirst(Bson, Bson, Bson, Class) terminal (routes through executeQuery(...)).
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Bson) new Document(), filter, (Bson) null, (Class<Document>) null));
+        // The delegating convenience overload inherits the guard.
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(filter, (Class<Document>) null));
+    }
+
+    @Test
+    public void testFindFirstWithAllParameters() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("createdAt", -1);
+        Document doc = new Document("name", "test");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.findFirst(selectPropNames, filter, sort, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstWithFilter() {
+        Bson filter = new Document("name", "test");
+        Document doc = new Document("name", "test");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.findFirst(filter);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstWithFilterAndRowType() {
+        Bson filter = new Document("value", 123);
+        Document doc = new Document("value", 123);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Integer> result = executor.findFirst(filter, Integer.class);
+
+        StepVerifier.create(result).expectNext(123).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstWithProjection() {
+        Bson projection = Projections.include("name", "status");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        Document doc = new Document("name", "test").append("status", "active");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.findFirst(projection, filter, sort, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstWithSelectPropNamesFilterAndRowType() {
+        Collection<String> selectPropNames = Arrays.asList("name", "age");
+        Bson filter = new Document("active", true);
+        Document doc = new Document("name", "John").append("age", 30);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.findFirst(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndReplace() {
+        Bson filter = new Document("name", "oldName");
+        Document replacement = new Document("name", "newName");
+        Publisher<Document> publisher = Mono.just(replacement);
+        when(mockCollection.findOneAndReplace(filter, replacement)).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndReplace(filter, replacement);
+
+        StepVerifier.create(result).expectNext(replacement).verifyComplete();
     }
 
     @Test
@@ -2448,16 +1786,918 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testFindOneAndDeleteWithNullFilterThrowsIAE() {
-        // Regression: a null filter must be rejected eagerly with IllegalArgumentException at the call site (before a
-        // Mono is built), matching every sibling deleteOne/findOneAndUpdate/findOneAndReplace. Before the fix the null
-        // filter reached the driver, which silently deletes an arbitrary document.
-        final com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+    public void testFindOneAndReplaceWithOptions() {
+        Bson filter = new Document("name", "oldName");
+        Document replacement = new Document("name", "newName");
+        FindOneAndReplaceOptions options = new FindOneAndReplaceOptions();
+        Publisher<Document> publisher = Mono.just(replacement);
+        when(mockCollection.findOneAndReplace(filter, replacement, options)).thenReturn(publisher);
 
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null));
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, Integer.class));
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options));
-        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options, Document.class));
+        Mono<Document> result = executor.findOneAndReplace(filter, replacement, options);
+
+        StepVerifier.create(result).expectNext(replacement).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithOptionsAndRowType() {
+        Bson filter = new Document("name", "oldName");
+        Document replacement = new Document("name", "newName");
+        FindOneAndReplaceOptions options = new FindOneAndReplaceOptions();
+        Publisher<Document> publisher = Mono.just(replacement);
+        when(mockCollection.findOneAndReplace(filter, replacement, options)).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndReplace(filter, replacement, options, Document.class);
+
+        StepVerifier.create(result).expectNext(replacement).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithRowType() {
+        Bson filter = new Document("name", "oldName");
+        Document replacement = new Document("name", "newName");
+        Publisher<Document> publisher = Mono.just(replacement);
+        when(mockCollection.findOneAndReplace(filter, replacement)).thenReturn(publisher);
+
+        Mono<Document> result = executor.findOneAndReplace(filter, replacement, Document.class);
+
+        StepVerifier.create(result).expectNext(replacement).verifyComplete();
+    }
+
+    @Test
+    public void testFindOneAndXxxTypedWithNullRowTypeThrowsIAE() {
+        // Regression: the typed findOneAndUpdate/findOneAndReplace/findOneAndDelete overloads all
+        // document "@throws IAE ... rowType is null" but had no guard — a null rowType silently
+        // emitted Object[] rows (same defect class as aggregate(List, Class) above). The guard at
+        // the four typed chokepoints now throws eagerly at the call site.
+        final Bson filter = new Document("_id", "x");
+        final Document update = new Document("$set", new Document("a", 1));
+
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, update, (FindOneAndUpdateOptions) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, Arrays.asList(update), (FindOneAndUpdateOptions) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, new Document("a", 1), (FindOneAndReplaceOptions) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (FindOneAndDeleteOptions) null, null));
+
+        // The delegating no-options typed overloads inherit the guard.
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (Class<Document>) null));
+    }
+
+    @Test
+    public void testGetWithInvalidObjectIdString() {
+        String invalidObjectId = "invalid";
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.get(invalidObjectId);
+        });
+    }
+
+    @Test
+    public void testGetWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        Document doc = new Document("_id", objectId).append("name", "test");
+
+        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.get(objectId);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testGetWithObjectIdAndRowType() {
+        ObjectId objectId = new ObjectId();
+        Map<String, Object> data = new HashMap<>();
+        data.put("name", "test");
+
+        Document doc = new Document("_id", objectId).append("name", "test");
+
+        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Map> result = executor.get(objectId, Map.class);
+
+        StepVerifier.create(result).expectNextMatches(map -> map.get("name").equals("test")).verifyComplete();
+    }
+
+    @Test
+    public void testGetWithObjectIdSelectPropNamesAndRowType() {
+        ObjectId objectId = new ObjectId();
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Document doc = new Document("name", "test");
+
+        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.get(objectId, selectPropNames, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testGetWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
+
+        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.get(objectId);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testGetWithStringObjectIdAndRowType() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId)).append("value", "test");
+
+        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<String> result = executor.get(objectId, String.class);
+
+        StepVerifier.create(result).expectNext("test").verifyComplete();
+    }
+
+    @Test
+    public void testGetWithStringObjectIdSelectPropNamesAndRowType() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Collection<String> selectPropNames = Arrays.asList("name", "status");
+        Document doc = new Document("name", "test").append("status", "active");
+
+        when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Document> result = executor.get(objectId, selectPropNames, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    // Regression: for a non-Document rowType, groupByAndCount projects {<fieldName>: "$_id", count: 1}; a group field
+    // named "count" was overwritten by the count column, so every row silently lost its group key (live: rows {count: 2}).
+    // It must be rejected at call time, while the Document row type ({_id: key, count: n}) keeps working.
+    @Test
+    public void testGroupByAndCountRejectsGroupFieldNamedCountForNonDocumentRowType_sliceF() {
+        final List<List<? extends Bson>> pipelines = new ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            return mockAggregatePublisher;
+        });
+
+        for (final Class<?> rowType : Arrays.asList(Map.class, Object.class, GroupRow.class)) {
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType));
+            assertTrue(e.getMessage().contains("'count'"), e.getMessage());
+            e = assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType));
+            assertTrue(e.getMessage().contains("'count'"), e.getMessage());
+        }
+
+        assertTrue(pipelines.isEmpty());
+
+        // The Document row type keeps the key in _id and is unaffected; groupBy (no count column) is unaffected too.
+        assertNotNull(executor.groupByAndCount("count"));
+        assertNotNull(executor.groupByAndCount(Arrays.asList("department", "count")));
+        assertNotNull(executor.groupBy("count", Map.class));
+        assertEquals(3, pipelines.size());
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testGroupByAndCountCountFieldRejectedForEveryNonDocumentRowType_verifyME() {
+        // Same rule and message as the sync executor, thrown at call time (no aggregate, no subscription): only Document
+        // rows (key kept under _id) accept a group field named "count"; a Document subclass is projected like a Map.
+        final List<List<? extends Bson>> pipelines = new ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            return mockAggregatePublisher;
+        });
+
+        for (final Class rowType : Arrays.<Class> asList(Map.class, java.util.LinkedHashMap.class, Object.class, Bson.class, CountDocument_verifyME.class,
+                GroupRow.class, Long.class, long.class, String.class)) {
+            assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
+                    assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType)).getMessage(), rowType.getName());
+            assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
+                    assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType)).getMessage(),
+                    rowType.getName());
+        }
+
+        assertTrue(pipelines.isEmpty());
+
+        // Document rows, other field names, and groupBy (no count column) are unaffected.
+        executor.groupByAndCount("count", Document.class);
+        executor.groupByAndCount(Arrays.asList("department", "count"), Document.class);
+        executor.groupByAndCount("department", Map.class);
+        executor.groupBy("count", CountDocument_verifyME.class);
+        executor.groupBy(Arrays.asList("department", "count"), Map.class);
+        assertEquals(5, pipelines.size());
+        assertEquals(new Document("$project", new Document("_id", 0).append("department", "$_id").append("count", 1)), pipelines.get(2).get(1));
+    }
+
+    @Test
+    public void testGroupByAndCountTypedMapsSingleGroupKey() {
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            final List<?> pipeline = invocation.getArgument(0);
+            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2) : new Document("_id", "sales").append("count", 2);
+
+            stubEmits(mockAggregatePublisher, row);
+            return mockAggregatePublisher;
+        });
+
+        StepVerifier.create(executor.groupByAndCount("department", GroupRow.class))
+                .expectNextMatches(row -> "sales".equals(row.getDepartment()) && row.getCount() == 2)
+                .verifyComplete();
+    }
+
+    @Test
+    public void testGroupByAndCountWithFieldName() {
+        String fieldName = "category";
+        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics").append("count", 10), new Document("_id", "books").append("count", 5));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupByAndCount(fieldName);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testGroupByAndCountWithFieldNameAndRowType() {
+        String fieldName = "category";
+        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics").append("count", 10), new Document("_id", "books").append("count", 5));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupByAndCount(fieldName, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testGroupByAndCountWithFieldNames() {
+        Collection<String> fieldNames = Arrays.asList("category", "brand");
+        List<Document> groupResults = Arrays
+                .asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")).append("count", 10));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupByAndCount(fieldNames);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testGroupByAndCountWithFieldNamesAndRowType() {
+        Collection<String> fieldNames = Arrays.asList("category", "brand");
+        List<Document> groupResults = Arrays
+                .asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")).append("count", 10));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupByAndCount(fieldNames, Document.class);
+
+        assertNotNull(result);
+    }
+
+    // Regression: groupBy on a dotted field into a scalar type used to append $project {"a.b": "$_id"}, which the
+    // server materialises as the NESTED document {a: {b: key}}; the scalar conversion then saw {b: key} and emitted
+    // its JSON text ('{"b": "v1"}') for String (NumberFormatException for Integer). Scalar results must be the keys.
+    @Test
+    public void testGroupByDottedFieldIntoScalarTypeEmitsGroupKeys_sliceF() {
+        final List<List<? extends Bson>> pipelines = new ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            return mockAggregatePublisher;
+        });
+        doAnswer(invocation -> {
+            // Emit what MongoDB returns for the pipeline: $group alone yields {_id: key}, while a trailing
+            // $project {"a.b": "$_id", _id: 0} yields {a: {b: key}} (live-verified against MongoDB).
+            final Document row = pipelines.get(pipelines.size() - 1).size() == 1 ? new Document("_id", "v1") : new Document("a", new Document("b", "v1"));
+            Flux.just(row).subscribe(invocation.<Subscriber<? super Document>> getArgument(0));
+            return null;
+        }).when(mockAggregatePublisher).subscribe(any());
+
+        StepVerifier.create(executor.groupBy("a.b", String.class)).expectNext("v1").verifyComplete();
+
+        // Map/bean results keep the named-field projection.
+        StepVerifier.create(executor.groupBy("a.b", Map.class)).expectNext(new Document("a", new Document("b", "v1"))).verifyComplete();
+        assertEquals(2, pipelines.get(pipelines.size() - 1).size());
+    }
+
+    @Test
+    public void testGroupByWithFieldName() {
+        String fieldName = "category";
+        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupBy(fieldName);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testGroupByWithFieldNameAndRowType() {
+        String fieldName = "category";
+        List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupBy(fieldName, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testGroupByWithFieldNames() {
+        Collection<String> fieldNames = Arrays.asList("category", "brand");
+        List<Document> groupResults = Arrays.asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupBy(fieldNames);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testGroupByWithFieldNamesAndRowType() {
+        Collection<String> fieldNames = Arrays.asList("category", "brand");
+        List<Document> groupResults = Arrays.asList(new Document("_id", new Document("category", "electronics").append("brand", "Samsung")));
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        // when(mockAggregatePublisher.iterator()).thenReturn(groupResults.iterator());
+
+        Flux<Document> result = executor.groupBy(fieldNames, Document.class);
+
+        assertNotNull(result);
+    }
+
+    // Regression: a field-less document in a multi-result stream is still a Document.class result.
+    @Test
+    public void testListIncludesEmptyDocumentForDocumentRowType() {
+        Bson filter = new Document("active", true);
+        int offset = 10;
+        int count = 5;
+        Document populated = new Document("name", "doc1");
+        Document emptyDoc = new Document();
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, populated, emptyDoc);
+
+        Flux<Document> result = executor.list(filter, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNext(populated).expectNext(emptyDoc).verifyComplete();
+    }
+
+    @Test
+    public void testListWithEmptySelectPropNames() {
+        Collection<String> selectPropNames = Collections.emptyList();
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+
+        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testListWithNullRowTypeThrowsIAE() {
+        final Bson filter = new Document("active", true);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.list(filter, (Class<Document>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.list(Arrays.asList("name"), filter, null, 0, 1, (Class<Document>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) new Document("name", 1), filter, null, 0, 1, (Class<Document>) null));
+    }
+
+    @Test
+    public void testListWithAllParameters() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("createdAt", -1);
+        int offset = 5;
+        int count = 10;
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+
+        Flux<Document> result = executor.list(selectPropNames, filter, sort, offset, count, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testListWithDocumentRowTypeReturnsRawDocumentInstances() {
+        // Regression: when the caller asks for Document, the raw documents must be returned untouched
+        // (same instances), not rebuilt through readRow.
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        int offset = 2;
+        int count = 10;
+        Document doc1 = new Document("name", "a").append("value", 1).append("extra", true);
+        Document doc2 = new Document("name", "b").append("value", 2).append("extra", false);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc1, doc2);
+
+        Flux<Document> result = executor.list(selectPropNames, filter, sort, offset, count, Document.class);
+
+        StepVerifier.create(result).assertNext(d -> assertSame(doc1, d)).assertNext(d -> assertSame(doc2, d)).verifyComplete();
+    }
+
+    @Test
+    public void testListWithFilter() {
+        Bson filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
+
+        Flux<Document> result = executor.list(filter);
+
+        StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
+    }
+
+    @Test
+    public void testListWithFilterAndRowType() {
+        Bson filter = new Document("type", "number");
+        List<Document> docs = Arrays.asList(new Document("value", 1), new Document("value", 2));
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
+
+        Flux<Integer> result = executor.list(filter, Integer.class);
+
+        StepVerifier.create(result).expectNext(1).expectNext(2).verifyComplete();
+    }
+
+    @Test
+    public void testListWithNegativeCount() {
+        Bson filter = new Document("name", "test");
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.list(filter, 0, -1, Document.class);
+        });
+    }
+
+    @Test
+    public void testListWithObjectRowTypeNoLongerThrowsForWideDocuments() {
+        // Regression: list(..., Object.class) previously rebuilt each row through readRow, which threw
+        // for documents with more than two fields. Object.class now short-circuits to the raw documents.
+        Bson projection = Projections.include("a", "b", "c");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("a", 1);
+        Document wideDoc = new Document("a", 1).append("b", 2).append("c", 3);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(10)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, wideDoc);
+
+        Flux<Object> result = executor.list(projection, filter, sort, 0, 10, Object.class);
+
+        StepVerifier.create(result).assertNext(o -> assertSame(wideDoc, o)).verifyComplete();
+    }
+
+    @Test
+    public void testListWithProjection() {
+        Bson projection = Projections.include("name", "status");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+
+        Flux<Document> result = executor.list(projection, filter, sort, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testListWithSelectPropNamesAsList() {
+        List<String> selectPropNames = Arrays.asList("name", "value");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+
+        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
+
+        assertNotNull(result);
+    }
+
+    // Covers the private query(Collection,...) -> executeQuery(Projections.include(List)) branch
+    // by passing selectPropNames as a non-List Collection (Set).
+    @Test
+    public void testListWithSelectPropNamesAsNonListCollection() {
+        Collection<String> selectPropNames = new java.util.LinkedHashSet<>(Arrays.asList("name", "value"));
+        Bson filter = new Document("active", true);
+        Document doc = new Document("name", "x").append("value", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testListWithSelectPropNamesFilterAndRowType() {
+        Collection<String> selectPropNames = Arrays.asList("name", "email");
+        Bson filter = new Document("active", true);
+        List<Document> docs = Arrays.asList(new Document("name", "John").append("email", "john@example.com"),
+                new Document("name", "Jane").append("email", "jane@example.com"));
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
+
+        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
+    }
+
+    // Cover list(Collection, Bson, Bson, Class) overload (with sort and projection collection).
+    @Test
+    public void testListWithSelectPropNamesFilterSortAndRowType() {
+        Collection<String> selectPropNames = Arrays.asList("name", "score");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("score", -1);
+        List<Document> docs = Arrays.asList(new Document("name", "a").append("score", 10), new Document("name", "b").append("score", 5));
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
+
+        Flux<Document> result = executor.list(selectPropNames, filter, sort, Document.class);
+
+        StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
+    }
+
+    @Test
+    public void testListWithZeroCountReturnsEmptyAndDoesNotUseLimitZero() {
+        // Regression: limit(0) is treated by the MongoDB driver as "no limit" (return ALL docs).
+        // A user-supplied count of 0 must yield zero results, not the whole collection.
+        Bson filter = new Document("status", "active");
+        Document alwaysFalse = new Document("$expr", false);
+        when(mockCollection.find(eq(alwaysFalse))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
+
+        Flux<Document> result = executor.list(filter, 0, 0, Document.class);
+
+        StepVerifier.create(result).verifyComplete();
+        verify(mockCollection).find(eq(alwaysFalse));
+        verify(mockFindPublisher, org.mockito.Mockito.never()).limit(0);
+    }
+
+    @Test
+    public void testQueryForBoolean() {
+        String propName = "isActive";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Boolean> result = executor.queryForBoolean(propName, filter);
+
+        StepVerifier.create(result).expectNext(true).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForByte() {
+        String propName = "level";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, (byte) 5);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Byte> result = executor.queryForByte(propName, filter);
+
+        StepVerifier.create(result).expectNext((byte) 5).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForChar() {
+        String propName = "grade";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, 'A');
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Character> result = executor.queryForChar(propName, filter);
+
+        StepVerifier.create(result).expectNext('A').verifyComplete();
+    }
+
+    @Test
+    public void testQueryForDate() {
+        String propName = "createdAt";
+        Bson filter = new Document("id", 1);
+        Date date = new Date();
+        Document doc = new Document(propName, date);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Date> result = executor.queryForDate(propName, filter);
+
+        StepVerifier.create(result).expectNext(date).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForDateWithRowType() {
+        String propName = "timestamp";
+        Bson filter = new Document("id", 1);
+        Date date = new Date();
+        Document doc = new Document(propName, date);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Date> result = executor.queryForDate(propName, filter, Date.class);
+
+        StepVerifier.create(result).expectNext(date).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForDouble() {
+        String propName = "price";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, 19.99);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Double> result = executor.queryForDouble(propName, filter);
+
+        StepVerifier.create(result).expectNext(19.99).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForFloat() {
+        String propName = "score";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, 98.5f);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Float> result = executor.queryForFloat(propName, filter);
+
+        StepVerifier.create(result).expectNext(98.5f).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForInt() {
+        String propName = "age";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, 25);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Integer> result = executor.queryForInt(propName, filter);
+
+        StepVerifier.create(result).expectNext(25).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForLong() {
+        String propName = "timestamp";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, 1234567890L);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Long> result = executor.queryForLong(propName, filter);
+
+        StepVerifier.create(result).expectNext(1234567890L).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForShort() {
+        String propName = "count";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, (short) 100);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Short> result = executor.queryForShort(propName, filter);
+
+        StepVerifier.create(result).expectNext((short) 100).verifyComplete();
+    }
+
+    @Test
+    public void testqueryForSingleValue() {
+        String propName = "value";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, 42);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Integer> result = executor.queryForSingleValue(propName, filter, Integer.class);
+
+        StepVerifier.create(result).expectNext(42).verifyComplete();
+    }
+
+    // sliceF 2026-09-22: pins the documented queryForSingleValue contract for a matched document whose
+    // field is missing — a wrapper valueType completes empty, a primitive valueType emits its default.
+    @Test
+    public void testQueryForSingleValueMissingFieldWrapperVsPrimitive_sliceF() {
+        Bson filter = new Document("id", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()));
+
+        StepVerifier.create(executor.queryForSingleValue("age", filter, Integer.class)).verifyComplete();
+        StepVerifier.create(executor.queryForSingleValue("age", filter, int.class)).expectNext(0).verifyComplete();
+    }
+
+    @Test
+    public void testqueryForSingleValueWithEmptyDocument() {
+        String propName = "value";
+        Bson filter = new Document("id", 999);
+        Document emptyDoc = new Document();
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, emptyDoc);
+
+        Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
+
+        StepVerifier.create(result).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForSingleValueWithNullValueTypeThrowsIAESynchronously() {
+        // Regression: a null valueType is now validated eagerly, so IllegalArgumentException is thrown
+        // at the call site (before any Mono is returned) instead of erroring on subscription.
+        Bson filter = new Document("id", 1);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("prop", filter, null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+    }
+
+    @Test
+    public void testQueryForSingleValueWithFoundDocumentButNullPropertyCompletesEmpty() {
+        // Regression: a matching document is found but the requested property is absent/null.
+        // N.convert(null, String.class) returns null and Mono.just(null) throws NPE.
+        // The reactive contract requires completing empty (no value) instead.
+        String propName = "name";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document("otherField", "value"); // no "name" property
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
+
+        StepVerifier.create(result).verifyComplete();
+    }
+
+    @Test
+    public void testQueryForString() {
+        String propName = "name";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document(propName, "John Doe");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<String> result = executor.queryForString(propName, filter);
+
+        StepVerifier.create(result).expectNext("John Doe").verifyComplete();
+    }
+
+    @Test
+    public void testQueryWithFilter() {
+        Bson filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(filter);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testQueryWithFilterAndRowType() {
+        Bson filter = new Document("type", "test");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(filter, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testQueryWithNegativeCount() {
+        Bson filter = new Document("name", "test");
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.query(filter, 0, -1, Document.class);
+        });
+    }
+
+    // Covers the empty-results path for query(Bson projection, ...) -> Dataset.
+    @Test
+    public void testQueryWithProjectionEmptyResults() {
+        Bson projection = Projections.include("name");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(projection, filter, null, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+    }
+
+    // Covers the empty-results path: extractData on an empty rowList yields an empty Dataset.
+    @Test
+    public void testQueryWithSelectPropNamesEmptyResults() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+    }
+
+    // Covers executeQuery(projection, filter, sort, offset, 0) zero-count path which
+    // uses an always-false {$expr: false} filter instead of limit(0).
+    @Test
+    public void testQueryWithZeroCount_ReturnsEmpty() {
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+
+        when(mockCollection.find(any(Document.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(Projections.include("name"), filter, sort, 0, 0, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
     }
 
     @Test
@@ -2504,156 +2744,31 @@ public class MongoCollectionExecutorTest extends TestBase {
         verify(mockCollection, org.mockito.Mockito.never()).countDocuments(any(Bson.class));
     }
 
-    // ========= Regression: eager IllegalArgumentException at the call site (not NPE / not deferred) =========
-
     @Test
-    public void testInsertOneWithNullObjectThrowsIAESynchronously() {
-        // Regression: insertOne(null) converted the payload eagerly and surfaced a raw NPE. It must
-        // throw IllegalArgumentException synchronously, before any Mono is built or the driver touched.
-        assertThrows(IllegalArgumentException.class, () -> executor.insertOne((Object) null));
+    public void testReplaceOneWithFilter() {
+        Bson filter = new Document("name", "old name");
+        Document replacement = new Document("name", "new name").append("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.replaceOne(eq(filter), eq(replacement))).thenReturn(publisher);
 
-        verify(mockCollection, org.mockito.Mockito.never()).insertOne(any(Document.class));
+        Mono<UpdateResult> result = executor.replaceOne(filter, replacement);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
     @Test
-    public void testInsertOneWithNullObjectAndOptionsThrowsIAESynchronously() {
-        InsertOneOptions options = new InsertOneOptions();
+    public void testReplaceOneWithFilterAndOptions() {
+        Bson filter = new Document("name", "old name");
+        Document replacement = new Document("name", "new name").append("status", "active");
+        ReplaceOptions options = new ReplaceOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.replaceOne(eq(filter), eq(replacement), eq(options))).thenReturn(publisher);
 
-        assertThrows(IllegalArgumentException.class, () -> executor.insertOne(null, options));
+        Mono<UpdateResult> result = executor.replaceOne(filter, replacement, options);
 
-        verify(mockCollection, org.mockito.Mockito.never()).insertOne(any(Document.class), any(InsertOneOptions.class));
-    }
-
-    @Test
-    public void testQueryForSingleValueWithNullValueTypeThrowsIAESynchronously() {
-        // Regression: a null valueType is now validated eagerly, so IllegalArgumentException is thrown
-        // at the call site (before any Mono is returned) instead of erroring on subscription.
-        Bson filter = new Document("id", 1);
-
-        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("prop", filter, null));
-
-        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
-    }
-
-    @Test
-    public void testQueryDatasetWithInvalidRowTypeThrowsIAESynchronously() {
-        // Regression: an invalid rowType (not a bean / Map / Document) is rejected synchronously at the
-        // call site (checkResultClass), mirroring the sync executor, instead of producing a malformed
-        // Dataset on subscription.
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Bson projection = Projections.include("name");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
-
-        assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, filter, sort, 0, 10, String.class));
-        assertThrows(IllegalArgumentException.class, () -> executor.query(projection, filter, sort, 0, 10, String.class));
-
-        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
-    }
-
-    // ========= Regression: list(..., Document.class/Object.class) short-circuits to the raw documents =========
-
-    @Test
-    public void testListWithDocumentRowTypeReturnsRawDocumentInstances() {
-        // Regression: when the caller asks for Document, the raw documents must be returned untouched
-        // (same instances), not rebuilt through readRow.
-        Collection<String> selectPropNames = Arrays.asList("name");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("name", 1);
-        int offset = 2;
-        int count = 10;
-        Document doc1 = new Document("name", "a").append("value", 1).append("extra", true);
-        Document doc2 = new Document("name", "b").append("value", 2).append("extra", false);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, doc1, doc2);
-
-        Flux<Document> result = executor.list(selectPropNames, filter, sort, offset, count, Document.class);
-
-        StepVerifier.create(result).assertNext(d -> assertSame(doc1, d)).assertNext(d -> assertSame(doc2, d)).verifyComplete();
-    }
-
-    @Test
-    public void testListWithObjectRowTypeNoLongerThrowsForWideDocuments() {
-        // Regression: list(..., Object.class) previously rebuilt each row through readRow, which threw
-        // for documents with more than two fields. Object.class now short-circuits to the raw documents.
-        Bson projection = Projections.include("a", "b", "c");
-        Bson filter = new Document("active", true);
-        Bson sort = new Document("a", 1);
-        Document wideDoc = new Document("a", 1).append("b", 2).append("c", 3);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(10)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, wideDoc);
-
-        Flux<Object> result = executor.list(projection, filter, sort, 0, 10, Object.class);
-
-        StepVerifier.create(result).assertNext(o -> assertSame(wideDoc, o)).verifyComplete();
-    }
-
-    @Test
-    public void testUpdateRejectsMixedOperatorAndOrdinaryFieldsBeforePublisherCreation() {
-        Document filter = new Document("active", true);
-        Document invalidUpdate = new Document("$set", new Document("name", "alice")).append("status", "active");
-        BasicDBObject reversedInvalidUpdate = new BasicDBObject("status", "active").append("$set", new BasicDBObject("name", "alice"));
-
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, invalidUpdate));
-
-        assertTrue(ex.getMessage().contains("cannot mix"));
-        assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, reversedInvalidUpdate));
-        verify(mockCollection, org.mockito.Mockito.never()).updateOne(any(Bson.class), any(Bson.class));
-    }
-
-    @SuppressWarnings({ "rawtypes", "unchecked" })
-    @Test
-    public void testInsertManyPreservesDocumentInstancesInHeterogeneousBatch() {
-        Document callerDocument = new Document("name", "document-row");
-        List<Object> rows = Arrays.asList(callerDocument, Map.of("name", "map-row"));
-        InsertManyResult insertResult = mock(InsertManyResult.class);
-        org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
-        when(mockCollection.insertMany(anyList())).thenReturn(Mono.just(insertResult));
-
-        executor.insertMany(rows);
-
-        verify(mockCollection).insertMany(captor.capture());
-        assertSame(callerDocument, captor.getValue().get(0));
-        assertTrue(captor.getValue().get(1) instanceof Document);
-    }
-
-    @Test
-    public void testReactiveDriverFactoriesRejectNullArgumentsSynchronously() {
-        assertThrows(IllegalArgumentException.class, () -> executor.watch((Class<Document>) null));
-        assertThrows(IllegalArgumentException.class, () -> executor.watch((List<? extends Bson>) null));
-        assertThrows(IllegalArgumentException.class, () -> executor.watch(List.of(), null));
-        assertThrows(IllegalArgumentException.class, () -> executor.distinct("category", (Class<String>) null));
-        assertThrows(IllegalArgumentException.class, () -> executor.aggregate(null, Document.class));
-        assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("", "function(k, v) { return 1; }", Document.class));
-        assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("function() { emit(1, 1); }", "", Document.class));
-        assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("name"), new Document(), null, 0, 1, null));
-
-        verify(mockCollection, org.mockito.Mockito.never()).aggregate(anyList(), eq(Document.class));
-        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
-    }
-
-    // sliceF 2026-09-22: pins the documented queryForSingleValue contract for a matched document whose
-    // field is missing — a wrapper valueType completes empty, a primitive valueType emits its default.
-    @Test
-    public void testQueryForSingleValueMissingFieldWrapperVsPrimitive_sliceF() {
-        Bson filter = new Document("id", 1);
-
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()));
-
-        StepVerifier.create(executor.queryForSingleValue("age", filter, Integer.class)).verifyComplete();
-        StepVerifier.create(executor.queryForSingleValue("age", filter, int.class)).expectNext(0).verifyComplete();
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
 
     @Test
@@ -2670,6 +2785,8 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(executor.findFirst(Arrays.asList("value"), filter, Integer.class)).expectError(ArithmeticException.class).verify();
         StepVerifier.create(executor.list(Arrays.asList("value"), filter, Integer.class)).expectError(ArithmeticException.class).verify();
     }
+
+    // Additional contracts
 
     @Test
     public void testBinaryScalarQueriesPreserveReadablePayloads() {
@@ -2689,149 +2806,255 @@ public class MongoCollectionExecutorTest extends TestBase {
         }
     }
 
-    // Pins the documented cold-publisher contract of insertOne: building the Mono creates the driver
-    // publisher once (no insert yet), and every subscription re-issues that same insert with the SAME
-    // Document instance rather than building a fresh write.
     @Test
-    public void testInsertOneResubscriptionReissuesInsertWithSameDocument() {
-        final Document doc = new Document("name", "dup");
-        final InsertOneResult insertResult = mock(InsertOneResult.class);
-        final java.util.concurrent.atomic.AtomicInteger executions = new java.util.concurrent.atomic.AtomicInteger();
-        final Publisher<InsertOneResult> publisher = Mono.fromSupplier(() -> {
-            executions.incrementAndGet();
-            return insertResult;
-        });
-        when(mockCollection.insertOne(doc)).thenReturn(publisher);
+    public void testBulkWrite() {
+        List<WriteModel<Document>> requests = Arrays.asList(new InsertOneModel<>(new Document("name", "doc1")));
+        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
+        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
+        when(mockCollection.bulkWrite(requests)).thenReturn(publisher);
 
-        final Mono<InsertOneResult> result = executor.insertOne(doc);
+        Mono<BulkWriteResult> result = executor.bulkWrite(requests);
 
-        verify(mockCollection).insertOne(org.mockito.ArgumentMatchers.same(doc));
-        assertEquals(0, executions.get());
-
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
-
-        assertEquals(2, executions.get());
-        verify(mockCollection, org.mockito.Mockito.times(1)).insertOne(any(Document.class));
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
     }
 
-    // Pins the documented "write-value conversion happens while the publisher is built" contract:
-    // an entity is converted to a Document exactly once, at call time, and that Document is what
-    // every subscription re-submits.
     @Test
-    public void testInsertOneConvertsEntityOnceAtCallTimeNotPerSubscription() {
-        final CountingBean bean = new CountingBean();
-        final InsertOneResult insertResult = mock(InsertOneResult.class);
-        when(mockCollection.insertOne(any(Document.class))).thenReturn(Mono.just(insertResult));
-
-        final Mono<InsertOneResult> result = executor.insertOne(bean);
-
-        assertTrue(bean.readCount > 0);
-        final int readsAfterBuild = bean.readCount;
-
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
-        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
-
-        assertEquals(readsAfterBuild, bean.readCount);
-        final org.mockito.ArgumentCaptor<Document> captor = org.mockito.ArgumentCaptor.forClass(Document.class);
-        verify(mockCollection).insertOne(captor.capture());
-        assertEquals("counted", captor.getValue().getString("name"));
+    public void testBulkWriteRejectsEmptyRequests() {
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(List.of()));
     }
 
-    // Regression: a multi-field aggregation output requested as Object.class must be emitted as the raw
-    // Document (same short-circuit as list/findFirst), not rejected by readRow's scalar fallback.
     @Test
-    public void testAggregateWithObjectRowTypeReturnsRawMultiFieldDocument() {
-        final List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
-        final Document wideDoc = new Document("_id", new ObjectId()).append("name", "John").append("age", 30);
-
-        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mockAggregatePublisher);
-        stubEmits(mockAggregatePublisher, wideDoc);
-
-        StepVerifier.create(executor.aggregate(pipeline, Object.class)).expectNext(wideDoc).verifyComplete();
-        StepVerifier.create(executor.aggregate(pipeline, Bson.class)).expectNext(wideDoc).verifyComplete();
+    public void testBulkWriteRejectsNullRequests() {
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(null));
     }
 
-    // ========= sliceF (2026-09-27) regression tests =========
-
-    // Regression: groupBy on a dotted field into a scalar type used to append $project {"a.b": "$_id"}, which the
-    // server materialises as the NESTED document {a: {b: key}}; the scalar conversion then saw {b: key} and emitted
-    // its JSON text ('{"b": "v1"}') for String (NumberFormatException for Integer). Scalar results must be the keys.
     @Test
-    public void testGroupByDottedFieldIntoScalarTypeEmitsGroupKeys_sliceF() {
-        final List<List<? extends Bson>> pipelines = new ArrayList<>();
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
-            pipelines.add(invocation.getArgument(0));
-            return mockAggregatePublisher;
-        });
+    public void testBulkWriteWithOptions() {
+        List<WriteModel<Document>> requests = Arrays.asList(new InsertOneModel<>(new Document("name", "doc1")));
+        BulkWriteOptions options = new BulkWriteOptions();
+        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
+        Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
+        when(mockCollection.bulkWrite(requests, options)).thenReturn(publisher);
+
+        Mono<BulkWriteResult> result = executor.bulkWrite(requests, options);
+
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
+    }
+
+    @Test
+    public void testColl() {
+        MongoCollection<Document> result = executor.coll();
+        assertSame(mockCollection, result);
+    }
+
+    // Sanity: executor.coll() returns the wrapped collection (additional assertion form).
+    @Test
+    public void testCollReturnsWrappedCollection() {
+        assertNotNull(executor.coll());
+        assertEquals(mockCollection, executor.coll());
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.dayDoc_coverageME()));
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("day", 1)));
+        final java.time.LocalDate day = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(day, exec.list(filter, java.time.LocalDate.class).blockFirst(), "list"),
+                () -> assertEquals(day, exec.findFirst(filter, java.time.LocalDate.class).block(), "findFirst"),
+                () -> assertEquals(day, exec.aggregate(pipeline, java.time.LocalDate.class).blockFirst(), "aggregate"),
+                () -> assertEquals(day, exec.findOneAndDelete(filter, java.time.LocalDate.class).block(), "findOneAndDelete"));
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleValuesAreReadInUtcOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.entityDoc_coverageME()));
+        final Bson filter = new Document();
+        final java.time.LocalDate day = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
+        final Date dayDate = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.DAY_coverageME;
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(day, exec.queryForSingleValue("day", filter, java.time.LocalDate.class).block(), "queryForSingleValue LocalDate"),
+                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_AT_coverageME,
+                        exec.queryForSingleValue("at", filter, java.time.LocalDateTime.class).block(), "queryForSingleValue LocalDateTime"),
+                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_TIME_coverageME,
+                        exec.queryForSingleValue("time", filter, java.time.LocalTime.class).block(), "queryForSingleValue LocalTime"),
+                () -> assertEquals(day, exec.findFirst(Arrays.asList("day"), filter, java.time.LocalDate.class).block(), "findFirst(Collection)"),
+                () -> assertEquals(day, exec.list(Arrays.asList("day"), filter, java.time.LocalDate.class).blockFirst(), "list(Collection)"),
+                // Previous behavior kept: other date targets keep the instant.
+                () -> assertEquals(dayDate, exec.queryForSingleValue("day", filter, Date.class).block(), "Date"),
+                () -> assertEquals(dayDate.toInstant(), exec.queryForSingleValue("day", filter, java.time.Instant.class).block(), "Instant"));
+    }
+
+    @Test
+    public void testMapReduce() {
+        String mapFunction = "function() { emit(this.category, 1); }";
+        String reduceFunction = "function(key, values) { return Array.sum(values); }";
+        List<Document> mapReduceResults = Arrays.asList(new Document("_id", "electronics").append("value", 10),
+                new Document("_id", "books").append("value", 5));
+        when(mockCollection.mapReduce(mapFunction, reduceFunction, Document.class)).thenReturn(mockMapReducePublisher);
+        // when(mockMapReducePublisher.iterator()).thenReturn(mapReduceResults.iterator());
+
+        Flux<Document> result = executor.mapReduce(mapFunction, reduceFunction);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testMapReduceWithNullRowTypeThrowsIAE() {
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.mapReduce("function() { emit(this.category, 1); }", "function(key, values) { return Array.sum(values); }", null));
+    }
+
+    @Test
+    public void testMapReduceWithRowType() {
+        String mapFunction = "function() { emit(this.category, 1); }";
+        String reduceFunction = "function(key, values) { return Array.sum(values); }";
+        List<Document> mapReduceResults = Arrays.asList(new Document("_id", "electronics").append("value", 10),
+                new Document("_id", "books").append("value", 5));
+        when(mockCollection.mapReduce(mapFunction, reduceFunction, Document.class)).thenReturn(mockMapReducePublisher);
+        // when(mockMapReducePublisher.iterator()).thenReturn(mapReduceResults.iterator());
+
+        Flux<Document> result = executor.mapReduce(mapFunction, reduceFunction, Document.class);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testReactiveDriverFactoriesRejectNullArgumentsSynchronously() {
+        assertThrows(IllegalArgumentException.class, () -> executor.watch((Class<Document>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.watch((List<? extends Bson>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.watch(List.of(), null));
+        assertThrows(IllegalArgumentException.class, () -> executor.distinct("category", (Class<String>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.aggregate(null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("", "function(k, v) { return 1; }", Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("function() { emit(1, 1); }", "", Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("name"), new Document(), null, 0, 1, null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).aggregate(anyList(), eq(Document.class));
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+    }
+
+    @Test
+    public void testRecordRowsOnEveryReadPath_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
+                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.recordDoc_coverageME()));
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eRecord_coverageME.class;
+        final Object expected = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.expectedRecord_coverageME();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expected, exec.list(filter, type).blockFirst(), "list"),
+                () -> assertEquals(expected, exec.findFirst(filter, type).block(), "findFirst"),
+                () -> assertEquals(expected, exec.get(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.OID_HEX_coverageME, type).block(),
+                        "get(String)"),
+                () -> assertEquals(expected, exec.aggregate(pipeline, type).blockFirst(), "aggregate"),
+                () -> assertEquals(expected, exec.findOneAndDelete(filter, type).block(), "findOneAndDelete"),
+                () -> assertEquals(Arrays.asList(4L), exec.query(filter, type).block().getColumn("nums").get(0), "query Dataset"));
+    }
+
+    @Test
+    public void testReplaceOneWithNullReplacementThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.replaceOne(filter, (Object) null));
+    }
+
+    @Test
+    public void testReplaceOneWithNonDocumentObject() {
+        Bson filter = new Document("name", "oldName");
+        Map<String, Object> replacement = new HashMap<>();
+        replacement.put("name", "newName");
+        replacement.put("status", "active");
+
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.replaceOne(eq(filter), any(Document.class))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.replaceOne(filter, replacement);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testReplaceOneWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        Document replacement = new Document("name", "new name").append("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.replaceOne(any(Bson.class), eq(replacement))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.replaceOne(objectId, replacement);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testReplaceOneWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document replacement = new Document("name", "new name").append("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.replaceOne(any(Bson.class), eq(replacement))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.replaceOne(objectId, replacement);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testWatch() {
+        when(mockCollection.watch()).thenReturn(mockChangeStreamPublisher);
+
+        ChangeStreamPublisher<Document> result = executor.watch();
+
+        assertSame(mockChangeStreamPublisher, result);
+    }
+
+    @Test
+    public void testWatchWithPipeline() {
+        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("operationType", "insert")));
+        when(mockCollection.watch(pipeline)).thenReturn(mockChangeStreamPublisher);
+
+        ChangeStreamPublisher<Document> result = executor.watch(pipeline);
+
+        assertSame(mockChangeStreamPublisher, result);
+    }
+
+    @Test
+    public void testWatchWithPipelineAndRowType() {
+        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("operationType", "update")));
+        ChangeStreamPublisher<Map> mockMapPublisher = mock(ChangeStreamPublisher.class);
+        when(mockCollection.watch(pipeline, Map.class)).thenReturn(mockMapPublisher);
+
+        ChangeStreamPublisher<Map> result = executor.watch(pipeline, Map.class);
+
+        assertSame(mockMapPublisher, result);
+    }
+
+    @Test
+    public void testWatchWithRowType() {
+        ChangeStreamPublisher<String> mockStringPublisher = mock(ChangeStreamPublisher.class);
+        when(mockCollection.watch(String.class)).thenReturn(mockStringPublisher);
+
+        ChangeStreamPublisher<String> result = executor.watch(String.class);
+
+        assertSame(mockStringPublisher, result);
+    }
+
+    @SuppressWarnings("unchecked")
+    @SafeVarargs
+    private static <T> void stubEmits(final Publisher<T> publisher, final T... items) {
+        // The executor consumes these publishers via Flux.from(publisher), which calls
+        // publisher.subscribe(...). Stubbing publisher.first()/limit()/etc. is useless —
+        // those are never invoked. We must stub subscribe() itself so the subscriber
+        // actually receives signals, otherwise StepVerifier hangs forever.
         doAnswer(invocation -> {
-            // Emit what MongoDB returns for the pipeline: $group alone yields {_id: key}, while a trailing
-            // $project {"a.b": "$_id", _id: 0} yields {a: {b: key}} (live-verified against MongoDB).
-            final Document row = pipelines.get(pipelines.size() - 1).size() == 1 ? new Document("_id", "v1")
-                    : new Document("a", new Document("b", "v1"));
-            Flux.just(row).subscribe(invocation.<Subscriber<? super Document>> getArgument(0));
+            Flux.fromArray(items).subscribe((Subscriber<? super T>) invocation.getArgument(0));
             return null;
-        }).when(mockAggregatePublisher).subscribe(any());
-
-        StepVerifier.create(executor.groupBy("a.b", String.class)).expectNext("v1").verifyComplete();
-
-        // Map/bean results keep the named-field projection.
-        StepVerifier.create(executor.groupBy("a.b", Map.class)).expectNext(new Document("a", new Document("b", "v1"))).verifyComplete();
-        assertEquals(2, pipelines.get(pipelines.size() - 1).size());
-    }
-
-    // ---- 2026-10-02 sliceF ----
-
-    // Regression: for a non-Document rowType, groupByAndCount projects {<fieldName>: "$_id", count: 1}; a group field
-    // named "count" was overwritten by the count column, so every row silently lost its group key (live: rows {count: 2}).
-    // It must be rejected at call time, while the Document row type ({_id: key, count: n}) keeps working.
-    @Test
-    public void testGroupByAndCountRejectsGroupFieldNamedCountForNonDocumentRowType_sliceF() {
-        final List<List<? extends Bson>> pipelines = new ArrayList<>();
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
-            pipelines.add(invocation.getArgument(0));
-            return mockAggregatePublisher;
-        });
-
-        for (final Class<?> rowType : Arrays.asList(Map.class, Object.class, GroupRow.class)) {
-            IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType));
-            assertTrue(e.getMessage().contains("'count'"), e.getMessage());
-            e = assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType));
-            assertTrue(e.getMessage().contains("'count'"), e.getMessage());
-        }
-
-        assertTrue(pipelines.isEmpty());
-
-        // The Document row type keeps the key in _id and is unaffected; groupBy (no count column) is unaffected too.
-        assertNotNull(executor.groupByAndCount("count"));
-        assertNotNull(executor.groupByAndCount(Arrays.asList("department", "count")));
-        assertNotNull(executor.groupBy("count", Map.class));
-        assertEquals(3, pipelines.size());
-    }
-
-    // Regression: a dotted select name such as "address.city" is a valid projection, but MongoDB returns it nested
-    // ({address: {city: ...}}) while Dataset columns are read by flat map key / bean property, so the column was all null.
-    @Test
-    public void testQueryDatasetResolvesDottedSelectNamesFromNestedDocuments_sliceF() {
-        final Bson filter = new Document("status", "active");
-        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris")),
-                new Document("_id", 2).append("department", "ops"));
-
-        final List<String> selectPropNames = Arrays.asList("department", "address.city");
-
-        for (final Class<?> rowType : Arrays.asList(Map.class, Document.class, GroupRow.class)) {
-            final Dataset dataset = executor.query(selectPropNames, filter, rowType).block();
-
-            assertEquals(selectPropNames, dataset.columnNames());
-            assertEquals(Arrays.asList("eng", "ops"), dataset.getColumn("department"));
-            assertEquals(Arrays.asList("Paris", null), dataset.getColumn("address.city"));
-        }
-
-        // A dotted path through a non-Document value fails through the publisher, as for list/findFirst.
-        stubEmits(mockFindPublisher, new Document("_id", 3).append("department", "x").append("address", Arrays.asList(new Document("city", "Rome"))));
-        StepVerifier.create(executor.query(selectPropNames, filter, Map.class)).expectError(ClassCastException.class).verify();
+        }).when(publisher).subscribe(any());
     }
 
     public static class CountingBean {
@@ -2868,100 +3091,12 @@ public class MongoCollectionExecutorTest extends TestBase {
         }
     }
 
-    // ---- 2026-10-02 verifyME ----
-
-    private static final String COUNT_COLUMN_CONFLICT_verifyME = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
-
     private void stubFindChain_verifyME(final Bson filter) {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.sort(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(mockFindPublisher);
-    }
-
-    @Test
-    public void testQueryDatasetDottedSelectNamesOnEveryOverloadKeepOrderAndRawNestedValues_verifyME() {
-        // Every Collection-projection Dataset overload resolves dotted names from the nested documents (they were all-null
-        // columns): requested order kept, null for a missing/null parent or leaf, raw nested value (Integer zip although
-        // GroupRow declares no address), plain columns converted as before; an empty result still emits an empty Dataset.
-        final Bson filter = new Document("status", "active");
-        final Bson sort = new Document("_id", 1);
-        stubFindChain_verifyME(filter);
-        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris").append("zip", 75001)),
-                new Document("_id", 2).append("department", "ops"), new Document("_id", 3).append("department", "hr").append("address", new Document("city", null)),
-                new Document("_id", 4).append("department", "qa").append("address", null));
-        final List<String> names = Arrays.asList("address.zip", "department", "address.city");
-
-        for (final Class<?> rowType : Arrays.asList(Map.class, java.util.LinkedHashMap.class, Document.class, GroupRow.class)) {
-            for (final Mono<Dataset> mono : Arrays.asList(executor.query(names, filter, rowType), executor.query(names, filter, 1, 3, rowType),
-                    executor.query(names, filter, sort, rowType), executor.query(names, filter, sort, 1, 3, rowType))) {
-                final Dataset ds = mono.block();
-                assertEquals(names, ds.columnNames(), rowType.getName());
-                assertEquals(Arrays.asList("eng", "ops", "hr", "qa"), ds.getColumn("department"), rowType.getName());
-                assertEquals(Arrays.asList(75001, null, null, null), ds.getColumn("address.zip"), rowType.getName());
-                assertEquals(Arrays.asList("Paris", null, null, null), ds.getColumn("address.city"), rowType.getName());
-            }
-        }
-
-        final Dataset withId = executor.query(new java.util.LinkedHashSet<>(Arrays.asList("_id", "address.city")), filter, Map.class).block();
-        assertEquals(Arrays.asList("_id", "address.city"), withId.columnNames());
-        assertEquals(Arrays.asList(1, 2, 3, 4), withId.getColumn("_id"));
-
-        stubEmits(mockFindPublisher);
-        assertEquals(0, executor.query(names, filter, sort, 0, 10, Map.class).block().size());
-    }
-
-    @Test
-    public void testQueryDatasetDottedSelectNameThroughArrayFailsOnEveryOverload_verifyME() {
-        final Bson filter = new Document("status", "active");
-        final Bson sort = new Document("_id", 1);
-        stubFindChain_verifyME(filter);
-        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris")),
-                new Document("_id", 2).append("department", "ops").append("address", Arrays.asList(new Document("city", "Rome"))));
-        final List<String> names = Arrays.asList("department", "address.city");
-
-        StepVerifier.create(executor.query(names, filter, Map.class)).expectError(ClassCastException.class).verify();
-        StepVerifier.create(executor.query(names, filter, 0, 5, Document.class)).expectError(ClassCastException.class).verify();
-        StepVerifier.create(executor.query(names, filter, sort, GroupRow.class)).expectError(ClassCastException.class).verify();
-        StepVerifier.create(executor.query(names, filter, sort, 1, 5, Map.class)).expectError(ClassCastException.class).verify();
-
-        // Without a dotted name the same rows load as before: the array is just a column value.
-        final Dataset plain = executor.query(Arrays.asList("department", "address"), filter, Map.class).block();
-        assertEquals(Arrays.asList("eng", "ops"), plain.getColumn("department"));
-        assertEquals(Arrays.asList(new Document("city", "Rome")), plain.getColumn("address").get(1));
-    }
-
-    @SuppressWarnings({ "unchecked", "rawtypes" })
-    @Test
-    public void testGroupByAndCountCountFieldRejectedForEveryNonDocumentRowType_verifyME() {
-        // Same rule and message as the sync executor, thrown at call time (no aggregate, no subscription): only Document
-        // rows (key kept under _id) accept a group field named "count"; a Document subclass is projected like a Map.
-        final List<List<? extends Bson>> pipelines = new ArrayList<>();
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
-            pipelines.add(invocation.getArgument(0));
-            return mockAggregatePublisher;
-        });
-
-        for (final Class rowType : Arrays.<Class> asList(Map.class, java.util.LinkedHashMap.class, Object.class, Bson.class, CountDocument_verifyME.class,
-                GroupRow.class, Long.class, long.class, String.class)) {
-            assertEquals(COUNT_COLUMN_CONFLICT_verifyME, assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType)).getMessage(),
-                    rowType.getName());
-            assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
-                    assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType)).getMessage(),
-                    rowType.getName());
-        }
-
-        assertTrue(pipelines.isEmpty());
-
-        // Document rows, other field names, and groupBy (no count column) are unaffected.
-        executor.groupByAndCount("count", Document.class);
-        executor.groupByAndCount(Arrays.asList("department", "count"), Document.class);
-        executor.groupByAndCount("department", Map.class);
-        executor.groupBy("count", CountDocument_verifyME.class);
-        executor.groupBy(Arrays.asList("department", "count"), Map.class);
-        assertEquals(5, pipelines.size());
-        assertEquals(new Document("$project", new Document("_id", 0).append("department", "$_id").append("count", 1)), pipelines.get(2).get(1));
     }
 
     public static class CountDocument_verifyME extends Document {
@@ -3000,138 +3135,4 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         return collection;
     }
-
-    @Test
-    public void testEntityReadPathsConvertDecodedValuesToDeclaredTypes_coverageME() {
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
-                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.entityDoc_coverageME()));
-        final Bson filter = new Document();
-        final Bson update = new Document("$set", new Document("x", 1));
-        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eEntity_coverageME.class;
-        final String oid = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.OID_HEX_coverageME;
-
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list", exec.list(filter, type).blockFirst()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list(Collection)",
-                        exec.list(Arrays.asList("nums", "day"), filter, type).blockFirst()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findFirst", exec.findFirst(filter, type).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("get(ObjectId)",
-                        exec.get(new ObjectId(oid), type).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("get(String)", exec.get(oid, type).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("aggregate",
-                        exec.aggregate(pipeline, type).blockFirst()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndUpdate",
-                        exec.findOneAndUpdate(filter, update, type).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndDelete",
-                        exec.findOneAndDelete(filter, type).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntityDataset_coverageME("query(Bson, Class)",
-                        exec.query(filter, type).block()));
-    }
-
-    @Test
-    public void testRecordRowsOnEveryReadPath_coverageME() {
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
-                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.recordDoc_coverageME()));
-        final Bson filter = new Document();
-        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eRecord_coverageME.class;
-        final Object expected = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.expectedRecord_coverageME();
-
-        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expected, exec.list(filter, type).blockFirst(), "list"),
-                () -> assertEquals(expected, exec.findFirst(filter, type).block(), "findFirst"),
-                () -> assertEquals(expected, exec.get(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.OID_HEX_coverageME, type).block(), "get(String)"),
-                () -> assertEquals(expected, exec.aggregate(pipeline, type).blockFirst(), "aggregate"),
-                () -> assertEquals(expected, exec.findOneAndDelete(filter, type).block(), "findOneAndDelete"),
-                () -> assertEquals(Arrays.asList(4L), exec.query(filter, type).block().getColumn("nums").get(0), "query Dataset"));
-    }
-
-    @Test
-    public void testGenericSubclassRowsOnEveryReadPath_coverageME() {
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
-                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.longBoxDoc_coverageME()));
-        final Bson filter = new Document();
-        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final var type = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eLongBox_coverageME.class;
-
-        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals((Object) 9L, exec.list(filter, type).blockFirst().getValue(), "list"),
-                () -> assertEquals((Object) 9L, exec.findFirst(filter, type).block().getValue(), "findFirst"),
-                () -> assertEquals((Object) 9L, exec.aggregate(pipeline, type).blockFirst().getValue(), "aggregate"),
-                () -> assertEquals((Object) 9L, exec.findOneAndDelete(filter, type).block().getValue(), "findOneAndDelete"));
-    }
-
-    @Test
-    public void testLocalJavaTimeSingleValuesAreReadInUtcOnEveryReadPath_coverageME() {
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
-                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.entityDoc_coverageME()));
-        final Bson filter = new Document();
-        final java.time.LocalDate day = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
-        final Date dayDate = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.DAY_coverageME;
-
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertEquals(day, exec.queryForSingleValue("day", filter, java.time.LocalDate.class).block(), "queryForSingleValue LocalDate"),
-                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_AT_coverageME,
-                        exec.queryForSingleValue("at", filter, java.time.LocalDateTime.class).block(), "queryForSingleValue LocalDateTime"),
-                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_TIME_coverageME,
-                        exec.queryForSingleValue("time", filter, java.time.LocalTime.class).block(), "queryForSingleValue LocalTime"),
-                () -> assertEquals(day, exec.findFirst(Arrays.asList("day"), filter, java.time.LocalDate.class).block(), "findFirst(Collection)"),
-                () -> assertEquals(day, exec.list(Arrays.asList("day"), filter, java.time.LocalDate.class).blockFirst(), "list(Collection)"),
-                // Previous behavior kept: other date targets keep the instant.
-                () -> assertEquals(dayDate, exec.queryForSingleValue("day", filter, Date.class).block(), "Date"),
-                () -> assertEquals(dayDate.toInstant(), exec.queryForSingleValue("day", filter, java.time.Instant.class).block(), "Instant"));
-    }
-
-    @Test
-    public void testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME() {
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
-                mockCollectionReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.dayDoc_coverageME()));
-        final Bson filter = new Document();
-        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("day", 1)));
-        final java.time.LocalDate day = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
-
-        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(day, exec.list(filter, java.time.LocalDate.class).blockFirst(), "list"),
-                () -> assertEquals(day, exec.findFirst(filter, java.time.LocalDate.class).block(), "findFirst"),
-                () -> assertEquals(day, exec.aggregate(pipeline, java.time.LocalDate.class).blockFirst(), "aggregate"),
-                () -> assertEquals(day, exec.findOneAndDelete(filter, java.time.LocalDate.class).block(), "findOneAndDelete"));
-    }
-
-    @Test
-    public void testDottedSelectNameCheckToleratesNullNames_coverageME() {
-        // Pin: the dotted-name check runs when the Mono is assembled, so it must be null-safe: a null select name still fails
-        // through the publisher with the Dataset's IllegalArgumentException (as before the fix), whichever position it has.
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(
-                mockCollectionReturning_coverageME(new Document("_id", 1).append("address", new Document("city", "Paris"))));
-        final Bson filter = new Document();
-
-        for (final List<String> names : Arrays.asList(Arrays.asList(null, "address.city"), Arrays.asList("address.city", null),
-                Arrays.asList("department", null))) {
-            StepVerifier.create(exec.query(names, filter, Map.class)).expectError(IllegalArgumentException.class).verify();
-        }
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    public void testAggregateSingleValueRowTypeSkipsDocumentsWithoutAValue_coverageME() {
-        // Pins the behavior documented on aggregate(List, Class) (and the mapper's aggregate) this round: for a single-value
-        // rowType an output document that yields no value (an empty document, or BSON null for a non-primitive rowType) is
-        // skipped, as Reactive Streams forbids null elements; a primitive rowType receives its default for BSON null.
-        final org.mockito.MockSettings lenient = org.mockito.Mockito.withSettings().strictness(org.mockito.quality.Strictness.LENIENT);
-        final MongoCollection<Document> collection = mock(MongoCollection.class, lenient);
-        final AggregatePublisher<Document> publisher = mock(AggregatePublisher.class, lenient);
-        when(collection.aggregate(anyList(), eq(Document.class))).thenReturn(publisher);
-        doAnswer(invocation -> {
-            Flux.just(new Document(), new Document("v", null), new Document("_id", 1).append("v", 5))
-                    .subscribe((Subscriber<? super Document>) invocation.getArgument(0));
-            return null;
-        }).when(publisher).subscribe(any());
-
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(collection);
-        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("v", 1)));
-
-        assertEquals(Arrays.asList(5L), exec.aggregate(pipeline, Long.class).collectList().block());
-        assertEquals(Arrays.asList("5"), exec.aggregate(pipeline, String.class).collectList().block());
-        assertEquals(Arrays.asList(0L, 5L), exec.aggregate(pipeline, long.class).collectList().block());
-    }
-
-    // ---- end 2026-10-04 coverageME ----
 }

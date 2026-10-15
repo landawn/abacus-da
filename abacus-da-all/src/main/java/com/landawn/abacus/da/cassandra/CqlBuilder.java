@@ -1540,8 +1540,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
      *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
-     * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not an entity bean class, or a
-     *         column name staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not an entity bean class, its derived table name is not
+     *         exactly one CQL table reference, or a column name staged by {@code select(...)} or {@code delete(...)} is blank or contains a CQL comment token
      */
     @Override
     public CqlBuilder from(final Class<?> entityClass) throws IllegalStateException, IllegalArgumentException {
@@ -1561,9 +1561,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, the current operation is not SELECT or DELETE, if no columns have
      *         been set for a SELECT, or if the table was already supplied by {@code from(...)} or {@code deleteFrom(...)}
-     * @throws IllegalArgumentException if {@code entityClass} is {@code null}, {@code alias} is non-empty,
-     *         {@code entityClass} is not an entity bean class, or a column name staged by {@code select(...)} or
-     *         {@code delete(...)} is blank or contains a CQL comment token
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null}, {@code alias} is non-empty, {@code entityClass} is not an entity bean class,
+     *         its derived table name is not exactly one CQL table reference, or a column name staged by {@code select(...)} or {@code delete(...)}
+     *         is blank or contains a CQL comment token
      */
     @Override
     public CqlBuilder from(final Class<?> entityClass, final String alias) throws IllegalStateException, IllegalArgumentException {
@@ -2458,7 +2458,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param entityClass the entity class
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or its derived table name is not
+         *         exactly one CQL table reference
          */
         public CqlBuilder insertInto(final Class<?> entityClass) throws IllegalArgumentException {
             return insertInto(entityClass, null);
@@ -2480,7 +2481,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param entityClass the entity class
          * @param excludedPropNames properties to exclude from the insert
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or its derived table name is not
+         *         exactly one CQL table reference
          */
         public CqlBuilder insertInto(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             final CqlBuilder instance = insert(entityClass, excludedPropNames);
@@ -3187,7 +3189,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param entityClass the entity class
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or if its table name
+         *         is not exactly one CQL table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass) throws IllegalArgumentException {
             return selectFrom(entityClass, false);
@@ -3208,7 +3211,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param alias unsupported table alias; must be {@code null} or empty
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null, alias is non-empty, or entityClass is not an entity
-         *         bean class
+         *         bean class, or if its table name is not exactly one CQL table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias) throws IllegalArgumentException {
             return selectFrom(entityClass, alias, false);
@@ -3232,7 +3235,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or nested entity
-         *         tables would be required
+         *         tables would be required, or if its table name is not exactly one CQL table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties) throws IllegalArgumentException {
             return selectFrom(entityClass, includeSubEntityProperties, null);
@@ -3254,7 +3257,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null, alias is non-empty, entityClass is not an entity
-         *         bean class, or nested entity tables would be required
+         *         bean class, or nested entity tables would be required, or if its table name is not exactly one CQL
+         *         table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final boolean includeSubEntityProperties) throws IllegalArgumentException {
             return selectFrom(entityClass, alias, includeSubEntityProperties, null);
@@ -3278,7 +3282,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param entityClass the entity class
          * @param excludedPropNames properties to exclude from selection
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or if its table name
+         *         is not exactly one CQL table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
             return selectFrom(entityClass, false, excludedPropNames);
@@ -3300,7 +3305,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param excludedPropNames properties to exclude from selection
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null, alias is non-empty, or entityClass is not an entity
-         *         bean class
+         *         bean class, or if its table name is not exactly one CQL table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final Set<String> excludedPropNames) throws IllegalArgumentException {
             return selectFrom(entityClass, alias, false, excludedPropNames);
@@ -3326,7 +3331,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param excludedPropNames properties to exclude from selection
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or nested entity
-         *         tables would be required
+         *         tables would be required, or if its table name is not exactly one CQL table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties, final Set<String> excludedPropNames)
                 throws IllegalArgumentException {
@@ -3352,7 +3357,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param excludedPropNames properties to exclude from selection
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entityClass is null, alias is non-empty, entityClass is not an entity
-         *         bean class, or nested entity tables would be required
+         *         bean class, or nested entity tables would be required, or if its table name is not exactly one CQL
+         *         table reference
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final boolean includeSubEntityProperties,
                 final Set<String> excludedPropNames) throws IllegalArgumentException {
@@ -3415,7 +3421,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param entityClass the entity class
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class
+         * @throws IllegalArgumentException if entityClass is null or is not an entity bean class, or if its table name
+         *         is not exactly one CQL table reference
          */
         public CqlBuilder count(final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);

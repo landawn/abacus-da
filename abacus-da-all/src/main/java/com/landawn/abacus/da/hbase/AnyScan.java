@@ -899,9 +899,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setTimestamp(1234567890L);   // returns this scan
-     * long min = scan.getTimeRange().getMin();                                     // returns 1234567890
-     * long max = scan.getTimeRange().getMax();                                     // returns 1234567891 (timestamp + 1)
+     * AnyScan scan = AnyScan.create().setTimestamp(1234567890L);  // returns this scan
+     * long min = scan.getTimeRange().getMin();                    // returns 1234567890
+     * long max = scan.getTimeRange().getMax();                    // returns 1234567891 (timestamp + 1)
      *
      * // A negative timestamp is rejected.
      * AnyScan.create().setTimestamp(-1L);   // throws IllegalArgumentException

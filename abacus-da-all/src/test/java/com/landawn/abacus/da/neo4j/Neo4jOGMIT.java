@@ -12,11 +12,11 @@ import org.neo4j.ogm.config.Configuration;
 import org.neo4j.ogm.model.Result;
 import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
- 
+
 import com.landawn.abacus.da.neo4j.model.Actor;
 import com.landawn.abacus.da.neo4j.model.Address;
 import com.landawn.abacus.da.neo4j.model.Customer;
-import com.landawn.abacus.da.neo4j.model.Movie; 
+import com.landawn.abacus.da.neo4j.model.Movie;
 import com.landawn.abacus.da.neo4j.model.Order;
 import com.landawn.abacus.da.neo4j.model.OrderItem;
 import com.landawn.abacus.da.neo4j.model.Product;
@@ -26,7 +26,7 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.Strings;
 
 // http://neo4j.com/docs/ogm/java/stable/
-public class Neo4jOGMTest {
+public class Neo4jOGMIT {
     private static SessionFactory sessionFactory;
 
     @BeforeAll
@@ -51,9 +51,9 @@ public class Neo4jOGMTest {
     }
 
     /**
-     * 
      *
-     * @throws Exception 
+     *
+     * @throws Exception
      */
     @Test
     public void test_movie() throws Exception {
@@ -88,9 +88,9 @@ public class Neo4jOGMTest {
     }
 
     /**
-     * 
      *
-     * @throws Exception 
+     *
+     * @throws Exception
      */
     @Test
     public void test_order() throws Exception {

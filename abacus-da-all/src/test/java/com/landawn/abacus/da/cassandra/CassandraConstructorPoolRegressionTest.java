@@ -7,7 +7,6 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
@@ -17,13 +16,14 @@ import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.pool.KeyedObjectPool;
 import com.landawn.abacus.pool.PoolFactory;
 
-@Tag("base-test")
 public class CassandraConstructorPoolRegressionTest extends TestBase {
 
     @Test
     void failedModernConstructorDoesNotRetainPool() throws Exception {
         final CqlSession failedSession = (CqlSession) Proxy.newProxyInstance(CqlSession.class.getClassLoader(), new Class<?>[] { CqlSession.class },
-                (proxy, method, args) -> { throw new IllegalStateException("session context unavailable"); });
+                (proxy, method, args) -> {
+                    throw new IllegalStateException("session context unavailable");
+                });
 
         assertNoRetainedPools(CassandraExecutor.class, () -> new CassandraExecutor(null), () -> new CassandraExecutor(failedSession));
     }
@@ -32,11 +32,11 @@ public class CassandraConstructorPoolRegressionTest extends TestBase {
     @SuppressWarnings("deprecation")
     void failedLegacyConstructorDoesNotRetainPool() throws Exception {
         final com.datastax.driver.core.Session failedSession = (com.datastax.driver.core.Session) Proxy.newProxyInstance(
-                com.datastax.driver.core.Session.class.getClassLoader(), new Class<?>[] { com.datastax.driver.core.Session.class },
-                (proxy, method, args) -> { throw new IllegalStateException("session cluster unavailable"); });
+                com.datastax.driver.core.Session.class.getClassLoader(), new Class<?>[] { com.datastax.driver.core.Session.class }, (proxy, method, args) -> {
+                    throw new IllegalStateException("session cluster unavailable");
+                });
 
-        assertNoRetainedPools(com.landawn.abacus.da.cassandra.v3.CassandraExecutor.class,
-                () -> new com.landawn.abacus.da.cassandra.v3.CassandraExecutor(null),
+        assertNoRetainedPools(com.landawn.abacus.da.cassandra.v3.CassandraExecutor.class, () -> new com.landawn.abacus.da.cassandra.v3.CassandraExecutor(null),
                 () -> new com.landawn.abacus.da.cassandra.v3.CassandraExecutor(failedSession));
     }
 

@@ -4,22 +4,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -27,13 +23,8 @@ import com.google.cloud.NoCredentials;
 import com.google.cloud.bigquery.BigQuery;
 import com.google.cloud.bigquery.BigQueryOptions;
 import com.google.cloud.bigquery.DatasetInfo;
-import com.google.cloud.bigquery.Field;
-import com.google.cloud.bigquery.FieldList;
-import com.google.cloud.bigquery.FieldValue;
 import com.google.cloud.bigquery.FieldValueList;
 import com.google.cloud.bigquery.QueryJobConfiguration;
-import com.google.cloud.bigquery.QueryParameterValue;
-import com.google.cloud.bigquery.StandardSQLTypeName;
 import com.google.cloud.bigquery.TableResult;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.query.Filters;
@@ -41,46 +32,19 @@ import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
-import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.stream.Stream;
+import com.landawn.abacus.util.u.Nullable;
 
 /**
- * No-mock counterpart of {@code BigQueryExecutorTest}: it drives {@link BigQueryExecutor} against a
- * <b>real</b> BigQuery emulator (goccy/bigquery-emulator) instead of Mockito stubs.
+ * BigQuery emulator round trips. Requires the test-project emulator at localhost:9050 and creates a separate dataset for each run. Static mapping and validation contracts live in the BigQuery unit suites.
  *
- * <p>Tests fall into three groups:</p>
- * <ul>
- * <li><b>Pure-logic tests</b> for the static converters ({@code toEntity}/{@code toMap}/
- *     {@code buildQueryParameterValue}) built from hand-constructed {@code Field}/{@code FieldValueList},
- *     and for argument validation / unsupported naming policy (which throw before any RPC). These never used
- *     the mock and are kept as-is; they run regardless of whether the emulator is up.</li>
- * <li><b>Conversion round-trips</b> that previously stubbed {@code TableResult}. These now obtain a real
- *     {@code TableResult} from a {@code SELECT}/DML against the emulator and feed it to the static helpers.</li>
- * <li><b>Executor round-trips</b> that previously stubbed {@code BigQuery.query(...)}. These now create a real
- *     dataset/tables and run real {@code INSERT}/{@code UPDATE}/{@code DELETE}/{@code SELECT}.</li>
- * </ul>
- *
- * <h2>Running locally</h2>
- * <pre>{@code
- * docker run --rm -d --name bigquery-emulator -p 9050:9050  ghcr.io/goccy/bigquery-emulator:latest --project=test-project
- * mvn -pl abacus-da-all test -Dtest=BigQueryExecutorTest2
- * }</pre>
- *
- * <p>The Java client is pointed at the emulator with {@code setHost("http://localhost:9050")} +
- * {@link NoCredentials}. The emulator is feature-complete for this executor: it resolves unqualified table
- * names, binds positional {@code ?} parameters, treats column names case-insensitively (so
- * {@code SCREAMING_SNAKE_CASE} works against lower-case columns), and supports {@code INSERT}/{@code UPDATE}/
- * {@code DELETE} DML plus {@code STRUCT}/array results. If the emulator is unreachable, the executor/conversion
- * round-trips are <b>skipped</b> (JUnit {@link Assumptions}); the pure-logic tests still run.</p>
- *
- * <p>The three {@code InterruptedException} error-path tests from the mock suite are intentionally omitted:
- * forcing a real client to raise {@code InterruptedException} is not reliably reproducible without a mock.</p>
+ * <p>Run with {@code mvn -pl abacus-da-all -Pintegration-tests -Dit.test=BigQueryExecutorIT verify -Dgpg.skip=true}.</p>
  */
-public class BigQueryExecutorTest2 extends TestBase {
+public class BigQueryExecutorIT extends TestBase {
 
     private static final String PROJECT = "test-project";
     private static final String ENDPOINT = "http://localhost:9050";
-    private static final String DATASET = "bq_test";
+    private static final String DATASET = "abacus_da_test_" + java.util.UUID.randomUUID().toString().replace("-", "");
     private static final String TEST_TABLE = DATASET + ".test_entity"; // SNAKE_CASE / SCREAMING_SNAKE_CASE (case-insensitive) of TestEntity
     private static final String CAMEL_TABLE = DATASET + ".testEntity"; // CAMEL_CASE of TestEntity (no underscore -> distinct table)
     private static final String CK_TABLE = DATASET + ".composite_key_entity";
@@ -88,8 +52,7 @@ public class BigQueryExecutorTest2 extends TestBase {
     private static BigQuery bigQuery;
     private static BigQueryExecutor executor;
 
-    private static boolean available;
-    private static String unavailableReason;
+    private static boolean datasetCreated;
 
     private static final AtomicInteger SEQ = new AtomicInteger(100_000);
 
@@ -98,61 +61,25 @@ public class BigQueryExecutorTest2 extends TestBase {
     }
 
     @BeforeAll
-    public static void setUpClass() {
-        // Building the client does not connect; the first query does.
+    public static void setUpClass() throws Exception {
         bigQuery = BigQueryOptions.newBuilder().setProjectId(PROJECT).setHost(ENDPOINT).setCredentials(NoCredentials.getInstance()).build().getService();
         executor = new BigQueryExecutor(bigQuery);
-
-        try {
-            try {
-                bigQuery.create(DatasetInfo.newBuilder(DATASET).build());
-            } catch (final Exception ignore) {
-                // dataset already exists
-            }
-            createTable("CREATE TABLE " + TEST_TABLE + " (id INT64, name STRING)");
-            createTable("CREATE TABLE " + CAMEL_TABLE + " (id INT64, name STRING)");
-            createTable("CREATE TABLE " + CK_TABLE + " (id_a STRING, id_b STRING, value STRING)");
-            // Start each run from a clean slate (the emulator lacks CREATE TABLE IF NOT EXISTS).
-            ddl("DELETE FROM " + TEST_TABLE + " WHERE true");
-            ddl("DELETE FROM " + CAMEL_TABLE + " WHERE true");
-            ddl("DELETE FROM " + CK_TABLE + " WHERE true");
-            available = true;
-        } catch (final Throwable t) {
-            available = false;
-            unavailableReason = t.toString();
-            System.err.println("[BigQueryExecutorTest2] BigQuery emulator unavailable at " + ENDPOINT + " - DB-backed tests will be skipped: " + t);
-        }
+        bigQuery.create(DatasetInfo.newBuilder(DATASET).build());
+        datasetCreated = true;
+        ddl("CREATE TABLE " + TEST_TABLE + " (id INT64, name STRING)");
+        ddl("CREATE TABLE " + CAMEL_TABLE + " (id INT64, name STRING)");
+        ddl("CREATE TABLE " + CK_TABLE + " (id_a STRING, id_b STRING, value STRING)");
     }
 
     @AfterAll
     public static void tearDownClass() {
-        if (bigQuery != null && available) {
-            try {
-                ddl("DROP TABLE " + TEST_TABLE);
-                ddl("DROP TABLE " + CAMEL_TABLE);
-                ddl("DROP TABLE " + CK_TABLE);
-            } catch (final Throwable ignore) {
-                // best-effort cleanup
-            }
+        if (bigQuery != null && datasetCreated) {
+            bigQuery.delete(DATASET, BigQuery.DatasetDeleteOption.deleteContents());
         }
-    }
-
-    private static void assumeAvailable() {
-        Assumptions.assumeTrue(available, "BigQuery emulator not reachable at " + ENDPOINT + " (" + unavailableReason + ")");
     }
 
     private static TableResult ddl(final String sql) throws Exception {
         return bigQuery.query(QueryJobConfiguration.newBuilder(sql).setUseLegacySql(false).build());
-    }
-
-    private static void createTable(final String ddl) throws Exception {
-        try {
-            ddl(ddl);
-        } catch (final Exception e) {
-            if (!String.valueOf(e.getMessage()).contains("already")) {
-                throw e;
-            }
-        }
     }
 
     /** Runs a SELECT (or any query) and returns the real {@link TableResult}. */
@@ -168,499 +95,11 @@ public class BigQueryExecutorTest2 extends TestBase {
     }
 
     // ====================================================================================================
-    // Pure-logic tests (no emulator required) - carried over unchanged from the mock suite
-    // ====================================================================================================
-
-    @Test
-    public void testConstructorWithBigQuery() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery);
-        assertNotNull(exec);
-        assertEquals(bigQuery, exec.bigQuery());
-    }
-
-    @Test
-    public void testConstructorWithBigQueryAndNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
-        assertNotNull(exec);
-        assertEquals(bigQuery, exec.bigQuery());
-    }
-
-    @Test
-    public void testBigQuery() {
-        assertEquals(bigQuery, executor.bigQuery());
-    }
-
-    @Test
-    public void testBigQuery_ReturnsSameInstance() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery);
-        assertSame(bigQuery, exec.bigQuery());
-    }
-
-    @Test
-    public void testToEntityWithSchemaFieldValueListAndClass() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-        com.google.cloud.bigquery.Schema schema = com.google.cloud.bigquery.Schema.of(fields);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "123"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName")), fields);
-
-        TestEntity entity = BigQueryExecutor.toEntity(schema, fieldValueList, TestEntity.class);
-
-        assertNotNull(entity);
-        assertEquals(123, entity.getId());
-        assertEquals("TestName", entity.getName());
-    }
-
-    @Test
-    public void testToEntityWithFieldListFieldValueListAndClass() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "456"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName2")), fields);
-
-        TestEntity entity = BigQueryExecutor.toEntity(fields, fieldValueList, TestEntity.class);
-
-        assertNotNull(entity);
-        assertEquals(456, entity.getId());
-        assertEquals("TestName2", entity.getName());
-    }
-
-    @Test
-    public void testToEntityWithFieldValueListAndClass() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "789"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName3")), fields);
-
-        TestEntity entity = BigQueryExecutor.toEntity(fieldValueList, TestEntity.class);
-
-        assertNotNull(entity);
-        assertEquals(789, entity.getId());
-        assertEquals("TestName3", entity.getName());
-    }
-
-    @Test
-    public void testToMapWithSchemaAndFieldValueList() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-        com.google.cloud.bigquery.Schema schema = com.google.cloud.bigquery.Schema.of(fields);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "123"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName")), fields);
-
-        Map<String, Object> map = BigQueryExecutor.toMap(schema, fieldValueList);
-
-        assertNotNull(map);
-        assertEquals("123", map.get("id"));
-        assertEquals("TestName", map.get("name"));
-    }
-
-    @Test
-    public void testToMapWithFieldListAndFieldValueList() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "456"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName2")), fields);
-
-        Map<String, Object> map = BigQueryExecutor.toMap(fields, fieldValueList);
-
-        assertNotNull(map);
-        assertEquals("456", map.get("id"));
-        assertEquals("TestName2", map.get("name"));
-    }
-
-    @Test
-    public void testToMapWithFieldListFieldValueListAndSupplier() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "789"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName3")), fields);
-
-        Map<String, Object> map = BigQueryExecutor.toMap(fields, fieldValueList, HashMap::new);
-
-        assertNotNull(map);
-        assertTrue(map instanceof HashMap);
-        assertEquals("789", map.get("id"));
-        assertEquals("TestName3", map.get("name"));
-    }
-
-    @Test
-    public void testToMapWithFieldValueList() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "111"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName4")), fields);
-
-        Map<String, Object> map = BigQueryExecutor.toMap(fieldValueList);
-
-        assertNotNull(map);
-        assertEquals("111", map.get("id"));
-        assertEquals("TestName4", map.get("name"));
-    }
-
-    @Test
-    public void testToMapWithFieldValueListAndSupplier() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "222"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName5")), fields);
-
-        Map<String, Object> map = BigQueryExecutor.toMap(fieldValueList, HashMap::new);
-
-        assertNotNull(map);
-        assertTrue(map instanceof HashMap);
-        assertEquals("222", map.get("id"));
-        assertEquals("TestName5", map.get("name"));
-    }
-
-    @Test
-    public void testToEntityWithNestedFieldValueList() {
-        Field nestedField1 = Field.of("nestedId", StandardSQLTypeName.INT64);
-        Field nestedField2 = Field.of("nestedName", StandardSQLTypeName.STRING);
-        FieldList nestedFields = FieldList.of(nestedField1, nestedField2);
-
-        FieldValueList nestedFieldValueList = FieldValueList.of(
-                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "999"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "NestedName")), nestedFields);
-
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("nested", StandardSQLTypeName.STRUCT, nestedFields);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList.of(
-                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "123"), FieldValue.of(FieldValue.Attribute.RECORD, nestedFieldValueList)), fields);
-
-        TestEntityWithNested entity = BigQueryExecutor.toEntity(fields, fieldValueList, TestEntityWithNested.class);
-
-        assertNotNull(entity);
-        assertEquals(123, entity.getId());
-        assertNotNull(entity.getNested());
-    }
-
-    @Test
-    public void testToMapWithNestedFieldValueList() {
-        Field nestedField = Field.of("nestedValue", StandardSQLTypeName.STRING);
-        FieldList nestedFields = FieldList.of(nestedField);
-
-        FieldValueList nestedFieldValueList = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "NestedValue")), nestedFields);
-
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("nested", StandardSQLTypeName.STRUCT, nestedFields);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList.of(
-                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "123"), FieldValue.of(FieldValue.Attribute.RECORD, nestedFieldValueList)), fields);
-
-        Map<String, Object> map = BigQueryExecutor.toMap(fields, fieldValueList);
-
-        assertNotNull(map);
-        assertEquals("123", map.get("id"));
-        assertTrue(map.get("nested") instanceof Map);
-    }
-
-    @Test
-    public void testToEntityWithDottedPropertyName() {
-        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("nested.property", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field1, field2);
-
-        FieldValueList fieldValueList = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "123"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "NestedValue")), fields);
-
-        TestEntity entity = BigQueryExecutor.toEntity(fields, fieldValueList, TestEntity.class);
-
-        assertNotNull(entity);
-        assertEquals(123, entity.getId());
-    }
-
-    @Test
-    public void testToEntityWithInvalidEntityClass() {
-        Field field = Field.of("value", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(field);
-
-        FieldValueList fieldValueList = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Value")), fields);
-
-        assertThrows(IllegalArgumentException.class, () -> {
-            BigQueryExecutor.toEntity(fields, fieldValueList, String.class);
-        });
-    }
-
-    @Test
-    public void testToMap_WithLinkedHashMapSupplier() {
-        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field f2 = Field.of("name", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(f1, f2);
-
-        FieldValueList fvl = FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Z")), fields);
-
-        Map<String, Object> map = BigQueryExecutor.toMap(fields, fvl, com.landawn.abacus.util.IntFunctions.ofLinkedHashMap());
-        assertTrue(map instanceof LinkedHashMap);
-        assertEquals("9", map.get("id"));
-        assertEquals("Z", map.get("name"));
-    }
-
-    @Test
-    public void testToMapWithNullMapSupplier() {
-        FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64));
-        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9")), fields);
-
-        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toMap(fields, row, null));
-        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toMap(row, null));
-    }
-
-    @Test
-    public void testToMap_UnwrapsRepeatedFieldValues() {
-        final Field repeated = Field.newBuilder("tags", StandardSQLTypeName.STRING).setMode(Field.Mode.REPEATED).build();
-        final FieldList fields = FieldList.of(repeated);
-        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.REPEATED,
-                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "a"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "b")))), fields);
-
-        final Map<String, Object> map = BigQueryExecutor.toMap(fields, row, com.landawn.abacus.util.IntFunctions.ofLinkedHashMap());
-
-        assertEquals(Arrays.asList("a", "b"), map.get("tags"));
-    }
-
-    @Test
-    public void testGetSchema_FieldValueListWithSchema() {
-        Field f1 = Field.of("a", StandardSQLTypeName.STRING);
-        FieldList fields = FieldList.of(f1);
-        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), fields);
-
-        Map<String, Object> result = BigQueryExecutor.toMap(row);
-        assertNotNull(result);
-        assertEquals("x", result.get("a"));
-    }
-
-    // ----- buildQueryParameterValue (pure) -----
-
-    @Test
-    public void testBuildQueryParameterValueWithDifferentTypes() {
-        Object[] parameters = new Object[] { "string", true, 'c', (byte) 1, (short) 2, 3, 4L, 5.0f, 6.0d, new BigDecimal("7.0"), new java.util.Date(),
-                new byte[] { 1, 2, 3 } };
-
-        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(parameters);
-
-        assertNotNull(values);
-        assertEquals(parameters.length, values.size());
-    }
-
-    @Test
-    public void testBuildQueryParameterValueWithEmptyParameters() {
-        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue();
-
-        assertNotNull(values);
-        assertEquals(0, values.size());
-    }
-
-    @Test
-    public void testBuildQueryParameterValueWithComplexTypes() {
-        List<String> list = Arrays.asList("a", "b", "c");
-        Map<String, Object> map = new HashMap<>();
-        map.put("key", "value");
-        TestEntity entity = new TestEntity();
-        entity.setId(1);
-
-        Object[] parameters = new Object[] { list, map, entity, new String[] { "x", "y" } };
-
-        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(parameters);
-
-        assertNotNull(values);
-        assertEquals(parameters.length, values.size());
-    }
-
-    @Test
-    public void testBuildQueryParameterValueRejectsUntypedNull() {
-        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.buildQueryParameterValue("abc", null));
-    }
-
-    @Test
-    public void testBuildQueryParameterValueAcceptsTypedNull() {
-        final QueryParameterValue typedNull = QueryParameterValue.int64((Long) null);
-
-        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(typedNull);
-
-        assertEquals(1, values.size());
-        assertTrue(values.get(0) == typedNull);
-    }
-
-    @Test
-    public void testBuildQueryParameterValueWithSqlTypes() {
-        Object[] params = new Object[] { java.sql.Date.valueOf("2024-01-01"), java.sql.Time.valueOf("12:34:56"), new java.sql.Timestamp(1000L),
-                com.google.cloud.Timestamp.ofTimeSecondsAndNanos(1L, 0) };
-
-        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(params);
-        assertEquals(4, values.size());
-        assertEquals(StandardSQLTypeName.DATE, values.get(0).getType());
-        assertEquals("2024-01-01", values.get(0).getValue());
-        assertEquals(StandardSQLTypeName.TIME, values.get(1).getType());
-        assertEquals("12:34:56.000000", values.get(1).getValue());
-        assertEquals(StandardSQLTypeName.TIMESTAMP, values.get(2).getType());
-        assertEquals(QueryParameterValue.timestamp(1_000_000L).getValue(), values.get(2).getValue());
-        assertEquals(QueryParameterValue.timestamp(1_000_000L).getValue(), values.get(3).getValue());
-    }
-
-    @Test
-    public void testBuildQueryParameterValueWithUtilDateUsesTimestampMicros() {
-        final List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(new java.util.Date(1000L));
-
-        assertEquals(1, values.size());
-        assertEquals(StandardSQLTypeName.TIMESTAMP, values.get(0).getType());
-        assertEquals(QueryParameterValue.timestamp(1_000_000L).getValue(), values.get(0).getValue());
-    }
-
-    @Test
-    public void testBuildQueryParameterValueWithGoogleDate() {
-        Object[] params = new Object[] { com.google.cloud.Date.fromYearMonthDay(2024, 1, 1) };
-        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(params);
-        assertEquals(1, values.size());
-    }
-
-    @Test
-    public void testBuildQueryParameterValue_NullParametersArray() {
-        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue((Object[]) null);
-        assertNotNull(values);
-        assertEquals(0, values.size());
-    }
-
-    // ----- Constructor / validation (throw before any RPC) -----
-
-    @Test
-    public void testConstructor_NullBigQuery() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(null));
-    }
-
-    @Test
-    public void testConstructor_NullNamingPolicy() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, null));
-    }
-
-    @Test
-    public void testConstructor_NullBigQueryWithNamingPolicy() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(null, NamingPolicy.SNAKE_CASE));
-    }
-
-    // An unsupported naming policy is now rejected eagerly at construction (fail-fast contract),
-    // so no INSERT/UPDATE/DELETE/query call is ever reached.
-
-    @Test
-    public void testUnsupportedNamingPolicy() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
-    }
-
-    @Test
-    public void testInsertWithMap_UnsupportedNamingPolicy() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
-    }
-
-    @Test
-    public void testUpdateWithMap_UnsupportedNamingPolicy() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
-    }
-
-    @Test
-    public void testDelete_UnsupportedNamingPolicy() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
-    }
-
-    @Test
-    public void testQuery_UnsupportedNamingPolicy() {
-        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
-    }
-
-    @Test
-    public void testUpdateWithEmptyPrimaryKeyNames() {
-        TestEntity entity = new TestEntity();
-        entity.setId(1);
-        Set<String> emptyKeyNames = N.toSet();
-        assertThrows(IllegalArgumentException.class, () -> executor.update(entity, emptyKeyNames));
-    }
-
-    @Test
-    public void testUpdateWithEmptyProps() {
-        Map<String, Object> emptyProps = new HashMap<>();
-        assertThrows(IllegalArgumentException.class, () -> executor.update(TestEntity.class, emptyProps, Filters.eq("id", 1)));
-    }
-
-    @Test
-    public void testDelete_WithIds_MismatchCount() {
-        assertThrows(IllegalArgumentException.class, () -> executor.delete(TestEntity.class, 1, 2));
-    }
-
-    @Test
-    public void testDelete_WithIds_EmptyIds() {
-        assertThrows(IllegalArgumentException.class, () -> executor.delete(TestEntity.class, new Object[0]));
-    }
-
-    @Test
-    public void testDelete_WithIds_NullIdValue() {
-        assertThrows(IllegalArgumentException.class, () -> executor.delete(TestEntity.class, (Object[]) null));
-    }
-
-    @Test
-    public void testDelete_EntityNoKeyValue() {
-        TestEntityWithStringKey entity = new TestEntityWithStringKey();
-        entity.setId(""); // empty string is treated as missing
-        assertThrows(IllegalArgumentException.class, () -> executor.delete(entity));
-    }
-
-    @Test
-    public void testDelete_EntityNullKeyValue() {
-        TestEntityWithStringKey entity = new TestEntityWithStringKey();
-        entity.setId(null);
-        assertThrows(IllegalArgumentException.class, () -> executor.delete(entity));
-    }
-
-    @Test
-    public void testEntityToCondition_NullEntityThrows() {
-        assertThrows(IllegalArgumentException.class, () -> executor.delete((Object) null));
-    }
-
-    @Test
-    public void testIdsToCondition_EmptyIdsThrows() {
-        assertThrows(IllegalArgumentException.class, () -> executor.exists(TestEntity.class, new Object[0]));
-    }
-
-    @Test
-    public void testIdsToCondition_TooManyIdsThrows() {
-        assertThrows(IllegalArgumentException.class, () -> executor.exists(TestEntity.class, 1, 2, 3));
-    }
-
-    @Test
-    public void testEntityToCondition_CompositeKey_NullValueThrows() {
-        CompositeKeyEntity e = new CompositeKeyEntity();
-        e.setIdA("1");
-        // idB is null
-        e.setValue("v");
-        assertThrows(IllegalArgumentException.class, () -> executor.delete(e));
-    }
-
-    @Test
-    public void testIdsToCondition_CompositeKeyMismatchThrows() {
-        assertThrows(IllegalArgumentException.class, () -> executor.exists(CompositeKeyEntity.class, "1"));
-    }
-
-    // ====================================================================================================
     // Conversion round-trips: real TableResult fed to the static helpers
     // ====================================================================================================
 
     @Test
     public void testToListWithTableResultAndClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 1 AS id, 'Name1' AS name UNION ALL SELECT 2 AS id, 'Name2' AS name ORDER BY id");
 
         List<TestEntity> list = BigQueryExecutor.toList(tr, TestEntity.class);
@@ -675,7 +114,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToListWithEmptyTableResult() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT id, name FROM " + TEST_TABLE + " WHERE id = -1");
 
         List<TestEntity> list = BigQueryExecutor.toList(tr, TestEntity.class);
@@ -686,7 +124,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractDataWithTableResultAndClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 1 AS id, 'Name1' AS name");
 
         Dataset dataset = BigQueryExecutor.extractData(tr, TestEntity.class);
@@ -700,7 +137,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractDataWithEmptyTableResult() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT id, name FROM " + TEST_TABLE + " WHERE id = -1");
 
         Dataset dataset = BigQueryExecutor.extractData(tr, TestEntity.class);
@@ -711,7 +147,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractDataWithMapClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 1 AS id, 'Name1' AS name");
 
         Dataset dataset = BigQueryExecutor.extractData(tr, Map.class);
@@ -723,7 +158,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractData_AsMapClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 1 AS id, 'x' AS name");
 
         Dataset ds = BigQueryExecutor.extractData(tr, Map.class);
@@ -734,7 +168,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractData_NullTargetClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 55 AS id");
 
         Dataset ds = BigQueryExecutor.extractData(tr, null);
@@ -744,7 +177,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToListWithDifferentRowClasses() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 'Value1' AS value");
 
         List<String> stringList = BigQueryExecutor.toList(q("SELECT 'Value1' AS value"), String.class);
@@ -763,7 +195,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToListWithObjectArrayPopulatesElements() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 42 AS id, 'Alice' AS name UNION ALL SELECT 43 AS id, 'Bob' AS name ORDER BY id");
 
         List<Object[]> arrayList = BigQueryExecutor.toList(tr, Object[].class);
@@ -780,7 +211,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToListWithListClassPopulatesElements() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 100 AS id, 'Carol' AS name");
 
         List<List> listList = BigQueryExecutor.toList(tr, List.class);
@@ -794,7 +224,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToList_AsCollectionClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 1 AS id, 'n' AS name");
 
         @SuppressWarnings({ "unchecked", "rawtypes" })
@@ -805,7 +234,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToList_AsMapClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 42 AS id");
 
         @SuppressWarnings({ "unchecked", "rawtypes" })
@@ -816,7 +244,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToList_AsSingleValueClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 100 AS id UNION ALL SELECT 200 AS id ORDER BY id");
 
         List<Long> result = BigQueryExecutor.toList(tr, Long.class);
@@ -827,7 +254,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToList_WithIntegerClass() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT 1 AS c UNION ALL SELECT 2 AS c ORDER BY c");
 
         List<Integer> values = BigQueryExecutor.toList(tr, Integer.class);
@@ -838,7 +264,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToList_ReadRow_WithFieldValueList_AsObjectArray() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT STRUCT('v' AS inner_val) AS outer_val");
 
         List<Object[]> result = BigQueryExecutor.toList(tr, Object[].class);
@@ -849,7 +274,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractData_NestedFieldValueListInColumn() throws Exception {
-        assumeAvailable();
         TableResult tr = q("SELECT STRUCT('x' AS a) AS nested");
 
         Dataset ds = BigQueryExecutor.extractData(tr, Map.class);
@@ -861,7 +285,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testToListWithDmlResult() throws Exception {
-        assumeAvailable();
         TableResult dml = executor.delete(TestEntity.class, Filters.eq("id", -987_654));
         List<TestEntity> list = BigQueryExecutor.toList(dml, TestEntity.class);
         assertNotNull(list);
@@ -870,7 +293,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractDataWithDmlResult() throws Exception {
-        assumeAvailable();
         TableResult dml = executor.delete(TestEntity.class, Filters.eq("id", -987_653));
         Dataset ds = BigQueryExecutor.extractData(dml, TestEntity.class);
         assertNotNull(ds);
@@ -879,7 +301,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExtractDataWithDmlResult_MapClass() throws Exception {
-        assumeAvailable();
         TableResult dml = executor.delete(TestEntity.class, Filters.eq("id", -987_652));
         Dataset ds = BigQueryExecutor.extractData(dml, Map.class);
         assertNotNull(ds);
@@ -892,7 +313,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testInsertEntity() throws Exception {
-        assumeAvailable();
         int id = uid();
         TableResult result = executor.insert(entity(id, "Test"));
         assertNotNull(result);
@@ -901,7 +321,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testInsertWithClassAndProps() throws Exception {
-        assumeAvailable();
         int id = uid();
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("id", id);
@@ -914,7 +333,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateEntity() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "old"));
 
@@ -925,7 +343,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateEntityWithPrimaryKeyNames() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "old"));
 
@@ -936,7 +353,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateWithClassPropsAndCondition() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "old"));
 
@@ -949,7 +365,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testDeleteEntity() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
 
@@ -960,7 +375,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testDeleteWithClassAndIds() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
 
@@ -971,7 +385,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testDeleteWithClassAndCondition() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
 
@@ -984,7 +397,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testInsertEntityGeneratesPositionalSql() throws Exception {
-        assumeAvailable();
         int id = uid();
         // Succeeds only if the generated SQL uses positional '?' bound via setPositionalParameters.
         assertNotNull(executor.insert(entity(id, "Test")));
@@ -993,7 +405,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testInsertClassPropsGeneratesPositionalSql() throws Exception {
-        assumeAvailable();
         int id = uid();
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("id", id);
@@ -1004,7 +415,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateEntityWithKeysGeneratesPositionalSql() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "old"));
         assertNotNull(executor.update(entity(id, "UpdatedTest"), N.asSet("id")));
@@ -1013,7 +423,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateClassPropsConditionGeneratesPositionalSql() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "old"));
         Map<String, Object> props = new LinkedHashMap<>();
@@ -1024,7 +433,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testDeleteClassConditionGeneratesPositionalSql() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
         assertNotNull(executor.delete(TestEntity.class, Filters.eq("id", id)));
@@ -1035,7 +443,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExistsWithClassAndIds() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
         assertTrue(executor.exists(TestEntity.class, id));
@@ -1043,20 +450,17 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExistsWithClassAndCondition() throws Exception {
-        assumeAvailable();
         assertFalse(executor.exists(TestEntity.class, Filters.eq("id", -424_242)));
     }
 
     @Test
     public void testExists_NullWhereClause_NoRows() throws Exception {
-        assumeAvailable();
         ddl("DELETE FROM " + TEST_TABLE + " WHERE true");
         assertFalse(executor.exists(TestEntity.class, (Condition) null));
     }
 
     @Test
     public void testExists_NullWhereClause_HasRows() throws Exception {
-        assumeAvailable();
         executor.insert(entity(uid(), "x"));
         assertTrue(executor.exists(TestEntity.class, (Condition) null));
     }
@@ -1065,7 +469,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testqueryForSingleValueWithTargetClass() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "TestName"));
 
@@ -1076,7 +479,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testqueryForSingleValueWithQuery() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
 
@@ -1087,14 +489,12 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testqueryForSingleValueWithEmptyResult() throws Exception {
-        assumeAvailable();
         Nullable<String> result = executor.queryForSingleValue(String.class, "SELECT name FROM " + TEST_TABLE + " WHERE id = ?", -999);
         assertFalse(result.isPresent());
     }
 
     @Test
     public void testQueryForSingleValue_WithCondition_NullValue() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, null)); // row exists but name is null
 
@@ -1105,14 +505,12 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQueryForSingleValue_ByQuery_NoRows() throws Exception {
-        assumeAvailable();
         Nullable<Long> result = executor.queryForSingleValue(Long.class, "SELECT id FROM " + TEST_TABLE + " WHERE id = ?", -321);
         assertFalse(result.isPresent());
     }
 
     @Test
     public void testQueryForSingleValueWithDmlSql() throws Exception {
-        assumeAvailable();
         // queryForSingleValue over a DML statement: there are no value rows -> empty (must not NoSuchElement).
         Nullable<String> result = executor.queryForSingleValue(String.class, "UPDATE " + TEST_TABLE + " SET name = ? WHERE id < ?", "x", -100_000);
         assertFalse(result.isPresent());
@@ -1122,7 +520,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQueryWithClassAndCondition() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "Name1"));
 
@@ -1133,7 +530,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQueryWithClassSelectPropsAndCondition() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "Name1"));
 
@@ -1146,7 +542,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQueryWithClassQueryAndParameters() throws Exception {
-        assumeAvailable();
         Dataset dataset = executor.query(TestEntity.class, "SELECT * FROM " + TEST_TABLE + " WHERE id = ?", -1);
         assertNotNull(dataset);
         assertEquals(0, dataset.size());
@@ -1154,14 +549,12 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQuery_NullCondition() throws Exception {
-        assumeAvailable();
         Dataset ds = executor.query(TestEntity.class, (Condition) null);
         assertNotNull(ds);
     }
 
     @Test
     public void testListWithClassAndCondition() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "Name1"));
 
@@ -1173,7 +566,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testListWithClassAndCondition_NoMatching() throws Exception {
-        assumeAvailable();
         List<TestEntity> list = executor.list(TestEntity.class, Filters.eq("id", -1));
         assertNotNull(list);
         assertEquals(0, list.size());
@@ -1181,7 +573,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testListWithClassSelectPropsAndCondition() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "Name1"));
 
@@ -1193,7 +584,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testListWithClassQueryAndParameters() throws Exception {
-        assumeAvailable();
         List<TestEntity> list = executor.list(TestEntity.class, "SELECT * FROM " + TEST_TABLE + " WHERE id = ?", -1);
         assertNotNull(list);
         assertEquals(0, list.size());
@@ -1203,7 +593,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQuery_ScreamingSnakeCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
         Dataset ds = exec.query(TestEntity.class, Filters.eq("id", -1));
         assertNotNull(ds);
@@ -1211,7 +600,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQuery_CamelCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.CAMEL_CASE);
         Dataset ds = exec.query(TestEntity.class, Filters.eq("id", -1));
         assertNotNull(ds);
@@ -1219,7 +607,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQuery_WithSelectProps_ScreamingSnakeCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
         Dataset ds = exec.query(TestEntity.class, Arrays.asList("name"), null);
         assertNotNull(ds);
@@ -1227,7 +614,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testQuery_WithSelectProps_CamelCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.CAMEL_CASE);
         Dataset ds = exec.query(TestEntity.class, Arrays.asList("name"), null);
         assertNotNull(ds);
@@ -1235,7 +621,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testInsertWithMap_ScreamingSnakeCase() throws Exception {
-        assumeAvailable();
         // Column names are case-insensitive in the emulator, so the SCREAMING_SNAKE_CASE columns (ID, NAME)
         // bind to the lower-case stored columns.
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
@@ -1250,7 +635,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testInsertWithMap_CamelCase() throws Exception {
-        assumeAvailable();
         // CAMEL_CASE derives the table name "testEntity" (no underscore), distinct from "test_entity";
         // seed, operate and verify all through the CAMEL executor so they target the same table.
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.CAMEL_CASE);
@@ -1265,7 +649,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateEntity_ScreamingSnakeCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
         int id = uid();
         executor.insert(entity(id, "old"));
@@ -1274,7 +657,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateEntity_CamelCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.CAMEL_CASE);
         int id = uid();
         exec.insert(entity(id, "old")); // CAMEL executor -> "testEntity" table
@@ -1283,7 +665,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateWithMap_ScreamingSnakeCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
         int id = uid();
         executor.insert(entity(id, "old"));
@@ -1294,7 +675,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testUpdateWithMap_CamelCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.CAMEL_CASE);
         int id = uid();
         exec.insert(entity(id, "old")); // CAMEL executor -> "testEntity" table
@@ -1305,7 +685,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testDelete_ScreamingSnakeCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
         int id = uid();
         executor.insert(entity(id, "x"));
@@ -1314,7 +693,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testDelete_CamelCase() throws Exception {
-        assumeAvailable();
         BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.CAMEL_CASE);
         int id = uid();
         exec.insert(entity(id, "x")); // CAMEL executor -> "testEntity" table
@@ -1323,7 +701,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExecutorWithDifferentNamingPolicies() throws Exception {
-        assumeAvailable();
         int id1 = uid();
         int id2 = uid();
         int id3 = uid();
@@ -1346,7 +723,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStreamWithClassAndCondition() throws Exception {
-        assumeAvailable();
         Stream<TestEntity> stream = executor.stream(TestEntity.class, Filters.eq("id", -1));
         assertNotNull(stream);
         assertEquals(0, stream.count());
@@ -1354,7 +730,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStreamWithClassAndCondition_ReturnsRows() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "Eve"));
 
@@ -1367,7 +742,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStreamWithClassSelectPropsAndCondition() throws Exception {
-        assumeAvailable();
         Collection<String> selectProps = Arrays.asList("name");
         Stream<TestEntity> stream = executor.stream(TestEntity.class, selectProps, Filters.eq("id", -1));
         assertNotNull(stream);
@@ -1376,7 +750,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStreamWithClassQueryAndParameters() throws Exception {
-        assumeAvailable();
         Stream<TestEntity> stream = executor.stream(TestEntity.class, "SELECT * FROM " + TEST_TABLE + " WHERE id = ?", -1);
         assertNotNull(stream);
         assertEquals(0, stream.count());
@@ -1384,7 +757,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStreamWithClassAndQueryJobConfiguration() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration queryConfig = QueryJobConfiguration.newBuilder("SELECT id, name FROM " + TEST_TABLE + " WHERE id = -1").build();
         Stream<TestEntity> stream = executor.stream(TestEntity.class, queryConfig);
         assertNotNull(stream);
@@ -1393,7 +765,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStreamWithQueryJobConfiguration() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration queryConfig = QueryJobConfiguration.newBuilder("SELECT id, name FROM " + TEST_TABLE + " WHERE id = -1").build();
         Stream<FieldValueList> stream = executor.stream(queryConfig);
         assertNotNull(stream);
@@ -1402,7 +773,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_WithClassAndQueryConfig() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "John"));
 
@@ -1415,7 +785,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_RawFieldValueList() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
 
@@ -1429,7 +798,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_AsObjectArrayClass() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT 1 AS id, 'Alice' AS name").build();
         Stream<Object[]> stream = executor.stream(Object[].class, cfg);
         List<Object[]> result = stream.toList();
@@ -1439,7 +807,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_AsCollectionClass() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT 1 AS id, 'Bob' AS name").build();
         @SuppressWarnings({ "unchecked", "rawtypes" })
         Stream<List> stream = executor.stream((Class) List.class, cfg);
@@ -1450,7 +817,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_AsMapClass() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT 1 AS id, 'Carol' AS name").build();
         @SuppressWarnings({ "unchecked", "rawtypes" })
         Stream<Map> stream = executor.stream((Class) Map.class, cfg);
@@ -1461,7 +827,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_AsSingleValueClass() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT 'hello' AS v").build();
         Stream<String> stream = executor.stream(String.class, cfg);
         List<String> result = stream.toList();
@@ -1471,7 +836,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_AsSingleValueClass_MultiColumnThrows() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT 1 AS id, 'X' AS name").build();
         Stream<String> stream = executor.stream(String.class, cfg);
         assertThrows(IllegalArgumentException.class, () -> stream.toList());
@@ -1479,7 +843,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testStream_AsObjectArray_NestedFieldValueList() throws Exception {
-        assumeAvailable();
         QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT STRUCT('x' AS a) AS s").build();
         Stream<Object[]> stream = executor.stream(Object[].class, cfg);
         List<Object[]> result = stream.toList();
@@ -1491,7 +854,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExecuteWithQueryAndParameters() throws Exception {
-        assumeAvailable();
         int id = uid();
         executor.insert(entity(id, "x"));
 
@@ -1502,7 +864,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testExecute_WithParameters() throws Exception {
-        assumeAvailable();
         TableResult result = executor.execute("SELECT * FROM " + TEST_TABLE + " WHERE id = ?", -42);
         assertNotNull(result);
     }
@@ -1511,7 +872,6 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testEntityToCondition_CompositeKey() throws Exception {
-        assumeAvailable();
         CompositeKeyEntity e = new CompositeKeyEntity();
         e.setIdA("a-" + uid());
         e.setIdB("b-" + uid());
@@ -1522,13 +882,11 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testIdsToCondition_CompositeKey() throws Exception {
-        assumeAvailable();
         assertFalse(executor.exists(CompositeKeyEntity.class, "no-such-a", "no-such-b"));
     }
 
     @Test
     public void testUpdate_EntityWithCompositeKey() throws Exception {
-        assumeAvailable();
         String a = "a-" + uid();
         String b = "b-" + uid();
         ddl("INSERT INTO " + CK_TABLE + " (id_a, id_b, value) VALUES ('" + a + "', '" + b + "', 'old')");

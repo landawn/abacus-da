@@ -1911,6 +1911,11 @@ public abstract class MongoDBBase {
      * basic single value types. Each document in the result is automatically converted to the target type,
      * providing type safety and eliminating manual conversion code.</p>
      *
+     * <p>For bean and map targets, rows are converted independently, so {@link Document}, other {@link Map}
+     * implementations and bean rows may be mixed. A map target creates every row's map with one factory: when the first
+     * non-null row is a Document, {@link IntFunctions#ofMap(Class)} with the row's size, including registered map
+     * creators, as for a Document result; otherwise {@code N.newMap(Class)}, as for other rows.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Convert query results to entities:
@@ -1947,7 +1952,8 @@ public abstract class MongoDBBase {
      *         collection or array result requested as a scalar type)
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
-     * @throws ClassCastException if a result list beginning with a Document contains a later non-Document row in the document conversion branch
+     * @throws ClassCastException if a map contains non-String field names needed for bean or scalar mapping, its keys are incompatible with
+     *         the requested map type (for example, non-comparable {@code TreeMap} keys), or row conversion performs an incompatible cast
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result map or bean, or invoking a bean accessor, fails
      * @see com.mongodb.client.MongoIterable
@@ -1973,40 +1979,30 @@ public abstract class MongoDBBase {
                 final List<Object> resultList = new ArrayList<>(rowList.size());
 
                 if (targetType.isBean() || targetType.isMap()) {
-                    if (firstNonNull.get() instanceof Document) {
-                        for (final Object row : rowList) {
-                            resultList.add(readRow((Document) row, rowType));
-                        }
-                    } else if (targetType.isMap()) {
-                        for (final Object row : rowList) {
-                            if (row == null) {
-                                resultList.add(null);
-                                continue;
-                            }
+                    final PropConversions conversions = targetType.isBean() ? propConversions(targetType) : null;
+                    // One map factory per result, chosen as before by the first row: a Document result keeps its size-aware
+                    // creators for every row, and other results their supplier, so a mixed result is not built two ways.
+                    final IntFunction<? extends Map<String, Object>> mapFactory = !targetType.isMap() ? null
+                            : firstNonNull.get() instanceof Document ? IntFunctions.ofMap((Class<Map>) rowType) : size -> N.newMap((Class<Map>) rowType);
 
-                            final Map<String, Object> rowMap = N.newMap((Class<Map>) rowType);
-
-                            if (row instanceof Map) {
-                                rowMap.putAll((Map<String, Object>) row);
-                            } else {
-                                Beans.beanToMap(row, rowMap);
-                            }
-
+                    // A MongoIterable may contain different Map implementations. Dispatch each row independently;
+                    // choosing the Document branch from the first row made later maps fail a cast.
+                    for (final Object row : rowList) {
+                        if (row == null) {
+                            resultList.add(null);
+                        } else if (targetType.isMap() && row instanceof final Map<?, ?> map) {
+                            final Map<String, Object> rowMap = mapFactory.apply(map.size());
+                            rowMap.putAll((Map<String, Object>) map);
                             resultList.add(rowMap);
-                        }
-                    } else {
-                        for (final Object row : rowList) {
-                            // A non-Document Map row (e.g. BasicDBObject) is still a document: map it like one, including
-                            // the _id handling, since Beans.copyAs can only copy bean-to-bean and rejects a Map.
-                            // A null row stays null, as in the Document and Map branches (Beans.copyAs(null, ...) would
-                            // fabricate an empty entity instead).
-                            if (row == null) {
-                                resultList.add(null);
-                            } else if (row instanceof Map) {
-                                resultList.add(toEntity(new Document((Map<String, Object>) row), rowType));
-                            } else {
-                                resultList.add(Beans.copyAs(row, rowType));
-                            }
+                        } else if (targetType.isMap()) {
+                            resultList.add(Beans.beanToMap(row, mapFactory));
+                        } else if (row instanceof Map) {
+                            // Normalize map keys before resolving _id: identity or comparator-based maps otherwise
+                            // change field lookup semantics and may lose or overwrite the entity's identifier.
+                            final Document document = row instanceof final Document doc ? doc : new Document((Map<String, Object>) row);
+                            resultList.add(toEntity(document, rowType, conversions, false));
+                        } else {
+                            resultList.add(Beans.copyAs(row, rowType));
                         }
                     }
                 } else if (firstNonNull.get() instanceof Map) {
@@ -2205,7 +2201,7 @@ public abstract class MongoDBBase {
      *         consistent Dataset, or if a null row is present while column names are inferred from Map rows
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
-     * @throws ClassCastException if returned rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean, invoking a bean accessor, or reading a row value fails during Dataset conversion
      * @see Dataset
@@ -2244,7 +2240,7 @@ public abstract class MongoDBBase {
      *         present while column names are inferred from Map rows
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
-     * @throws ClassCastException if returned rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean, invoking a bean accessor, or reading a row value fails during Dataset conversion
      * @see Dataset
@@ -2286,7 +2282,7 @@ public abstract class MongoDBBase {
      *         present while column names are inferred from Map rows
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
-     * @throws ClassCastException if returned rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean, invoking a bean accessor, or reading a row value fails during Dataset conversion
      * @see Dataset
@@ -2331,7 +2327,7 @@ public abstract class MongoDBBase {
      * @return a Dataset containing the objects as Map-based rows
      * @throws IllegalArgumentException if the selected columns or row values cannot be converted into a consistent Dataset, or if a
      *         null row is present while column names are inferred from Map rows
-     * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean, invoking a bean accessor, or reading a row value fails during Dataset conversion
      * @see Dataset
@@ -2374,7 +2370,7 @@ public abstract class MongoDBBase {
      * @return a Dataset containing the objects as typed rows
      * @throws IllegalArgumentException if {@code rowType} is null, or the selected columns or row values cannot be converted into a
      *         consistent Dataset, or if a null row is present while column names are inferred from Map rows
-     * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a Document row value is incompatible with its component type
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean, invoking a bean accessor, or reading a row value fails during Dataset conversion
@@ -2401,6 +2397,9 @@ public abstract class MongoDBBase {
      * <li><strong>Document objects:</strong> Converts to target type using the framework's type conversion system</li>
      * <li><strong>Other objects:</strong> Extracts the selected properties directly (no per-row conversion to the target type)</li>
      * </ul>
+     *
+     * <p>Rows may mix these shapes. With a Map target and a Map first row, bean rows are converted to maps; with a Document
+     * first row, each row is converted individually, other maps like documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2429,7 +2428,7 @@ public abstract class MongoDBBase {
      * @return a Dataset containing the extracted properties as typed rows
      * @throws IllegalArgumentException if {@code rowType} is null, or the selected columns or row values cannot be converted into a
      *         consistent Dataset, or if a null row is present while column names are inferred from Map rows
-     * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
+     * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a Document row value is incompatible with its component type
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean, invoking a bean accessor, or reading a row value fails during Dataset conversion
@@ -2445,9 +2444,13 @@ public abstract class MongoDBBase {
 
         if (first.isPresent()) {
             if (Map.class.isAssignableFrom(rowType) && Map.class.isAssignableFrom(first.get().getClass())) {
+                // A result may mix map and bean rows, as toList accepts: bean rows become maps instead of failing a cast.
+                final List<?> mapRows = rowList.stream().allMatch(row -> row == null || row instanceof Map) ? rowList
+                        : rowList.stream().map(row -> row == null || row instanceof Map ? row : Beans.beanToMap(row)).toList();
+
                 if (N.isEmpty(selectPropNames)) {
                     @SuppressWarnings("rawtypes")
-                    final List<Map<String, Object>> tmp = (List) rowList;
+                    final List<Map<String, Object>> tmp = (List) mapRows;
 
                     for (final Map<String, Object> row : tmp) {
                         N.checkArgNotNull(row, cs.row);
@@ -2459,15 +2462,23 @@ public abstract class MongoDBBase {
                         columnNames.addAll(row.keySet());
                     }
 
-                    return N.newDataset(columnNames, rowList);
+                    return N.newDataset(columnNames, mapRows);
                 } else {
-                    return N.newDataset(selectPropNames, rowList);
+                    return N.newDataset(selectPropNames, mapRows);
                 }
             } else if (Document.class.isAssignableFrom(first.get().getClass())) {
                 final List<Object> newRowList = new ArrayList<>(rowList.size());
 
+                // Dispatch each row, as toList does: casting every row to the first row's Document type failed for later
+                // map or bean rows. Other maps are read like documents; a bean row is copied to a bean target.
                 for (final Object row : rowList) {
-                    newRowList.add(readRow((Document) row, rowType));
+                    if (row == null || row instanceof Document) {
+                        newRowList.add(readRow((Document) row, rowType));
+                    } else if (row instanceof Map) {
+                        newRowList.add(readRow(new Document((Map<String, Object>) row), rowType));
+                    } else {
+                        newRowList.add(rowType.isInstance(row) || !Beans.isBeanClass(rowType) ? row : Beans.copyAs(row, rowType));
+                    }
                 }
 
                 if (N.isEmpty(selectPropNames)) {

@@ -102,6 +102,10 @@
 			<artifactId>junit-jupiter-engine</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-params</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.junit.platform</groupId>
 			<artifactId>junit-platform-suite-api</artifactId>
 		</dependency>
@@ -122,4 +126,30 @@
 			<artifactId>reactor-test</artifactId>
 		</dependency>
 	</dependencies>
+	<profiles>
+		<profile>
+			<id>integration-tests</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<version>${surefire.version}</version>
+						<configuration>
+							<includes><include>**/*IT.java</include></includes>
+							<useModulePath>false</useModulePath>
+							<testFailureIgnore>false</testFailureIgnore>
+							<failIfNoTests>true</failIfNoTests>
+							<argLine>@{argLine} ${test.jvm.args}</argLine>
+						</configuration>
+						<executions>
+							<execution>
+								<goals><goal>integration-test</goal><goal>verify</goal></goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>

@@ -59,8 +59,7 @@ public class CassandraValidationOrderTest extends TestBase {
 
     @Test
     void mapperValidatesIdBeforeParsedCql() {
-        final IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-                () -> new CqlMapper().add("", (ParsedCql) null));
+        final IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> new CqlMapper().add("", (ParsedCql) null));
 
         assertTrue(failure.getMessage().contains("id"));
     }
@@ -77,6 +76,7 @@ public class CassandraValidationOrderTest extends TestBase {
         }
 
         verify(resultSet, never()).all();
+        verify(resultSet, never()).iterator();
     }
 
     @Test
@@ -87,19 +87,18 @@ public class CassandraValidationOrderTest extends TestBase {
 
         for (final int count : new int[] { 0, 2 }) {
             when(columns.size()).thenReturn(count);
-            assertThrows(IllegalArgumentException.class,
-                    () -> com.landawn.abacus.da.cassandra.v3.CassandraExecutor.toList(resultSet, String.class));
+            assertThrows(IllegalArgumentException.class, () -> com.landawn.abacus.da.cassandra.v3.CassandraExecutor.toList(resultSet, String.class));
         }
 
         verify(resultSet, never()).all();
+        verify(resultSet, never()).iterator();
     }
 
     @Test
     void allEntitiesAreValidatedBeforeInvokingAnyKeyGetter() {
         final KeyEntity entity = new KeyEntity();
 
-        assertThrows(IllegalArgumentException.class,
-                () -> CassandraExecutorBase.entityToCondition(KeyEntity.class, Arrays.asList(entity, null)));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.entityToCondition(KeyEntity.class, Arrays.asList(entity, null)));
 
         assertEquals(0, entity.getterCalls);
     }

@@ -50,42 +50,10 @@ import com.landawn.abacus.util.u.Optional;
 public class Neo4jExecutorTest extends TestBase {
 
     private SessionFactory mockSessionFactory;
+
     private Session mockSession;
+
     private Neo4jExecutor executor;
-
-    /** Sample entity class used as the targetClass argument in load/save/delete tests. */
-    public static class Person {
-        private Long id;
-        private String name;
-
-        public Long getId() {
-            return id;
-        }
-
-        public void setId(Long id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        public void setName(String name) {
-            this.name = name;
-        }
-    }
-
-    public static class StringIdEntity {
-        private String id;
-
-        public String getId() {
-            return id;
-        }
-
-        public void setId(String id) {
-            this.id = id;
-        }
-    }
 
     @BeforeEach
     public void setUp() {
@@ -95,7 +63,7 @@ public class Neo4jExecutorTest extends TestBase {
         executor = new Neo4jExecutor(mockSessionFactory);
     }
 
-    // ---------- Constructor / accessor tests ----------
+    // Construction and configuration
 
     @Test
     public void testConstructor() {
@@ -108,46 +76,460 @@ public class Neo4jExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> new Neo4jExecutor(null));
     }
 
+    // Factories and insert operations
+
     @Test
     public void testSessionFactory() {
         assertSame(mockSessionFactory, executor.sessionFactory());
     }
 
+    // Updates and deletes
+
     @Test
-    public void testOpenSession() {
-        Session session = executor.openSession();
-        assertSame(mockSession, session);
-        verify(mockSessionFactory, atLeastOnce()).openSession();
+    public void testDelete() {
+        Person p = new Person();
+        executor.delete(p);
+        verify(mockSession).delete(p);
+        verify(mockSession).clear();
     }
 
-    // ---------- run / call helpers ----------
+    @Test
+    public void testDeleteAll() {
+        executor.deleteAll(Person.class);
+        verify(mockSession).deleteAll(Person.class);
+        verify(mockSession).clear();
+    }
+
+    // Queries and results
 
     @Test
-    public void testRun() {
-        AtomicBoolean invoked = new AtomicBoolean(false);
+    public void testCount() {
+        List<Filter> filters = Arrays.asList(new Filter("name", ComparisonOperator.EQUALS, "John"));
+        when(mockSession.count(Person.class, filters)).thenReturn(7L);
+        assertEquals(7L, executor.count(Person.class, filters));
+    }
+
+    @Test
+    public void testCount_ByClass() {
+        when(mockSession.countEntitiesOfType(Person.class)).thenReturn(123L);
+        assertEquals(123L, executor.count(Person.class));
+    }
+
+    @Test
+    public void testFindOnly() {
+        Person p = new Person();
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("name", "John");
+        when(mockSession.queryForObject(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params)).thenReturn(p);
+
+        Optional<Person> actual = executor.findOnly(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params);
+        assertTrue(actual.isPresent());
+        assertSame(p, actual.get());
+    }
+
+    @Test
+    public void testFindOnly_EmptyWhenNoRow() {
+        when(mockSession.queryForObject(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenReturn(null);
+
+        Optional<Person> actual = executor.findOnly(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap());
+        assertNotNull(actual);
+        assertTrue(actual.isEmpty());
+        verify(mockSession).clear();
+    }
+
+    @Test
+    public void testFindOnly_PropagatesFailureAndReleasesSession() {
+        // OGM raises a plain RuntimeException when the query returns more than one row; the
+        // executor must propagate it unchanged and still return the session to the pool.
+        final RuntimeException tooMany = new RuntimeException("Result not of expected size");
+        when(mockSession.queryForObject(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenThrow(tooMany);
+
+        final RuntimeException thrown = assertThrows(RuntimeException.class,
+                () -> executor.findOnly(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap()));
+        assertSame(tooMany, thrown);
+        verify(mockSession).clear();
+
         executor.run(s -> {
-            invoked.set(true);
-            assertSame(mockSession, s);
         });
-        assertTrue(invoked.get());
-        // Session is cleared and returned to the pool.
+        verify(mockSessionFactory, times(1)).openSession();
+    }
+
+    @Test
+    public void testGetGraphId() {
+        Person p = new Person();
+        when(mockSession.resolveGraphIdFor(p)).thenReturn(99L);
+        assertEquals(Long.valueOf(99L), executor.getGraphId(p));
+    }
+
+    @Test
+    public void testGetGraphId_NotEntity() {
+        Object obj = new Object();
+        when(mockSession.resolveGraphIdFor(obj)).thenReturn(null);
+        assertNull(executor.getGraphId(obj));
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilter() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        when(mockSession.loadAll(Person.class, filter)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilterAndDepth() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        when(mockSession.loadAll(Person.class, filter, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilterAndPagination() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filter, pagination)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter, pagination).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilterAndSortOrder() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, filter, sortOrder)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilterPaginationAndDepth() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filter, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter, pagination, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilters() {
+        Filters filters = new Filters();
+        when(mockSession.loadAll(Person.class, filters)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFiltersAndDepth() {
+        Filters filters = new Filters();
+        when(mockSession.loadAll(Person.class, filters, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFiltersAndPagination() {
+        Filters filters = new Filters();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filters, pagination)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters, pagination).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFiltersAndSortOrder() {
+        Filters filters = new Filters();
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, filters, sortOrder)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilterSortOrderAndDepth() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, filter, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilterSortOrderAndPagination() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        SortOrder sortOrder = new SortOrder();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filter, sortOrder, pagination)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, pagination).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFilterSortOrderPaginationAndDepth() {
+        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
+        SortOrder sortOrder = new SortOrder();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filter, sortOrder, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, pagination, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFiltersPaginationAndDepth() {
+        Filters filters = new Filters();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filters, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters, pagination, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFiltersSortOrderAndDepth() {
+        Filters filters = new Filters();
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, filters, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFiltersSortOrderAndPagination() {
+        Filters filters = new Filters();
+        SortOrder sortOrder = new SortOrder();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filters, sortOrder, pagination)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder, pagination).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithFiltersSortOrderPaginationAndDepth() {
+        Filters filters = new Filters();
+        SortOrder sortOrder = new SortOrder();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, filters, sortOrder, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder, pagination, 1).size());
+    }
+
+    @Test
+    public void testQueryParametersAreForwardedByIdentity() {
+        // The executor forwards the (possibly immutable) parameter map verbatim; it must not copy or mutate it.
+        final Map<String, Object> params = Map.of("name", "John");
+        final Result mockResult = mock(Result.class);
+        when(mockResult.iterator()).thenReturn(Collections.<Map<String, Object>> emptyList().iterator());
+        when(mockSession.query(eq("MATCH (n) RETURN n"), same(params))).thenReturn(mockResult);
+        when(mockSession.query(eq("MATCH (n) RETURN n"), same(params), eq(true))).thenReturn(mockResult);
+        when(mockSession.query(eq(Person.class), eq("MATCH (n) RETURN n"), same(params))).thenReturn(Collections.<Person> emptyList());
+
+        assertEquals(0L, executor.stream("MATCH (n) RETURN n", params).count());
+        assertEquals(0L, executor.stream("MATCH (n) RETURN n", params, true).count());
+        assertEquals(0L, executor.stream(Person.class, "MATCH (n) RETURN n", params).count());
+        executor.findOnly(Person.class, "MATCH (n) RETURN n", params);
+
+        verify(mockSession).query(eq("MATCH (n) RETURN n"), same(params));
+        verify(mockSession).query(eq("MATCH (n) RETURN n"), same(params), eq(true));
+        verify(mockSession).query(eq(Person.class), eq("MATCH (n) RETURN n"), same(params));
+        verify(mockSession).queryForObject(eq(Person.class), eq("MATCH (n) RETURN n"), same(params));
+        assertEquals(1, params.size());
+    }
+
+    @Test
+    public void testStream() {
+        // Build a Result that returns a single-row iterator.
+        Result mockResult = mock(Result.class);
+        Map<String, Object> row = Collections.singletonMap("p", "x");
+        Iterator<Map<String, Object>> rowIter = Collections.singletonList(row).iterator();
+        when(mockResult.iterator()).thenReturn(rowIter);
+        when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap())).thenReturn(mockResult);
+
+        Stream<Map<String, Object>> rows = executor.stream("MATCH (n) RETURN n", Collections.emptyMap());
+
+        // OGM materializes query results eagerly, so the executor can return the session before
+        // the stream is consumed. A second operation must therefore reuse the same session.
+        verify(mockSession).clear();
+        executor.run(s -> {
+        });
+        verify(mockSessionFactory, times(1)).openSession();
+
+        assertEquals(1L, rows.count());
+    }
+
+    @Test
+    public void testStreamClosesSessionOnException() {
+        // When session.query throws, the session must still be returned to the pool.
+        when(mockSession.query(eq("BAD CYPHER"), eq(Collections.emptyMap()))).thenThrow(new RuntimeException("syntax"));
+
+        assertThrows(RuntimeException.class, () -> executor.stream("BAD CYPHER", Collections.emptyMap()));
         verify(mockSession).clear();
     }
 
     @Test
-    public void testCall() {
-        String result = executor.call(s -> {
-            assertSame(mockSession, s);
-            return "ok";
-        });
-        assertEquals("ok", result);
+    public void testStreamWithReadOnly() {
+        Result mockResult = mock(Result.class);
+        Iterator<Map<String, Object>> rowIter = Collections.<Map<String, Object>> emptyList().iterator();
+        when(mockResult.iterator()).thenReturn(rowIter);
+        when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap(), true)).thenReturn(mockResult);
+
+        Stream<Map<String, Object>> rows = executor.stream("MATCH (n) RETURN n", Collections.emptyMap(), true);
+        verify(mockSession).clear();
+        assertEquals(0L, rows.count());
+    }
+
+    @Test
+    public void testStreamWithType() {
+        // session.query(Class, String, Map) returns Iterable<T>.
+        @SuppressWarnings("unchecked")
+        Iterable<Person> iterable = mock(Iterable.class);
+        List<Person> people = Arrays.asList(new Person(), new Person());
+        when(iterable.iterator()).thenReturn(people.iterator());
+        when(mockSession.query(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenReturn(iterable);
+
+        Stream<Person> peopleStream = executor.stream(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap());
+        verify(mockSession).clear();
+        assertEquals(2L, peopleStream.count());
+    }
+
+    @Test
+    public void testWriteAndCountOperationsReleaseSessionOnException() {
+        final Person p = new Person();
+        doThrow(new RuntimeException("save failed")).when(mockSession).save(p);
+        doThrow(new RuntimeException("save failed")).when(mockSession).save(p, 0);
+        doThrow(new RuntimeException("delete failed")).when(mockSession).delete(p);
+        doThrow(new RuntimeException("deleteAll failed")).when(mockSession).deleteAll(Person.class);
+        when(mockSession.countEntitiesOfType(Person.class)).thenThrow(new RuntimeException("count failed"));
+        when(mockSession.count(eq(Person.class), eq(Collections.emptyList()))).thenThrow(new RuntimeException("count failed"));
+        when(mockSession.resolveGraphIdFor(p)).thenThrow(new RuntimeException("resolve failed"));
+        when(mockSession.load(Person.class, 1L)).thenThrow(new RuntimeException("load failed"));
+
+        assertThrows(RuntimeException.class, () -> executor.save(p));
+        assertThrows(RuntimeException.class, () -> executor.save(p, 0));
+        assertThrows(RuntimeException.class, () -> executor.delete(p));
+        assertThrows(RuntimeException.class, () -> executor.deleteAll(Person.class));
+        assertThrows(RuntimeException.class, () -> executor.count(Person.class));
+        assertThrows(RuntimeException.class, () -> executor.count(Person.class, Collections.emptyList()));
+        assertThrows(RuntimeException.class, () -> executor.getGraphId(p));
+        assertThrows(RuntimeException.class, () -> executor.load(Person.class, 1L));
+
+        // Every failed operation cleared its session and returned it to the pool, so the single
+        // pooled session was reused throughout and no second session was ever opened.
+        verify(mockSession, times(8)).clear();
+        verify(mockSessionFactory, times(1)).openSession();
+    }
+
+    // Resource lifecycle
+
+    @Test
+    public void testCall_PropagatesException() {
+        assertThrows(RuntimeException.class, () -> executor.call(s -> {
+            throw new RuntimeException("boom");
+        }));
         verify(mockSession).clear();
     }
 
     @Test
-    public void testRunAndCallRejectNullActions() {
-        assertThrows(IllegalArgumentException.class, () -> executor.run(null));
-        assertThrows(IllegalArgumentException.class, () -> executor.call(null));
+    public void testRun_ClearFailureDoesNotMaskActionFailureAndDiscardsSession() {
+        final RuntimeException actionFailure = new RuntimeException("action failed");
+        doThrow(new RuntimeException("clear failed")).when(mockSession).clear();
+
+        final RuntimeException thrown = assertThrows(RuntimeException.class, () -> executor.run(s -> {
+            throw actionFailure;
+        }));
+
+        assertSame(actionFailure, thrown);
+
+        // A session whose mapping context could not be cleared must never be reused.
+        executor.run(s -> {
+        });
+        verify(mockSessionFactory, times(2)).openSession();
+    }
+
+    @Test
+    public void testRun_LeakedNestedTransactionIsFullyUnwound() {
+        // OGM "extended" transaction: beginTransaction() called twice on the same session returns
+        // the same underlying transaction with an incremented nesting count. One rollback()/close()
+        // pair only pops one level (rollback merely marks ROLLBACK_PENDING), so the transaction is
+        // still current after the first pair; only the root-level pair actually rolls back and
+        // deregisters it. closeSession must keep unwinding until no live transaction remains.
+        Transaction tx = mock(Transaction.class);
+        when(mockSession.getTransaction()).thenReturn(tx, tx, (Transaction) null);
+
+        executor.run(s -> {
+            s.beginTransaction();
+            s.beginTransaction();
+        });
+
+        verify(tx, times(2)).rollback();
+        verify(tx, times(2)).close();
+        // Fully unwound, so the session is safe to pool.
+        verify(mockSession).clear();
+    }
+
+    @Test
+    public void testRun_LeakedTransactionIsRolledBackBeforePooling() {
+        Transaction tx = mock(Transaction.class);
+        // The transaction is still current after the action returns, and gone once one
+        // rollback()/close() pair has run.
+        when(mockSession.getTransaction()).thenReturn(tx, (Transaction) null);
+
+        executor.run(s -> s.beginTransaction());
+
+        verify(tx).rollback();
+        verify(tx).close();
+        verify(mockSession).clear();
+    }
+
+    @Test
+    public void testRun_PropagatesException() {
+        // Session must still be cleared even if the action throws.
+        assertThrows(RuntimeException.class, () -> executor.run(s -> {
+            throw new RuntimeException("boom");
+        }));
+        verify(mockSession).clear();
+    }
+
+    @Test
+    public void testRun_TransactionInspectionFailureDoesNotMaskActionFailure() {
+        final RuntimeException actionFailure = new RuntimeException("action failed");
+        when(mockSession.getTransaction()).thenThrow(new RuntimeException("inspection failed"));
+
+        final RuntimeException thrown = assertThrows(RuntimeException.class, () -> executor.run(s -> {
+            throw actionFailure;
+        }));
+
+        assertSame(actionFailure, thrown);
+        verify(mockSession, never()).clear();
+    }
+
+    @Test
+    public void testRun_TransactionRollbackFailure_DiscardsSession() {
+        Transaction tx = mock(Transaction.class);
+        when(mockSession.getTransaction()).thenReturn(tx);
+        doThrow(new RuntimeException("rollback failed")).when(tx).rollback();
+
+        executor.run(s -> s.beginTransaction());
+
+        // A session whose transaction could not be rolled back must not be pooled (or even
+        // cleared); the next borrower gets a fresh session instead.
+        verify(mockSession, never()).clear();
+        executor.run(s -> {
+        });
+        verify(mockSessionFactory, times(2)).openSession();
+    }
+
+    // Additional contracts
+
+    @Test
+    public void testNullTolerantArgumentsAreForwarded() {
+        final Collection<Person> expected = Collections.emptyList();
+        final Class<Person> type = Person.class;
+
+        when(mockSession.loadAll(type, (Filters) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (Filters) null));
+
+        when(mockSession.loadAll(type, (SortOrder) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (SortOrder) null));
+
+        when(mockSession.loadAll(type, (Pagination) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (Pagination) null));
+
+        // ids / sortOrder of the ids overloads are not validated here (OGM tolerates them for unmapped types)
+        when(mockSession.loadAll(type, (Collection<Long>) null)).thenReturn(expected);
+        assertSame(expected, executor.loadAll(type, (Collection<Long>) null));
+
+        // objects overloads: null is passed through (OGM returns it as-is)
+        executor.loadAll((Collection<Person>) null);
+        verify(mockSession).loadAll((Collection<Person>) null);
+        executor.loadAll((Collection<Person>) null, (SortOrder) null);
+        verify(mockSession).loadAll((Collection<Person>) null, (SortOrder) null);
+
+        // getGraphId: null is passed through (OGM returns null for it)
+        executor.getGraphId(null);
+        verify(mockSession).resolveGraphIdFor(null);
     }
 
     @Test
@@ -228,135 +610,22 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
-    public void testNullTolerantArgumentsAreForwarded() {
-        final Collection<Person> expected = Collections.emptyList();
-        final Class<Person> type = Person.class;
-
-        when(mockSession.loadAll(type, (Filters) null)).thenReturn(expected);
-        assertSame(expected, executor.loadAll(type, (Filters) null));
-
-        when(mockSession.loadAll(type, (SortOrder) null)).thenReturn(expected);
-        assertSame(expected, executor.loadAll(type, (SortOrder) null));
-
-        when(mockSession.loadAll(type, (Pagination) null)).thenReturn(expected);
-        assertSame(expected, executor.loadAll(type, (Pagination) null));
-
-        // ids / sortOrder of the ids overloads are not validated here (OGM tolerates them for unmapped types)
-        when(mockSession.loadAll(type, (Collection<Long>) null)).thenReturn(expected);
-        assertSame(expected, executor.loadAll(type, (Collection<Long>) null));
-
-        // objects overloads: null is passed through (OGM returns it as-is)
-        executor.loadAll((Collection<Person>) null);
-        verify(mockSession).loadAll((Collection<Person>) null);
-        executor.loadAll((Collection<Person>) null, (SortOrder) null);
-        verify(mockSession).loadAll((Collection<Person>) null, (SortOrder) null);
-
-        // getGraphId: null is passed through (OGM returns null for it)
-        executor.getGraphId(null);
-        verify(mockSession).resolveGraphIdFor(null);
-    }
-
-    @Test
-    public void testRun_PropagatesException() {
-        // Session must still be cleared even if the action throws.
-        assertThrows(RuntimeException.class, () -> executor.run(s -> {
-            throw new RuntimeException("boom");
-        }));
-        verify(mockSession).clear();
-    }
-
-    @Test
-    public void testCall_PropagatesException() {
-        assertThrows(RuntimeException.class, () -> executor.call(s -> {
-            throw new RuntimeException("boom");
-        }));
-        verify(mockSession).clear();
-    }
-
-    // ---------- closeSession: leaked-transaction handling ----------
-
-    @Test
-    public void testRun_LeakedTransactionIsRolledBackBeforePooling() {
-        Transaction tx = mock(Transaction.class);
-        // The transaction is still current after the action returns, and gone once one
-        // rollback()/close() pair has run.
-        when(mockSession.getTransaction()).thenReturn(tx, (Transaction) null);
-
-        executor.run(s -> s.beginTransaction());
-
-        verify(tx).rollback();
-        verify(tx).close();
-        verify(mockSession).clear();
-    }
-
-    @Test
-    public void testRun_LeakedNestedTransactionIsFullyUnwound() {
-        // OGM "extended" transaction: beginTransaction() called twice on the same session returns
-        // the same underlying transaction with an incremented nesting count. One rollback()/close()
-        // pair only pops one level (rollback merely marks ROLLBACK_PENDING), so the transaction is
-        // still current after the first pair; only the root-level pair actually rolls back and
-        // deregisters it. closeSession must keep unwinding until no live transaction remains.
-        Transaction tx = mock(Transaction.class);
-        when(mockSession.getTransaction()).thenReturn(tx, tx, (Transaction) null);
-
-        executor.run(s -> {
-            s.beginTransaction();
-            s.beginTransaction();
+    public void testCall() {
+        String result = executor.call(s -> {
+            assertSame(mockSession, s);
+            return "ok";
         });
-
-        verify(tx, times(2)).rollback();
-        verify(tx, times(2)).close();
-        // Fully unwound, so the session is safe to pool.
+        assertEquals("ok", result);
         verify(mockSession).clear();
     }
 
     @Test
-    public void testRun_TransactionRollbackFailure_DiscardsSession() {
-        Transaction tx = mock(Transaction.class);
-        when(mockSession.getTransaction()).thenReturn(tx);
-        doThrow(new RuntimeException("rollback failed")).when(tx).rollback();
-
-        executor.run(s -> s.beginTransaction());
-
-        // A session whose transaction could not be rolled back must not be pooled (or even
-        // cleared); the next borrower gets a fresh session instead.
-        verify(mockSession, never()).clear();
-        executor.run(s -> {
-        });
-        verify(mockSessionFactory, times(2)).openSession();
+    public void testCall_ReturnsNull() {
+        // The session-managed call may legitimately return null.
+        Object result = executor.call(s -> null);
+        assertNull(result);
+        verify(mockSession).clear();
     }
-
-    @Test
-    public void testRun_ClearFailureDoesNotMaskActionFailureAndDiscardsSession() {
-        final RuntimeException actionFailure = new RuntimeException("action failed");
-        doThrow(new RuntimeException("clear failed")).when(mockSession).clear();
-
-        final RuntimeException thrown = assertThrows(RuntimeException.class, () -> executor.run(s -> {
-            throw actionFailure;
-        }));
-
-        assertSame(actionFailure, thrown);
-
-        // A session whose mapping context could not be cleared must never be reused.
-        executor.run(s -> {
-        });
-        verify(mockSessionFactory, times(2)).openSession();
-    }
-
-    @Test
-    public void testRun_TransactionInspectionFailureDoesNotMaskActionFailure() {
-        final RuntimeException actionFailure = new RuntimeException("action failed");
-        when(mockSession.getTransaction()).thenThrow(new RuntimeException("inspection failed"));
-
-        final RuntimeException thrown = assertThrows(RuntimeException.class, () -> executor.run(s -> {
-            throw actionFailure;
-        }));
-
-        assertSame(actionFailure, thrown);
-        verify(mockSession, never()).clear();
-    }
-
-    // ---------- load / loadAll delegators ----------
 
     @Test
     public void testLoad_ById() {
@@ -384,6 +653,21 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
+    public void testLoad_ReturnsNullWhenSessionReturnsNull() {
+        when(mockSession.load(Person.class, 999L)).thenReturn(null);
+        assertNull(executor.load(Person.class, 999L));
+    }
+
+    @Test
+    public void testLoadAll_EmptyCollection() {
+        Collection<Long> ids = Collections.emptyList();
+        when(mockSession.loadAll(Person.class, ids)).thenReturn(Collections.<Person> emptyList());
+        Collection<Person> actual = executor.loadAll(Person.class, ids);
+        assertEquals(0, actual.size());
+        assertTrue(actual.isEmpty());
+    }
+
+    @Test
     public void testLoadAll_ByIds() {
         Collection<Long> ids = Arrays.asList(1L, 2L);
         Collection<Person> expected = Arrays.asList(new Person(), new Person());
@@ -393,39 +677,11 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
-    public void testLoadAll_ByStringIds() {
-        Collection<String> ids = Arrays.asList("sku-1", "sku-2");
-        Collection<StringIdEntity> expected = Arrays.asList(new StringIdEntity(), new StringIdEntity());
-        when(mockSession.loadAll(StringIdEntity.class, ids)).thenReturn(expected);
-
-        Collection<StringIdEntity> actual = executor.loadAll(StringIdEntity.class, ids);
-
-        assertEquals(2, actual.size());
-        verify(mockSession).loadAll(StringIdEntity.class, ids);
-    }
-
-    @Test
     public void testLoadAll_ByIdsWithDepth() {
         Collection<Long> ids = Arrays.asList(1L);
         when(mockSession.loadAll(Person.class, ids, 1)).thenReturn(Collections.singletonList(new Person()));
         Collection<Person> actual = executor.loadAll(Person.class, ids, 1);
         assertEquals(1, actual.size());
-    }
-
-    @Test
-    public void testLoadAll_ByIdsWithSortOrder() {
-        Collection<Long> ids = Arrays.asList(1L);
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, ids, sortOrder)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, ids, sortOrder).size());
-    }
-
-    @Test
-    public void testLoadAll_ByIdsWithSortOrderAndDepth() {
-        Collection<Long> ids = Arrays.asList(1L);
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, ids, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, ids, sortOrder, 1).size());
     }
 
     @Test
@@ -442,6 +698,22 @@ public class Neo4jExecutorTest extends TestBase {
         Pagination pagination = new Pagination(0, 10);
         when(mockSession.loadAll(Person.class, ids, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, ids, pagination, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ByIdsWithSortOrder() {
+        Collection<Long> ids = Arrays.asList(1L);
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, ids, sortOrder)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, ids, sortOrder).size());
+    }
+
+    @Test
+    public void testLoadAll_ByIdsWithSortOrderAndDepth() {
+        Collection<Long> ids = Arrays.asList(1L);
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, ids, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, ids, sortOrder, 1).size());
     }
 
     @Test
@@ -462,7 +734,73 @@ public class Neo4jExecutorTest extends TestBase {
         assertEquals(1, executor.loadAll(Person.class, ids, sortOrder, pagination, 2).size());
     }
 
-    // ---------- loadAll(Collection<T>, ...) overloads ----------
+    @Test
+    public void testLoadAll_ByStringIds() {
+        Collection<String> ids = Arrays.asList("sku-1", "sku-2");
+        Collection<StringIdEntity> expected = Arrays.asList(new StringIdEntity(), new StringIdEntity());
+        when(mockSession.loadAll(StringIdEntity.class, ids)).thenReturn(expected);
+
+        Collection<StringIdEntity> actual = executor.loadAll(StringIdEntity.class, ids);
+
+        assertEquals(2, actual.size());
+        verify(mockSession).loadAll(StringIdEntity.class, ids);
+    }
+
+    @Test
+    public void testLoadAll_Class() {
+        when(mockSession.loadAll(Person.class)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithDepth() {
+        when(mockSession.loadAll(Person.class, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithPagination() {
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, pagination)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, pagination).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithPaginationAndDepth() {
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, pagination, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithSortOrder() {
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, sortOrder)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, sortOrder).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithSortOrderAndDepth() {
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(Person.class, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, sortOrder, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithSortOrderAndPagination() {
+        SortOrder sortOrder = new SortOrder();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, sortOrder, pagination)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, sortOrder, pagination).size());
+    }
+
+    @Test
+    public void testLoadAll_ClassWithSortOrderPaginationAndDepth() {
+        SortOrder sortOrder = new SortOrder();
+        Pagination pagination = new Pagination(0, 10);
+        when(mockSession.loadAll(Person.class, sortOrder, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        assertEquals(1, executor.loadAll(Person.class, sortOrder, pagination, 1).size());
+    }
 
     @Test
     public void testLoadAll_Objects() {
@@ -479,22 +817,6 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
-    public void testLoadAll_ObjectsWithSortOrder() {
-        Collection<Person> objs = Arrays.asList(new Person());
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(objs, sortOrder)).thenReturn(objs);
-        assertEquals(1, executor.loadAll(objs, sortOrder).size());
-    }
-
-    @Test
-    public void testLoadAll_ObjectsWithSortOrderAndDepth() {
-        Collection<Person> objs = Arrays.asList(new Person());
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(objs, sortOrder, 1)).thenReturn(objs);
-        assertEquals(1, executor.loadAll(objs, sortOrder, 1).size());
-    }
-
-    @Test
     public void testLoadAll_ObjectsWithPagination() {
         Collection<Person> objs = Arrays.asList(new Person());
         Pagination pagination = new Pagination(0, 10);
@@ -508,6 +830,22 @@ public class Neo4jExecutorTest extends TestBase {
         Pagination pagination = new Pagination(0, 10);
         when(mockSession.loadAll(objs, pagination, 1)).thenReturn(objs);
         assertEquals(1, executor.loadAll(objs, pagination, 1).size());
+    }
+
+    @Test
+    public void testLoadAll_ObjectsWithSortOrder() {
+        Collection<Person> objs = Arrays.asList(new Person());
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(objs, sortOrder)).thenReturn(objs);
+        assertEquals(1, executor.loadAll(objs, sortOrder).size());
+    }
+
+    @Test
+    public void testLoadAll_ObjectsWithSortOrderAndDepth() {
+        Collection<Person> objs = Arrays.asList(new Person());
+        SortOrder sortOrder = new SortOrder();
+        when(mockSession.loadAll(objs, sortOrder, 1)).thenReturn(objs);
+        assertEquals(1, executor.loadAll(objs, sortOrder, 1).size());
     }
 
     @Test
@@ -528,197 +866,41 @@ public class Neo4jExecutorTest extends TestBase {
         assertEquals(1, executor.loadAll(objs, sortOrder, pagination, 1).size());
     }
 
-    // ---------- loadAll(Class<T>, ...) overloads ----------
-
     @Test
-    public void testLoadAll_Class() {
-        when(mockSession.loadAll(Person.class)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class).size());
+    public void testOpenSession() {
+        Session session = executor.openSession();
+        assertSame(mockSession, session);
+        verify(mockSessionFactory, atLeastOnce()).openSession();
     }
 
     @Test
-    public void testLoadAll_ClassWithDepth() {
-        when(mockSession.loadAll(Person.class, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, 1).size());
+    public void testRun() {
+        AtomicBoolean invoked = new AtomicBoolean(false);
+        executor.run(s -> {
+            invoked.set(true);
+            assertSame(mockSession, s);
+        });
+        assertTrue(invoked.get());
+        // Session is cleared and returned to the pool.
+        verify(mockSession).clear();
     }
 
     @Test
-    public void testLoadAll_ClassWithSortOrder() {
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, sortOrder)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, sortOrder).size());
+    public void testRun_SessionIsActuallyPassed() {
+        AtomicInteger seen = new AtomicInteger();
+        executor.run(s -> {
+            if (s == mockSession) {
+                seen.incrementAndGet();
+            }
+        });
+        assertEquals(1, seen.get());
     }
 
     @Test
-    public void testLoadAll_ClassWithSortOrderAndDepth() {
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, sortOrder, 1).size());
+    public void testRunAndCallRejectNullActions() {
+        assertThrows(IllegalArgumentException.class, () -> executor.run(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.call(null));
     }
-
-    @Test
-    public void testLoadAll_ClassWithPagination() {
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, pagination)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, pagination).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithPaginationAndDepth() {
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, pagination, 1).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithSortOrderAndPagination() {
-        SortOrder sortOrder = new SortOrder();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, sortOrder, pagination)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, sortOrder, pagination).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithSortOrderPaginationAndDepth() {
-        SortOrder sortOrder = new SortOrder();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, sortOrder, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, sortOrder, pagination, 1).size());
-    }
-
-    // ---------- loadAll(Class<T>, Filter, ...) overloads ----------
-
-    @Test
-    public void testLoadAll_ClassWithFilter() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        when(mockSession.loadAll(Person.class, filter)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFilterAndDepth() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        when(mockSession.loadAll(Person.class, filter, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter, 1).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFilterAndSortOrder() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, filter, sortOrder)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFilterSortOrderAndDepth() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, filter, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, 1).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFilterAndPagination() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, pagination)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter, pagination).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFilterPaginationAndDepth() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter, pagination, 1).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFilterSortOrderAndPagination() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        SortOrder sortOrder = new SortOrder();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, sortOrder, pagination)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, pagination).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFilterSortOrderPaginationAndDepth() {
-        Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        SortOrder sortOrder = new SortOrder();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, sortOrder, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, pagination, 1).size());
-    }
-
-    // ---------- loadAll(Class<T>, Filters, ...) overloads ----------
-
-    @Test
-    public void testLoadAll_ClassWithFilters() {
-        Filters filters = new Filters();
-        when(mockSession.loadAll(Person.class, filters)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFiltersAndDepth() {
-        Filters filters = new Filters();
-        when(mockSession.loadAll(Person.class, filters, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters, 1).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFiltersAndSortOrder() {
-        Filters filters = new Filters();
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, filters, sortOrder)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFiltersSortOrderAndDepth() {
-        Filters filters = new Filters();
-        SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, filters, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder, 1).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFiltersAndPagination() {
-        Filters filters = new Filters();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filters, pagination)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters, pagination).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFiltersPaginationAndDepth() {
-        Filters filters = new Filters();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filters, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters, pagination, 1).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFiltersSortOrderAndPagination() {
-        Filters filters = new Filters();
-        SortOrder sortOrder = new SortOrder();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filters, sortOrder, pagination)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder, pagination).size());
-    }
-
-    @Test
-    public void testLoadAll_ClassWithFiltersSortOrderPaginationAndDepth() {
-        Filters filters = new Filters();
-        SortOrder sortOrder = new SortOrder();
-        Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filters, sortOrder, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
-        assertEquals(1, executor.loadAll(Person.class, filters, sortOrder, pagination, 1).size());
-    }
-
-    // ---------- Save / delete operations ----------
 
     @Test
     public void testSave() {
@@ -737,198 +919,6 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
-    public void testDelete() {
-        Person p = new Person();
-        executor.delete(p);
-        verify(mockSession).delete(p);
-        verify(mockSession).clear();
-    }
-
-    @Test
-    public void testDeleteAll() {
-        executor.deleteAll(Person.class);
-        verify(mockSession).deleteAll(Person.class);
-        verify(mockSession).clear();
-    }
-
-    // ---------- Query methods ----------
-
-    @Test
-    public void testFindOnly() {
-        Person p = new Person();
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("name", "John");
-        when(mockSession.queryForObject(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params)).thenReturn(p);
-
-        Optional<Person> actual = executor.findOnly(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params);
-        assertTrue(actual.isPresent());
-        assertSame(p, actual.get());
-    }
-
-    @Test
-    public void testFindOnly_EmptyWhenNoRow() {
-        when(mockSession.queryForObject(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenReturn(null);
-
-        Optional<Person> actual = executor.findOnly(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap());
-        assertNotNull(actual);
-        assertTrue(actual.isEmpty());
-        verify(mockSession).clear();
-    }
-
-    @Test
-    public void testFindOnly_PropagatesFailureAndReleasesSession() {
-        // OGM raises a plain RuntimeException when the query returns more than one row; the
-        // executor must propagate it unchanged and still return the session to the pool.
-        final RuntimeException tooMany = new RuntimeException("Result not of expected size");
-        when(mockSession.queryForObject(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenThrow(tooMany);
-
-        final RuntimeException thrown = assertThrows(RuntimeException.class,
-                () -> executor.findOnly(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap()));
-        assertSame(tooMany, thrown);
-        verify(mockSession).clear();
-
-        executor.run(s -> {
-        });
-        verify(mockSessionFactory, times(1)).openSession();
-    }
-
-    @Test
-    public void testQueryParametersAreForwardedByIdentity() {
-        // The executor forwards the (possibly immutable) parameter map verbatim; it must not copy or mutate it.
-        final Map<String, Object> params = Map.of("name", "John");
-        final Result mockResult = mock(Result.class);
-        when(mockResult.iterator()).thenReturn(Collections.<Map<String, Object>> emptyList().iterator());
-        when(mockSession.query(eq("MATCH (n) RETURN n"), same(params))).thenReturn(mockResult);
-        when(mockSession.query(eq("MATCH (n) RETURN n"), same(params), eq(true))).thenReturn(mockResult);
-        when(mockSession.query(eq(Person.class), eq("MATCH (n) RETURN n"), same(params))).thenReturn(Collections.<Person> emptyList());
-
-        assertEquals(0L, executor.stream("MATCH (n) RETURN n", params).count());
-        assertEquals(0L, executor.stream("MATCH (n) RETURN n", params, true).count());
-        assertEquals(0L, executor.stream(Person.class, "MATCH (n) RETURN n", params).count());
-        executor.findOnly(Person.class, "MATCH (n) RETURN n", params);
-
-        verify(mockSession).query(eq("MATCH (n) RETURN n"), same(params));
-        verify(mockSession).query(eq("MATCH (n) RETURN n"), same(params), eq(true));
-        verify(mockSession).query(eq(Person.class), eq("MATCH (n) RETURN n"), same(params));
-        verify(mockSession).queryForObject(eq(Person.class), eq("MATCH (n) RETURN n"), same(params));
-        assertEquals(1, params.size());
-    }
-
-    @Test
-    public void testStream() {
-        // Build a Result that returns a single-row iterator.
-        Result mockResult = mock(Result.class);
-        Map<String, Object> row = Collections.singletonMap("p", "x");
-        Iterator<Map<String, Object>> rowIter = Collections.singletonList(row).iterator();
-        when(mockResult.iterator()).thenReturn(rowIter);
-        when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap())).thenReturn(mockResult);
-
-        Stream<Map<String, Object>> rows = executor.stream("MATCH (n) RETURN n", Collections.emptyMap());
-
-        // OGM materializes query results eagerly, so the executor can return the session before
-        // the stream is consumed. A second operation must therefore reuse the same session.
-        verify(mockSession).clear();
-        executor.run(s -> {
-        });
-        verify(mockSessionFactory, times(1)).openSession();
-
-        assertEquals(1L, rows.count());
-    }
-
-    @Test
-    public void testStreamWithReadOnly() {
-        Result mockResult = mock(Result.class);
-        Iterator<Map<String, Object>> rowIter = Collections.<Map<String, Object>> emptyList().iterator();
-        when(mockResult.iterator()).thenReturn(rowIter);
-        when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap(), true)).thenReturn(mockResult);
-
-        Stream<Map<String, Object>> rows = executor.stream("MATCH (n) RETURN n", Collections.emptyMap(), true);
-        verify(mockSession).clear();
-        assertEquals(0L, rows.count());
-    }
-
-    @Test
-    public void testStreamWithType() {
-        // session.query(Class, String, Map) returns Iterable<T>.
-        @SuppressWarnings("unchecked")
-        Iterable<Person> iterable = mock(Iterable.class);
-        List<Person> people = Arrays.asList(new Person(), new Person());
-        when(iterable.iterator()).thenReturn(people.iterator());
-        when(mockSession.query(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenReturn(iterable);
-
-        Stream<Person> peopleStream = executor.stream(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap());
-        verify(mockSession).clear();
-        assertEquals(2L, peopleStream.count());
-    }
-
-    @Test
-    public void testStreamClosesSessionOnException() {
-        // When session.query throws, the session must still be returned to the pool.
-        when(mockSession.query(eq("BAD CYPHER"), eq(Collections.emptyMap()))).thenThrow(new RuntimeException("syntax"));
-
-        assertThrows(RuntimeException.class, () -> executor.stream("BAD CYPHER", Collections.emptyMap()));
-        verify(mockSession).clear();
-    }
-
-    // ---------- Count / id resolution ----------
-
-    @Test
-    public void testCount() {
-        List<Filter> filters = Arrays.asList(new Filter("name", ComparisonOperator.EQUALS, "John"));
-        when(mockSession.count(Person.class, filters)).thenReturn(7L);
-        assertEquals(7L, executor.count(Person.class, filters));
-    }
-
-    @Test
-    public void testCount_ByClass() {
-        when(mockSession.countEntitiesOfType(Person.class)).thenReturn(123L);
-        assertEquals(123L, executor.count(Person.class));
-    }
-
-    @Test
-    public void testGetGraphId() {
-        Person p = new Person();
-        when(mockSession.resolveGraphIdFor(p)).thenReturn(99L);
-        assertEquals(Long.valueOf(99L), executor.getGraphId(p));
-    }
-
-    @Test
-    public void testGetGraphId_NotEntity() {
-        Object obj = new Object();
-        when(mockSession.resolveGraphIdFor(obj)).thenReturn(null);
-        assertNull(executor.getGraphId(obj));
-    }
-
-    @Test
-    public void testWriteAndCountOperationsReleaseSessionOnException() {
-        final Person p = new Person();
-        doThrow(new RuntimeException("save failed")).when(mockSession).save(p);
-        doThrow(new RuntimeException("save failed")).when(mockSession).save(p, 0);
-        doThrow(new RuntimeException("delete failed")).when(mockSession).delete(p);
-        doThrow(new RuntimeException("deleteAll failed")).when(mockSession).deleteAll(Person.class);
-        when(mockSession.countEntitiesOfType(Person.class)).thenThrow(new RuntimeException("count failed"));
-        when(mockSession.count(eq(Person.class), eq(Collections.emptyList()))).thenThrow(new RuntimeException("count failed"));
-        when(mockSession.resolveGraphIdFor(p)).thenThrow(new RuntimeException("resolve failed"));
-        when(mockSession.load(Person.class, 1L)).thenThrow(new RuntimeException("load failed"));
-
-        assertThrows(RuntimeException.class, () -> executor.save(p));
-        assertThrows(RuntimeException.class, () -> executor.save(p, 0));
-        assertThrows(RuntimeException.class, () -> executor.delete(p));
-        assertThrows(RuntimeException.class, () -> executor.deleteAll(Person.class));
-        assertThrows(RuntimeException.class, () -> executor.count(Person.class));
-        assertThrows(RuntimeException.class, () -> executor.count(Person.class, Collections.emptyList()));
-        assertThrows(RuntimeException.class, () -> executor.getGraphId(p));
-        assertThrows(RuntimeException.class, () -> executor.load(Person.class, 1L));
-
-        // Every failed operation cleared its session and returned it to the pool, so the single
-        // pooled session was reused throughout and no second session was ever opened.
-        verify(mockSession, times(8)).clear();
-        verify(mockSessionFactory, times(1)).openSession();
-    }
-
-    // ---------- Session pool behaviour ----------
-
-    @Test
     public void testSessionPool_ReusesSession() {
         // Two sequential operations should reuse the same pooled session.
         executor.run(s -> {
@@ -939,37 +929,37 @@ public class Neo4jExecutorTest extends TestBase {
         verify(mockSession, atLeastOnce()).clear();
     }
 
-    @Test
-    public void testLoad_ReturnsNullWhenSessionReturnsNull() {
-        when(mockSession.load(Person.class, 999L)).thenReturn(null);
-        assertNull(executor.load(Person.class, 999L));
+    /** Sample entity class used as the targetClass argument in load/save/delete tests. */
+    public static class Person {
+        private Long id;
+        private String name;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
     }
 
-    @Test
-    public void testLoadAll_EmptyCollection() {
-        Collection<Long> ids = Collections.emptyList();
-        when(mockSession.loadAll(Person.class, ids)).thenReturn(Collections.<Person> emptyList());
-        Collection<Person> actual = executor.loadAll(Person.class, ids);
-        assertEquals(0, actual.size());
-        assertTrue(actual.isEmpty());
-    }
+    public static class StringIdEntity {
+        private String id;
 
-    @Test
-    public void testCall_ReturnsNull() {
-        // The session-managed call may legitimately return null.
-        Object result = executor.call(s -> null);
-        assertNull(result);
-        verify(mockSession).clear();
-    }
+        public String getId() {
+            return id;
+        }
 
-    @Test
-    public void testRun_SessionIsActuallyPassed() {
-        AtomicInteger seen = new AtomicInteger();
-        executor.run(s -> {
-            if (s == mockSession) {
-                seen.incrementAndGet();
-            }
-        });
-        assertEquals(1, seen.get());
+        public void setId(String id) {
+            this.id = id;
+        }
     }
 }

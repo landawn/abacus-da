@@ -1,13 +1,10 @@
 package com.landawn.abacus.da.azure;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -42,57 +39,11 @@ import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.util.NamingPolicy;
 
 /**
- * Integration tests for {@link CosmosContainerExecutor} that run against a <b>real</b> Azure Cosmos DB
- * instance instead of Mockito mocks (the mock-based counterpart lives in {@code CosmosContainerExecutorTest}).
+ * Cosmos emulator round trips at https://localhost:8081. Each run owns a separate database. Query features unsupported by the emulator are reported as skipped; SQL rewriting is covered by CosmosQueryParameterTest.
  *
- * <p>These tests exercise true CRUD, query, patch and streaming round-trips so the assertions reflect
- * actual Cosmos DB semantics (status codes, case-sensitive identifiers, alias-qualified SQL, etc.)
- * rather than verified mock interactions.</p>
- *
- * <h2>Running locally against the emulator</h2>
- * <p>Start the Linux emulator in HTTPS mode &mdash; the Java SDK does not support the emulator's (default)
- * HTTP mode. The {@code -e PROTOCOL=https} environment variable is the reliable way to force HTTPS:</p>
- * <pre>{@code
- * docker rm -f cosmos-db
- * docker run --detach --name cosmos-db `
- *   -e PROTOCOL=https `
- *   --publish 8081:8081 --publish 8080:8080 --publish 1234:1234 `
- *   mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest --protocol https
- * }</pre>
- *
- * <p>The emulator serves HTTPS with a self-signed certificate. Rather than importing that certificate
- * into the JVM trust store, these tests set the SDK system property
- * {@code COSMOS.EMULATOR_SERVER_CERTIFICATE_VALIDATION_DISABLED=true}, which makes the SDK trust the
- * emulator endpoint when the host is {@code localhost} (see
- * {@code com.azure.cosmos.implementation.Configs#isEmulatorServerCertValidationDisabled}).</p>
- *
- * <p>The repository's Surefire configuration runs only {@code AbacusDATestSuite} by default, so a normal
- * {@code mvn test} run does not pick up this integration test. Run it explicitly once the emulator is up:</p>
- * <pre>{@code
- * mvn -pl abacus-da-all test -Dtest=CosmosContainerExecutor2Test
- * }</pre>
- *
- * <h2>Graceful skips for emulator gaps</h2>
- * <p>Tests degrade to JUnit {@link Assumptions} skips (never failures) when the connected endpoint can't
- * support an operation, so the suite is green against the emulator while the same assertions run for real
- * against a full Azure Cosmos DB account:</p>
- * <ul>
- * <li>If the emulator is unreachable, every database-backed test is skipped. The pure-logic
- *     {@code rewritePositionalParameters} tests and the null-argument constructor guards always run.</li>
- * <li>The vNext emulator's query engine only supports predicates/projections/ORDER BY on <i>indexed</i>
- *     paths &mdash; {@code id} and the partition key by default ({@code SELECT *} and {@code COUNT} are fine;
- *     custom indexing policy is a documented no-op). Any query naming a non-indexed property (here
- *     {@code value}) returns {@code 400 BadRequest} &mdash; reproducible in the emulator's own shell, so it is
- *     the engine, not the Java SDK. Writes, point reads and {@code ReadFeed}-based {@code readAllItems}/
- *     {@code readMany} are unaffected. Therefore the {@code assumeQuerySupported()} tests (which filter/project
- *     {@code value}, as the executor's {@code selectFrom} projects every field) skip on localhost via
- *     {@link #setUpClass()} and run only against full Azure Cosmos DB, while the dedicated
- *     {@code ...RunsOnEmulator} tests stay on indexed paths and execute for real here too. See the cluster of
- *     emulator query issues, e.g. {@code github.com/Azure/azure-cosmos-db-emulator-docker/issues/156}.</li>
- * <li>{@code deleteAllItemsByPartitionKey} is skipped if the emulator reports the feature is unavailable.</li>
- * </ul>
+ * <p>Run with {@code mvn -pl abacus-da-all -Pintegration-tests -Dit.test=CosmosContainerExecutorIT verify -Dgpg.skip=true}.</p>
  */
-public class CosmosContainerExecutor2Test extends TestBase {
+public class CosmosContainerExecutorIT extends TestBase {
 
     private static final String ENDPOINT = "https://localhost:8081";
 
@@ -102,7 +53,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
     private static final String EMULATOR_CERT_VALIDATION_DISABLED_PROP = "COSMOS.EMULATOR_SERVER_CERTIFICATE_VALIDATION_DISABLED";
     private static final String LOCAL_EMULATOR_QUERY_UNSUPPORTED_REASON = "localhost Cosmos DB emulator skips SQL Query tests because the vNext emulator returns HTTP 400 for Query via the Java SDK";
 
-    private static final String DATABASE_ID = "abacus_da_test";
+    private static final String DATABASE_ID = "abacus_da_test_" + UUID.randomUUID().toString().replace("-", "");
     private static final String CONTAINER_ID = "test_item";
     private static final String PARTITION_KEY_PATH = "/name";
 
@@ -110,8 +61,8 @@ public class CosmosContainerExecutor2Test extends TestBase {
     private static CosmosContainer container;
     private static CosmosContainerExecutor executor;
 
-    private static boolean cosmosAvailable;
-    private static String unavailabilityReason;
+    private static String previousCertificateValidationSetting;
+    private static boolean databaseCreated;
 
     /**
      * Whether the connected endpoint can actually execute the SQL <i>Query</i> operation. The vNext-preview
@@ -125,6 +76,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
     @BeforeAll
     public static void setUpClass() {
         // Trust the emulator's self-signed cert for localhost instead of importing it into the JVM trust store.
+        previousCertificateValidationSetting = System.getProperty(EMULATOR_CERT_VALIDATION_DISABLED_PROP);
         System.setProperty(EMULATOR_CERT_VALIDATION_DISABLED_PROP, "true");
 
         try {
@@ -135,14 +87,14 @@ public class CosmosContainerExecutor2Test extends TestBase {
                     .contentResponseOnWriteEnabled(true) // so create/upsert/replace responses carry the document body
                     .buildClient();
 
-            client.createDatabaseIfNotExists(DATABASE_ID);
+            client.createDatabase(DATABASE_ID);
+            databaseCreated = true;
             final CosmosDatabase database = client.getDatabase(DATABASE_ID);
             database.createContainerIfNotExists(new CosmosContainerProperties(CONTAINER_ID, PARTITION_KEY_PATH),
                     ThroughputProperties.createManualThroughput(400));
             container = database.getContainer(CONTAINER_ID);
 
             executor = new CosmosContainerExecutor(container);
-            cosmosAvailable = true;
 
             if (isLocalEmulatorEndpoint()) {
                 querySupported = false;
@@ -164,26 +116,30 @@ public class CosmosContainerExecutor2Test extends TestBase {
                 querySupported = false;
                 queryUnsupportedReason = queryProbeFailureReason(e);
                 System.err.println(
-                        "[CosmosContainerExecutor2] SQL query API unavailable on this endpoint; query-based tests will be skipped: " + queryUnsupportedReason);
+                        "[CosmosContainerExecutorIT] SQL query API unavailable on this endpoint; query-based tests will be skipped: " + queryUnsupportedReason);
             }
-        } catch (final Throwable t) {
-            cosmosAvailable = false;
-            unavailabilityReason = t.toString();
-            System.err.println("[CosmosContainerExecutor2] Cosmos emulator unavailable at " + ENDPOINT + " - database-backed tests will be skipped: " + t);
+        } catch (final Exception e) {
+            throw new IllegalStateException("Cosmos integration setup failed at " + ENDPOINT, e);
         }
     }
 
     @AfterAll
     public static void tearDownClass() {
-        if (client != null) {
-            try {
-                if (cosmosAvailable) {
-                    client.getDatabase(DATABASE_ID).delete(); // drop everything created by this run
+        try {
+            if (client != null) {
+                try {
+                    if (databaseCreated) {
+                        client.getDatabase(DATABASE_ID).delete();
+                    }
+                } finally {
+                    client.close();
                 }
-            } catch (final Throwable ignore) {
-                // best-effort cleanup
-            } finally {
-                client.close();
+            }
+        } finally {
+            if (previousCertificateValidationSetting == null) {
+                System.clearProperty(EMULATOR_CERT_VALIDATION_DISABLED_PROP);
+            } else {
+                System.setProperty(EMULATOR_CERT_VALIDATION_DISABLED_PROP, previousCertificateValidationSetting);
             }
         }
     }
@@ -202,15 +158,10 @@ public class CosmosContainerExecutor2Test extends TestBase {
         return e.getClass().getSimpleName() + (message == null ? "" : ": " + message);
     }
 
-    private static void assumeCosmosAvailable() {
-        Assumptions.assumeTrue(cosmosAvailable, "Cosmos DB emulator not reachable at " + ENDPOINT + " (" + unavailabilityReason + ")");
-    }
-
     /**
-     * Skips a test when the connected endpoint cannot execute SQL queries. Implies {@link #assumeCosmosAvailable()}.
+     * Skips a test when the connected endpoint cannot execute SQL queries.
      */
     private static void assumeQuerySupported() {
-        assumeCosmosAvailable();
         Assumptions.assumeTrue(querySupported, "SQL query API not supported by this Cosmos endpoint (" + queryUnsupportedReason + ")");
     }
 
@@ -231,54 +182,11 @@ public class CosmosContainerExecutor2Test extends TestBase {
     }
 
     // ----------------------------------------------------------------------------------------------------
-    // Construction
-    // ----------------------------------------------------------------------------------------------------
-
-    @Test
-    public void testConstructorWithContainer() {
-        assumeCosmosAvailable();
-        final CosmosContainerExecutor exec = new CosmosContainerExecutor(container);
-        assertNotNull(exec);
-        assertEquals(container, exec.cosmosContainer());
-    }
-
-    @Test
-    public void testConstructorWithContainerAndNamingPolicy() {
-        assumeCosmosAvailable();
-        final CosmosContainerExecutor exec = new CosmosContainerExecutor(container, NamingPolicy.SCREAMING_SNAKE_CASE);
-        assertNotNull(exec);
-        assertEquals(container, exec.cosmosContainer());
-    }
-
-    @Test
-    public void testCosmosContainer() {
-        assumeCosmosAvailable();
-        assertEquals(container, executor.cosmosContainer());
-    }
-
-    @Test
-    public void testConstructorRejectsNullContainer() {
-        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(null));
-    }
-
-    @Test
-    public void testConstructorWithPolicyRejectsNullContainer() {
-        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(null, NamingPolicy.SNAKE_CASE));
-    }
-
-    @Test
-    public void testConstructorWithPolicyRejectsNullPolicy() {
-        assumeCosmosAvailable();
-        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(container, (NamingPolicy) null));
-    }
-
-    // ----------------------------------------------------------------------------------------------------
     // Create
     // ----------------------------------------------------------------------------------------------------
 
     @Test
     public void testCreateItemWithItem() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "create-basic");
 
         final CosmosItemResponse<TestItem> response = executor.createItem(item);
@@ -289,7 +197,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testCreateItemWithItemPartitionKeyAndOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "create-pk-opts");
 
         final CosmosItemResponse<TestItem> response = executor.createItem(item, pk(item), new CosmosItemRequestOptions());
@@ -300,7 +207,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testCreateItemWithItemAndOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "create-opts");
 
         final CosmosItemResponse<TestItem> response = executor.createItem(item, new CosmosItemRequestOptions());
@@ -315,7 +221,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testUpsertItemWithItem() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "upsert-1");
 
         // First upsert creates the item -> 201
@@ -332,7 +237,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testUpsertItemWithItemPartitionKeyAndOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "upsert-pk-opts");
 
         final CosmosItemResponse<TestItem> response = executor.upsertItem(item, pk(item), new CosmosItemRequestOptions());
@@ -343,7 +247,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testUpsertItemWithItemAndOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "upsert-opts");
 
         final CosmosItemResponse<TestItem> response = executor.upsertItem(item, new CosmosItemRequestOptions());
@@ -358,7 +261,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testReplaceItem() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "original");
         executor.createItem(item);
 
@@ -371,7 +273,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testPatchItemWithoutOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "pre-patch");
         executor.createItem(item);
 
@@ -384,7 +285,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testPatchItemWithOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "pre-patch-opts");
         executor.createItem(item);
 
@@ -402,7 +302,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testDeleteItemWithItem() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "delete-by-item");
         executor.createItem(item);
 
@@ -414,7 +313,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testDeleteItemWithId() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "delete-by-id");
         executor.createItem(item);
 
@@ -426,7 +324,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testDeleteAllItemsByPartitionKey() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         executor.createItem(itemIn(partition, "delete-all-1"));
         executor.createItem(itemIn(partition, "delete-all-2"));
@@ -446,7 +343,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testReadItemWithoutOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "read-basic");
         executor.createItem(item);
 
@@ -459,7 +355,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testReadItemWithOptions() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "read-opts");
         executor.createItem(item);
 
@@ -472,7 +367,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testReadManyWithoutSessionToken() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         final TestItem a = itemIn(partition, "read-many-a");
         final TestItem b = itemIn(partition, "read-many-b");
@@ -489,7 +383,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testReadManyWithSessionToken() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         final TestItem a = itemIn(partition, "read-many-st-a");
         final TestItem b = itemIn(partition, "read-many-st-b");
@@ -506,7 +399,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testReadAllItemsWithoutOptions() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         executor.createItem(itemIn(partition, "read-all-1"));
         executor.createItem(itemIn(partition, "read-all-2"));
@@ -519,7 +411,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testReadAllItemsWithOptions() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         executor.createItem(itemIn(partition, "read-all-opts-1"));
         executor.createItem(itemIn(partition, "read-all-opts-2"));
@@ -536,7 +427,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testStreamAllItemsWithoutOptions() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         executor.createItem(itemIn(partition, "stream-all-1"));
         executor.createItem(itemIn(partition, "stream-all-2"));
@@ -548,7 +438,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testStreamAllItemsWithOptions() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         executor.createItem(itemIn(partition, "stream-all-opts-1"));
         executor.createItem(itemIn(partition, "stream-all-opts-2"));
@@ -848,14 +737,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
         assertEquals(0, result.size());
     }
 
-    @Test
-    public void testUnsupportedNamingPolicy() {
-        assumeCosmosAvailable();
-        // NO_CHANGE is not handled by prepareQuery's switch; the constructor now rejects it
-        // eagerly, before any request is sent to Cosmos.
-        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(container, NamingPolicy.NO_CHANGE));
-    }
-
     // ----------------------------------------------------------------------------------------------------
     // Indexed-path queries that also execute on the local vNext emulator
     //
@@ -868,7 +749,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testQueryItemsByIdSelectStarRunsOnEmulator() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "by-id-select-star");
         executor.createItem(item);
 
@@ -882,7 +762,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testQueryItemsByIdSqlQuerySpecRunsOnEmulator() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "by-id-spec");
         executor.createItem(item);
 
@@ -895,7 +774,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testStreamItemsByIdSelectStarRunsOnEmulator() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "by-id-stream");
         executor.createItem(item);
 
@@ -907,7 +785,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
     @Test
     public void testStreamItemsConditionByIdProjectingIdRunsOnEmulator() {
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "cond-by-id");
         executor.createItem(item);
 
@@ -926,7 +803,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
         // predicate paths ("id" and partition key "name") are indexed and only "id" is projected, so the
         // alias-qualified SQL SELECT VALUE { "id": c.id } FROM test_item c WHERE c.id = @p0 AND c.name = @p1 runs on the
         // emulator and proves the generated query is accepted by a real Cosmos query engine.
-        assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "cond-by-id-pk");
         executor.createItem(item);
 
@@ -942,63 +818,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
     // rewritePositionalParameters (pure logic - no Cosmos connection required)
     // ----------------------------------------------------------------------------------------------------
 
-    @Test
-    public void testRewritePositionalParametersRejectsExtraPlaceholders() throws Exception {
-        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
-        method.setAccessible(true);
-
-        final InvocationTargetException ex = assertThrows(InvocationTargetException.class,
-                () -> method.invoke(null, "SELECT * FROM c WHERE c.id = ? AND c.name = ?", 1));
-
-        assertTrue(ex.getCause() instanceof IllegalArgumentException);
-        assertTrue(ex.getCause().getMessage().contains("expected 1 placeholders but found 2"));
-    }
-
-    @Test
-    public void testRewritePositionalParameters_NoPlaceholders() throws Exception {
-        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
-        method.setAccessible(true);
-        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.id = 'static'", 0);
-        assertEquals("SELECT * FROM c WHERE c.id = 'static'", result);
-    }
-
-    @Test
-    public void testRewritePositionalParameters_MultiPlaceholder() throws Exception {
-        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
-        method.setAccessible(true);
-        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.a = ? AND c.b = ? AND c.c = ?", 3);
-        assertEquals("SELECT * FROM c WHERE c.a = @p0 AND c.b = @p1 AND c.c = @p2", result);
-    }
-
-    @Test
-    public void testRewritePositionalParameters_QuestionMarkInsideSingleQuotes() throws Exception {
-        // The '?' inside a single-quoted string literal must be preserved, not rewritten.
-        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
-        method.setAccessible(true);
-        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.name = 'a?b' AND c.id = ?", 1);
-        assertEquals("SELECT * FROM c WHERE c.name = 'a?b' AND c.id = @p0", result);
-    }
-
-    @Test
-    public void testRewritePositionalParameters_EscapedSingleQuote() throws Exception {
-        // '' is the SQL escape for a single quote and should not toggle the in-quote state.
-        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
-        method.setAccessible(true);
-        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.name = 'O''Brien' AND c.id = ?", 1);
-        assertEquals("SELECT * FROM c WHERE c.name = 'O''Brien' AND c.id = @p0", result);
-    }
-
-    @Test
-    public void testRewritePositionalParameters_FewerParametersThanPlaceholders() throws Exception {
-        // When parameterCount < total '?' found, the extras stay as '?' and we hit the mismatch error.
-        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
-        method.setAccessible(true);
-        final InvocationTargetException ex = assertThrows(InvocationTargetException.class,
-                () -> method.invoke(null, "SELECT * FROM c WHERE a=? AND b=? AND c=?", 2));
-        assertTrue(ex.getCause() instanceof IllegalArgumentException);
-        assertTrue(ex.getCause().getMessage().contains("expected 2 placeholders but found 3"));
-    }
-
     // ---- 2026-10-04 coverageDC ----
 
     /**
@@ -1009,7 +828,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
      */
     @Test
     public void testCoalesceWithBoundConditionRunsOnEmulator_coverageDC() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         final TestItem first = itemIn(partition, "coalesce-1");
         final TestItem second = itemIn(partition, "coalesce-2");
@@ -1025,8 +843,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
             assertEquals(List.of(first.id), byId.stream().map(it -> it.id).toList());
 
             final List<String> fallback = executor
-                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("(missing ?? 'none') = 'none'")),
-                            TestItem.class)
+                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("(missing ?? 'none') = 'none'")), TestItem.class)
                     .map(it -> it.id)
                     .sorted()
                     .toList();
@@ -1044,7 +861,6 @@ public class CosmosContainerExecutor2Test extends TestBase {
      */
     @Test
     public void testLikeEscapeWithBoundConditionRunsOnEmulator_coverageDC() {
-        assumeCosmosAvailable();
         final String partition = newPartition();
         final String suffix = UUID.randomUUID().toString().substring(0, 8);
         final TestItem literalUnderscore = new TestItem("esc_" + suffix, partition, "escape-1");
@@ -1054,8 +870,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
 
         try {
             final List<String> escaped = executor
-                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("id LIKE 'esc!_%' ESCAPE '!'")),
-                            TestItem.class)
+                    .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("name", partition), Filters.expr("id LIKE 'esc!_%' ESCAPE '!'")), TestItem.class)
                     .map(it -> it.id)
                     .toList();
             assertEquals(List.of(literalUnderscore.id), escaped);

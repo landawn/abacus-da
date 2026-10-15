@@ -128,7 +128,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * HBase {@link Increment} pre-populated with the given family map and timestamp.
      *
      * @param rowKey the row key as a byte array
-     * @param timestamp the increment's default timestamp; existing cells retain their own timestamps
+     * @param timestamp the increment's default timestamp; existing cells retain their own timestamps; a negative
+     *                  value is retained without validation, unlike {@link #setTimestamp(long)}
      * @param familyMap a pre-populated map of column families to their cells
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
@@ -317,7 +318,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * }</pre>
      *
      * @param rowKey the row key for the increment operation as a byte array
-     * @param timestamp the default timestamp for subsequently added columns
+     * @param timestamp the default timestamp for subsequently added columns; a negative value is retained without
+     *                  validation, unlike {@link #setTimestamp(long)}
      * @param familyMap a pre-populated NavigableMap of column families to their Cell lists
      * @return a new AnyIncrement instance with the specified configuration
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty

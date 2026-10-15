@@ -195,7 +195,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * HBase {@link Append} pre-populated with the given family map and timestamp.
      *
      * @param rowKey the row key as a byte array
-     * @param timestamp the append's default timestamp; existing cells retain their own timestamps
+     * @param timestamp the append's default timestamp; existing cells retain their own timestamps; a negative
+     *                  value is retained without validation, unlike {@link #setTimestamp(long)}
      * @param familyMap a pre-populated map of column families to their cells
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
@@ -356,7 +357,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * }</pre>
      *
      * @param rowKey the row key as a byte array; must not be {@code null} or empty
-     * @param timestamp the default timestamp for subsequently added columns (milliseconds since epoch)
+     * @param timestamp the default timestamp for subsequently added columns (milliseconds since epoch); a negative
+     *                  value is retained without validation, unlike {@link #setTimestamp(long)}
      * @param familyMap a map of column family names to lists of cells to append
      * @return a new AnyAppend instance configured with the specified data
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty

@@ -61,7 +61,7 @@ public class MongoLiveTestSupportTest extends TestBase {
     }
 
     private static MongoCommandException commandError(final int code, final String message) {
-        return new MongoCommandException(new BsonDocument("ok", new BsonInt32(0)).append("code", new BsonInt32(code))
-                .append("errmsg", new BsonString(message)), new ServerAddress("localhost"));
+        return new MongoCommandException(new BsonDocument("ok", new BsonInt32(0)).append("code", new BsonInt32(code)).append("errmsg", new BsonString(message)),
+                new ServerAddress("localhost"));
     }
 }

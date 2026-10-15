@@ -63,8 +63,7 @@ public class HBaseExceptionContractTest extends TestBase {
         final IOException failure = new IOException("table unavailable");
         when(connection.getTable(any(TableName.class))).thenThrow(failure);
 
-        final UncheckedIOException actual = assertThrows(UncheckedIOException.class,
-                () -> executor.get("table", Arrays.asList((Get) null), String.class));
+        final UncheckedIOException actual = assertThrows(UncheckedIOException.class, () -> executor.get("table", Arrays.asList((Get) null), String.class));
 
         assertSame(failure, actual.getCause());
     }
@@ -130,10 +129,12 @@ public class HBaseExceptionContractTest extends TestBase {
 
             assertSame(failure, assertThrows(failure.getClass(), () -> executor.coprocessorService("table", Service.class, boundary, null, service -> null)));
             assertSame(failure, assertThrows(failure.getClass(),
-                    () -> executor.coprocessorService("table", Service.class, boundary, null, service -> null, (region, row, value) -> { })));
+                    () -> executor.coprocessorService("table", Service.class, boundary, null, service -> null, (region, row, value) -> {
+                    })));
             assertSame(failure, assertThrows(failure.getClass(), () -> executor.batchCoprocessorService("table", null, null, boundary, null, null)));
-            assertSame(failure, assertThrows(failure.getClass(),
-                    () -> executor.batchCoprocessorService("table", null, null, boundary, null, null, (region, row, value) -> { })));
+            assertSame(failure,
+                    assertThrows(failure.getClass(), () -> executor.batchCoprocessorService("table", null, null, boundary, null, null, (region, row, value) -> {
+                    })));
         }
 
         verify(table, times(8)).close();

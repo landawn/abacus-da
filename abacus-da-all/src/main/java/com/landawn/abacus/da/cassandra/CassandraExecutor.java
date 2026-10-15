@@ -24,7 +24,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -40,6 +42,7 @@ import com.datastax.oss.driver.api.core.CqlIdentifier;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.ProtocolVersion;
 import com.datastax.oss.driver.api.core.cql.BatchStatement;
+import com.datastax.oss.driver.api.core.cql.BatchStatementBuilder;
 import com.datastax.oss.driver.api.core.cql.BatchType;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
@@ -124,8 +127,8 @@ import lombok.experimental.Accessors;
  * prepared statement's metadata.</p>
  *
  * <h2>Batch Semantics</h2>
- * <p>Batch helpers accept a {@link BatchType}: {@link BatchType#LOGGED LOGGED} (the default applied
- * by {@code prepareBatchStatement} when {@code type} is {@code null}) uses Cassandra's batch log for
+ * <p>Batch helpers accept a {@link BatchType}: {@link BatchType#LOGGED LOGGED} (the default when
+ * {@code type} is {@code null}) uses Cassandra's batch log for
  * atomicity across partitions at the cost of extra coordination; {@link BatchType#UNLOGGED UNLOGGED}
  * skips the batch log (recommended only for single-partition batches); {@link BatchType#COUNTER
  * COUNTER} is required for counter mutations. Batches do <i>not</i> provide ACID transactions.</p>
@@ -134,7 +137,9 @@ import lombok.experimental.Accessors;
  * <p>Default consistency, serial consistency, page size, per-statement timeout, and query tracing from
  * {@link StatementSettings} are applied to every prepared/bound statement this executor builds
  * (via {@code prepareStatement}/{@code bind}/{@code prepareBatch*}). Caller-supplied {@link Statement}
- * instances passed to {@code execute}/{@code stream} are used as-is (executor settings are not applied).</p>
+ * instances passed to {@code execute}/{@code stream} are used as-is (executor settings are not applied).
+ * Driver 4.19.3 ignores a batch statement's own timeout (its {@code getTimeout()} returns {@code null}), so
+ * a {@code prepareBatch*} statement runs with its execution profile's request timeout; its other settings apply.</p>
  *
  * <h2>Key Features</h2>
  * <ul>
@@ -573,6 +578,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * that provides column-oriented access to the result data. This is useful for
      * analytical operations or when you need to work with result data in a tabular format.</p>
      *
+     * <p>Column values retain their driver types, except nested {@link Row} values, which are
+     * recursively flattened to {@code Object[]}.</p>
+     *
+     * <p>Remaining rows are decoded as pages are consumed, without first collecting the driver rows.
+     * If decoding a row fails, that row has been consumed, but later rows are not drained.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ResultSet resultSet = session.execute("SELECT id, name, age FROM users");
@@ -585,7 +596,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param resultSet the Cassandra ResultSet to extract data from
      * @return a Dataset containing all rows and columns from the result set
      * @throws IllegalArgumentException if {@code resultSet} is {@code null}
-     * @throws RuntimeException if the driver fails to fetch a remaining result page
+     * @throws RuntimeException if fetching a remaining result page or decoding a column value fails
      * @see Dataset
      */
     public static Dataset extractData(final ResultSet resultSet) throws IllegalArgumentException, RuntimeException {
@@ -601,7 +612,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * necessary conversions.</p>
      *
      * <p>When {@code targetClass} is {@code null}, {@code Map.class} (or any {@code Map} subtype), or
-     * a non-bean type, no per-column type conversion is applied and the raw driver values are kept.</p>
+     * a non-bean type, scalar values retain their driver types. Nested {@link Row} values become maps
+     * for a map target, or {@code Object[]} when no bean-property type is available.</p>
+     *
+     * <p>Remaining rows are mapped as pages are consumed, without first collecting the driver rows.
+     * If mapping a row fails, that row has been consumed, but later rows are not drained.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -617,11 +632,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param resultSet the Cassandra ResultSet to extract data from
-     * @param targetClass the entity class used to determine target column types, or null for no type conversion
+     * @param targetClass the entity class used to determine target column types; a map class, other non-bean
+     *                    class, or {@code null} keeps scalar driver values unchanged
      * @return a Dataset with type-converted data based on the target class
      * @throws IllegalArgumentException if {@code resultSet} is {@code null}
-     * @throws RuntimeException if the driver fails to fetch a remaining result page, or a column value cannot be
-     *         converted to the type of the matching {@code targetClass} property
+     * @throws RuntimeException if the driver fails to fetch a remaining result page, decoding a column value fails, or a column value
+     *         cannot be converted to the type of the matching {@code targetClass} property
      */
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(resultSet, cs.resultSet);
@@ -630,8 +646,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
         final ColumnDefinitions columnDefinitions = resultSet.getColumnDefinitions();
         final int columnCount = columnDefinitions.size();
-        final List<Row> rowList = resultSet.all();
-        final int rowCount = N.isEmpty(rowList) ? 0 : rowList.size();
+        // Only a sizing hint: a faulty ResultSet reporting a negative count must not fail the extraction.
+        final int initialRowCapacity = Math.max(0, resultSet.getAvailableWithoutFetching());
 
         final List<String> columnNameList = new ArrayList<>(columnCount);
         final List<List<Object>> columnList = new ArrayList<>(columnCount);
@@ -640,7 +656,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         for (int i = 0; i < columnCount; i++) {
             columnNameList.add(columnDefinitions.get(i).getName().asInternal());
-            columnList.add(new ArrayList<>(rowCount));
+            columnList.add(new ArrayList<>(initialRowCapacity));
             if (isEntity) {
                 final String columnName = columnNameList.get(i);
                 Method method = Beans.getPropGetter(targetClass, columnName);
@@ -661,7 +677,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         Object propValue = null;
 
-        for (final Row row : rowList) {
+        // Convert as pages are consumed so encoded driver rows are not retained alongside the entire Dataset.
+        for (final Row row : resultSet) {
             for (int i = 0; i < columnCount; i++) {
                 propValue = row.getObject(i);
 
@@ -671,7 +688,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         || columnClasses[i].isAssignableFrom(propValue.getClass())) {
                     columnList.get(i).add(propValue);
                 } else {
-                    columnList.get(i).add(convertValue(propValue, columnClasses[i]));
+                    columnList.get(i).add(decodeValue(propValue, columnClasses[i]));
                 }
             }
         }
@@ -690,11 +707,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <ul>
      * <li><strong>Entity classes:</strong> POJOs with getter/setter methods matching column names</li>
      * <li><strong>Map.class:</strong> Each row becomes a {@code Map<String, Object>}</li>
-     * <li><strong>Row.class:</strong> Returns raw Cassandra Row objects</li>
+     * <li><strong>Row.class, Object.class, or another supertype of Row:</strong> Returns raw Cassandra Row objects</li>
      * <li><strong>Array classes:</strong> Each row becomes an Object[] or typed array</li>
      * <li><strong>Collection classes:</strong> Each row becomes a List, Set, etc.</li>
      * <li><strong>Basic types:</strong> For single-column results (String, Integer, etc.)</li>
      * </ul>
+     *
+     * <p>For raw-row targets, the list returned by {@link ResultSet#all()} is returned unchanged.
+     * Other targets are mapped as pages are consumed, without first collecting the driver rows.
+     * If mapping a row fails, that row has been consumed, but later rows are not drained.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -740,10 +761,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         final ColumnDefinitions columnDefinitions = resultSet.getColumnDefinitions();
         final Function<? super Row, ? extends T> mapper = createRowMapper(targetClass, columnDefinitions);
-        final List<Row> rowList = resultSet.all();
-        final List<T> resultList = new ArrayList<>(rowList.size());
+        // Only a sizing hint: a faulty ResultSet reporting a negative count must not fail the conversion.
+        final List<T> resultList = new ArrayList<>(Math.max(0, resultSet.getAvailableWithoutFetching()));
 
-        for (final Row row : rowList) {
+        // Avoid an intermediate all-rows list, which retains every page while the mapped result grows.
+        for (final Row row : resultSet) {
             resultList.add(mapper.apply(row));
         }
 
@@ -968,28 +990,85 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         } else if (targetClass == ByteBuffer.class && value instanceof final byte[] bytes) {
             return (T) ByteBuffer.wrap(bytes);
         } else if (targetClass == java.sql.Time.class && value instanceof final LocalTime localTime) {
-            // N.convert parses the LocalTime's text and rejects both a fractional second ("01:02:03.456", usual for a CQL time,
-            // which has nanosecond precision) and a whole minute ("01:02", e.g. midnight "00:00"). Same local time of day on
-            // 1970-01-01 as the standard conversion gives for whole seconds, plus the milliseconds.
-            final java.sql.Time time = java.sql.Time.valueOf(localTime);
-            time.setTime(time.getTime() + localTime.getNano() / 1_000_000);
-
-            return (T) time;
+            return (T) fromTimeOfDay(localTime, targetClass);
         }
 
         return N.convert(value, targetClass);
     }
 
     /**
+     * Converts a driver-decoded column or field value to {@code targetClass}. A CQL time, which the driver decodes as a
+     * {@link LocalTime}, becomes a value of each supported date/time type (see {@link #fromTimeOfDay(LocalTime, Class)});
+     * {@code N.convert} parses the LocalTime's text and rejects it for those types.
+     * Every other value is converted by {@link #convertValue(Object, Class)}.
+     * @throws RuntimeException if {@code value} cannot be converted to {@code targetClass}
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T decodeValue(final Object value, final Class<T> targetClass) throws RuntimeException {
+        return value instanceof final LocalTime localTime && isTimeOfDayTarget(targetClass) ? (T) fromTimeOfDay(localTime, targetClass)
+                : convertValue(value, targetClass);
+    }
+
+    // The date/time types a time column or UDT field is read into. A LocalTime, Date, or Calendar bound to time reads back
+    // its time of day; the java.time date-time types, which this executor does not bind to time, receive it on 1970-01-01.
+    private static boolean isTimeOfDayTarget(final Class<?> targetClass) {
+        return targetClass == LocalTime.class || Date.class.isAssignableFrom(targetClass) || Calendar.class.isAssignableFrom(targetClass)
+                || targetClass == Instant.class || targetClass == java.time.LocalDateTime.class || targetClass == java.time.OffsetDateTime.class
+                || targetClass == java.time.ZonedDateTime.class || targetClass == java.time.OffsetTime.class;
+    }
+
+    /**
+     * Converts a CQL time of day to a date/time target: the time itself for {@code LocalTime}, and otherwise that time of day on
+     * 1970-01-01 in the current JVM default zone, the date a {@code java.sql.Time} carries. A {@code Date} or {@code Calendar}
+     * bound to a time column or field therefore reads back with the same local time of day while the JVM default zone is
+     * unchanged (a Date is bound in the zone captured when Abacus initialized); the date part is not stored. A
+     * {@code java.sql.Time} keeps milliseconds and a {@code Timestamp} nanoseconds.
+     */
+    private static Object fromTimeOfDay(final LocalTime localTime, final Class<?> targetClass) {
+        if (targetClass == LocalTime.class) {
+            return localTime;
+        } else if (targetClass == java.sql.Time.class) {
+            // N.convert parses the LocalTime's text and rejects both a fractional second ("01:02:03.456", usual for a CQL time,
+            // which has nanosecond precision) and a whole minute ("01:02", e.g. midnight "00:00"). Same local time of day on
+            // 1970-01-01 as the standard conversion gives for whole seconds, plus the milliseconds.
+            final java.sql.Time time = java.sql.Time.valueOf(localTime);
+            time.setTime(time.getTime() + localTime.getNano() / 1_000_000);
+
+            return time;
+        }
+
+        final java.time.LocalDateTime dateTime = LocalDate.EPOCH.atTime(localTime);
+
+        if (targetClass == java.time.LocalDateTime.class) {
+            return dateTime;
+        } else if (targetClass == java.time.OffsetTime.class) {
+            return localTime.atOffset(java.time.ZoneId.systemDefault().getRules().getOffset(dateTime));
+        }
+
+        final java.time.ZonedDateTime zonedDateTime = dateTime.atZone(java.time.ZoneId.systemDefault());
+
+        if (targetClass == java.time.ZonedDateTime.class) {
+            return zonedDateTime;
+        } else if (targetClass == java.time.OffsetDateTime.class) {
+            return zonedDateTime.toOffsetDateTime();
+        } else if (targetClass == Instant.class) {
+            return zonedDateTime.toInstant();
+        }
+
+        // Date (including java.sql.Timestamp) and Calendar: N.convert reads a LocalDateTime in the current default zone.
+        return N.convert(dateTime, targetClass);
+    }
+
+    /**
      * Converts a driver-decoded value for {@link PropInfo#setPropValue(Object, Object)} where that method's own conversion
      * fails: it turns a BLOB {@link ByteBuffer} into {@code null} for a {@code byte[]} property, and rejects a {@link LocalTime}
-     * with a fractional second or on a whole minute for a {@code java.sql.Time} property. Any other value is returned unchanged.
+     * for a {@code java.sql.Time} or other date/time property (see {@link #fromTimeOfDay(LocalTime, Class)}). Any other value is
+     * returned unchanged.
      * @throws RuntimeException if {@code value} cannot be converted to {@code propClass}
      */
     private static Object toPropValue(final Class<?> propClass, final Object value) throws RuntimeException {
-        return (propClass == byte[].class && value instanceof ByteBuffer) || (propClass == java.sql.Time.class && value instanceof LocalTime)
-                ? convertValue(value, propClass)
-                : value;
+        return (propClass == byte[].class && value instanceof ByteBuffer)
+                || (value instanceof LocalTime && propClass != LocalTime.class && isTimeOfDayTarget(propClass)) ? decodeValue(value, propClass) : value;
     }
 
     /**
@@ -998,7 +1077,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws RuntimeException if {@code value} cannot be converted to {@code componentType}
      */
     private static Object toArrayElement(final Object value, final Class<?> componentType) throws RuntimeException {
-        return value == null || componentType.isInstance(value) ? value : convertValue(value, componentType);
+        return value == null || componentType.isInstance(value) ? value : decodeValue(value, componentType);
     }
 
     /**
@@ -1055,7 +1134,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             if (value == null || rowClass.isAssignableFrom(value.getClass())) {
                 res = value;
             } else {
-                res = convertValue(value, rowClass);
+                res = decodeValue(value, rowClass);
             }
 
         } else {
@@ -1141,10 +1220,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         if (isAssignable) {
                             return (T) value;
                         } else {
-                            return convertValue(value, rowClass);
+                            return decodeValue(value, rowClass);
                         }
                     } else {
-                        return convertValue(value, rowClass);
+                        return decodeValue(value, rowClass);
                     }
                 }
             };
@@ -1244,7 +1323,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(convertValue(row.getObject(0), valueClass));
+        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(decodeValue(row.getObject(0), valueClass));
     }
 
     /**
@@ -1302,7 +1381,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Optional<V>) Optional.empty() : Optional.of(convertValue(row.getObject(0), valueClass));
+        return row == null ? (Optional<V>) Optional.empty() : Optional.of(decodeValue(row.getObject(0), valueClass));
     }
 
     /**
@@ -1703,6 +1782,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
     }
 
+    // All five batch INSERT/UPDATE methods below accumulate statements in a builder: BatchStatement.add
+    // copies all prior entries on each call, while the builder accumulates them in linear time.
+    // Apply configStatement after build(); initializing a builder from a configured template copies settings
+    // through driver getters, and getTimeout is broken in driver 4.19.3.
+
     /**
      * Builds a {@link BatchStatement} containing one {@code INSERT} per entity.
      *
@@ -1712,8 +1796,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param entities the entities to insert; must be non-null, non-empty, and contain no {@code null}
      * @param type the batch type ({@link BatchType#LOGGED}, {@code UNLOGGED}, or {@code COUNTER});
-     *        {@code null} is treated as {@code LOGGED} by {@link #prepareBatchStatement(BatchType)}
-     * @return a populated {@link BatchStatement} ready for execution
+     *        {@code null} is treated as {@code LOGGED}
+     * @return a populated {@link BatchStatement} in input iteration order, with this executor's {@link StatementSettings}
+     *         (the driver ignores the timeout of a batch; see the class documentation)
      * @throws IllegalArgumentException if {@code entities} is null, empty, or contains a {@code null} element, or an
      *         entity is not a supported bean or exposes no insertable properties
      * @throws RuntimeException if the driver fails to prepare a generated statement or rejects a bound value
@@ -1731,13 +1816,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             statements.add(prepareInsert(entity));
         }
 
-        BatchStatement stmt = prepareBatchStatement(type);
+        final BatchStatementBuilder stmt = BatchStatement.builder(type == null ? BatchType.LOGGED : type);
 
         for (final SP cp : statements) {
-            stmt = stmt.add(prepareStatement(cp.query(), cp.parameters().toArray()));
+            stmt.addStatement(prepareStatement(cp.query(), cp.parameters().toArray()));
         }
 
-        return stmt;
+        return configStatement(stmt.build());
     }
 
     /**
@@ -1751,7 +1836,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param propsList property-name &rarr; value maps, one per INSERT;
      *        must be non-null, non-empty, and contain no {@code null} elements
      * @param type the batch type; {@code null} is treated as {@link BatchType#LOGGED}
-     * @return a populated {@link BatchStatement} ready for execution
+     * @return a populated {@link BatchStatement} in input iteration order, with this executor's {@link StatementSettings}
+     *         (the driver ignores the timeout of a batch; see the class documentation)
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propsList} is null, empty, or
      *         contains a {@code null} element, or a map in {@code propsList} is empty
      * @throws RuntimeException if the driver fails to prepare a generated statement or rejects a bound value
@@ -1770,13 +1856,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             statements.add(prepareInsert(targetClass, props));
         }
 
-        BatchStatement stmt = prepareBatchStatement(type);
+        final BatchStatementBuilder stmt = BatchStatement.builder(type == null ? BatchType.LOGGED : type);
 
         for (final SP cp : statements) {
-            stmt = stmt.add(prepareStatement(cp.query(), cp.parameters().toArray()));
+            stmt.addStatement(prepareStatement(cp.query(), cp.parameters().toArray()));
         }
 
-        return stmt;
+        return configStatement(stmt.build());
     }
 
     /**
@@ -1790,7 +1876,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param entities the entities to update; must be non-null, non-empty, and contain no {@code null}
      * @param propNamesToUpdate the property names to include in each UPDATE; must be non-null and non-empty
      * @param type the batch type; {@code null} is treated as {@link BatchType#LOGGED}
-     * @return a populated {@link BatchStatement} ready for execution
+     * @return a populated {@link BatchStatement} in input iteration order, with this executor's {@link StatementSettings}
+     *         (the driver ignores the timeout of a batch; see the class documentation)
      * @throws IllegalArgumentException if {@code entities} is null or empty or contains a {@code null} element,
      *         if {@code propNamesToUpdate} is null or empty, if an entity's class is not a bean class, if
      *         {@code propNamesToUpdate} contains a key property, if an entity has no declared key or a null/empty
@@ -1811,13 +1898,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             statements.add(prepareUpdate(entity, propNamesToUpdate));
         }
 
-        BatchStatement stmt = prepareBatchStatement(type);
+        final BatchStatementBuilder stmt = BatchStatement.builder(type == null ? BatchType.LOGGED : type);
 
         for (final SP cp : statements) {
-            stmt = stmt.add(prepareStatement(cp.query(), cp.parameters().toArray()));
+            stmt.addStatement(prepareStatement(cp.query(), cp.parameters().toArray()));
         }
 
-        return stmt;
+        return configStatement(stmt.build());
     }
 
     /**
@@ -1834,7 +1921,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *        all primary-key values for {@code targetClass}. Must be non-null, non-empty,
      *        and contain no {@code null} elements
      * @param type the batch type; {@code null} is treated as {@link BatchType#LOGGED}
-     * @return a populated {@link BatchStatement} ready for execution
+     * @return a populated {@link BatchStatement} in input iteration order, with this executor's {@link StatementSettings}
+     *         (the driver ignores the timeout of a batch; see the class documentation)
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}; {@code propsList} is null, empty, or
      *         contains a {@code null} element; {@code targetClass} declares no key; or a map lacks a key value, has a
      *         null/empty key value, or has no non-key property
@@ -1854,13 +1942,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             statements.add(prepareBatchMapUpdate(targetClass, props));
         }
 
-        BatchStatement stmt = prepareBatchStatement(type);
+        final BatchStatementBuilder stmt = BatchStatement.builder(type == null ? BatchType.LOGGED : type);
 
         for (final SP cp : statements) {
-            stmt = stmt.add(prepareStatement(cp.query(), cp.parameters().toArray()));
+            stmt.addStatement(prepareStatement(cp.query(), cp.parameters().toArray()));
         }
 
-        return stmt;
+        return configStatement(stmt.build());
     }
 
     /**
@@ -1875,7 +1963,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parametersList parameter bundles, one per execution; must be non-null, non-empty,
      *        and contain no {@code null} elements
      * @param type the batch type; {@code null} is treated as {@link BatchType#LOGGED}
-     * @return a populated {@link BatchStatement} ready for execution
+     * @return a populated {@link BatchStatement} in input iteration order, with this executor's {@link StatementSettings}
+     *         (the driver ignores the timeout of a batch; see the class documentation)
      * @throws IllegalArgumentException if {@code query} is {@code null}; {@code parametersList} is null, empty, or
      *         contains a {@code null} element; the CQL contains malformed or mixed parameter markers; or an element's
      *         values do not match the prepared statement's parameter count or names
@@ -1889,18 +1978,22 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         N.checkArgument(N.notEmpty(parametersList), "'parametersList' can't be null or empty.");
         N.checkElementNotNull(parametersList);
 
-        BatchStatement stmt = prepareBatchStatement(type);
+        final BatchStatementBuilder stmt = BatchStatement.builder(type == null ? BatchType.LOGGED : type);
 
         for (final Object params : parametersList) {
-            stmt = stmt.add(prepareStatement(query, params));
+            stmt.addStatement(prepareStatement(query, params));
         }
 
-        return stmt;
+        return configStatement(stmt.build());
     }
 
     /**
      * Creates a new, empty {@link BatchStatement} of the given type and applies this
      * executor's {@link StatementSettings} via {@link #configStatement(Statement)}.
+     *
+     * <p>The batch helpers above do not use this method: they accumulate statements with
+     * {@link BatchStatement#builder(BatchType)} and configure the built batch. It is kept to fulfill the
+     * {@code CassandraExecutorBase} contract.</p>
      *
      * @param type the batch type ({@link BatchType#LOGGED}, {@code UNLOGGED}, or {@code COUNTER});
      *        {@code null} is treated as {@code LOGGED}
@@ -2341,7 +2434,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         N.checkArgNotNull(row, cs.row);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return convertValue(row.getObject(0), targetClass);
+        return decodeValue(row.getObject(0), targetClass);
     }
 
     /**
@@ -2389,6 +2482,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 if (value instanceof final byte[] bytes && cqlType.getFieldTypes().get(index).getProtocolCode() == ProtocolConstants.DataType.BLOB) {
                     // Preserve any registered byte[] codec; otherwise use the driver's native BLOB representation.
                     udtValue.setByteBuffer(index, ByteBuffer.wrap(bytes));
+                    return;
+                } else if ((value instanceof Date || value instanceof Calendar)
+                        && cqlType.getFieldTypes().get(index).getProtocolCode() == ProtocolConstants.DataType.TIME) {
+                    // Match ordinary TIME binding for legacy temporal values after registered codec lookup fails.
+                    // Serialization stays outside this catch so a registered codec's failure is never replaced by a fallback.
+                    udtValue.setLocalTime(index, convertValue(value, LocalTime.class));
                     return;
                 }
 
@@ -2451,6 +2550,22 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Java type takes precedence; otherwise the bytes are wrapped in a {@link ByteBuffer} for the
          * driver's standard BLOB codec. Blob fields decoded into {@code byte[]} bean properties are copied
          * from the buffer's remaining bytes.</p>
+         *
+         * <p>A CQL {@code time} field accepts the driver's native {@link LocalTime}, as well as {@link Date}
+         * (including {@code java.sql.Time} and {@code java.sql.Timestamp}) and {@link Calendar} values.
+         * Registered codecs take precedence, and failures from their serializers propagate unchanged. If no
+         * registered codec accepts a {@code Date} or {@code Calendar} value, it is converted to {@code LocalTime}
+         * the same way ordinary parameter binding converts it. Unlike ordinary binding, ISO time strings and
+         * epoch-millisecond numbers are rejected unless a registered codec accepts them. Dates use the JVM default
+         * zone captured when Abacus's {@link com.landawn.abacus.type.AbstractTemporalType} is initialized;
+         * calendars use their own zone. Milliseconds are preserved, and {@code Timestamp} values retain
+         * nanoseconds. Maps and collections decode TIME fields to {@code LocalTime}. Bean properties of {@code Date}
+         * (including {@code java.sql.Time} and {@code java.sql.Timestamp}), {@code Calendar}, and the zoned or local
+         * {@code java.time} date-time types receive that time of day on 1970-01-01 in the current JVM default zone. A
+         * {@code Date} or {@code Calendar} written from such a property therefore reads back with the same local time of day
+         * while the JVM default zone is unchanged; the date part is not stored. The {@code java.time} date-time types are not
+         * accepted when writing a TIME field unless a registered codec accepts them. {@code java.sql.Time} properties retain
+         * millisecond precision and {@code Timestamp} properties nanoseconds.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2654,7 +2769,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @deprecated Use {@link #encode(Object, ProtocolVersion)} instead.
          * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
          *         or a collection with more elements than UDT fields
-         * @throws CodecNotFoundException if neither a registered codec nor the supported BLOB conversion can map a non-null
+         * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB or TIME conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec while serializing
          * @throws RuntimeException if mapping the non-null value invokes a failing bean accessor, cannot create the target Java object, or a
          *         field codec rejects a value
@@ -2715,7 +2830,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @return a ByteBuffer containing the encoded value, or {@code null} for a {@code null} value
          * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
          *         or a collection with more elements than UDT fields
-         * @throws CodecNotFoundException if neither a registered codec nor the supported BLOB conversion can map a non-null
+         * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB or TIME conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec while serializing
          * @throws RuntimeException if mapping the non-null value invokes a failing bean accessor, cannot create the target Java object, or a
          *         field codec rejects a value
@@ -2805,7 +2920,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @return a CQL UDT literal, or {@link CassandraExecutorBase#NULL_STR} if the value is null
          * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
          *         or a collection with more elements than UDT fields
-         * @throws CodecNotFoundException if neither a registered codec nor the supported BLOB conversion can map a non-null
+         * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB or TIME conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec while serializing
          * @throws RuntimeException if mapping the non-null value invokes a failing bean accessor, cannot create the target Java object, or a
          *         field codec rejects a value
@@ -3149,7 +3264,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param serialConsistency serial consistency for LWT operations, or {@code null} for the
          *        driver default
          * @param fetchSize driver page size, or {@code null} for the driver default
-         * @param timeout per-statement timeout, or {@code null} for the driver default
+         * @param timeout per-statement timeout, or {@code null} for the driver default; driver 4.19.3 ignores it for batch statements
          * @param traceQuery {@code true} to enable server-side query tracing, {@code false} to
          *        disable, or {@code null} to leave unset
          */

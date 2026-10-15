@@ -35,37 +35,68 @@ import com.landawn.abacus.da.TestBase;
  */
 public class AnyQueryTest extends TestBase {
 
-    // ---------------------------------------------------------------------
-    // Filter
-    // ---------------------------------------------------------------------
+    // Updates and deletes
 
+    /**
+     * Null-tolerant paths inherited from HBase are preserved: a null filter clears the filter, a
+     * null consistency is stored as-is, and a null column family is accepted for a per-family time
+     * range.
+     */
     @Test
-    public void testSetFilter_andGetter() {
-        FirstKeyOnlyFilter filter = new FirstKeyOnlyFilter();
-        AnyGet get = AnyGet.of("row");
-        AnyGet returned = get.setFilter(filter);
-        assertSame(get, returned);
-        assertSame(filter, get.getFilter());
-    }
-
-    @Test
-    public void testSetFilter_nullClearsFilter() {
-        AnyGet get = AnyGet.of("row").setFilter(new FirstKeyOnlyFilter());
-        get.setFilter(null);
+    public void testNullTolerantSetters_preserved() {
+        AnyGet get = AnyGet.of("row").setFilter(new FirstKeyOnlyFilter()).setFilter(null);
         assertNull(get.getFilter());
+
+        get.setConsistency(null);
+        assertNull(get.getConsistency());
+
+        get.setColumnFamilyTimeRange((String) null, 1L, 2L);
+        get.setColumnFamilyTimeRange((byte[]) null, 1L, 2L);
+        assertEquals(1, get.getColumnFamilyTimeRange().size());
     }
 
     @Test
-    public void testSetFilter_filterList() {
-        FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ALL);
-        list.addFilter(new FirstKeyOnlyFilter());
-        AnyGet get = AnyGet.of("row").setFilter(list);
-        assertSame(list, get.getFilter());
+    public void testGetLoadColumnFamiliesOnDemandValue_unsetReturnsNull() {
+        AnyGet get = AnyGet.of("row");
+        assertNull(get.getLoadColumnFamiliesOnDemandValue());
     }
 
-    // ---------------------------------------------------------------------
+    /**
+     * Null direct arguments of both {@code setACL} overloads are rejected with
+     * {@code IllegalArgumentException}; a null key or value inside the map is still reported by the
+     * wrapped HBase {@code Query} with {@code NullPointerException}.
+     */
+    @Test
+    public void testSetACL_nullArguments_throwIae() {
+        AnyGet get = AnyGet.of("row");
+        assertThrows(IllegalArgumentException.class, () -> get.setACL(null, new Permission(Permission.Action.READ)));
+        assertThrows(IllegalArgumentException.class, () -> get.setACL("alice", (Permission) null));
+        assertThrows(IllegalArgumentException.class, () -> get.setACL((Map<String, Permission>) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setACL((Map<String, Permission>) null));
+        assertNull(get.getACL());
+
+        Map<String, Permission> nullValue = new HashMap<>();
+        nullValue.put("alice", null);
+        assertThrows(NullPointerException.class, () -> get.setACL(nullValue));
+    }
+
+    @Test
+    public void testSetACL_singleUser() {
+        AnyGet get = AnyGet.of("row").setACL("alice", new Permission(Permission.Action.READ));
+        // ACL is serialized to a byte array internally
+        assertNotNull(get.getACL());
+    }
+
+    @Test
+    public void testSetACL_userMap() {
+        Map<String, Permission> acl = new HashMap<>();
+        acl.put("alice", new Permission(Permission.Action.READ));
+        acl.put("bob", new Permission(Permission.Action.READ));
+        AnyGet get = AnyGet.of("row").setACL(acl);
+        assertNotNull(get.getACL());
+    }
+
     // Authorizations
-    // ---------------------------------------------------------------------
 
     @Test
     public void testSetAuthorizations_andGetter() throws DeserializationException {
@@ -89,54 +120,38 @@ public class AnyQueryTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setAuthorizations(null));
     }
 
-    // ---------------------------------------------------------------------
-    // ACL
-    // ---------------------------------------------------------------------
-
     @Test
-    public void testGetACL_initiallyNull() {
-        AnyGet get = AnyGet.of("row");
-        assertNull(get.getACL());
+    public void testSetColumnFamilyTimeRange_byteArray() {
+        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange(Bytes.toBytes("cf"), 100L, 200L);
+        Map<byte[], TimeRange> map = get.getColumnFamilyTimeRange();
+        assertEquals(1, map.size());
+        final TimeRange range = map.get(Bytes.toBytes("cf"));
+        assertNotNull(range);
+        assertEquals(100L, range.getMin());
+        assertEquals(200L, range.getMax());
     }
 
     @Test
-    public void testSetACL_singleUser() {
-        AnyGet get = AnyGet.of("row").setACL("alice", new Permission(Permission.Action.READ));
-        // ACL is serialized to a byte array internally
-        assertNotNull(get.getACL());
+    public void testSetColumnFamilyTimeRange_multipleFamilies() {
+        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange("cf1", 100L, 200L).setColumnFamilyTimeRange("cf2", 300L, 400L);
+        Map<byte[], TimeRange> map = get.getColumnFamilyTimeRange();
+        assertEquals(2, map.size());
     }
+
+    // Column-family time range
 
     @Test
-    public void testSetACL_userMap() {
-        Map<String, Permission> acl = new HashMap<>();
-        acl.put("alice", new Permission(Permission.Action.READ));
-        acl.put("bob", new Permission(Permission.Action.READ));
-        AnyGet get = AnyGet.of("row").setACL(acl);
-        assertNotNull(get.getACL());
+    public void testSetColumnFamilyTimeRange_string() {
+        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange("cf", 100L, 200L);
+        Map<byte[], TimeRange> map = get.getColumnFamilyTimeRange();
+        assertEquals(1, map.size());
+        final TimeRange range = map.get(Bytes.toBytes("cf"));
+        assertNotNull(range);
+        assertEquals(100L, range.getMin());
+        assertEquals(200L, range.getMax());
     }
 
-    /**
-     * Null direct arguments of both {@code setACL} overloads are rejected with
-     * {@code IllegalArgumentException}; a null key or value inside the map is still reported by the
-     * wrapped HBase {@code Query} with {@code NullPointerException}.
-     */
-    @Test
-    public void testSetACL_nullArguments_throwIae() {
-        AnyGet get = AnyGet.of("row");
-        assertThrows(IllegalArgumentException.class, () -> get.setACL(null, new Permission(Permission.Action.READ)));
-        assertThrows(IllegalArgumentException.class, () -> get.setACL("alice", (Permission) null));
-        assertThrows(IllegalArgumentException.class, () -> get.setACL((Map<String, Permission>) null));
-        assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setACL((Map<String, Permission>) null));
-        assertNull(get.getACL());
-
-        Map<String, Permission> nullValue = new HashMap<>();
-        nullValue.put("alice", null);
-        assertThrows(NullPointerException.class, () -> get.setACL(nullValue));
-    }
-
-    // ---------------------------------------------------------------------
     // Consistency
-    // ---------------------------------------------------------------------
 
     @Test
     public void testSetConsistency_strong() {
@@ -150,37 +165,45 @@ public class AnyQueryTest extends TestBase {
         assertEquals(Consistency.TIMELINE, get.getConsistency());
     }
 
-    // ---------------------------------------------------------------------
-    // Replica ID
-    // ---------------------------------------------------------------------
+    // Same behavior via AnyScan (different concrete subclass)
 
     @Test
-    public void testSetReplicaId_andGetter() {
-        AnyGet get = AnyGet.of("row").setReplicaId(3);
-        assertEquals(3, get.getReplicaId());
+    public void testSetConsistency_viaAnyScan() {
+        AnyScan scan = AnyScan.create().setConsistency(Consistency.TIMELINE);
+        assertEquals(Consistency.TIMELINE, scan.getConsistency());
     }
 
+    // Filter
+
     @Test
-    public void testGetReplicaId_default() {
+    public void testSetFilter_andGetter() {
+        FirstKeyOnlyFilter filter = new FirstKeyOnlyFilter();
         AnyGet get = AnyGet.of("row");
-        // Default replica id is -1 (no specific replica)
-        assertEquals(-1, get.getReplicaId());
-    }
-
-    // ---------------------------------------------------------------------
-    // Isolation level
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testSetIsolationLevel_readCommitted() {
-        AnyGet get = AnyGet.of("row").setIsolationLevel(IsolationLevel.READ_COMMITTED);
-        assertEquals(IsolationLevel.READ_COMMITTED, get.getIsolationLevel());
+        AnyGet returned = get.setFilter(filter);
+        assertSame(get, returned);
+        assertSame(filter, get.getFilter());
     }
 
     @Test
-    public void testSetIsolationLevel_readUncommitted() {
-        AnyGet get = AnyGet.of("row").setIsolationLevel(IsolationLevel.READ_UNCOMMITTED);
-        assertEquals(IsolationLevel.READ_UNCOMMITTED, get.getIsolationLevel());
+    public void testSetFilter_filterList() {
+        FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ALL);
+        list.addFilter(new FirstKeyOnlyFilter());
+        AnyGet get = AnyGet.of("row").setFilter(list);
+        assertSame(list, get.getFilter());
+    }
+
+    @Test
+    public void testSetFilter_nullClearsFilter() {
+        AnyGet get = AnyGet.of("row").setFilter(new FirstKeyOnlyFilter());
+        get.setFilter(null);
+        assertNull(get.getFilter());
+    }
+
+    @Test
+    public void testSetFilter_viaAnyScan() {
+        FirstKeyOnlyFilter filter = new FirstKeyOnlyFilter();
+        AnyScan scan = AnyScan.create().setFilter(filter);
+        assertSame(filter, scan.getFilter());
     }
 
     /**
@@ -195,33 +218,18 @@ public class AnyQueryTest extends TestBase {
         assertEquals(IsolationLevel.READ_COMMITTED, get.getIsolationLevel());
     }
 
-    /**
-     * Null-tolerant paths inherited from HBase are preserved: a null filter clears the filter, a
-     * null consistency is stored as-is, and a null column family is accepted for a per-family time
-     * range.
-     */
+    // Isolation level
+
     @Test
-    public void testNullTolerantSetters_preserved() {
-        AnyGet get = AnyGet.of("row").setFilter(new FirstKeyOnlyFilter()).setFilter(null);
-        assertNull(get.getFilter());
-
-        get.setConsistency(null);
-        assertNull(get.getConsistency());
-
-        get.setColumnFamilyTimeRange((String) null, 1L, 2L);
-        get.setColumnFamilyTimeRange((byte[]) null, 1L, 2L);
-        assertEquals(1, get.getColumnFamilyTimeRange().size());
+    public void testSetIsolationLevel_readCommitted() {
+        AnyGet get = AnyGet.of("row").setIsolationLevel(IsolationLevel.READ_COMMITTED);
+        assertEquals(IsolationLevel.READ_COMMITTED, get.getIsolationLevel());
     }
 
-    // ---------------------------------------------------------------------
-    // Load column families on demand
-    // ---------------------------------------------------------------------
-
     @Test
-    public void testSetLoadColumnFamiliesOnDemand_true() {
-        AnyGet get = AnyGet.of("row").setLoadColumnFamiliesOnDemand(true);
-        assertEquals(Boolean.TRUE, get.getLoadColumnFamiliesOnDemandValue());
-        assertTrue(get.doLoadColumnFamiliesOnDemand());
+    public void testSetIsolationLevel_readUncommitted() {
+        AnyGet get = AnyGet.of("row").setIsolationLevel(IsolationLevel.READ_UNCOMMITTED);
+        assertEquals(IsolationLevel.READ_UNCOMMITTED, get.getIsolationLevel());
     }
 
     @Test
@@ -230,35 +238,31 @@ public class AnyQueryTest extends TestBase {
         assertEquals(Boolean.FALSE, get.getLoadColumnFamiliesOnDemandValue());
     }
 
+    // Load column families on demand
+
     @Test
-    public void testGetLoadColumnFamiliesOnDemandValue_unsetReturnsNull() {
+    public void testSetLoadColumnFamiliesOnDemand_true() {
+        AnyGet get = AnyGet.of("row").setLoadColumnFamiliesOnDemand(true);
+        assertEquals(Boolean.TRUE, get.getLoadColumnFamiliesOnDemandValue());
+        assertTrue(get.doLoadColumnFamiliesOnDemand());
+    }
+
+    // Replica ID
+
+    @Test
+    public void testSetReplicaId_andGetter() {
+        AnyGet get = AnyGet.of("row").setReplicaId(3);
+        assertEquals(3, get.getReplicaId());
+    }
+
+    // Queries and results
+
+    // ACL
+
+    @Test
+    public void testGetACL_initiallyNull() {
         AnyGet get = AnyGet.of("row");
-        assertNull(get.getLoadColumnFamiliesOnDemandValue());
-    }
-
-    // ---------------------------------------------------------------------
-    // Column-family time range
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testSetColumnFamilyTimeRange_string() {
-        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange("cf", 100L, 200L);
-        Map<byte[], TimeRange> map = get.getColumnFamilyTimeRange();
-        assertEquals(1, map.size());
-    }
-
-    @Test
-    public void testSetColumnFamilyTimeRange_byteArray() {
-        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange(Bytes.toBytes("cf"), 100L, 200L);
-        Map<byte[], TimeRange> map = get.getColumnFamilyTimeRange();
-        assertEquals(1, map.size());
-    }
-
-    @Test
-    public void testSetColumnFamilyTimeRange_multipleFamilies() {
-        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange("cf1", 100L, 200L).setColumnFamilyTimeRange("cf2", 300L, 400L);
-        Map<byte[], TimeRange> map = get.getColumnFamilyTimeRange();
-        assertEquals(2, map.size());
+        assertNull(get.getACL());
     }
 
     @Test
@@ -269,20 +273,10 @@ public class AnyQueryTest extends TestBase {
         assertEquals(0, map.size());
     }
 
-    // ---------------------------------------------------------------------
-    // Same behavior via AnyScan (different concrete subclass)
-    // ---------------------------------------------------------------------
-
     @Test
-    public void testSetConsistency_viaAnyScan() {
-        AnyScan scan = AnyScan.create().setConsistency(Consistency.TIMELINE);
-        assertEquals(Consistency.TIMELINE, scan.getConsistency());
-    }
-
-    @Test
-    public void testSetFilter_viaAnyScan() {
-        FirstKeyOnlyFilter filter = new FirstKeyOnlyFilter();
-        AnyScan scan = AnyScan.create().setFilter(filter);
-        assertSame(filter, scan.getFilter());
+    public void testGetReplicaId_default() {
+        AnyGet get = AnyGet.of("row");
+        // Default replica id is -1 (no specific replica)
+        assertEquals(-1, get.getReplicaId());
     }
 }

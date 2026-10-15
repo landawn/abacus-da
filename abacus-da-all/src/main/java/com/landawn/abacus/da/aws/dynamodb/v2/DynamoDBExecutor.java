@@ -17,6 +17,7 @@ package com.landawn.abacus.da.aws.dynamodb.v2;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -24,27 +25,37 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 import java.util.function.IntFunction;
 
+import com.landawn.abacus.annotation.JsonXmlConfig;
 import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.aws.AnyUtil;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
+import com.landawn.abacus.parser.JsonDeserConfig;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.parser.ParserUtil.PropInfo;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Beans;
+import com.landawn.abacus.util.BiMap;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.Clazz;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.Fn;
+import com.landawn.abacus.util.Holder;
+import com.landawn.abacus.util.Immutable;
+import com.landawn.abacus.util.ImmutableBiMap;
+import com.landawn.abacus.util.ImmutableCollection;
 import com.landawn.abacus.util.IntFunctions;
 import com.landawn.abacus.util.InternalUtil;
 import com.landawn.abacus.util.N;
@@ -889,9 +900,11 @@ public final class DynamoDBExecutor {
      * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) → N (Number) using fromN()</li>
      * <li><b>Boolean</b> → BOOL using fromBool()</li>
      * <li><b>byte[]</b> → B (Binary) using fromB() with SdkBytes</li>
-     * <li><b>ByteBuffer</b> → B (Binary) using fromB() with SdkBytes, copying the buffer's remaining bytes
-     *     (position to limit)</li>
-     * <li><b>All other types</b> → S (String) using fromS() with string conversion</li>
+     * <li><b>ByteBuffer</b> → B (Binary) using fromB() with SdkBytes, copying the buffer's remaining bytes (position to limit)</li>
+     * <li><b>A byte[] or ByteBuffer held by present {@code Optional}, {@code Nullable}, or {@link Holder} wrappers</b>, at any
+     *     nesting depth → B, as for the bare value</li>
+     * <li><b>All other types</b> → S (String) using fromS() with string conversion; a value whose registered type renders it
+     *     as {@code null} text, such as an empty {@code Optional}, {@code Nullable}, or {@link Holder}, → NULL=true</li>
      * </ul>
      *
      * <p><b>SDK v2 Improvements:</b></p>
@@ -941,10 +954,51 @@ public final class DynamoDBExecutor {
                 return AttributeValue.fromB(SdkBytes.fromByteArray((byte[]) value));
             } else if (type.isByteBuffer()) {
                 return AttributeValue.fromB(SdkBytes.fromByteBuffer((ByteBuffer) value));
-            } else {
-                return AttributeValue.fromS(type.stringOf(value));
             }
+
+            final Object wrappedBinary = wrappedBinary(value);
+
+            if (wrappedBinary instanceof final ByteBuffer buffer) {
+                // The wrapper's text form encodes only the bytes before the buffer's position, so a readable buffer
+                // was stored as empty text. Store its remaining bytes as binary, as for a bare ByteBuffer.
+                return AttributeValue.fromB(SdkBytes.fromByteBuffer(buffer));
+            } else if (wrappedBinary instanceof final byte[] bytes) {
+                // Binary like a bare byte[], instead of JSON array text that a binary key or attribute cannot match.
+                return AttributeValue.fromB(SdkBytes.fromByteArray(bytes));
+            }
+
+            final String text = type.stringOf(value);
+
+            // An empty Optional/Nullable/Holder has no text form; fromS(null) would leave no attribute type set.
+            return text == null ? AttributeValue.fromNul(true) : AttributeValue.fromS(text);
         }
+    }
+
+    /**
+     * Returns the ByteBuffer or byte array held, at any nesting depth, by present JDK or Abacus {@code Optional}, Abacus
+     * {@code Nullable}, or {@link Holder} wrappers, or {@code null} if {@code value} is not such a wrapper or holds no binary value.
+     */
+    private static Object wrappedBinary(final Object value) {
+        Object content = value;
+        boolean wrapped = false;
+
+        while (content != null) {
+            if (content instanceof final java.util.Optional<?> optional) {
+                content = optional.orElse(null);
+            } else if (content instanceof final com.landawn.abacus.util.u.Optional<?> optional) {
+                content = optional.orElseNull();
+            } else if (content instanceof final com.landawn.abacus.util.u.Nullable<?> nullable) {
+                content = nullable.orElseNull();
+            } else if (content instanceof final Holder<?> holder) {
+                content = holder.value();
+            } else {
+                break;
+            }
+
+            wrapped = true;
+        }
+
+        return wrapped && (content instanceof ByteBuffer || content instanceof byte[]) ? content : null;
     }
 
     /**
@@ -1065,7 +1119,8 @@ public final class DynamoDBExecutor {
      *     .build();
      * }</pre>
      *
-     * @param value the value for the update operation, can be null for DELETE actions
+     * @param value the value for the update operation, can be null for DELETE actions; for DELETE, a null value or an empty
+     *        {@code Optional}, {@code Nullable}, or {@link Holder} sends no value, which removes the attribute
      * @param action the update action to perform using AWS SDK v2 AttributeAction enum; may be
      *               {@code null}, which leaves {@code Action} unset so DynamoDB applies its default
      *               ({@code PUT})
@@ -1078,9 +1133,12 @@ public final class DynamoDBExecutor {
     public static AttributeValueUpdate toAttributeValueUpdate(final Object value, final AttributeAction action)
             throws IllegalArgumentException, RuntimeException {
         final AttributeValueUpdate.Builder builder = AttributeValueUpdate.builder().action(action);
+        final AttributeValue attrVal = toAttributeValue(value);
 
-        if (value != null || AttributeAction.DELETE.equals(action) == false) {
-            builder.value(toAttributeValue(value));
+        // DELETE without a value removes the attribute. DynamoDB rejects NULL as a DELETE value, so a null value and an empty
+        // Optional, Nullable, or Holder (both converted to NULL) request that removal instead.
+        if (!AttributeAction.DELETE.equals(action) || !Boolean.TRUE.equals(attrVal.nul())) {
+            builder.value(attrVal);
         }
 
         return builder.build();
@@ -1504,6 +1562,7 @@ public final class DynamoDBExecutor {
      *         the item's attributes cannot be mapped to the bean properties
      * @throws RuntimeException if an attribute cannot be converted to the requested Java type, or the target bean or container cannot be constructed or
      *         populated
+     * @throws ParsingException if recursive construction of an {@code EnumMap} is required but its resolved key type is not a concrete enum
      */
     public static <T> T toEntity(final GetItemResponse getItemResponse, final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1524,9 +1583,36 @@ public final class DynamoDBExecutor {
      * declared property are silently ignored, as are attributes of read-only (getter-only) properties, whose
      * computed values {@link #toItem(Object)} writes but which cannot be assigned.</p>
      *
-     * <p>Native binary collection elements, array elements, and map values are converted directly when
-     * declared as {@code byte[]} or {@link ByteBuffer}. ByteBuffer results are readable from position zero.
-     * Containers with {@code Object}-typed elements or values retain their natural Java representations.</p>
+     * <p>Native binary values in collections, arrays, maps, and directly mapped bean properties are converted to their declared
+     * {@code byte[]} or {@link ByteBuffer} type. This conversion follows nested containers, bean type parameters, and generic
+     * {@code Optional}, {@code Nullable}, and {@link Holder} wrappers. ByteBuffer results from binary attributes, and Base64 text read
+     * into a {@link ByteBuffer} property of the item or of a directly mapped bean, or into the ByteBuffer of an item's
+     * {@code Optional}, {@code Nullable}, or {@link Holder} property (which {@link #toItem(Object)} writes back as binary), are readable
+     * from position zero, and {@code Object}-typed slots retain their natural Java representations. Base64 text read with JSON
+     * semantics (in the beans described below, or in JSON text) follows the JSON codec's buffer convention instead: the decoded bytes
+     * precede the buffer's position, so call {@link ByteBuffer#flip()} before reading them.</p>
+     *
+     * <p>Enum properties use their declared representation, so a {@code CODE} enum accepts both the constant names that
+     * {@link #toItem(Object)} writes and numeric codes. {@code Number} properties use JSON numeric inference for {@code N} values.
+     * Text for a parameterized type, or for an array of one, is read with the complete declared type. A native value whose shape does
+     * not match a typed container, an object array, or another parameterized type (for example an {@code M} or {@code BOOL} attribute
+     * for a {@code List<Long>} property) is converted or rejected instead of being stored unconverted: a collection or array receives it
+     * as its single element, read as the element type the way the JSON reader reads a value that is not an array, and other types read
+     * its JSON form through their codec. A binary value for a typed collection or object array becomes its single element when the
+     * elements are binary or untyped and supplies its byte values when they are other scalars, also in directly mapped beans; a binary
+     * value for a typed map, a pair or other parameterized type, or a collection of containers or beans is rejected.</p>
+     *
+     * <p>Typed Optional, Nullable, and Holder properties retain their declared contents for native values and serialized text. A
+     * {@code NULL} attribute for a Holder of another wrapper yields a Holder of the empty inner wrapper.
+     * Beans read through item collections, maps, or generic wrappers use JSON read semantics throughout their nested objects and arrays:
+     * supported property formats (for {@code BOOL} values as for text), enum representations, and property exposure are honored,
+     * unsupported format/type combinations are rejected, values of another shape are converted or rejected as described above, and
+     * unmatched dotted names are ignored. Unformatted {@code Number} values use JSON numeric inference.</p>
+     *
+     * <p>Direct native bean and bean-array properties instead retain map-to-bean rules: field-backed SERIALIZE_ONLY properties and
+     * dotted paths are assigned, property types (including generics and enum representations) are retained, and scalar conversion
+     * does not apply JSON date/number formats. Their nested containers retain the dependency's native conversion factories and
+     * map-key collision checks. A String assignable to a container's element type remains a single literal element in this context.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1556,23 +1642,48 @@ public final class DynamoDBExecutor {
      *         or the item's attributes cannot be mapped to the bean properties
      * @throws RuntimeException if an attribute cannot be converted to the requested Java type, or the target bean or container cannot be constructed or
      *         populated
+     * @throws ParsingException if recursive construction of an {@code EnumMap} is required but its resolved key type is not a concrete enum
      */
     public static <T> T toEntity(final Map<String, AttributeValue> item, final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
+        return toEntity(item, N.typeOf(targetClass), DynamoDBExecutor::toValue, MappingContext.ITEM);
+    }
+
+    /** Distinguishes outer item mapping, native Map-to-bean conversion, and JSON property-read rules. */
+    private enum MappingContext {
+        ITEM, MAPPED_BEAN, JSON
+    }
+
+    /**
+     * Maps attributes or already-decoded native values to a bean using its complete generic type.
+     * The decoder supplies raw property values; a {@code null} item returns {@code null}.
+     *
+     * <p>JSON reads apply property formats, skip every SERIALIZE_ONLY property, and ignore unmatched dotted
+     * names. Item and direct bean mapping permit field-backed SERIALIZE_ONLY properties and resolve dotted
+     * paths. Direct beans additionally retain the full-Type conversions of the dependency's map-to-bean mapper;
+     * those conversions differ from both item scalar conversion and JSON reads.</p>
+     *
+     * @param context the conversion rules used by the enclosing value
+     * @return the finished bean, or {@code null} for a {@code null} item
+     * @throws RuntimeException if decoding, conversion, bean construction, or property assignment fails
+     */
+    private static <T, V> T toEntity(final Map<String, V> item, final Type<T> targetType, final Function<? super V, ?> valueDecoder,
+            final MappingContext context) {
         if (item == null) {
             return null;
         }
 
-        final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetClass);
-        final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
+        final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetType.javaType());
+        final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetType.reflectType());
         final Object entity = entityInfo.createBeanResult();
+        final boolean jsonRead = context == MappingContext.JSON;
         PropInfo propInfo = null;
         String propName = null;
-        AttributeValue propValue = null;
+        V propValue = null;
         String fieldName = null;
 
-        for (final Map.Entry<String, AttributeValue> entry : item.entrySet()) {
+        for (final Map.Entry<String, V> entry : item.entrySet()) {
             propName = entry.getKey();
             propValue = entry.getValue();
 
@@ -1584,41 +1695,66 @@ public final class DynamoDBExecutor {
             }
 
             if (propInfo == null) {
-                if (propName.indexOf(SK._PERIOD) > 0) { //NOSONAR
-                    entityInfo.setPropValue(entity, propName, toValue(propValue), true);
+                if (!jsonRead && propName.indexOf(SK._PERIOD) > 0) { //NOSONAR
+                    entityInfo.setPropValue(entity, propName, valueDecoder.apply(propValue), true);
                 }
 
                 continue;
             }
 
-            // A getter-only (computed) property, e.g. one inherited from an @Entity superclass, is in propInfoList, so
-            // toItem writes its value as an attribute; but PropInfo.setPropValue throws UnsupportedOperationException for
-            // it, which failed the whole item on read. Skip it, as the JSON parser does. PropInfo's isReadOnlyProperty flag
-            // is package-private; a property without a field is SERIALIZE_ONLY exactly when it is read-only. Mirrors v1.
-            if (propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
+            // JSON reads skip every SERIALIZE_ONLY property; database mapping only skips computed ones.
+            if ((jsonRead || propInfo.field == null) && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
                 continue;
             }
 
-            final Object rawValue = toValue(propValue);
+            final Object rawValue = valueDecoder.apply(propValue);
             final Type<?> propType = propInfo.jsonXmlType;
 
-            // Convert container values through the property's FULL generic type: toValue only sees the
-            // raw class, so the elements of a native NS/SS/L/M attribute (or a JSON-serialized
-            // collection) would otherwise stay Strings inside a List<Integer>/Set<Long>/Map<String, Long>
-            // property — heap pollution surfacing as a ClassCastException at the call site. N.convert
-            // can't be used here: it short-circuits whenever the raw container class is assignable
-            // (e.g. ArrayList -> List<Long>) and keeps the polluted elements, so the value is rebuilt
-            // through the parameterized Type's JSON codec instead. Binary slots use direct leaf conversion
-            // to avoid JSON data loss; Object-typed slots skip the rebuild (see isElementConversionNeeded).
-            // Mirrors the v1 toEntity.
-            if (((rawValue instanceof Collection && (propType.isCollection() || propType.isObjectArray())) || (rawValue instanceof Map && propType.isMap()))
-                    && isBinaryContainerType(propType)) {
-                propInfo.setPropValue(entity, convertBinaryContainer(rawValue, propType));
-            } else if (rawValue != null && propType.isParameterizedType() && (propType.isCollection() || propType.isMap())
-                    && (rawValue instanceof String || ((rawValue instanceof Collection || rawValue instanceof Map) && isElementConversionNeeded(propType)))) {
-                propInfo.setPropValue(entity, propType.valueOf(rawValue instanceof String ? (String) rawValue : N.toJson(rawValue)));
+            // Direct Map-to-bean conversion used PropInfo's full Type, unlike the outer item mapper.
+            // Erasing it here silently puts Strings in Optional<Long>/Pair<Long, Long> and loses enum codes.
+            // Traverse native structures without a per-property JSON round trip, preserving binary leaves.
+            if (jsonRead && rawValue instanceof String) {
+                // readPropValue honors field/class date and number formats, enum codes, and explicit
+                // property types. Raw-class conversion would lose these when bypassing the JSON codec.
+                propInfo.setPropValue(entity, readNestedPropValue(entityInfo, propInfo, (String) rawValue));
+            } else if (jsonRead && rawValue instanceof Boolean && isScalarSlot(propType)) {
+                // A BOOL value is JSON's boolean token. Storing it because a Boolean is assignable skipped the
+                // property's number or date format, which rejects a boolean, as the JSON reader does.
+                propInfo.setPropValue(entity, readNestedBoolean(entityInfo, propInfo, (Boolean) rawValue));
+            } else if (jsonRead && rawValue != null) {
+                // A JSON bean reads its other native values with the rules of its nested values, so a value of another shape is
+                // converted or rejected as the JSON reader did, instead of being stored as the wrong element type.
+                propInfo.setPropValue(entity, convertContainerElement(rawValue, propType, context));
+            } else if (context == MappingContext.MAPPED_BEAN
+                    || isGenericWrapper(propType) && (rawValue != null || context == MappingContext.ITEM && propType.javaType() == Holder.class)) {
+                final Object converted = convertContainerElement(rawValue, propType, context);
+
+                if (context == MappingContext.ITEM && rawValue instanceof String && wrappedBinary(converted) instanceof final ByteBuffer buffer) {
+                    // toItem writes an item's wrapped buffer back as binary from its readable bytes. Base64 text decodes to a buffer
+                    // positioned after its bytes, so flip it as for a bare ByteBuffer; otherwise a read-modify-write stores an empty value.
+                    buffer.flip();
+                }
+
+                propInfo.setPropValue(entity, converted);
+            } else if ((rawValue instanceof Collection && (propType.isCollection() || propType.isObjectArray()))
+                    || (rawValue instanceof Map && propType.isMap())) {
+                propInfo.setPropValue(entity, convertNativeContainer(rawValue, propType, context));
+            } else if (rawValue instanceof String && !propInfo.clazz.isInstance(rawValue) && isParameterizedValueType(propType)) {
+                // Text for a parameterized type, or for an array of one, is read with the complete type. Raw-class conversion
+                // parsed "[1, 2]" into a Pair<Long, Long> or an Optional<Long>[] with Integer contents.
+                propInfo.setPropValue(entity, propType.valueOf((String) rawValue));
+            } else if (rawValue != null && !(rawValue instanceof String) && isItemShapeMismatch(rawValue, propType)) {
+                // A native value of another shape for a typed container, an object array, or another parameterized type (an M
+                // attribute for a List<Long>, a BOOL or B attribute for a Long[]): raw-class conversion would store it unconverted.
+                propInfo.setPropValue(entity, convertMismatchedValue(rawValue, propType, context));
+            } else if (rawValue instanceof Map && propType.isBean()) {
+                propInfo.setPropValue(entity, convertContainerElement(rawValue, propType, context));
             } else if (rawValue == null || propInfo.clazz.isAssignableFrom(rawValue.getClass())) {
                 propInfo.setPropValue(entity, rawValue);
+            } else if (rawValue instanceof String && propType.javaType().isEnum()) {
+                // Use the property's enum representation: a CODE enum accepts both the constant names that toItem
+                // writes and numeric codes, instead of the raw enum class reading a numeric code as an ordinal.
+                propInfo.setPropValue(entity, propType.valueOf((String) rawValue));
             } else {
                 propInfo.setPropValue(entity, convertValue(rawValue, propInfo.clazz));
             }
@@ -1628,65 +1764,460 @@ public final class DynamoDBExecutor {
     }
 
     /**
-     * Identifies containers whose declared element or map-value type is binary.
+     * Reads scalar text for a bean in JSON context, applying property formats and the effective property type.
+     * Unformatted {@code Number} values and supported wrapper chains ending in {@code Number} use JSON numeric
+     * inference instead of the abstract number type's String factory.
      */
-    private static boolean isBinaryContainerType(final Type<?> type) {
-        final Class<?> elementClass = type.isObjectArray() ? type.javaType().getComponentType()
-                : type.isParameterizedType() && (type.isCollection() || type.isMap()) ? type.parameterTypes().get(type.isMap() ? 1 : 0).javaType() : null;
+    private static Object readNestedPropValue(final BeanInfo beanInfo, final PropInfo propInfo, final String value) {
+        if (Number.class.equals(propInfo.jsonXmlType.javaType())) {
+            final JsonXmlField fieldConfig = propInfo.getAnnotation(JsonXmlField.class);
+            final JsonXmlConfig beanConfig = beanInfo.getAnnotation(JsonXmlConfig.class);
+            final String numberFormat = fieldConfig != null && Strings.isNotEmpty(fieldConfig.numberFormat()) ? fieldConfig.numberFormat()
+                    : beanConfig == null ? null : beanConfig.numberFormat();
 
-        return elementClass == byte[].class || elementClass == ByteBuffer.class;
+            if (Strings.isBlank(numberFormat) && (fieldConfig == null || Strings.isBlank(fieldConfig.dateFormat()))) {
+                // Number is abstract and its Type has no String factory. Use the JSON parser's numeric
+                // inference, as before, unless PropInfo has an explicit format to apply or reject.
+                return N.fromJson(value, Number.class);
+            }
+        } else if (needsNumberInference(propInfo.jsonXmlType)) {
+            final JsonXmlField fieldConfig = propInfo.getAnnotation(JsonXmlField.class);
+
+            if (fieldConfig == null || Strings.isBlank(fieldConfig.dateFormat()) && Strings.isBlank(fieldConfig.numberFormat())) {
+                return readJsonScalar(value, propInfo.jsonXmlType);
+            }
+        }
+
+        return propInfo.readPropValue(value);
     }
 
     /**
-     * Converts native binary container elements without serializing them through JSON. Buffer positions
-     * are preserved, and byte arrays converted to buffers remain readable.
+     * Reads a BOOL value for a bean in JSON context as the JSON reader reads a boolean token: a property format
+     * parses (and rejects) its text, and property types other than {@code Boolean}'s supertypes read that text.
+     * Slots declared as a supertype of {@code Boolean}, such as {@code Object}, keep the Boolean value.
+     */
+    private static Object readNestedBoolean(final BeanInfo beanInfo, final PropInfo propInfo, final Boolean value) {
+        final String text = value.toString();
+
+        if (Boolean.class.equals(propInfo.clazz) || !propInfo.clazz.isAssignableFrom(Boolean.class)) {
+            return readNestedPropValue(beanInfo, propInfo, text);
+        }
+
+        // Without a format, a supertype slot reads the text back unchanged; any other result or failure comes from a format.
+        final Object formatted = propInfo.readPropValue(text);
+        return text.equals(formatted) ? value : formatted;
+    }
+
+    /**
+     * Returns whether the type holds a single value: not a collection, map, array, bean, or supported generic wrapper.
+     */
+    private static boolean isScalarSlot(final Type<?> type) {
+        return !type.isCollection() && !type.isMap() && !type.isArray() && !type.isBean() && !isGenericWrapper(type);
+    }
+
+    /**
+     * Returns whether text for the type must be read with its complete type: a parameterized type other than an array,
+     * or an object array whose element type is parameterized (such as {@code Optional<Long>[]}).
+     */
+    private static boolean isParameterizedValueType(final Type<?> type) {
+        // Abacus reports every array type, including byte[], as parameterized by its element type.
+        return type.isObjectArray() ? type.elementType().isParameterizedType() && !type.elementType().isArray() : type.isParameterizedType() && !type.isArray();
+    }
+
+    /**
+     * Returns whether a non-text native item value has another shape than its declared type: any value for an object array,
+     * a typed collection, or a typed map (matching collections and maps were converted before), or a value that is not an
+     * instance of another parameterized type. Wrappers, beans, and Object-element containers are converted elsewhere.
+     */
+    private static boolean isItemShapeMismatch(final Object value, final Type<?> type) {
+        if (type.isObjectArray()) {
+            return true;
+        } else if (type.isArray() || !type.isParameterizedType() || isGenericWrapper(type) || type.isBean()) {
+            return false;
+        } else if (type.isCollection() || type.isMap()) {
+            return isElementConversionNeeded(type);
+        }
+
+        return !type.javaType().isInstance(value) && !acceptsBinaryValue(value, type);
+    }
+
+    /**
+     * Returns whether a non-text native value read with JSON rules does not fit its declared type: a binary value for a
+     * container, an object array, a bean, or another parameterized type that a ByteBuffer cannot be, or any other value that
+     * is not an instance of the type.
+     */
+    private static boolean isJsonShapeMismatch(final Object value, final Type<?> type) {
+        if (value instanceof ByteBuffer || value instanceof byte[]) {
+            return type.isCollection() || type.isMap() || type.isObjectArray() || type.isBean()
+                    || type.isParameterizedType() && !type.isArray() && !acceptsBinaryValue(value, type);
+        }
+
+        return !type.javaType().isInstance(value);
+    }
+
+    /**
+     * Returns whether a binary value can be held as-is or as a ByteBuffer by a declared type such as {@code Comparable<?>}:
+     * {@code convertValue} keeps or wraps it, as for an untyped slot.
+     */
+    private static boolean acceptsBinaryValue(final Object value, final Type<?> type) {
+        return (value instanceof ByteBuffer || value instanceof byte[])
+                && (type.javaType().isInstance(value) || type.javaType().isAssignableFrom(ByteBuffer.class));
+    }
+
+    /**
+     * Returns whether the type is a parameterized JDK or Abacus {@code Optional}, Abacus {@code Nullable}, or {@link Holder}.
+     */
+    private static boolean isGenericWrapper(final Type<?> type) {
+        final Class<?> cls = type.javaType();
+        return type.isParameterizedType() && (cls == java.util.Optional.class || cls == com.landawn.abacus.util.u.Optional.class
+                || cls == com.landawn.abacus.util.u.Nullable.class || cls == Holder.class);
+    }
+
+    /**
+     * Returns whether the type is exactly {@link Number}, possibly enclosed in supported generic wrappers.
+     * Concrete number subclasses retain their own type codecs.
+     */
+    private static boolean needsNumberInference(Type<?> type) {
+        while (isGenericWrapper(type)) {
+            type = type.parameterTypes().get(0);
+        }
+
+        return type.javaType() == Number.class;
+    }
+
+    /**
+     * Reads non-null scalar text as {@link Number}, or a supported wrapper chain ending in {@code Number},
+     * using the JSON reader's numeric inference and empty/null-like text handling.
+     */
+    private static Object readJsonScalar(final String value, final Type<?> targetType) {
+        if (targetType.javaType() == Number.class) {
+            return N.fromJson(value, Number.class);
+        }
+
+        // Wrapper Type.valueOf delegates to its element's String factory, which Number lacks. A JSON
+        // array slot uses the parser's scalar inference recursively, including Optional<Optional<Number>>.
+        final List<?> result = N.fromJson(N.toJson(List.of(value)), JsonDeserConfig.create().setElementType(targetType), List.class);
+        return result.get(0);
+    }
+
+    /**
+     * Converts a native map or collection to its declared map, collection, or object-array type while preserving
+     * binary leaves. Unconstrained item containers retain their existing raw conversion; exact CopyOnWriteArrayList
+     * targets always use bulk construction. Arrays pass their context to each element.
      *
-     * @throws RuntimeException if a key or binary value cannot be converted, or the requested container
+     * <p>Direct bean containers use full-Type {@code N.convert} after their nested values are converted; this
+     * preserves its size-aware factories, immutable stand-ins, map-key collision checks, and rejected-entry errors.
+     * Their {@code Number} map keys use JSON numeric inference first, with the same collision check.
+     * Item containers use JSON rules except for immediate binary elements/values, which retain native factories.
+     * JSON containers use no-argument constructors, JSON key parsing, and their existing last-value-wins behavior.
+     * In item and JSON containers, a null key or value that the target map rejects is reported as an
+     * {@link IllegalArgumentException}, as in direct bean containers. Exact EnumMap construction requires a resolved
+     * concrete enum key type.</p>
+     *
+     * <p>Immutable targets are populated through mutable stand-ins and finalized with {@code N.convert},
+     * including nested containers. CopyOnWriteArrayList targets accumulate in an ordinary list and are constructed
+     * once; ArrayBlockingQueue targets do too, sized to their elements in every context, including untyped item queues. Other
+     * empty queues use their no-argument constructors, which accept no elements where a capacity of zero is rejected. Scalar
+     * containers are traversed directly too, avoiding repeated JSON serialization inside each bean.</p>
+     *
+     * @throws ParsingException if an {@code EnumMap} must be constructed and its resolved key type is not a concrete enum
+     * @throws IllegalArgumentException if converted map keys collide in a direct bean container, or a target map rejects a converted
+     *         entry
+     * @throws RuntimeException if a key or element cannot be converted, or the requested container
      *         cannot be constructed or populated
      */
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    private static Object convertBinaryContainer(final Object value, final Type<?> targetType) throws RuntimeException {
-        if (targetType.isMap()) {
-            final Class<?> keyClass = targetType.parameterTypes().get(0).javaType();
-            final Class<?> valueClass = targetType.parameterTypes().get(1).javaType();
-            final Map<Object, Object> result = N.newMap((Class<Map>) targetType.javaType());
+    private static Object convertNativeContainer(final Object value, final Type<?> targetType, final MappingContext context) throws RuntimeException {
+        final Class<?> targetClass = targetType.javaType();
+        final boolean copyOnWrite = targetClass == CopyOnWriteArrayList.class;
+        final boolean boundedQueue = targetClass == ArrayBlockingQueue.class;
 
-            for (final Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
-                result.put(convertValue(entry.getKey(), keyClass), convertValue(entry.getValue(), valueClass));
+        if (value instanceof final Collection<?> values && values.isEmpty() && !boundedQueue && Queue.class.isAssignableFrom(targetClass)) {
+            // Size-aware factories request capacity zero for an empty input, which PriorityQueue and the linked blocking
+            // queues and deques reject; their no-argument constructors accept it.
+            return N.newCollection((Class<Collection>) targetClass);
+        } else if (context == MappingContext.ITEM && !copyOnWrite && !boundedQueue && !targetType.isObjectArray()
+                && (!targetType.isParameterizedType() || !isElementConversionNeeded(targetType))) {
+            return convertValue(value, targetType.javaType());
+        }
+
+        final Type<?> elementType = targetType.isObjectArray() ? targetType.elementType()
+                : targetType.isParameterizedType() ? targetType.parameterTypes().get(targetType.isMap() ? 1 : 0) : N.typeOf(Object.class);
+        final MappingContext elementContext = context == MappingContext.ITEM && !targetType.isObjectArray() && elementType.javaType() != byte[].class
+                && elementType.javaType() != ByteBuffer.class ? MappingContext.JSON : context;
+        final boolean jsonContainer = elementContext == MappingContext.JSON;
+        final boolean immutable = Immutable.class.isAssignableFrom(targetClass);
+
+        if (targetType.isMap()) {
+            final Type<?> keyType = targetType.isParameterizedType() ? targetType.parameterTypes().get(0) : N.typeOf(Object.class);
+
+            if (targetClass == EnumMap.class && !keyType.javaType().isEnum()) {
+                throw new ParsingException("EnumMap requires a declared enum key type; resolved key type: " + keyType.name());
             }
 
-            return result;
+            // Keep the original keys until the dependency constructs a direct-bean map. Converting them
+            // into an intermediate Map first would hide collisions such as "1" and "01" becoming 1L.
+            if (context == MappingContext.MAPPED_BEAN) {
+                // Number has no String factory, so the dependency rejects every Number key text. Infer those keys as
+                // JSON does, and keep its collision check for keys inferred to the same value.
+                final boolean inferNumberKeys = needsNumberInference(keyType);
+                final Map<Object, Object> convertedValues = new LinkedHashMap<>();
+
+                for (final Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                    final Object key = inferNumberKeys && entry.getKey() instanceof String ? readJsonScalar((String) entry.getKey(), keyType) : entry.getKey();
+
+                    if (inferNumberKeys && convertedValues.containsKey(key)) {
+                        throw new IllegalArgumentException("Converted map keys collide for " + targetType.name());
+                    }
+
+                    convertedValues.put(key, convertContainerElement(entry.getValue(), elementType, context));
+                }
+
+                return N.convert(convertedValues, targetType);
+            }
+
+            final Map<Object, Object> result = targetClass == EnumMap.class ? new EnumMap((Class<Enum>) keyType.javaType())
+                    : targetClass == ImmutableBiMap.class ? new BiMap<>()
+                            : jsonContainer && !immutable ? N.newInstance((Class<Map>) targetClass) : N.newMap((Class<Map>) targetClass);
+
+            final boolean inferNumberKeys = jsonContainer && needsNumberInference(keyType);
+
+            for (final Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                final Object key = jsonContainer && entry.getKey() instanceof String
+                        ? inferNumberKeys ? readJsonScalar((String) entry.getKey(), keyType) : keyType.valueOf((String) entry.getKey())
+                        : convertContainerElement(entry.getKey(), keyType, elementContext);
+                final Object convertedValue = convertContainerElement(entry.getValue(), elementType, elementContext);
+
+                try {
+                    result.put(key, convertedValue);
+                } catch (final NullPointerException | ClassCastException e) {
+                    // e.g. a NULL attribute for a ConcurrentHashMap/Hashtable value: report the rejected entry as the
+                    // dependency's direct-bean conversion does, instead of a bare JDK exception.
+                    throw new IllegalArgumentException("Converted map entry (" + key + ", " + convertedValue + ") is not accepted by " + targetType.name(), e);
+                }
+            }
+
+            // Finalize both factory-provided and explicit immutable stand-ins at every nesting level;
+            // a declared ImmutableMap/List must never expose its mutable construction buffer.
+            return N.convert(result, targetClass);
         }
 
         final Collection<?> values = (Collection<?>) value;
-        final Class<?> elementClass = targetType.isObjectArray() ? targetType.javaType().getComponentType() : targetType.parameterTypes().get(0).javaType();
 
         if (targetType.isObjectArray()) {
-            final Object[] result = N.newArray(elementClass, values.size());
+            final Object[] result = N.newArray(targetClass.getComponentType(), values.size());
             int index = 0;
 
             for (final Object element : values) {
-                result[index++] = convertValue(element, elementClass);
+                result[index++] = convertContainerElement(element, elementType, context);
             }
 
             return result;
         }
 
-        final Collection<Object> result = N.newCollection((Class<Collection>) targetType.javaType());
+        // Build an exact CopyOnWriteArrayList once, as the JSON reader does; individual adds copy the
+        // growing backing array and turn decoding a long list into quadratic work and allocation.
+        final Collection<Object> result = copyOnWrite || boundedQueue || context == MappingContext.MAPPED_BEAN || targetClass == ImmutableCollection.class
+                ? new ArrayList<>(values.size())
+                : jsonContainer && !immutable ? N.newInstance((Class<Collection>) targetClass) : N.newCollection((Class<Collection>) targetClass);
 
         for (final Object element : values) {
-            result.add(convertValue(element, elementClass));
+            result.add(convertContainerElement(element, elementType, elementContext));
+        }
+
+        if (boundedQueue) {
+            // This queue has no no-argument constructor, and the size-aware native factory requests capacity zero for an
+            // empty input, which it rejects. Size it to the elements in every context.
+            return new ArrayBlockingQueue<>(Math.max(1, values.size()), false, result);
+        }
+
+        return copyOnWrite ? new CopyOnWriteArrayList<>(result)
+                : context == MappingContext.MAPPED_BEAN ? N.convert(result, targetType) : N.convert(result, targetClass);
+    }
+
+    /**
+     * Converts one decoded native value using its full declared type, preserving {@code Object} values as-is.
+     * Native wrappers decode their contents in JSON context. Direct native beans use map-to-bean rules;
+     * JSON beans retain JSON rules. Direct bean scalar conversion uses the complete Type, including enum
+     * representations and generic wrappers. Parameterized text uses its declared codec except where the direct
+     * bean mapper preserves scalar-to-container conversion (for example a literal String in List&lt;String&gt;).
+     * In JSON context, a non-text value that does not fit its declared type is handled by {@code convertMismatchedValue},
+     * as is a binary value for a typed container in a direct bean. Base64 text for a ByteBuffer outside JSON context becomes
+     * a buffer readable from position zero; JSON reads, including wrapper contents, keep the JSON codec's buffer convention.
+     *
+     * <p>A null value produces empty Optional/Nullable wrappers. Holder slots remain null in JSON context and
+     * otherwise receive a Holder of the null value for their content type, so a Holder of another wrapper holds that
+     * wrapper empty; all other null values remain null. Bean property defaults are applied separately by the property setter.</p>
+     */
+    private static Object convertContainerElement(final Object value, final Type<?> targetType, final MappingContext context) {
+        if (value == null) {
+            // JSON slots keep null Holders; direct native arrays previously used N.convert, which supplies
+            // Holder(null). Optional/Nullable slots use empty wrappers in both contexts.
+            if (!isGenericWrapper(targetType) || (context == MappingContext.JSON && targetType.javaType() == Holder.class)) {
+                return null;
+            }
+
+            // A NULL attribute cannot record which nested wrapper was empty. Keep the declared wrapper inside a Holder,
+            // instead of a null where, for example, an Optional is declared.
+            return targetType.javaType() == Holder.class ? Holder.of(convertContainerElement(null, targetType.parameterTypes().get(0), context))
+                    : targetType.defaultValue();
+        } else if (targetType.javaType() == Object.class) {
+            return value;
+        }
+
+        if (!(value instanceof String) && isGenericWrapper(targetType)) {
+            // Decode the wrapped value with its complete type before wrapping. Serializing a native B
+            // value first loses buffer slices or turns bytes into JSON arrays that a buffer cannot read.
+            final Object converted = convertContainerElement(value, targetType.parameterTypes().get(0), MappingContext.JSON);
+            final Class<?> wrapperClass = targetType.javaType();
+
+            if (wrapperClass == java.util.Optional.class) {
+                return java.util.Optional.ofNullable(converted);
+            } else if (wrapperClass == com.landawn.abacus.util.u.Optional.class) {
+                return com.landawn.abacus.util.u.Optional.ofNullable(converted);
+            } else if (wrapperClass == com.landawn.abacus.util.u.Nullable.class) {
+                return com.landawn.abacus.util.u.Nullable.of(converted);
+            } else {
+                return Holder.of(converted);
+            }
+        }
+
+        if (value instanceof Map && targetType.isBean()) {
+            return toEntity((Map<String, Object>) value, targetType, Fn.identity(),
+                    context == MappingContext.JSON ? MappingContext.JSON : MappingContext.MAPPED_BEAN);
+        }
+
+        if ((value instanceof Collection && (targetType.isCollection() || targetType.isObjectArray())) || (value instanceof Map && targetType.isMap())) {
+            return convertNativeContainer(value, targetType, context);
+        } else if (value instanceof String && needsNumberInference(targetType)) {
+            return readJsonScalar((String) value, targetType);
+        } else if (context == MappingContext.MAPPED_BEAN && (value instanceof ByteBuffer || value instanceof byte[])
+                && isJsonShapeMismatch(value, targetType)) {
+            // The dependency's conversion turned a ByteBuffer into null and a byte array into one-byte arrays or Base64 errors:
+            // apply the binary rule of item and JSON values to a direct bean's typed containers too.
+            return convertMismatchedValue(value, targetType, context);
+        } else if (context == MappingContext.MAPPED_BEAN && !isBinaryConversion(value, targetType.javaType())) {
+            return N.convert(value, targetType);
+        } else if (value instanceof String && (targetType.isParameterizedType() || context == MappingContext.JSON)) {
+            return targetType.valueOf((String) value);
+        } else if (context == MappingContext.JSON && isJsonShapeMismatch(value, targetType)) {
+            // A JSON slot holding a native value of another shape (a boolean, a binary value, or a container that does not
+            // match the declared type) is converted or rejected as the JSON reader did. Raw-class conversion would store it
+            // unconverted, e.g. a Boolean inside a List<Long> or a map inside a List<List<Long>>.
+            return convertMismatchedValue(value, targetType, context);
+        }
+
+        return convertValue(value, targetType.javaType());
+    }
+
+    /**
+     * Converts a non-text native value whose shape does not match the declared type: a boolean, a binary value, or a
+     * container of another kind.
+     *
+     * <p>A binary value read as a collection or object array becomes its single element when the elements are binary or
+     * untyped, and supplies its byte values when they are other scalars, as the JSON reader read a byte array; text
+     * conversion would lose a buffer's bytes. A binary value has no map, pair, bean, or nested-container form and is
+     * rejected.</p>
+     *
+     * <p>Any other value for a collection or object array becomes its single element, read as the element type, as the JSON
+     * reader reads a value that is not an array; reading the value's JSON text with the container's codec instead left a map
+     * unconverted inside a {@code List<List<..>>}. A {@code Number} reads the value's JSON form with numeric inference. A number
+     * (such as a byte of a binary value) or a boolean is read as the JSON reader reads that token for the declared type: a
+     * number is a {@code Date}'s epoch milliseconds and a {@code Character}'s code point, not their text. A map or collection
+     * for any other type is read through the declared type's JSON codec, as the JSON reader did.</p>
+     *
+     * @throws IllegalArgumentException if a binary value has no form of the declared type
+     * @throws RuntimeException if the codec, the JSON reader, or an element conversion rejects the value, for example with a
+     *         {@code NumberFormatException}, {@code ParsingException}, or {@code DateTimeParseException}
+     */
+    private static Object convertMismatchedValue(final Object value, final Type<?> targetType, final MappingContext context) {
+        final Type<?> elementType = targetType.isObjectArray() ? targetType.elementType()
+                : targetType.isCollection() && targetType.isParameterizedType() ? targetType.parameterTypes().get(0) : null;
+
+        if (value instanceof ByteBuffer || value instanceof byte[]) {
+            if (elementType != null && acceptsWholeBinary(elementType)) {
+                return convertNativeContainer(singletonList(value), targetType, context);
+            } else if (elementType != null && !elementType.isCollection() && !elementType.isMap() && !elementType.isBean() && !elementType.isArray()) {
+                return convertNativeContainer(byteValues(value), targetType, context);
+            }
+
+            // Raw conversion silently produced null for a ByteBuffer, and a parsing error for a byte array.
+            throw new IllegalArgumentException("Cannot convert a binary value to " + targetType.name());
+        }
+
+        if (elementType != null) {
+            return convertNativeContainer(singletonList(value), targetType, context);
+        } else if (needsNumberInference(targetType)) {
+            return readJsonScalar(N.toJson(value), targetType);
+        } else if (value instanceof Number || value instanceof Boolean) {
+            // Read the token as JSON does: a type's text codec read 1 as the text "1", an ambiguous date or the character '1'.
+            final List<?> result = N.fromJson(N.toJson(singletonList(value)), JsonDeserConfig.create().setElementType(targetType), List.class);
+            return result.get(0);
+        }
+
+        return targetType.valueOf(N.toJson(value));
+    }
+
+    /**
+     * Returns a mutable list holding only {@code value}, the input for converting a single value as a container's element.
+     */
+    private static List<Object> singletonList(final Object value) {
+        final List<Object> result = new ArrayList<>(1);
+        result.add(value);
+        return result;
+    }
+
+    /**
+     * Returns whether a collection element of this type holds a whole binary value: {@code byte[]}, {@link ByteBuffer}, or
+     * {@code Object}, possibly enclosed in supported generic wrappers.
+     */
+    private static boolean acceptsWholeBinary(Type<?> type) {
+        while (isGenericWrapper(type)) {
+            type = type.parameterTypes().get(0);
+        }
+
+        final Class<?> cls = type.javaType();
+        return cls == byte[].class || cls == ByteBuffer.class || cls == Object.class;
+    }
+
+    /**
+     * Returns the bytes of a byte array, or the remaining bytes of a ByteBuffer without consuming it, as a list.
+     */
+    private static List<Byte> byteValues(final Object binary) {
+        final byte[] bytes;
+
+        if (binary instanceof final byte[] array) {
+            bytes = array;
+        } else {
+            final ByteBuffer buffer = ((ByteBuffer) binary).duplicate();
+            bytes = new byte[buffer.remaining()];
+            buffer.get(bytes);
+        }
+
+        final List<Byte> result = new ArrayList<>(bytes.length);
+
+        for (final byte b : bytes) {
+            result.add(b);
         }
 
         return result;
     }
 
-    // A container value only needs the parameterized-Type rebuild when a declared element/value type
-    // can differ from what toValue produced. Object-typed slots accept any runtime type, so the raw
-    // container is assigned as-is for them: the JSON round trip can't re-type what it parses under
-    // Object and would corrupt binary values (a byte[] from a native B attribute comes back as a List
-    // of numbers). Map keys from an M attribute are always String, so String keys need no rebuild.
-    // Mirrors the v1 toEntity.
+    /**
+     * Returns whether {@code convertValue} must handle a binary conversion that {@code N.convert} gets wrong: Base64 text
+     * to ByteBuffer (positioned after the bytes), or a byte array to a ByteBuffer or to another type a ByteBuffer can be,
+     * such as {@code Comparable<?>}, which it wraps as at item level. This SDK decodes binary attributes as byte arrays,
+     * so no ByteBuffer reaches a byte[] conversion.
+     */
+    private static boolean isBinaryConversion(final Object value, final Class<?> targetClass) {
+        return value instanceof byte[] ? !targetClass.isInstance(value) && targetClass.isAssignableFrom(ByteBuffer.class)
+                : targetClass == ByteBuffer.class && value instanceof String;
+    }
+
+    /**
+     * Returns whether a parameterized item container constrains its values or its native String map keys.
+     * Unconstrained Object slots retain their decoded values, including binary values, as-is.
+     */
     private static boolean isElementConversionNeeded(final Type<?> propType) {
         if (propType.isMap()) {
             final Class<?> keyClass = propType.parameterTypes().get(0).javaType();
@@ -1953,6 +2484,17 @@ public final class DynamoDBExecutor {
             return (T) ByteBuffer.wrap((byte[]) rawValue);
         }
 
+        if (rawValue instanceof String && targetClass == ByteBuffer.class) {
+            // ByteBufferType decodes Base64 text into a buffer positioned after the decoded bytes. Flip it so
+            // the bytes are readable from position zero, like the buffers decoded from binary attributes.
+            final ByteBuffer buffer = N.convert(rawValue, ByteBuffer.class);
+            return buffer == null ? null : (T) buffer.flip();
+        }
+
+        if (targetClass == Number.class && !(rawValue instanceof Number)) {
+            return (T) toNumber(rawValue);
+        }
+
         // toAttributeValue stores arrays as their JSON text (an S attribute). For an array whose component type
         // accepts a String (String[], CharSequence[], Object[]), N.convert wraps that whole text as a single
         // element instead of parsing it, so e.g. a String[] property would not survive a put -> get round trip.
@@ -1968,6 +2510,41 @@ public final class DynamoDBExecutor {
         }
 
         return N.convert(rawValue, targetClass);
+    }
+
+    /**
+     * Reads a decoded value as {@link Number}. Number is abstract and has no String factory, so {@code N.convert} rejected every
+     * value with {@link UnsupportedOperationException}: text uses JSON numeric inference, as nested Number properties do, and
+     * other values fail as the JSON reader rejects them. A decimal that the inferred {@code Double} does not represent exactly
+     * becomes a {@link java.math.BigDecimal}, so a DynamoDB number of up to 38 digits reads and writes back unchanged.
+     *
+     * @throws NumberFormatException if the value is not a number
+     * @throws IllegalArgumentException if the value is binary
+     */
+    private static Number toNumber(final Object value) {
+        if (value instanceof ByteBuffer || value instanceof byte[]) {
+            throw new IllegalArgumentException("Cannot convert a binary value to " + Number.class.getName());
+        }
+
+        if (!(value instanceof final String text)) {
+            return N.fromJson(N.toJson(value), Number.class);
+        }
+
+        final Number number = N.fromJson(text, Number.class);
+
+        if (number instanceof final Double inferred) {
+            try {
+                final java.math.BigDecimal exact = new java.math.BigDecimal(text.strip());
+
+                if (Double.isInfinite(inferred) || java.math.BigDecimal.valueOf(inferred).compareTo(exact) != 0) {
+                    return exact;
+                }
+            } catch (final NumberFormatException e) {
+                // JSON number syntax the BigDecimal parser does not accept: keep the inferred value.
+            }
+        }
+
+        return number;
     }
 
     /**

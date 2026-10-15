@@ -25,10 +25,12 @@ public final class MongoLiveTestSupport {
     }
 
     static MongoClient documentsClient(final String connectionString) {
-        final MongoClientSettings settings = MongoClientSettings.builder().applyConnectionString(new ConnectionString(connectionString))
+        final MongoClientSettings settings = MongoClientSettings.builder()
+                .applyConnectionString(new ConnectionString(connectionString))
                 .applyToClusterSettings(builder -> builder.serverSelectionTimeout(1, TimeUnit.SECONDS))
                 .applyToSocketSettings(builder -> builder.connectTimeout(1, TimeUnit.SECONDS).readTimeout(1, TimeUnit.SECONDS))
-                .timeout(2, TimeUnit.SECONDS).build();
+                .timeout(2, TimeUnit.SECONDS)
+                .build();
         final MongoClient client = MongoClients.create(settings);
         try {
             requireDocumentsStage(client);

@@ -24,11 +24,11 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
-import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.da.MockitoTestBase;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.Dataset;
+import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -39,7 +39,6 @@ import com.landawn.abacus.util.u.OptionalFloat;
 import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
-import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.ChangeStreamIterable;
@@ -60,7 +59,7 @@ import com.mongodb.client.result.InsertManyResult;
 import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
-public class MongoCollectionExecutorTest extends TestBase {
+public class MongoCollectionExecutorTest extends MockitoTestBase {
 
     @Mock
     private MongoCollection<Document> mockCollection;
@@ -78,7 +77,6 @@ public class MongoCollectionExecutorTest extends TestBase {
 
     @BeforeEach
     public void setUp() {
-        MockitoAnnotations.openMocks(this);
         executor = new MongoCollectionExecutor(mockCollection, mockAsyncExecutor);
 
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindIterable);
@@ -92,43 +90,976 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockFindIterable.iterator()).thenReturn(mockCursor);
     }
 
+    // ---- 2026-10-02 verifyME ----
+
+    private static final String COUNT_COLUMN_CONFLICT_verifyME = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
+
+    // ---- 2026-10-04 coverageME ----
+
+    // End-to-end coverage of the MongoDBBase read-side changes through the executors' read paths: typed container elements
+    // (int32 Integers in a List<Long>, embedded Documents in a List/Map of beans, String keys of a Map<Integer, Long>), BSON
+    // dates read into LocalDate/LocalDateTime/LocalTime in UTC (as the driver's codecs write them), the type arguments of
+    // generic beans (Box<Long>, LongBox extends Box<Long>) and records (every value converted, _id into the id component).
+    // The documents hold what the driver decodes. Each read path is asserted on its own (assertAll), so every path that
+    // bypassed the conversion is reported. The fixtures are shared with the async, mapper and reactive tests.
+
+    public static final String OID_HEX_coverageME = "65f0a1b2c3d4e5f601234567";
+
+    public static final Date DAY_coverageME = new Date(java.time.Instant.parse("2024-01-02T00:00:00Z").toEpochMilli());
+
+    public static final Date AT_coverageME = new Date(java.time.Instant.parse("2024-01-02T03:04:05.006Z").toEpochMilli());
+
+    public static final java.time.LocalDate LOCAL_DAY_coverageME = java.time.LocalDate.of(2024, 1, 2);
+
+    public static final java.time.LocalDateTime LOCAL_AT_coverageME = java.time.LocalDateTime.of(2024, 1, 2, 3, 4, 5, 6_000_000);
+
+    public static final java.time.LocalTime LOCAL_TIME_coverageME = java.time.LocalTime.of(3, 4, 5, 6_000_000);
+
+    // Construction and configuration
+
     @Test
-    public void testColl() {
-        MongoCollection<Document> result = executor.coll();
-        Assertions.assertSame(mockCollection, result);
+    public void testEstimatedDocumentCountWithNullOptionsUsesDefaults() {
+        // Null options fall back to the no-options driver call (family convention),
+        // instead of the driver's notNull IAE.
+        when(mockCollection.estimatedDocumentCount()).thenReturn(42L);
+
+        long count = executor.estimatedDocumentCount((EstimatedDocumentCountOptions) null);
+
+        Assertions.assertEquals(42L, count);
+        verify(mockCollection).estimatedDocumentCount();
+    }
+
+    // Row and entity mapping
+
+    @Test
+    public void testEntityReadPathsConvertDecodedValuesToDeclaredTypes_coverageME() {
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(entityDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final Bson update = new Document("$set", new Document("x", 1));
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final Class<E2eEntity_coverageME> type = E2eEntity_coverageME.class;
+
+        Assertions.assertAll(() -> assertEntity_coverageME("list", exec.list(filter, type).get(0)),
+                () -> assertEntity_coverageME("list(Collection)", exec.list(Arrays.asList("nums", "day"), filter, type).get(0)),
+                () -> assertEntity_coverageME("findFirst", exec.findFirst(filter, type).get()),
+                () -> assertEntity_coverageME("get(ObjectId)", exec.get(new ObjectId(OID_HEX_coverageME), type).get()),
+                () -> assertEntity_coverageME("gett(String)", exec.gett(OID_HEX_coverageME, type)),
+                () -> assertEntity_coverageME("stream", firstOf_coverageME(exec.stream(filter, type))),
+                () -> assertEntity_coverageME("stream(Collection)", firstOf_coverageME(exec.stream(Arrays.asList("nums", "day"), filter, type))),
+                () -> assertEntity_coverageME("aggregate", firstOf_coverageME(exec.aggregate(pipeline, type))),
+                () -> assertEntity_coverageME("findOneAndUpdate", exec.findOneAndUpdate(filter, update, type)),
+                () -> assertEntity_coverageME("findOneAndDelete", exec.findOneAndDelete(filter, type)),
+                () -> assertEntityDataset_coverageME("query(Bson, Class)", exec.query(filter, type)));
     }
 
     @Test
-    public void testAsync() {
-        AsyncMongoCollectionExecutor asyncExecutor = executor.async();
-        Assertions.assertNotNull(asyncExecutor);
+    public void testGenericSubclassRowsOnEveryReadPath_coverageME() {
+        // LongBox extends Box<Long>: the value of its erased T field is converted to the bound Long (HEAD kept the Integer).
+        final MongoCollectionExecutor boxExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(longBoxDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final Class<E2eLongBox_coverageME> boxType = E2eLongBox_coverageME.class;
+
+        Assertions.assertAll(() -> Assertions.assertEquals((Object) 9L, boxExec.list(filter, boxType).get(0).getValue(), "list"),
+                () -> Assertions.assertEquals((Object) 9L, boxExec.findFirst(filter, boxType).get().getValue(), "findFirst"),
+                () -> Assertions.assertEquals((Object) 9L, firstOf_coverageME(boxExec.stream(filter, boxType)).getValue(), "stream"),
+                () -> Assertions.assertEquals((Object) 9L, firstOf_coverageME(boxExec.aggregate(pipeline, boxType)).getValue(), "aggregate"),
+                () -> Assertions.assertEquals((Object) 9L, boxExec.findOneAndDelete(filter, boxType).getValue(), "findOneAndDelete"));
     }
 
     @Test
-    public void testExistsWithStringObjectId() {
+    public void testStreamWithNonDocumentClassUsesToEntityMapper() {
+        when(mockCollection.find()).thenReturn(mockFindIterable);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        when(mockCursor.hasNext()).thenReturn(false);
+        Stream<TestEntity> s = executor.stream(TestEntity.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    // Factories and insert operations
+
+    @Test
+    public void testBulkInsert() {
+        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(bulkWriteResult.getInsertedCount()).thenReturn(2);
+        when(mockCollection.bulkWrite(anyList())).thenReturn(bulkWriteResult);
+
+        BulkWriteResult result = executor.bulkInsert(docs);
+        Assertions.assertSame(bulkWriteResult, result);
+        Assertions.assertEquals(2, result.getInsertedCount());
+    }
+
+    @Test
+    public void testBulkInsertRejectsEmptyEntities() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(List.of()));
+    }
+
+    @Test
+    public void testBulkInsertRejectsNullEntities() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(null));
+    }
+
+    @Test
+    public void testBulkInsertWithDocumentsAndOptions() {
+        List<Document> docs = Arrays.asList(new Document("a", 1), new Document("a", 2));
+        com.mongodb.bulk.BulkWriteResult bwr = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(bwr.getInsertedCount()).thenReturn(2);
+        com.mongodb.client.model.BulkWriteOptions opts = new com.mongodb.client.model.BulkWriteOptions();
+        when(mockCollection.bulkWrite(anyList(), any(com.mongodb.client.model.BulkWriteOptions.class))).thenReturn(bwr);
+        BulkWriteResult result = executor.bulkInsert(docs, opts);
+        Assertions.assertSame(bwr, result);
+        Assertions.assertEquals(2, result.getInsertedCount());
+    }
+
+    @Test
+    public void testBulkInsertWithEntities() {
+        TestEntity e1 = new TestEntity();
+        e1.setName("a");
+        com.mongodb.bulk.BulkWriteResult bwr = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(bwr.getInsertedCount()).thenReturn(1);
+        when(mockCollection.bulkWrite(anyList())).thenReturn(bwr);
+        BulkWriteResult result = executor.bulkInsert(Arrays.asList(e1));
+        Assertions.assertSame(bwr, result);
+        Assertions.assertEquals(1, result.getInsertedCount());
+    }
+
+    @Test
+    public void testInsertNullElementIsIllegalArgument() {
+        // A null element is rejected like the update family (updateOne/updateMany(filter, objList)):
+        // IllegalArgumentException, before anything is sent to the driver.
+        final List<Document> docs = Arrays.asList(new Document("id", 1), null);
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs, new InsertManyOptions()));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs, null));
+        verify(mockCollection, never()).insertMany(anyList());
+        verify(mockCollection, never()).bulkWrite(anyList());
+    }
+
+    @Test
+    public void testInsertMany() {
+        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockCollection.insertMany(anyList())).thenReturn(insertResult);
+
+        InsertManyResult result = executor.insertMany(docs);
+        verify(mockCollection).insertMany(docs);
+        Assertions.assertSame(insertResult, result);
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    public void testInsertManyPreservesDocumentInstancesInHeterogeneousBatch() {
+        // The driver populates generated _id values into the supplied Document. A mixed batch used
+        // to copy that Document while converting the non-Document rows, so the caller never saw it.
+        Document callerDocument = new Document("name", "document-row");
+        List<Object> rows = Arrays.asList(callerDocument, java.util.Map.of("name", "map-row"));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
+        when(mockCollection.insertMany(anyList())).thenReturn(insertResult);
+
+        executor.insertMany(rows);
+
+        verify(mockCollection).insertMany(captor.capture());
+        Assertions.assertSame(callerDocument, captor.getValue().get(0));
+        Assertions.assertTrue(captor.getValue().get(1) instanceof Document);
+    }
+
+    @Test
+    public void testInsertManyWithEntities() {
+        TestEntity e1 = new TestEntity();
+        e1.setName("a");
+        TestEntity e2 = new TestEntity();
+        e2.setName("b");
+        List<TestEntity> entities = Arrays.asList(e1, e2);
+        executor.insertMany(entities);
+        verify(mockCollection).insertMany(anyList());
+    }
+
+    @Test
+    public void testInsertManyWithOptions() {
+        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
+        InsertManyOptions options = new InsertManyOptions();
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockCollection.insertMany(anyList(), eq(options))).thenReturn(insertResult);
+
+        InsertManyResult result = executor.insertMany(docs, options);
+        verify(mockCollection).insertMany(docs, options);
+        Assertions.assertSame(insertResult, result);
+    }
+
+    @Test
+    public void testInsertManyWithSetOfDocuments() {
+        java.util.Set<Document> docs = new java.util.LinkedHashSet<>();
+        docs.add(new Document("a", 1));
+        docs.add(new Document("a", 2));
+        executor.insertMany(docs);
+        verify(mockCollection).insertMany(anyList());
+    }
+
+    @Test
+    public void testInsertOne() {
+        Document doc = new Document("name", "test");
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollection.insertOne(doc)).thenReturn(insertResult);
+
+        InsertOneResult result = executor.insertOne(doc);
+        verify(mockCollection).insertOne(doc);
+        Assertions.assertSame(insertResult, result);
+    }
+
+    @Test
+    public void testInsertOneWithOptions() {
+        Document doc = new Document("name", "test");
+        InsertOneOptions options = new InsertOneOptions();
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollection.insertOne(doc, options)).thenReturn(insertResult);
+
+        InsertOneResult result = executor.insertOne(doc, options);
+        verify(mockCollection).insertOne(doc, options);
+        Assertions.assertSame(insertResult, result);
+    }
+
+    // Updates and deletes
+
+    @Test
+    public void testDeleteMany() {
+        Document filter = new Document("status", "inactive");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteMany(filter)).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteMany(filter);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteManyWithNullOptionsUsesDefaultOverload() {
+        Document filter = new Document("status", "x");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteMany(filter)).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteMany(filter, (DeleteOptions) null);
+
+        Assertions.assertSame(deleteResult, result);
+        verify(mockCollection).deleteMany(filter);
+        verify(mockCollection, times(0)).deleteMany(any(Bson.class), any(DeleteOptions.class));
+    }
+
+    @Test
+    public void testDeleteManyWithFilterAndOptions() {
+        Document filter = new Document("status", "x");
+        com.mongodb.client.model.DeleteOptions options = new com.mongodb.client.model.DeleteOptions();
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteMany(any(Bson.class), any(com.mongodb.client.model.DeleteOptions.class))).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteMany(filter, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteOne() {
         String objectId = "507f1f77bcf86cd799439011";
-        when(mockCollection.countDocuments(any(), any(CountOptions.class))).thenReturn(1L);
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteOne(any())).thenReturn(deleteResult);
 
-        boolean result = executor.exists(objectId);
-        Assertions.assertTrue(result);
+        DeleteResult result = executor.deleteOne(objectId);
+        Assertions.assertNotNull(result);
     }
 
     @Test
-    public void testExistsWithObjectId() {
-        ObjectId objectId = new ObjectId();
-        when(mockCollection.countDocuments(any(), any(CountOptions.class))).thenReturn(0L);
+    public void testDeleteOneWithNullOptionsUsesDefaultOverload() {
+        Document filter = new Document("status", "x");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteOne(filter)).thenReturn(deleteResult);
 
-        boolean result = executor.exists(objectId);
-        Assertions.assertFalse(result);
+        DeleteResult result = executor.deleteOne(filter, (DeleteOptions) null);
+
+        Assertions.assertSame(deleteResult, result);
+        verify(mockCollection).deleteOne(filter);
+        verify(mockCollection, times(0)).deleteOne(any(Bson.class), any(DeleteOptions.class));
     }
 
     @Test
-    public void testExistsWithBsonFilter() {
+    public void testDeleteOneWithFilterAndOptions() {
+        Document filter = new Document("status", "x");
+        com.mongodb.client.model.DeleteOptions options = new com.mongodb.client.model.DeleteOptions();
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteOne(any(Bson.class), any(com.mongodb.client.model.DeleteOptions.class))).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteOne(filter, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDelete() {
+        Document filter = new Document("id", 1);
+        Document deletedDoc = new Document("id", 1);
+        when(mockCollection.findOneAndDelete(filter)).thenReturn(deletedDoc);
+
+        Document result = executor.findOneAndDelete(filter);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDeleteNullFilterThrows() {
+        // Regression: a null filter must be rejected with IllegalArgumentException (as documented and as every
+        // sibling deleteOne/deleteMany/findOneAndUpdate/findOneAndReplace does). Before the fix the null filter
+        // was passed straight to the driver, which omits the query from the findAndModify command and silently
+        // deletes an arbitrary document. The driver must NOT be invoked.
+        final com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options, Document.class));
+
+        verify(mockCollection, never()).findOneAndDelete(any(Bson.class));
+        verify(mockCollection, never()).findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class));
+    }
+
+    @Test
+    public void testFindOneAndDeleteReturnsNullWhenNoDoc() {
+        Document filter = new Document();
+        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(null);
+        Document r = executor.findOneAndDelete(filter, Document.class);
+        Assertions.assertNull(r);
+    }
+
+    @Test
+    public void testFindOneAndDeleteWithOptions() {
+        Document filter = new Document("id", 1);
+        com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+        Document returnedDoc = new Document("id", 1);
+        when(mockCollection.findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndDelete(filter, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDeleteWithOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+        Document returnedDoc = new Document("id", 1);
+        when(mockCollection.findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndDelete(filter, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDeleteWithRowType() {
+        Document filter = new Document("id", 1);
+        Document returnedDoc = new Document("id", 1);
+        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndDelete(filter, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdate() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("name", "updated");
+        Document updatedDoc = new Document("id", 1).append("name", "updated");
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(updatedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, update);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, (Object) null));
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollection() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionAndOptions() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, updates, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionAndRowTypeReturnsNullWhenNoDoc() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(null);
+        Document result = executor.findOneAndUpdate(filter, updates, Document.class);
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, updates, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionOptionsAndRowType_Specific() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.FindOneAndUpdateOptions opts = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
+        Document result = executor.findOneAndUpdate(filter, updates, opts, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithObjListRejectsEmptyUpdates() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(new Document("id", 1), List.of()));
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithObjListRejectsNullFilter() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(null, List.of(new Document("$set", new Document("a", 1)))));
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithOptions() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, update, options);
+        Assertions.assertNotNull(result);
+        verify(mockCollection).findOneAndUpdate(any(Bson.class), any(Bson.class), eq(options));
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, update, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithRowType() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, update, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testListRejectsNegativeOffset() {
+        Document filter = new Document("status", "active");
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(filter, -1, 10, Document.class));
+    }
+
+    @Test
+    public void testListWithBsonProjectionFilterSortOffsetCount() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(projection, filter, sort, 0, 10, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testListWithPositiveOffsetCallsSkip() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+        executor.list(filter, 5, 10, Document.class);
+        verify(mockFindIterable).skip(5);
+        verify(mockFindIterable).limit(10);
+    }
+
+    @Test
+    public void testListWithSelectPropNamesFilterOffsetCount() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, 0, 10, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testListWithSelectPropNamesFilterSortOffsetCount() {
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, sort, 0, 10, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testQueryWithFilterOffsetCountAndRowType() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("id", 1));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        Dataset result = executor.query(filter, 0, 10, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testStreamWithFilterOffsetCountAndClass() {
+        Document filter = new Document("a", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        Stream<Document> s = executor.stream(filter, 0, 10, Document.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    @Test
+    public void testStreamWithFilterOffsetCountAndNonDocumentClass() {
+        Document filter = new Document("a", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        when(mockCursor.hasNext()).thenReturn(false);
+        Stream<TestEntity> s = executor.stream(filter, 0, 10, TestEntity.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    @Test
+    public void testStreamWithProjectionFilterSortOffsetCountAndNonDocumentClass() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        when(mockCursor.hasNext()).thenReturn(false);
+        Stream<TestEntity> s = executor.stream(projection, filter, sort, 0, 10, TestEntity.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    @Test
+    public void testStreamWithSelectFilterSortOffsetCountAndClass() {
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        Stream<Document> s = executor.stream(Arrays.asList("a"), filter, sort, 0, 10, Document.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    @Test
+    public void testUpdateRejectsMixedOperatorAndOrdinaryFieldsBeforeDriverCall() {
+        Document filter = new Document("active", true);
+        Document invalidUpdate = new Document("$set", new Document("name", "alice")).append("status", "active");
+        com.mongodb.BasicDBObject reversedInvalidUpdate = new com.mongodb.BasicDBObject("status", "active").append("$set",
+                new com.mongodb.BasicDBObject("name", "alice"));
+
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, invalidUpdate));
+
+        Assertions.assertTrue(ex.getMessage().contains("cannot mix"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, reversedInvalidUpdate));
+        verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
+    }
+
+    @Test
+    public void testUpdateMany() {
+        Document filter = new Document("status", "active");
+        Document update = new Document("status", "inactive");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateMany(filter, update);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateManyWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, (Object) null));
+    }
+
+    @Test
+    public void testUpdateManyWithCollection() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), anyList())).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateMany(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateManyWithCollectionAndOptions() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.UpdateOptions options = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), anyList(), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateMany(filter, updates, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateManyWithEntityOnlyIdPayloadThrowsIAE() {
+        // An entity whose only non-null property is the id converts to {_id: ...}; once the immutable
+        // _id is stripped, the payload is empty and must be rejected before reaching the server.
+        Document filter = new Document("status", "active");
+        TestEntity entity = new TestEntity();
+        entity.setId("507f1f77bcf86cd799439011");
+
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, entity));
+
+        Assertions.assertTrue(ex.getMessage().contains("empty"));
+        verify(mockCollection, never()).updateMany(any(Bson.class), any(Bson.class));
+    }
+
+    @Test
+    public void testUpdateManyWithEntityPayloadStripsIdFromSet() {
+        // Regression: the immutable _id is stripped from the converted update document. Previously the
+        // generated {$set: {_id: ..., ...}} failed server-side for every matched document whose _id differs.
+        Document filter = new Document("status", "active");
+        TestEntity entity = new TestEntity();
+        entity.setId("507f1f77bcf86cd799439011");
+        entity.setName("alice");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateMany(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        executor.updateMany(filter, entity);
+
+        verify(mockCollection).updateMany(any(Bson.class), updateCaptor.capture());
+        Document captured = (Document) updateCaptor.getValue();
+        Assertions.assertTrue(captured.containsKey("$set"));
+        Document setDoc = (Document) captured.get("$set");
+        Assertions.assertFalse(setDoc.containsKey("_id"));
+        Assertions.assertEquals("alice", setDoc.get("name"));
+    }
+
+    @Test
+    public void testUpdateManyWithFilterAndDocumentAndOptions() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
+        UpdateResult result = executor.updateMany(filter, (Object) update, opts);
+        Assertions.assertNotNull(result);
+        verify(mockCollection).updateMany(any(Bson.class), any(Bson.class), eq(opts));
+    }
+
+    @Test
+    public void testUpdateManyWithFilterAndEntityAndOptions() {
+        Document filter = new Document();
+        TestEntity e = new TestEntity();
+        e.setName("x");
+        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
+        UpdateResult r = executor.updateMany(filter, e, opts);
+        Assertions.assertSame(ur, r);
+    }
+
+    @Test
+    public void testUpdateManyWithSetOfBson() {
+        Document filter = new Document("id", 1);
+        java.util.Set<Document> updates = new java.util.LinkedHashSet<>();
+        updates.add(new Document("$set", new Document("a", 1)));
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), anyList())).thenReturn(ur);
+        UpdateResult result = executor.updateMany(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateOneDoesNotMutateCallerDocument() {
+        // Regression: toBson stripped _id from the CALLER's Document in place on the
+        // non-$-operator path; the $set payload must be built from a copy.
         Document filter = new Document("name", "test");
-        when(mockCollection.countDocuments(any(), any(CountOptions.class))).thenReturn(1L);
+        ObjectId id = new ObjectId();
+        Document callerUpdate = new Document("_id", id).append("name", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
 
-        boolean result = executor.exists(filter);
-        Assertions.assertTrue(result);
+        executor.updateOne(filter, callerUpdate);
+
+        // The caller's Document must be untouched.
+        Assertions.assertEquals(id, callerUpdate.get("_id"));
+        Assertions.assertEquals(2, callerUpdate.size());
+        // The sent update is {$set: {...}} without _id.
+        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
+        Document sent = (Document) updateCaptor.getValue();
+        Document setPayload = (Document) sent.get("$set");
+        Assertions.assertFalse(setPayload.containsKey("_id"));
+        Assertions.assertEquals("updated", setPayload.get("name"));
+    }
+
+    @Test
+    public void testUpdateOneNormalizesPlainBsonDocumentInPipeline() {
+        Document filter = new Document("id", 1);
+        Document plainUpdate = new Document("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(eq(filter), anyList())).thenReturn(updateResult);
+
+        Assertions.assertSame(updateResult, executor.updateOne(filter, Arrays.asList(plainUpdate)));
+
+        @SuppressWarnings("rawtypes")
+        org.mockito.ArgumentCaptor<List> updatesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mockCollection).updateOne(eq(filter), updatesCaptor.capture());
+        Assertions.assertEquals(Arrays.asList(new Document("$set", new Document("status", "active"))), updatesCaptor.getValue());
+        Assertions.assertEquals(new Document("status", "active"), plainUpdate, "The caller's update document must remain unchanged");
+    }
+
+    @Test
+    public void testUpdateOneWithEmptyMapPayloadThrowsIAE() {
+        // This executor rejects an empty plain-object update before calling the driver, even though
+        // MongoDB 5.0+ accepts an empty $set operand as a no-op.
+        Document filter = new Document("status", "active");
+
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> executor.updateOne(filter, new java.util.HashMap<String, Object>()));
+
+        Assertions.assertTrue(ex.getMessage().contains("empty"));
+        verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
+    }
+
+    @Test
+    public void testUpdateOneWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, (Object) null));
+    }
+
+    @Test
+    public void testUpdateOneWithCollection() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), anyList())).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateOne(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateOneWithCollectionAndOptions() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.UpdateOptions options = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), anyList(), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateOne(filter, updates, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateOneWithCollectionOfEntities() {
+        Document filter = new Document("id", 1);
+        TestEntity e1 = new TestEntity();
+        e1.setName("a");
+        TestEntity e2 = new TestEntity();
+        e2.setName("b");
+        List<TestEntity> updates = Arrays.asList(e1, e2);
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), anyList())).thenReturn(ur);
+        UpdateResult result = executor.updateOne(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateOneWithDriverBuiltBsonNotWrappedInSet() {
+        // Regression: a driver-built Bson (Updates.set(...)) is neither Document nor BasicDBObject.
+        // It must be passed through as-is, not re-wrapped in {$set: ...} which corrupts the update.
+        Document filter = new Document("name", "test");
+        Bson update = com.mongodb.client.model.Updates.set("verified", true);
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        executor.updateOne(filter, update);
+
+        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
+        Assertions.assertSame(update, updateCaptor.getValue());
+        Assertions.assertFalse(updateCaptor.getValue() instanceof Document);
+    }
+
+    @Test
+    public void testUpdateOneWithFilterAndDocumentAndOptions() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
+        UpdateResult result = executor.updateOne(filter, (Object) update, opts);
+        Assertions.assertNotNull(result);
+        verify(mockCollection).updateOne(any(Bson.class), any(Bson.class), eq(opts));
+    }
+
+    @Test
+    public void testUpdateOneWithFilterAndEntityAndOptions() {
+        Document filter = new Document();
+        TestEntity e = new TestEntity();
+        e.setName("x");
+        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
+        UpdateResult r = executor.updateOne(filter, e, opts);
+        Assertions.assertSame(ur, r);
+    }
+
+    @Test
+    public void testUpdateOneWithMapPayloadStripsIdFromSet() {
+        Document filter = new Document("status", "active");
+        java.util.Map<String, Object> update = new java.util.HashMap<>();
+        update.put("_id", new ObjectId());
+        update.put("name", "bob");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        executor.updateOne(filter, update);
+
+        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
+        Document captured = (Document) updateCaptor.getValue();
+        Assertions.assertTrue(captured.containsKey("$set"));
+        Document setDoc = (Document) captured.get("$set");
+        Assertions.assertFalse(setDoc.containsKey("_id"));
+        Assertions.assertEquals("bob", setDoc.get("name"));
+    }
+
+    @Test
+    public void testUpdateOneWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document update = new Document("name", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateOne(objectId, update);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateOneWrapsEntityUpdateInSet() {
+        Document filter = new Document("id", 1);
+        TestEntity entity = new TestEntity();
+        entity.setName("x");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+        executor.updateOne(filter, entity);
+        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
+        Assertions.assertTrue(updateCaptor.getValue() instanceof Document);
+        Assertions.assertTrue(((Document) updateCaptor.getValue()).containsKey("$set"));
+    }
+
+    // Queries and results
+
+    @Test
+    public void testAggregate() {
+        List<Document> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
+        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mock());
+
+        Stream<Document> result = executor.aggregate(pipeline);
+        Assertions.assertNotNull(result);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testAggregateDefaultDocumentRowTypePreservesRowContent() {
+        // The default aggregate(pipeline) decodes to Document and maps each row through toEntity,
+        // which hands Document-assignable row types the raw row; this pins the content-preserving
+        // pass-through of multi-field aggregate rows for the default rowType.
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+
+        final Document row = new Document("_id", "sales").append("count", 2).append("region", "east");
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
+        when(aggregateIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(row);
+
+        final List<Document> pipeline = Arrays.asList(new Document("$group", new Document("_id", "$department").append("count", new Document("$sum", 1))));
+        final List<Document> rows = executor.aggregate(pipeline).toList();
+
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(row, rows.get(0));
+    }
+
+    @Test
+    public void testAggregateWithNullRowTypeThrowsIAE() {
+        // Regression: a null rowType is now rejected eagerly with IllegalArgumentException, before any
+        // aggregation cursor is opened.
+        List<Document> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.aggregate(pipeline, (Class<Document>) null));
+
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testAggregateWithDocumentAssignableRowTypeReturnsRawDocuments() {
+        // Regression: aggregate(pipeline, Object.class) sent every row through readRow's scalar fallback,
+        // which throws for a multi-field row and silently dropped _id for a single-field row. Result types
+        // that can hold a Document (Object, Bson, Map, Document) must receive the raw row, matching
+        // list/stream/findFirst.
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+        final Document row = new Document("_id", "sales").append("count", 2).append("region", "east");
+        final List<Document> pipeline = Arrays.asList(new Document("$group", new Document("_id", "$department")));
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
+        when(aggregateIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(row);
+
+        final List<Object> objects = executor.aggregate(pipeline, Object.class).toList();
+
+        Assertions.assertEquals(1, objects.size());
+        Assertions.assertSame(row, objects.get(0));
+
+        when(cursor.hasNext()).thenReturn(true, false);
+        final List<Bson> bsons = executor.aggregate(pipeline, Bson.class).toList();
+        Assertions.assertSame(row, bsons.get(0));
+
+        when(cursor.hasNext()).thenReturn(true, false);
+        final List<Document> documents = executor.aggregate(pipeline, Document.class).toList();
+        Assertions.assertSame(row, documents.get(0));
     }
 
     @Test
@@ -149,6 +1080,14 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testCountWithFilterAndNullOptions() {
+        Document filter = new Document("a", 1);
+        when(mockCollection.countDocuments(any(Bson.class))).thenReturn(5L);
+        long result = executor.count(filter, null);
+        Assertions.assertEquals(5L, result);
+    }
+
+    @Test
     public void testCountWithFilterAndOptions() {
         Document filter = new Document("status", "active");
         CountOptions options = new CountOptions().limit(10);
@@ -156,6 +1095,37 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         long result = executor.count(filter, options);
         Assertions.assertEquals(10L, result);
+    }
+
+    @Test
+    public void testDistinct() {
+        String fieldName = "category";
+        MongoCursor<String> cursor = mock(MongoCursor.class);
+        when(mockCollection.distinct(fieldName, String.class)).thenReturn(mock());
+
+        Stream<String> result = executor.distinct(fieldName, String.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testDistinctWithFilter() {
+        String fieldName = "category";
+        Document filter = new Document("active", true);
+        when(mockCollection.distinct(eq(fieldName), eq(filter), eq(String.class))).thenReturn(mock());
+
+        Stream<String> result = executor.distinct(fieldName, filter, String.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testDottedSelectNameCheckToleratesNullNames_coverageME() {
+        // Pin: the dotted-name check of query(Collection, ...) -> Dataset is null-safe, so a null select name still fails
+        // with the projection's IllegalArgumentException (as before the fix), whichever position it has.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("address", new Document("city", "Paris"))));
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList(null, "address.city"), new Document(), java.util.Map.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("address.city", null), new Document(), java.util.Map.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("name", null), new Document(), java.util.Map.class));
     }
 
     @Test
@@ -176,52 +1146,30 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testGetWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document doc = new Document("_id", new ObjectId(objectId));
-        when(mockFindIterable.first()).thenReturn(doc);
+    public void testExistsWithBsonFilter() {
+        Document filter = new Document("name", "test");
+        when(mockCollection.countDocuments(any(), any(CountOptions.class))).thenReturn(1L);
 
-        Optional<Document> result = executor.get(objectId);
-        Assertions.assertTrue(result.isPresent());
+        boolean result = executor.exists(filter);
+        Assertions.assertTrue(result);
     }
 
     @Test
-    public void testGetWithObjectId() {
+    public void testExistsWithObjectId() {
         ObjectId objectId = new ObjectId();
-        when(mockFindIterable.first()).thenReturn(null);
+        when(mockCollection.countDocuments(any(), any(CountOptions.class))).thenReturn(0L);
 
-        Optional<Document> result = executor.get(objectId);
-        Assertions.assertFalse(result.isPresent());
+        boolean result = executor.exists(objectId);
+        Assertions.assertFalse(result);
     }
 
     @Test
-    public void testGetWithStringObjectIdAndRowType() {
+    public void testExistsWithStringObjectId() {
         String objectId = "507f1f77bcf86cd799439011";
-        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
-        when(mockFindIterable.first()).thenReturn(doc);
-        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockCollection.countDocuments(any(), any(CountOptions.class))).thenReturn(1L);
 
-        Optional<TestEntity> result = executor.get(objectId, TestEntity.class);
-        Assertions.assertTrue(result.isPresent());
-    }
-
-    @Test
-    public void testGettWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document doc = new Document("_id", new ObjectId(objectId));
-        when(mockFindIterable.first()).thenReturn(doc);
-
-        Document result = executor.gett(objectId);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testGettWithObjectId() {
-        ObjectId objectId = new ObjectId();
-        when(mockFindIterable.first()).thenReturn(null);
-
-        Document result = executor.gett(objectId);
-        Assertions.assertNull(result);
+        boolean result = executor.exists(objectId);
+        Assertions.assertTrue(result);
     }
 
     @Test
@@ -235,45 +1183,15 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testFindFirstWithRowType() {
-        Document filter = new Document("name", "test");
-        Document doc = new Document("name", "test");
+    public void testFindFirstBsonProjectionObjectRowTypeReturnsRawDocument() {
+        Document filter = new Document("active", true);
+        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c").append("name", "John");
         when(mockFindIterable.first()).thenReturn(doc);
 
-        Optional<Document> result = executor.findFirst(filter, Document.class);
-        Assertions.assertTrue(result.isPresent());
-    }
-
-    @Test
-    public void testFindFirstWithEmptyDocumentRowTypeReturnsDocument() {
-        Document filter = new Document("active", true);
-        Document doc = new Document();
-        when(mockFindIterable.first()).thenReturn(doc);
-
-        Optional<Document> result = executor.findFirst(filter, Document.class);
+        Optional<Object> result = executor.findFirst(new Document("email", 1), filter, null, Object.class);
 
         Assertions.assertTrue(result.isPresent());
-        Assertions.assertTrue(result.get().isEmpty());
-    }
-
-    @Test
-    public void testFindFirstWithScalarRowTypeSkipsEmptyDocument() {
-        Document filter = new Document("active", true);
-        when(mockFindIterable.first()).thenReturn(new Document());
-
-        Optional<Integer> result = executor.findFirst(filter, Integer.class);
-
-        Assertions.assertFalse(result.isPresent());
-    }
-
-    @Test
-    public void testFindFirstSingleScalarProjectionDoesNotFallBackToObjectId() {
-        Document filter = new Document("active", true);
-        when(mockFindIterable.first()).thenReturn(new Document("_id", new ObjectId()));
-
-        Optional<String> result = executor.findFirst(Arrays.asList("name"), filter, String.class);
-
-        Assertions.assertFalse(result.isPresent(), "A missing projected value is not the document's _id");
+        Assertions.assertSame(doc, result.get(), "Document-assignable rowType receives the raw document instead of readRow's scalar fallback");
     }
 
     @Test
@@ -300,15 +1218,354 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testFindFirstBsonProjectionObjectRowTypeReturnsRawDocument() {
+    public void testFindFirstSingleScalarProjectionDoesNotFallBackToObjectId() {
         Document filter = new Document("active", true);
-        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c").append("name", "John");
+        when(mockFindIterable.first()).thenReturn(new Document("_id", new ObjectId()));
+
+        Optional<String> result = executor.findFirst(Arrays.asList("name"), filter, String.class);
+
+        Assertions.assertFalse(result.isPresent(), "A missing projected value is not the document's _id");
+    }
+
+    @Test
+    public void testFindFirstWithEmptyDocumentRowTypeReturnsDocument() {
+        Document filter = new Document("active", true);
+        Document doc = new Document();
         when(mockFindIterable.first()).thenReturn(doc);
 
-        Optional<Object> result = executor.findFirst(new Document("email", 1), filter, null, Object.class);
+        Optional<Document> result = executor.findFirst(filter, Document.class);
 
         Assertions.assertTrue(result.isPresent());
-        Assertions.assertSame(doc, result.get(), "Document-assignable rowType receives the raw document instead of readRow's scalar fallback");
+        Assertions.assertTrue(result.get().isEmpty());
+    }
+
+    @Test
+    public void testFindFirstWithProjectionFilterSortClassEmpty() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("id", 1);
+        Document sort = new Document("name", 1);
+        when(mockFindIterable.first()).thenReturn(null);
+        Optional<Document> result = executor.findFirst(projection, filter, sort, Document.class);
+        Assertions.assertFalse(result.isPresent());
+    }
+
+    @Test
+    public void testFindFirstWithProjectionFilterSortClassFound() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("id", 1);
+        Document sort = new Document("name", 1);
+        Document doc = new Document("name", "x");
+        when(mockFindIterable.first()).thenReturn(doc);
+        Optional<Document> result = executor.findFirst(projection, filter, sort, Document.class);
+        Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testFindFirstWithRowType() {
+        Document filter = new Document("name", "test");
+        Document doc = new Document("name", "test");
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Optional<Document> result = executor.findFirst(filter, Document.class);
+        Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testFindFirstWithScalarRowTypeSkipsEmptyDocument() {
+        Document filter = new Document("active", true);
+        when(mockFindIterable.first()).thenReturn(new Document());
+
+        Optional<Integer> result = executor.findFirst(filter, Integer.class);
+
+        Assertions.assertFalse(result.isPresent());
+    }
+
+    @Test
+    public void testFindFirstWithSelectFilterSortAndClassEmpty() {
+        Document filter = new Document();
+        Document sort = new Document();
+        when(mockFindIterable.first()).thenReturn(null);
+        Optional<Document> r = executor.findFirst(Arrays.asList("a"), filter, sort, Document.class);
+        Assertions.assertFalse(r.isPresent());
+    }
+
+    @Test
+    public void testFindOneAndReplace() {
+        Document filter = new Document("id", 1);
+        Document replacement = new Document("id", 1).append("name", "replaced");
+        when(mockCollection.findOneAndReplace(any(), any())).thenReturn(replacement);
+
+        Document result = executor.findOneAndReplace(filter, replacement);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithNullReplacementThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, (Object) null));
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithOptions() {
+        Document filter = new Document("id", 1);
+        Document replacement = new Document("name", "x");
+        com.mongodb.client.model.FindOneAndReplaceOptions options = new com.mongodb.client.model.FindOneAndReplaceOptions();
+        Document returnedDoc = new Document("name", "x");
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class), any(com.mongodb.client.model.FindOneAndReplaceOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndReplace(filter, replacement, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        Document replacement = new Document("name", "x");
+        com.mongodb.client.model.FindOneAndReplaceOptions options = new com.mongodb.client.model.FindOneAndReplaceOptions();
+        Document returnedDoc = new Document("name", "x");
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class), any(com.mongodb.client.model.FindOneAndReplaceOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndReplace(filter, replacement, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithRowType() {
+        Document filter = new Document("id", 1);
+        Document replacement = new Document("name", "x");
+        Document returnedDoc = new Document("name", "x");
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndReplace(filter, replacement, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testGettWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        when(mockFindIterable.first()).thenReturn(null);
+
+        Document result = executor.gett(objectId);
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void testGettWithSelectPropNamesAndRowType() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        TestEntity result = executor.gett(objectId, Arrays.asList("name"), TestEntity.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testGettWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId));
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Document result = executor.gett(objectId);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testGetWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        when(mockFindIterable.first()).thenReturn(null);
+
+        Optional<Document> result = executor.get(objectId);
+        Assertions.assertFalse(result.isPresent());
+    }
+
+    @Test
+    public void testGetWithSelectPropNamesAndRowType() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Optional<TestEntity> result = executor.get(objectId, Arrays.asList("name"), TestEntity.class);
+        Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testGetWithStringObjectId() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId));
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Optional<Document> result = executor.get(objectId);
+        Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testGetWithStringObjectIdAndRowType() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
+        when(mockFindIterable.first()).thenReturn(doc);
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+
+        Optional<TestEntity> result = executor.get(objectId, TestEntity.class);
+        Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testGroupBy() {
+        String fieldName = "category";
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mock());
+
+        Stream<Document> result = executor.groupBy(fieldName);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testGroupByAndCount() {
+        String fieldName = "category";
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mock());
+
+        Stream<Document> result = executor.groupByAndCount(fieldName);
+        Assertions.assertNotNull(result);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testGroupByAndCountRejectsGroupFieldNamedCountForNonDocumentRows_sliceE() {
+        // Regression: the {fieldName: "$_id", count: 1} projection overwrote a group field literally named "count"
+        // with the count, silently losing the group key (live: groupByAndCount("count", Map.class) -> [{count=2}, {count=1}]).
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+        when(aggregateIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(false);
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
+
+        final String expectedMessage = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
+
+        Assertions.assertEquals(expectedMessage,
+                Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", java.util.Map.class)).getMessage());
+        Assertions.assertEquals(expectedMessage,
+                Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("count", "cat"), GroupRow.class))
+                        .getMessage());
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", Long.class));
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+
+        // Document rows keep the key in _id, so they are unaffected; groupBy (no count column) is unaffected too.
+        Assertions.assertEquals(0, executor.groupByAndCount("count").count());
+        Assertions.assertEquals(0, executor.groupByAndCount(Arrays.asList("count", "cat")).count());
+        Assertions.assertEquals(0, executor.groupBy("count", java.util.Map.class).count());
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testGroupByAndCountCountFieldRejectedForEveryNonDocumentRowType_verifyME() {
+        // Same rule and message as the reactive executor: only Document rows (key kept under _id) accept a group field
+        // named "count"; every other row type is projected as {<field>: key, count: n}, a Document subclass included.
+        final List<List<? extends Bson>> pipelines = new java.util.ArrayList<>();
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            pipelines.add(invocation.getArgument(0));
+            final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+            when(aggregateIterable.iterator()).thenReturn(mock(MongoCursor.class));
+            return aggregateIterable;
+        });
+
+        for (final Class rowType : Arrays.<Class> asList(java.util.Map.class, java.util.LinkedHashMap.class, Object.class, Bson.class,
+                CountDocument_verifyME.class, GroupRow.class, Long.class, long.class, String.class)) {
+            Assertions.assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
+                    Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType)).getMessage(), rowType.getName());
+            Assertions.assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
+                    Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType))
+                            .getMessage(),
+                    rowType.getName());
+        }
+
+        Assertions.assertTrue(pipelines.isEmpty());
+
+        // Document rows, other field names, and groupBy (no count column) are unaffected.
+        executor.groupByAndCount("count", Document.class).count();
+        executor.groupByAndCount(Arrays.asList("department", "count"), Document.class).count();
+        executor.groupByAndCount("department", java.util.Map.class).count();
+        executor.groupBy("count", CountDocument_verifyME.class).count();
+        executor.groupBy(Arrays.asList("department", "count"), java.util.Map.class).count();
+        Assertions.assertEquals(5, pipelines.size());
+        Assertions.assertEquals(new Document("$project", new Document("_id", 0).append("department", "$_id").append("count", 1)), pipelines.get(2).get(1));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testGroupByAndCountTypedMapsSingleGroupKey() {
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            final List<?> pipeline = invocation.getArgument(0);
+            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2) : new Document("_id", "sales").append("count", 2);
+
+            when(aggregateIterable.iterator()).thenReturn(cursor);
+            when(cursor.hasNext()).thenReturn(true, false);
+            when(cursor.next()).thenReturn(row);
+            return aggregateIterable;
+        });
+
+        final List<GroupRow> rows = executor.groupByAndCount("department", GroupRow.class).toList();
+
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("sales", rows.get(0).getDepartment());
+        Assertions.assertEquals(2, rows.get(0).getCount());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testGroupByDottedFieldIntoScalarTypeEmitsGroupKeys_sliceE() {
+        // Regression: groupBy("a.b", String.class) re-projected the key as {"a.b": "$_id"}, which MongoDB
+        // materializes as {a: {b: key}}; the scalar conversion then received the embedded document
+        // ({"b": "v1"} as JSON text, or NumberFormatException for Integer) instead of the key.
+        final List<List<? extends Bson>> pipelines = new java.util.ArrayList<>();
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            final List<? extends Bson> pipeline = invocation.getArgument(0);
+            pipelines.add(pipeline);
+
+            // Emit what MongoDB returns for the pipeline (live-verified): $group alone yields {_id: key},
+            // while a trailing $project {"a.b": "$_id", _id: 0} yields {a: {b: key}}.
+            final boolean groupsByNM = "$n.m".equals(((Document) pipeline.get(0)).get("$group", Document.class).get("_id"));
+            final Object key = groupsByNM ? (Object) 7 : "v1";
+            final Document row = pipeline.size() == 1 ? new Document("_id", key)
+                    : groupsByNM ? new Document("n", new Document("m", key)) : new Document("a", new Document("b", key));
+
+            final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+            final MongoCursor<Document> cursor = mock(MongoCursor.class);
+            when(aggregateIterable.iterator()).thenReturn(cursor);
+            when(cursor.hasNext()).thenReturn(true, false);
+            when(cursor.next()).thenReturn(row);
+            return aggregateIterable;
+        });
+
+        Assertions.assertEquals(Arrays.asList("v1"), executor.groupBy("a.b", String.class).toList());
+        Assertions.assertEquals(1, pipelines.get(pipelines.size() - 1).size());
+
+        Assertions.assertEquals(Arrays.asList(7), executor.groupBy("n.m", Integer.class).toList());
+        Assertions.assertEquals(1, pipelines.get(pipelines.size() - 1).size());
+
+        // Map/bean/Object results keep the named-field projection.
+        Assertions.assertEquals(Arrays.asList(new Document("a", new Document("b", "v1"))), executor.groupBy("a.b", java.util.Map.class).toList());
+        Assertions.assertEquals(2, pipelines.get(pipelines.size() - 1).size());
+    }
+
+    @Test
+    public void testGroupByWithNullRowTypeThrowsIAE() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupBy("category", (Class<Document>) null));
+
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+    }
+
+    @Test
+    public void testGroupByWithMultipleFields() {
+        Collection<String> fieldNames = Arrays.asList("category", "status");
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mock());
+
+        Stream<Document> result = executor.groupBy(fieldNames);
+        Assertions.assertNotNull(result);
     }
 
     @Test
@@ -322,6 +1579,77 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testListRejectsNegativeCount() {
+        Document filter = new Document("status", "active");
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(filter, 0, -1, Document.class));
+    }
+
+    @Test
+    public void testListSingleDottedProjectionReadsNestedScalarValue() {
+        // A projection of "address.city" is returned as {address: {city: ...}}. Treating the
+        // top-level address document as the scalar produced a JSON-like String instead of "Berlin".
+        Document filter = new Document("active", true);
+        Document row = new Document("_id", new ObjectId()).append("address", new Document("city", "Berlin"));
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        List<String> result = executor.list(Arrays.asList("address.city"), filter, String.class);
+
+        Assertions.assertEquals(Arrays.asList("Berlin"), result);
+    }
+
+    @Test
+    public void testListSingleMissingProjectionDoesNotReturnImplicitId() {
+        Document filter = new Document("active", true);
+        Document row = new Document("_id", new ObjectId());
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        List<String> result = executor.list(Arrays.asList("nickname"), filter, String.class);
+
+        Assertions.assertEquals(Arrays.asList((String) null), result);
+    }
+
+    @Test
+    public void testListSingleProjectionPreservesRawDocumentForDocumentSupertypes() {
+        Document filter = new Document("active", true);
+        Document row = new Document("name", "alice");
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        List<Object> objects = executor.list(Arrays.asList("name"), filter, Object.class);
+        List<Bson> bsons = executor.list(Arrays.asList("name"), filter, Bson.class);
+
+        Assertions.assertSame(row, objects.get(0));
+        Assertions.assertSame(row, bsons.get(0));
+    }
+
+    @Test
+    public void testListWithNullFilterThrowsIAE() {
+        // A null filter is now rejected with IllegalArgumentException (it is no longer silently treated
+        // as match-all), and the driver must not be touched.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(null, 0, 10, Document.class));
+        verify(mockCollection, org.mockito.Mockito.never()).find();
+    }
+
+    @Test
+    public void testListWithBsonProjectionFilterAndSort() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(projection, filter, sort, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testListWithMaxCountDoesNotCallLimitWithMaxValue() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+        executor.list(filter, 0, Integer.MAX_VALUE, Document.class);
+        verify(mockFindIterable, org.mockito.Mockito.never()).limit(Integer.MAX_VALUE);
+    }
+
+    @Test
     public void testListWithRowType() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
@@ -329,6 +1657,101 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         List<Document> result = executor.list(filter, Document.class);
         Assertions.assertEquals(2, result.size());
+    }
+
+    @Test
+    public void testListWithSelectPropNamesAndFilter() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("name", "a"), new Document("name", "b"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, Document.class);
+        Assertions.assertEquals(2, result.size());
+    }
+
+    @Test
+    public void testListWithSelectPropNamesFilterAndSort() {
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, sort, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    // Test entity class
+    @Test
+    public void testListWithZeroCountReturnsEmptyAndDoesNotUseLimitZero() {
+        // Regression: limit(0) is treated by the MongoDB driver as "no limit" (return ALL docs).
+        // A user-supplied count of 0 must yield zero results, not the whole collection.
+        Document filter = new Document("status", "active");
+        org.mockito.ArgumentCaptor<Bson> findCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+
+        List<Document> result = executor.list(filter, 0, 0, Document.class);
+
+        Assertions.assertTrue(result.isEmpty());
+        verify(mockCollection).find(findCaptor.capture());
+        Assertions.assertEquals(new Document("$expr", false), findCaptor.getValue());
+        // limit(0) must never be applied (it would mean "no limit").
+        verify(mockFindIterable, org.mockito.Mockito.never()).limit(0);
+    }
+
+    @Test
+    public void testQuery() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        Dataset result = executor.query(filter);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testQueryDottedSelectNamesOnEveryOverloadKeepOrderAndRawNestedValues_verifyME() {
+        // Every Collection-projection Dataset overload resolves dotted names from the nested documents (they were all-null
+        // columns): requested column order is kept, a missing/null parent or leaf gives null, and the dotted value is the
+        // raw nested value (Integer zip although DottedAddress declares no zip), while plain columns are converted as before.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris").append("zip", 75001)),
+                new Document("_id", 2).append("name", "n2"), new Document("_id", 3).append("name", "n3").append("address", new Document("city", null)),
+                new Document("_id", 4).append("name", "n4").append("address", null)));
+        final List<String> names = Arrays.asList("address.zip", "name", "address.city");
+        final Bson sort = new Document("_id", 1);
+
+        for (final Class<?> rowType : Arrays.asList(java.util.Map.class, java.util.LinkedHashMap.class, Document.class, DottedRow.class)) {
+            for (final Dataset ds : Arrays.asList(executor.query(names, new Document(), rowType), executor.query(names, new Document(), 1, 3, rowType),
+                    executor.query(names, new Document(), sort, rowType), executor.query(names, new Document(), sort, 1, 3, rowType))) {
+                Assertions.assertEquals(names, ds.columnNames(), rowType.getName());
+                Assertions.assertEquals(Arrays.asList("n1", "n2", "n3", "n4"), ds.getColumn("name"), rowType.getName());
+                Assertions.assertEquals(Arrays.asList(75001, null, null, null), ds.getColumn("address.zip"), rowType.getName());
+                Assertions.assertEquals(Arrays.asList("Paris", null, null, null), ds.getColumn("address.city"), rowType.getName());
+                Assertions.assertFalse(ds.isFrozen());
+            }
+        }
+
+        final Dataset withId = executor.query(new java.util.LinkedHashSet<>(Arrays.asList("_id", "address.city")), new Document(), java.util.Map.class);
+        Assertions.assertEquals(Arrays.asList("_id", "address.city"), withId.columnNames());
+        Assertions.assertEquals(Arrays.asList(1, 2, 3, 4), withId.getColumn("_id"));
+        Assertions.assertEquals(Arrays.asList("Paris", null, null, null), withId.getColumn("address.city"));
+    }
+
+    @Test
+    public void testQueryDottedSelectNameThroughArrayFailsOnEveryOverload_verifyME() {
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("name", "n2").append("address", Arrays.asList(new Document("city", "Rome")))));
+        final List<String> names = Arrays.asList("name", "address.city");
+        final Bson sort = new Document("_id", 1);
+
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), java.util.Map.class));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), 0, 5, Document.class));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), sort, DottedRowWithoutAddress_verifyME.class));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), sort, 0, 5, java.util.Map.class));
+
+        // Without a dotted name the same rows load as before: the array is just a column value.
+        final Dataset plain = executor.query(Arrays.asList("name", "address"), new Document(), java.util.Map.class);
+        Assertions.assertEquals(Arrays.asList("n1", "n2"), plain.getColumn("name"));
+        Assertions.assertEquals(Arrays.asList(new Document("city", "Rome")), plain.getColumn("address").get(1));
     }
 
     @Test
@@ -342,20 +1765,6 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         OptionalBoolean result = executor.queryForBoolean(propName, filter);
         Assertions.assertTrue(result.orElseThrow());
-    }
-
-    @Test
-    public void testQueryForChar() {
-        String propName = "grade";
-        Document filter = new Document("id", 1);
-        Document doc = new Document(propName, 'A');
-        when(mockFindIterable.first()).thenReturn(doc);
-        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
-        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
-
-        OptionalChar result = executor.queryForChar(propName, filter);
-        Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals('A', result.get());
     }
 
     @Test
@@ -373,17 +1782,81 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForShort() {
-        String propName = "count";
+    public void testQueryForChar() {
+        String propName = "grade";
         Document filter = new Document("id", 1);
-        Document doc = new Document(propName, (short) 100);
+        Document doc = new Document(propName, 'A');
         when(mockFindIterable.first()).thenReturn(doc);
         when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
         when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
 
-        OptionalShort result = executor.queryForShort(propName, filter);
+        OptionalChar result = executor.queryForChar(propName, filter);
         Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals((short) 100, result.get());
+        Assertions.assertEquals('A', result.get());
+    }
+
+    @Test
+    public void testQueryForDate() {
+        String propName = "createdAt";
+        Document filter = new Document("id", 1);
+        Date date = new Date();
+        Document doc = new Document(propName, date);
+        when(mockFindIterable.first()).thenReturn(doc);
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
+
+        Nullable<Date> result = executor.queryForDate(propName, filter);
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals(date, result.get());
+    }
+
+    @Test
+    public void testQueryForDateBasic() {
+        Document filter = new Document("id", 1);
+        Date d = new Date();
+        Document doc = new Document("date", d);
+        when(mockFindIterable.first()).thenReturn(doc);
+        Nullable<Date> result = executor.queryForDate("date", filter);
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals(d, result.get());
+    }
+
+    @Test
+    public void testQueryForDateWithSqlDateType() {
+        Document filter = new Document("id", 1);
+        Date d = new Date();
+        Document doc = new Document("date", d);
+        when(mockFindIterable.first()).thenReturn(doc);
+        Nullable<java.sql.Date> result = executor.queryForDate("date", filter, java.sql.Date.class);
+        Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testQueryForDouble() {
+        String propName = "amount";
+        Document filter = new Document("id", 1);
+        Document doc = new Document(propName, 99.99);
+        when(mockFindIterable.first()).thenReturn(doc);
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
+
+        OptionalDouble result = executor.queryForDouble(propName, filter);
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals(99.99, result.get(), 0.01);
+    }
+
+    @Test
+    public void testQueryForFloat() {
+        String propName = "price";
+        Document filter = new Document("id", 1);
+        Document doc = new Document(propName, 19.99f);
+        when(mockFindIterable.first()).thenReturn(doc);
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
+
+        OptionalFloat result = executor.queryForFloat(propName, filter);
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals(19.99f, result.get(), 0.01f);
     }
 
     @Test
@@ -415,74 +1888,17 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForFloat() {
-        String propName = "price";
+    public void testQueryForShort() {
+        String propName = "count";
         Document filter = new Document("id", 1);
-        Document doc = new Document(propName, 19.99f);
+        Document doc = new Document(propName, (short) 100);
         when(mockFindIterable.first()).thenReturn(doc);
         when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
         when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
 
-        OptionalFloat result = executor.queryForFloat(propName, filter);
+        OptionalShort result = executor.queryForShort(propName, filter);
         Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals(19.99f, result.get(), 0.01f);
-    }
-
-    @Test
-    public void testQueryForDouble() {
-        String propName = "amount";
-        Document filter = new Document("id", 1);
-        Document doc = new Document(propName, 99.99);
-        when(mockFindIterable.first()).thenReturn(doc);
-        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
-        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
-
-        OptionalDouble result = executor.queryForDouble(propName, filter);
-        Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals(99.99, result.get(), 0.01);
-    }
-
-    @Test
-    public void testQueryForString() {
-        String propName = "name";
-        Document filter = new Document("id", 1);
-        Document doc = new Document(propName, "John");
-        when(mockFindIterable.first()).thenReturn(doc);
-        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
-        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
-
-        Nullable<String> result = executor.queryForString(propName, filter);
-        Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals("John", result.get());
-    }
-
-    @Test
-    public void testQueryForDate() {
-        String propName = "createdAt";
-        Document filter = new Document("id", 1);
-        Date date = new Date();
-        Document doc = new Document(propName, date);
-        when(mockFindIterable.first()).thenReturn(doc);
-        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
-        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
-
-        Nullable<Date> result = executor.queryForDate(propName, filter);
-        Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals(date, result.get());
-    }
-
-    @Test
-    public void testqueryForSingleValue() {
-        String propName = "value";
-        Document filter = new Document("id", 1);
-        Document doc = new Document(propName, "result");
-        when(mockFindIterable.first()).thenReturn(doc);
-        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
-        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
-
-        Nullable<String> result = executor.queryForSingleValue(propName, filter, String.class);
-        Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals("result", result.get());
+        Assertions.assertEquals((short) 100, result.get());
     }
 
     @Test
@@ -500,6 +1916,24 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testQueryForSingleNonNullWhenNoDoc() {
+        Document filter = new Document("id", 1);
+        when(mockFindIterable.first()).thenReturn(null);
+        Optional<String> result = executor.queryForSingleNonNull("v", filter, String.class);
+        Assertions.assertFalse(result.isPresent());
+    }
+
+    @Test
+    public void testQueryForSingleNonNullWithMatchedDocAndNonNullValue() {
+        Document filter = new Document("id", 1);
+        Document doc = new Document("v", 42);
+        when(mockFindIterable.first()).thenReturn(doc);
+        Optional<Integer> r = executor.queryForSingleNonNull("v", filter, Integer.class);
+        Assertions.assertTrue(r.isPresent());
+        Assertions.assertEquals(42, r.get());
+    }
+
+    @Test
     public void testQueryForSingleNonNullWithNullValue() {
         String propName = "value";
         Document filter = new Document("id", 1);
@@ -511,451 +1945,6 @@ public class MongoCollectionExecutorTest extends TestBase {
         // When a document is matched but the field value is null, Optional.of(null) rejects the
         // payload and NullPointerException is thrown.
         Assertions.assertThrows(NullPointerException.class, () -> executor.queryForSingleNonNull(propName, filter, String.class));
-    }
-
-    @Test
-    public void testQuery() {
-        Document filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
-
-        Dataset result = executor.query(filter);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testStream() {
-        when(mockCollection.find()).thenReturn(mockFindIterable);
-
-        Stream<Document> result = executor.stream();
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testStreamWithRowType() {
-        when(mockCollection.find()).thenReturn(mockFindIterable);
-
-        Stream<Document> result = executor.stream(Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testWatch() {
-        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
-        when(mockCollection.watch()).thenReturn(changeStream);
-
-        ChangeStreamIterable<Document> result = executor.watch();
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testWatchWithRowType() {
-        ChangeStreamIterable<TestEntity> changeStream = mock(ChangeStreamIterable.class);
-        when(mockCollection.watch(TestEntity.class)).thenReturn(changeStream);
-
-        ChangeStreamIterable<TestEntity> result = executor.watch(TestEntity.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testInsertOne() {
-        Document doc = new Document("name", "test");
-        InsertOneResult insertResult = mock(InsertOneResult.class);
-        when(mockCollection.insertOne(doc)).thenReturn(insertResult);
-
-        InsertOneResult result = executor.insertOne(doc);
-        verify(mockCollection).insertOne(doc);
-        Assertions.assertSame(insertResult, result);
-    }
-
-    @Test
-    public void testInsertOneWithOptions() {
-        Document doc = new Document("name", "test");
-        InsertOneOptions options = new InsertOneOptions();
-        InsertOneResult insertResult = mock(InsertOneResult.class);
-        when(mockCollection.insertOne(doc, options)).thenReturn(insertResult);
-
-        InsertOneResult result = executor.insertOne(doc, options);
-        verify(mockCollection).insertOne(doc, options);
-        Assertions.assertSame(insertResult, result);
-    }
-
-    @Test
-    public void testInsertMany() {
-        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        InsertManyResult insertResult = mock(InsertManyResult.class);
-        when(mockCollection.insertMany(anyList())).thenReturn(insertResult);
-
-        InsertManyResult result = executor.insertMany(docs);
-        verify(mockCollection).insertMany(docs);
-        Assertions.assertSame(insertResult, result);
-    }
-
-    @Test
-    public void testInsertManyWithOptions() {
-        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        InsertManyOptions options = new InsertManyOptions();
-        InsertManyResult insertResult = mock(InsertManyResult.class);
-        when(mockCollection.insertMany(anyList(), eq(options))).thenReturn(insertResult);
-
-        InsertManyResult result = executor.insertMany(docs, options);
-        verify(mockCollection).insertMany(docs, options);
-        Assertions.assertSame(insertResult, result);
-    }
-
-    @Test
-    public void testInsertNullElementIsIllegalArgument() {
-        // A null element is rejected like the update family (updateOne/updateMany(filter, objList)):
-        // IllegalArgumentException, before anything is sent to the driver.
-        final List<Document> docs = Arrays.asList(new Document("id", 1), null);
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.insertMany(docs, new InsertManyOptions()));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(docs, null));
-        verify(mockCollection, never()).insertMany(anyList());
-        verify(mockCollection, never()).bulkWrite(anyList());
-    }
-
-    @Test
-    public void testUpdateOneWithStringObjectId() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document update = new Document("name", "updated");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
-
-        UpdateResult result = executor.updateOne(objectId, update);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testUpdateMany() {
-        Document filter = new Document("status", "active");
-        Document update = new Document("status", "inactive");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateMany(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
-
-        UpdateResult result = executor.updateMany(filter, update);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testReplaceOne() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document replacement = new Document("name", "replaced");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.replaceOne(any(), any())).thenReturn(updateResult);
-
-        UpdateResult result = executor.replaceOne(objectId, replacement);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testDeleteOne() {
-        String objectId = "507f1f77bcf86cd799439011";
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        when(mockCollection.deleteOne(any())).thenReturn(deleteResult);
-
-        DeleteResult result = executor.deleteOne(objectId);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testDeleteMany() {
-        Document filter = new Document("status", "inactive");
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        when(mockCollection.deleteMany(filter)).thenReturn(deleteResult);
-
-        DeleteResult result = executor.deleteMany(filter);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testBulkInsert() {
-        List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
-        when(bulkWriteResult.getInsertedCount()).thenReturn(2);
-        when(mockCollection.bulkWrite(anyList())).thenReturn(bulkWriteResult);
-
-        BulkWriteResult result = executor.bulkInsert(docs);
-        Assertions.assertSame(bulkWriteResult, result);
-        Assertions.assertEquals(2, result.getInsertedCount());
-    }
-
-    @Test
-    public void testBulkWrite() {
-        List<WriteModel<Document>> requests = Arrays.asList(mock(WriteModel.class));
-        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
-        when(mockCollection.bulkWrite(requests)).thenReturn(bulkWriteResult);
-
-        BulkWriteResult result = executor.bulkWrite(requests);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testBulkInsertRejectsNullEntities() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(null));
-    }
-
-    @Test
-    public void testBulkInsertRejectsEmptyEntities() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(List.of()));
-    }
-
-    @Test
-    public void testBulkWriteRejectsNullRequests() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(null));
-    }
-
-    @Test
-    public void testBulkWriteRejectsEmptyRequests() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(List.of()));
-    }
-
-    @Test
-    public void testFindOneAndUpdate() {
-        Document filter = new Document("id", 1);
-        Document update = new Document("name", "updated");
-        Document updatedDoc = new Document("id", 1).append("name", "updated");
-        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(updatedDoc);
-
-        Document result = executor.findOneAndUpdate(filter, update);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithObjListRejectsNullFilter() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(null, List.of(new Document("$set", new Document("a", 1)))));
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithObjListRejectsEmptyUpdates() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(new Document("id", 1), List.of()));
-    }
-
-    @Test
-    public void testFindOneAndReplace() {
-        Document filter = new Document("id", 1);
-        Document replacement = new Document("id", 1).append("name", "replaced");
-        when(mockCollection.findOneAndReplace(any(), any())).thenReturn(replacement);
-
-        Document result = executor.findOneAndReplace(filter, replacement);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndDelete() {
-        Document filter = new Document("id", 1);
-        Document deletedDoc = new Document("id", 1);
-        when(mockCollection.findOneAndDelete(filter)).thenReturn(deletedDoc);
-
-        Document result = executor.findOneAndDelete(filter);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testDistinct() {
-        String fieldName = "category";
-        MongoCursor<String> cursor = mock(MongoCursor.class);
-        when(mockCollection.distinct(fieldName, String.class)).thenReturn(mock());
-
-        Stream<String> result = executor.distinct(fieldName, String.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testAggregate() {
-        List<Document> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
-        when(mockCollection.aggregate(pipeline, Document.class)).thenReturn(mock());
-
-        Stream<Document> result = executor.aggregate(pipeline);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupBy() {
-        String fieldName = "category";
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mock());
-
-        Stream<Document> result = executor.groupBy(fieldName);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByWithMultipleFields() {
-        Collection<String> fieldNames = Arrays.asList("category", "status");
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mock());
-
-        Stream<Document> result = executor.groupBy(fieldNames);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testGroupByAndCount() {
-        String fieldName = "category";
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(mock());
-
-        Stream<Document> result = executor.groupByAndCount(fieldName);
-        Assertions.assertNotNull(result);
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    public void testGroupByAndCountTypedMapsSingleGroupKey() {
-        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
-        final MongoCursor<Document> cursor = mock(MongoCursor.class);
-
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
-            final List<?> pipeline = invocation.getArgument(0);
-            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2) : new Document("_id", "sales").append("count", 2);
-
-            when(aggregateIterable.iterator()).thenReturn(cursor);
-            when(cursor.hasNext()).thenReturn(true, false);
-            when(cursor.next()).thenReturn(row);
-            return aggregateIterable;
-        });
-
-        final List<GroupRow> rows = executor.groupByAndCount("department", GroupRow.class).toList();
-
-        Assertions.assertEquals(1, rows.size());
-        Assertions.assertEquals("sales", rows.get(0).getDepartment());
-        Assertions.assertEquals(2, rows.get(0).getCount());
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    public void testAggregateDefaultDocumentRowTypePreservesRowContent() {
-        // The default aggregate(pipeline) decodes to Document and maps each row through toEntity,
-        // which hands Document-assignable row types the raw row; this pins the content-preserving
-        // pass-through of multi-field aggregate rows for the default rowType.
-        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
-        final MongoCursor<Document> cursor = mock(MongoCursor.class);
-
-        final Document row = new Document("_id", "sales").append("count", 2).append("region", "east");
-
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
-        when(aggregateIterable.iterator()).thenReturn(cursor);
-        when(cursor.hasNext()).thenReturn(true, false);
-        when(cursor.next()).thenReturn(row);
-
-        final List<Document> pipeline = Arrays.asList(new Document("$group", new Document("_id", "$department").append("count", new Document("$sum", 1))));
-        final List<Document> rows = executor.aggregate(pipeline).toList();
-
-        Assertions.assertEquals(1, rows.size());
-        Assertions.assertEquals(row, rows.get(0));
-    }
-
-    @Test
-    public void testMapReduce() {
-        String mapFunction = "function() { emit(this.name, 1); }";
-        String reduceFunction = "function(key, values) { return Array.sum(values); }";
-        when(mockCollection.mapReduce(mapFunction, reduceFunction, Document.class)).thenReturn(mock());
-
-        Stream<Document> result = executor.mapReduce(mapFunction, reduceFunction);
-        Assertions.assertNotNull(result);
-    }
-
-    // Test entity class
-    @Test
-    public void testListWithZeroCountReturnsEmptyAndDoesNotUseLimitZero() {
-        // Regression: limit(0) is treated by the MongoDB driver as "no limit" (return ALL docs).
-        // A user-supplied count of 0 must yield zero results, not the whole collection.
-        Document filter = new Document("status", "active");
-        org.mockito.ArgumentCaptor<Bson> findCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
-
-        List<Document> result = executor.list(filter, 0, 0, Document.class);
-
-        Assertions.assertTrue(result.isEmpty());
-        verify(mockCollection).find(findCaptor.capture());
-        Assertions.assertEquals(new Document("$expr", false), findCaptor.getValue());
-        // limit(0) must never be applied (it would mean "no limit").
-        verify(mockFindIterable, org.mockito.Mockito.never()).limit(0);
-    }
-
-    @Test
-    public void testUpdateOneWithDriverBuiltBsonNotWrappedInSet() {
-        // Regression: a driver-built Bson (Updates.set(...)) is neither Document nor BasicDBObject.
-        // It must be passed through as-is, not re-wrapped in {$set: ...} which corrupts the update.
-        Document filter = new Document("name", "test");
-        Bson update = com.mongodb.client.model.Updates.set("verified", true);
-        UpdateResult updateResult = mock(UpdateResult.class);
-        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
-
-        executor.updateOne(filter, update);
-
-        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
-        Assertions.assertSame(update, updateCaptor.getValue());
-        Assertions.assertFalse(updateCaptor.getValue() instanceof Document);
-    }
-
-    @Test
-    public void testUpdateOneDoesNotMutateCallerDocument() {
-        // Regression: toBson stripped _id from the CALLER's Document in place on the
-        // non-$-operator path; the $set payload must be built from a copy.
-        Document filter = new Document("name", "test");
-        ObjectId id = new ObjectId();
-        Document callerUpdate = new Document("_id", id).append("name", "updated");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
-
-        executor.updateOne(filter, callerUpdate);
-
-        // The caller's Document must be untouched.
-        Assertions.assertEquals(id, callerUpdate.get("_id"));
-        Assertions.assertEquals(2, callerUpdate.size());
-        // The sent update is {$set: {...}} without _id.
-        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
-        Document sent = (Document) updateCaptor.getValue();
-        Document setPayload = (Document) sent.get("$set");
-        Assertions.assertFalse(setPayload.containsKey("_id"));
-        Assertions.assertEquals("updated", setPayload.get("name"));
-    }
-
-    @Test
-    public void testEstimatedDocumentCountWithNullOptionsUsesDefaults() {
-        // Null options fall back to the no-options driver call (family convention),
-        // instead of the driver's notNull IAE.
-        when(mockCollection.estimatedDocumentCount()).thenReturn(42L);
-
-        long count = executor.estimatedDocumentCount((EstimatedDocumentCountOptions) null);
-
-        Assertions.assertEquals(42L, count);
-        verify(mockCollection).estimatedDocumentCount();
-    }
-
-    @Test
-    public void testStreamRejectsNullRowTypeBeforeOpeningCursor() {
-        // Regression: previously, stream(null) would open a cursor and then throw NPE on
-        // `rowType.isAssignableFrom(...)`, leaking the cursor. The contract says null rowType
-        // must throw IllegalArgumentException, and no cursor should be opened.
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Document>) null));
-
-        verify(mockCollection, org.mockito.Mockito.never()).find();
-    }
-
-    @Test
-    public void testStreamWithCollectionProjectionRejectsNullRowTypeBeforeOpeningCursor() {
-        // Regression: cursor-leak fix for the multi-arg stream overload.
-        final Collection<String> selectPropNames = java.util.Collections.singletonList("name");
-        final Document filter = new Document("status", "active");
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream(selectPropNames, filter, (Bson) null, 0, 10, (Class<Document>) null));
-
-        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
-        verify(mockCollection, org.mockito.Mockito.never()).find();
-    }
-
-    @Test
-    public void testStreamWithBsonProjectionRejectsNullRowTypeBeforeOpeningCursor() {
-        // Regression: cursor-leak fix for the Bson-projection stream overload.
-        final Bson projection = com.mongodb.client.model.Projections.include("name");
-        final Bson filter = new Document("status", "active");
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream(projection, filter, (Bson) null, 0, 10, (Class<Document>) null));
-
-        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
-        verify(mockCollection, org.mockito.Mockito.never()).find();
     }
 
     @Test
@@ -971,102 +1960,65 @@ public class MongoCollectionExecutorTest extends TestBase {
         Assertions.assertThrows(NullPointerException.class, () -> executor.queryForSingleNonNull("value", filter, String.class));
     }
 
-    // ---- Additional coverage: list/query/stream overloads with selectPropNames / projection / pagination / sort ----
-
     @Test
-    public void testListWithSelectPropNamesAndFilter() {
-        Document filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("name", "a"), new Document("name", "b"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+    public void testqueryForSingleValue() {
+        String propName = "value";
+        Document filter = new Document("id", 1);
+        Document doc = new Document(propName, "result");
+        when(mockFindIterable.first()).thenReturn(doc);
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
 
-        List<Document> result = executor.list(Arrays.asList("name"), filter, Document.class);
-        Assertions.assertEquals(2, result.size());
+        Nullable<String> result = executor.queryForSingleValue(propName, filter, String.class);
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals("result", result.get());
     }
 
     @Test
-    public void testListWithSelectPropNamesFilterOffsetCount() {
-        Document filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
-
-        List<Document> result = executor.list(Arrays.asList("name"), filter, 0, 10, Document.class);
-        Assertions.assertEquals(1, result.size());
+    public void testQueryForSingleValueWhenNoDoc() {
+        Document filter = new Document("id", 1);
+        when(mockFindIterable.first()).thenReturn(null);
+        Nullable<String> result = executor.queryForSingleValue("v", filter, String.class);
+        Assertions.assertFalse(result.isPresent());
     }
 
     @Test
-    public void testListWithSelectPropNamesFilterAndSort() {
-        Document filter = new Document("status", "active");
-        Document sort = new Document("name", 1);
-        List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+    public void testQueryForSingleValueWithDottedPathReadsNestedValue() {
+        // Regression: a dotted path like "address.city" is a valid projection; the server returns
+        // {address: {city: ...}}. Previously the flat doc.get("address.city") lookup yielded a
+        // present-but-null result; the nested value must be resolved.
+        Document filter = new Document("id", 1);
+        Document doc = new Document("address", new Document("city", "Berlin"));
+        when(mockFindIterable.first()).thenReturn(doc);
 
-        List<Document> result = executor.list(Arrays.asList("name"), filter, sort, Document.class);
-        Assertions.assertEquals(1, result.size());
+        Nullable<String> result = executor.queryForSingleValue("address.city", filter, String.class);
+
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals("Berlin", result.get());
     }
 
     @Test
-    public void testListWithSelectPropNamesFilterSortOffsetCount() {
-        Document filter = new Document("status", "active");
-        Document sort = new Document("name", 1);
-        List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
-
-        List<Document> result = executor.list(Arrays.asList("name"), filter, sort, 0, 10, Document.class);
-        Assertions.assertEquals(1, result.size());
+    public void testQueryForSingleValueWithMatchedDocAndNonNullValue() {
+        Document filter = new Document("id", 1);
+        Document doc = new Document("v", 42);
+        when(mockFindIterable.first()).thenReturn(doc);
+        Nullable<Integer> r = executor.queryForSingleValue("v", filter, Integer.class);
+        Assertions.assertTrue(r.isPresent());
+        Assertions.assertEquals(42, r.get());
     }
 
     @Test
-    public void testListWithBsonProjectionFilterAndSort() {
-        Bson projection = com.mongodb.client.model.Projections.include("name");
-        Document filter = new Document("status", "active");
-        Document sort = new Document("name", 1);
-        List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+    public void testQueryForString() {
+        String propName = "name";
+        Document filter = new Document("id", 1);
+        Document doc = new Document(propName, "John");
+        when(mockFindIterable.first()).thenReturn(doc);
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
 
-        List<Document> result = executor.list(projection, filter, sort, Document.class);
-        Assertions.assertEquals(1, result.size());
-    }
-
-    @Test
-    public void testListWithBsonProjectionFilterSortOffsetCount() {
-        Bson projection = com.mongodb.client.model.Projections.include("name");
-        Document filter = new Document("status", "active");
-        Document sort = new Document("name", 1);
-        List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
-
-        List<Document> result = executor.list(projection, filter, sort, 0, 10, Document.class);
-        Assertions.assertEquals(1, result.size());
-    }
-
-    @Test
-    public void testQueryWithFilterAndRowType() {
-        Document filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("id", 1));
-        when(mockFindIterable.into(any())).thenReturn(docs);
-
-        Dataset result = executor.query(filter, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testQueryWithFilterOffsetCountAndRowType() {
-        Document filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("id", 1));
-        when(mockFindIterable.into(any())).thenReturn(docs);
-
-        Dataset result = executor.query(filter, 0, 10, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testQueryWithSelectPropNamesAndFilter() {
-        Document filter = new Document("status", "active");
-        List<Document> docs = Arrays.asList(new Document("id", 1));
-        when(mockFindIterable.into(any())).thenReturn(docs);
-
-        Dataset result = executor.query(Arrays.asList("id"), filter, Document.class);
-        Assertions.assertNotNull(result);
+        Nullable<String> result = executor.queryForString(propName, filter);
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals("John", result.get());
     }
 
     @Test
@@ -1082,825 +2034,54 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testStreamWithFilter() {
+    public void testQueryWithDottedSelectPropNameEmptyAndArrayResults_sliceE() {
+        stubFindRows_sliceE(java.util.Collections.emptyList());
+        Assertions.assertEquals(0, executor.query(Arrays.asList("name", "address.city"), new Document(), java.util.Map.class).size());
+
+        // Same dotted-path rule as list/findFirst/queryForSingleValue: a path through an array is not a Document path.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("items", Arrays.asList(new Document("sku", "a")))));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(Arrays.asList("items.sku"), new Document(), java.util.Map.class));
+    }
+
+    @Test
+    public void testQueryWithDottedSelectPropNameFillsNestedColumn_sliceE() {
+        // Regression: the server returns a dotted projection such as "address.city" nested ({address: {city: ...}}),
+        // but the Dataset column was read by the flat key/property "address.city", so the column was all null.
+        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("name", "n2")));
+
+        final Dataset mapRows = executor.query(Arrays.asList("name", "address.city"), new Document(), java.util.Map.class);
+        Assertions.assertEquals(Arrays.asList("name", "address.city"), mapRows.columnNames());
+        Assertions.assertEquals(Arrays.asList("n1", "n2"), mapRows.getColumn("name"));
+        Assertions.assertEquals(Arrays.asList("Paris", null), mapRows.getColumn("address.city"));
+
+        final Dataset beanRows = executor.query(Arrays.asList("name", "address.city"), new Document(), null, 0, 10, DottedRow.class);
+        Assertions.assertEquals(Arrays.asList("name", "address.city"), beanRows.columnNames());
+        Assertions.assertEquals(Arrays.asList("n1", "n2"), beanRows.getColumn("name"));
+        Assertions.assertEquals(Arrays.asList("Paris", null), beanRows.getColumn("address.city"));
+
+        final Dataset documentRows = executor.query(Arrays.asList("address.city"), new Document(), 0, 10, Document.class);
+        Assertions.assertEquals(Arrays.asList("Paris", null), documentRows.getColumn("address.city"));
+    }
+
+    @Test
+    public void testQueryWithFilterAndRowType() {
         Document filter = new Document("status", "active");
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        List<Document> docs = Arrays.asList(new Document("id", 1));
+        when(mockFindIterable.into(any())).thenReturn(docs);
 
-        Stream<Document> result = executor.stream(filter);
+        Dataset result = executor.query(filter, Document.class);
         Assertions.assertNotNull(result);
-        result.close();
     }
 
     @Test
-    public void testStreamWithFilterAndRowType() {
+    public void testQueryWithSelectPropNamesAndFilter() {
         Document filter = new Document("status", "active");
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        List<Document> docs = Arrays.asList(new Document("id", 1));
+        when(mockFindIterable.into(any())).thenReturn(docs);
 
-        Stream<Document> result = executor.stream(filter, Document.class);
+        Dataset result = executor.query(Arrays.asList("id"), filter, Document.class);
         Assertions.assertNotNull(result);
-        result.close();
-    }
-
-    @Test
-    public void testStreamWithSelectPropNamesAndFilter() {
-        Document filter = new Document("status", "active");
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-
-        Stream<Document> result = executor.stream(Arrays.asList("name"), filter, Document.class);
-        Assertions.assertNotNull(result);
-        result.close();
-    }
-
-    @Test
-    public void testStreamWithBsonProjectionFilterSort() {
-        Bson projection = com.mongodb.client.model.Projections.include("name");
-        Document filter = new Document("status", "active");
-        Document sort = new Document("name", 1);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-
-        Stream<Document> result = executor.stream(projection, filter, sort, Document.class);
-        Assertions.assertNotNull(result);
-        result.close();
-    }
-
-    // ---- findOneAndUpdate / Replace / Delete with options & rowType ----
-
-    @Test
-    public void testFindOneAndUpdateWithRowType() {
-        Document filter = new Document("id", 1);
-        Document update = new Document("$set", new Document("a", 1));
-        Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndUpdate(filter, update, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithOptions() {
-        Document filter = new Document("id", 1);
-        Document update = new Document("$set", new Document("a", 1));
-        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
-        Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
-                .thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndUpdate(filter, update, options);
-        Assertions.assertNotNull(result);
-        verify(mockCollection).findOneAndUpdate(any(Bson.class), any(Bson.class), eq(options));
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithOptionsAndRowType() {
-        Document filter = new Document("id", 1);
-        Document update = new Document("$set", new Document("a", 1));
-        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
-        Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
-                .thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndUpdate(filter, update, options, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithCollection() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndUpdate(filter, updates);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithCollectionAndOptions() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
-        Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndUpdate(filter, updates, options);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithCollectionOptionsAndRowType() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
-        Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndUpdate(filter, updates, options, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndReplaceWithRowType() {
-        Document filter = new Document("id", 1);
-        Document replacement = new Document("name", "x");
-        Document returnedDoc = new Document("name", "x");
-        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class))).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndReplace(filter, replacement, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndReplaceWithOptions() {
-        Document filter = new Document("id", 1);
-        Document replacement = new Document("name", "x");
-        com.mongodb.client.model.FindOneAndReplaceOptions options = new com.mongodb.client.model.FindOneAndReplaceOptions();
-        Document returnedDoc = new Document("name", "x");
-        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class), any(com.mongodb.client.model.FindOneAndReplaceOptions.class)))
-                .thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndReplace(filter, replacement, options);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndReplaceWithOptionsAndRowType() {
-        Document filter = new Document("id", 1);
-        Document replacement = new Document("name", "x");
-        com.mongodb.client.model.FindOneAndReplaceOptions options = new com.mongodb.client.model.FindOneAndReplaceOptions();
-        Document returnedDoc = new Document("name", "x");
-        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class), any(com.mongodb.client.model.FindOneAndReplaceOptions.class)))
-                .thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndReplace(filter, replacement, options, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndDeleteWithRowType() {
-        Document filter = new Document("id", 1);
-        Document returnedDoc = new Document("id", 1);
-        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndDelete(filter, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndDeleteWithOptions() {
-        Document filter = new Document("id", 1);
-        com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
-        Document returnedDoc = new Document("id", 1);
-        when(mockCollection.findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class))).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndDelete(filter, options);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndDeleteWithOptionsAndRowType() {
-        Document filter = new Document("id", 1);
-        com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
-        Document returnedDoc = new Document("id", 1);
-        when(mockCollection.findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class))).thenReturn(returnedDoc);
-
-        Document result = executor.findOneAndDelete(filter, options, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndDeleteNullFilterThrows() {
-        // Regression: a null filter must be rejected with IllegalArgumentException (as documented and as every
-        // sibling deleteOne/deleteMany/findOneAndUpdate/findOneAndReplace does). Before the fix the null filter
-        // was passed straight to the driver, which omits the query from the findAndModify command and silently
-        // deletes an arbitrary document. The driver must NOT be invoked.
-        final com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, Document.class));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options, Document.class));
-
-        verify(mockCollection, never()).findOneAndDelete(any(Bson.class));
-        verify(mockCollection, never()).findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class));
-    }
-
-    // ---- distinct/update/delete/get with collection projection ----
-
-    @Test
-    public void testDistinctWithFilter() {
-        String fieldName = "category";
-        Document filter = new Document("active", true);
-        when(mockCollection.distinct(eq(fieldName), eq(filter), eq(String.class))).thenReturn(mock());
-
-        Stream<String> result = executor.distinct(fieldName, filter, String.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testGetWithSelectPropNamesAndRowType() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
-        when(mockFindIterable.first()).thenReturn(doc);
-
-        Optional<TestEntity> result = executor.get(objectId, Arrays.asList("name"), TestEntity.class);
-        Assertions.assertTrue(result.isPresent());
-    }
-
-    @Test
-    public void testGettWithSelectPropNamesAndRowType() {
-        String objectId = "507f1f77bcf86cd799439011";
-        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
-        when(mockFindIterable.first()).thenReturn(doc);
-
-        TestEntity result = executor.gett(objectId, Arrays.asList("name"), TestEntity.class);
-        Assertions.assertNotNull(result);
-    }
-
-    // ---- toBson collection path: collection of non-Bson entities triggers conversion via MongoDBBase ----
-
-    @Test
-    public void testUpdateOneWithCollection() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateOne(any(Bson.class), anyList())).thenReturn(updateResult);
-
-        UpdateResult result = executor.updateOne(filter, updates);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testUpdateOneNormalizesPlainBsonDocumentInPipeline() {
-        Document filter = new Document("id", 1);
-        Document plainUpdate = new Document("status", "active");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateOne(eq(filter), anyList())).thenReturn(updateResult);
-
-        Assertions.assertSame(updateResult, executor.updateOne(filter, Arrays.asList(plainUpdate)));
-
-        @SuppressWarnings("rawtypes")
-        org.mockito.ArgumentCaptor<List> updatesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
-        verify(mockCollection).updateOne(eq(filter), updatesCaptor.capture());
-        Assertions.assertEquals(Arrays.asList(new Document("$set", new Document("status", "active"))), updatesCaptor.getValue());
-        Assertions.assertEquals(new Document("status", "active"), plainUpdate, "The caller's update document must remain unchanged");
-    }
-
-    @Test
-    public void testUpdateOneWithCollectionAndOptions() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        com.mongodb.client.model.UpdateOptions options = new com.mongodb.client.model.UpdateOptions();
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateOne(any(Bson.class), anyList(), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(updateResult);
-
-        UpdateResult result = executor.updateOne(filter, updates, options);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testUpdateManyWithCollection() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateMany(any(Bson.class), anyList())).thenReturn(updateResult);
-
-        UpdateResult result = executor.updateMany(filter, updates);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testUpdateManyWithCollectionAndOptions() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        com.mongodb.client.model.UpdateOptions options = new com.mongodb.client.model.UpdateOptions();
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(mockCollection.updateMany(any(Bson.class), anyList(), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(updateResult);
-
-        UpdateResult result = executor.updateMany(filter, updates, options);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testDeleteOneWithFilterAndOptions() {
-        Document filter = new Document("status", "x");
-        com.mongodb.client.model.DeleteOptions options = new com.mongodb.client.model.DeleteOptions();
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        when(mockCollection.deleteOne(any(Bson.class), any(com.mongodb.client.model.DeleteOptions.class))).thenReturn(deleteResult);
-
-        DeleteResult result = executor.deleteOne(filter, options);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testDeleteOneWithNullOptionsUsesDefaultOverload() {
-        Document filter = new Document("status", "x");
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        when(mockCollection.deleteOne(filter)).thenReturn(deleteResult);
-
-        DeleteResult result = executor.deleteOne(filter, (DeleteOptions) null);
-
-        Assertions.assertSame(deleteResult, result);
-        verify(mockCollection).deleteOne(filter);
-        verify(mockCollection, times(0)).deleteOne(any(Bson.class), any(DeleteOptions.class));
-    }
-
-    @Test
-    public void testDeleteManyWithFilterAndOptions() {
-        Document filter = new Document("status", "x");
-        com.mongodb.client.model.DeleteOptions options = new com.mongodb.client.model.DeleteOptions();
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        when(mockCollection.deleteMany(any(Bson.class), any(com.mongodb.client.model.DeleteOptions.class))).thenReturn(deleteResult);
-
-        DeleteResult result = executor.deleteMany(filter, options);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testDeleteManyWithNullOptionsUsesDefaultOverload() {
-        Document filter = new Document("status", "x");
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        when(mockCollection.deleteMany(filter)).thenReturn(deleteResult);
-
-        DeleteResult result = executor.deleteMany(filter, (DeleteOptions) null);
-
-        Assertions.assertSame(deleteResult, result);
-        verify(mockCollection).deleteMany(filter);
-        verify(mockCollection, times(0)).deleteMany(any(Bson.class), any(DeleteOptions.class));
-    }
-
-    @Test
-    public void testWatchWithPipeline() {
-        List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
-        when(mockCollection.watch(pipeline)).thenReturn(changeStream);
-
-        ChangeStreamIterable<Document> result = executor.watch(pipeline);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testWatchWithPipelineAndRowType() {
-        List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
-        when(mockCollection.watch(pipeline, Document.class)).thenReturn(changeStream);
-
-        ChangeStreamIterable<Document> result = executor.watch(pipeline, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    // ========= Additional coverage targeting residual gaps =========
-
-    @Test
-    public void testUpdateOneWrapsEntityUpdateInSet() {
-        Document filter = new Document("id", 1);
-        TestEntity entity = new TestEntity();
-        entity.setName("x");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
-        executor.updateOne(filter, entity);
-        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
-        Assertions.assertTrue(updateCaptor.getValue() instanceof Document);
-        Assertions.assertTrue(((Document) updateCaptor.getValue()).containsKey("$set"));
-    }
-
-    @Test
-    public void testListRejectsNegativeOffset() {
-        Document filter = new Document("status", "active");
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(filter, -1, 10, Document.class));
-    }
-
-    @Test
-    public void testListRejectsNegativeCount() {
-        Document filter = new Document("status", "active");
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(filter, 0, -1, Document.class));
-    }
-
-    @Test
-    public void testListWithPositiveOffsetCallsSkip() {
-        Document filter = new Document("status", "active");
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
-        executor.list(filter, 5, 10, Document.class);
-        verify(mockFindIterable).skip(5);
-        verify(mockFindIterable).limit(10);
-    }
-
-    @Test
-    public void testListWithMaxCountDoesNotCallLimitWithMaxValue() {
-        Document filter = new Document("status", "active");
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
-        executor.list(filter, 0, Integer.MAX_VALUE, Document.class);
-        verify(mockFindIterable, org.mockito.Mockito.never()).limit(Integer.MAX_VALUE);
-    }
-
-    @Test
-    public void testListWithNullFilterThrowsIAE() {
-        // A null filter is now rejected with IllegalArgumentException (it is no longer silently treated
-        // as match-all), and the driver must not be touched.
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(null, 0, 10, Document.class));
-        verify(mockCollection, org.mockito.Mockito.never()).find();
-    }
-
-    @Test
-    public void testCountWithFilterAndNullOptions() {
-        Document filter = new Document("a", 1);
-        when(mockCollection.countDocuments(any(Bson.class))).thenReturn(5L);
-        long result = executor.count(filter, null);
-        Assertions.assertEquals(5L, result);
-    }
-
-    @Test
-    public void testStreamWithDocumentClassCallsFindNoArgs() {
-        when(mockCollection.find()).thenReturn(mockFindIterable);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        Stream<Document> s = executor.stream(Document.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testStreamWithNonDocumentClassUsesToEntityMapper() {
-        when(mockCollection.find()).thenReturn(mockFindIterable);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        when(mockCursor.hasNext()).thenReturn(false);
-        Stream<TestEntity> s = executor.stream(TestEntity.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testStreamWithNullClassDoesNotCallFind() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Document>) null));
-        verify(mockCollection, org.mockito.Mockito.never()).find();
-    }
-
-    @Test
-    public void testStreamWithFilterOffsetCountAndClass() {
-        Document filter = new Document("a", 1);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        Stream<Document> s = executor.stream(filter, 0, 10, Document.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testStreamWithFilterOffsetCountAndNonDocumentClass() {
-        Document filter = new Document("a", 1);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        when(mockCursor.hasNext()).thenReturn(false);
-        Stream<TestEntity> s = executor.stream(filter, 0, 10, TestEntity.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testStreamWithSelectFilterSortAndClass() {
-        Document filter = new Document("a", 1);
-        Document sort = new Document("a", 1);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        Stream<Document> s = executor.stream(Arrays.asList("a"), filter, sort, Document.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testStreamWithSelectFilterSortOffsetCountAndClass() {
-        Document filter = new Document("a", 1);
-        Document sort = new Document("a", 1);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        Stream<Document> s = executor.stream(Arrays.asList("a"), filter, sort, 0, 10, Document.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testStreamWithProjectionFilterSortOffsetCountAndNonDocumentClass() {
-        Bson projection = com.mongodb.client.model.Projections.include("name");
-        Document filter = new Document("a", 1);
-        Document sort = new Document("a", 1);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        when(mockCursor.hasNext()).thenReturn(false);
-        Stream<TestEntity> s = executor.stream(projection, filter, sort, 0, 10, TestEntity.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testStreamWithProjectionFilterSortAndClass() {
-        Bson projection = com.mongodb.client.model.Projections.include("name");
-        Document filter = new Document("a", 1);
-        Document sort = new Document("a", 1);
-        when(mockFindIterable.iterator()).thenReturn(mockCursor);
-        Stream<Document> s = executor.stream(projection, filter, sort, Document.class);
-        Assertions.assertNotNull(s);
-        s.close();
-    }
-
-    @Test
-    public void testQueryForSingleValueWhenNoDoc() {
-        Document filter = new Document("id", 1);
-        when(mockFindIterable.first()).thenReturn(null);
-        Nullable<String> result = executor.queryForSingleValue("v", filter, String.class);
-        Assertions.assertFalse(result.isPresent());
-    }
-
-    @Test
-    public void testQueryForSingleNonNullWhenNoDoc() {
-        Document filter = new Document("id", 1);
-        when(mockFindIterable.first()).thenReturn(null);
-        Optional<String> result = executor.queryForSingleNonNull("v", filter, String.class);
-        Assertions.assertFalse(result.isPresent());
-    }
-
-    @Test
-    public void testQueryForDateBasic() {
-        Document filter = new Document("id", 1);
-        Date d = new Date();
-        Document doc = new Document("date", d);
-        when(mockFindIterable.first()).thenReturn(doc);
-        Nullable<Date> result = executor.queryForDate("date", filter);
-        Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals(d, result.get());
-    }
-
-    @Test
-    public void testQueryForDateWithSqlDateType() {
-        Document filter = new Document("id", 1);
-        Date d = new Date();
-        Document doc = new Document("date", d);
-        when(mockFindIterable.first()).thenReturn(doc);
-        Nullable<java.sql.Date> result = executor.queryForDate("date", filter, java.sql.Date.class);
-        Assertions.assertTrue(result.isPresent());
-    }
-
-    @Test
-    public void testFindFirstWithProjectionFilterSortClassEmpty() {
-        Bson projection = com.mongodb.client.model.Projections.include("name");
-        Document filter = new Document("id", 1);
-        Document sort = new Document("name", 1);
-        when(mockFindIterable.first()).thenReturn(null);
-        Optional<Document> result = executor.findFirst(projection, filter, sort, Document.class);
-        Assertions.assertFalse(result.isPresent());
-    }
-
-    @Test
-    public void testFindFirstWithProjectionFilterSortClassFound() {
-        Bson projection = com.mongodb.client.model.Projections.include("name");
-        Document filter = new Document("id", 1);
-        Document sort = new Document("name", 1);
-        Document doc = new Document("name", "x");
-        when(mockFindIterable.first()).thenReturn(doc);
-        Optional<Document> result = executor.findFirst(projection, filter, sort, Document.class);
-        Assertions.assertTrue(result.isPresent());
-    }
-
-    @Test
-    public void testUpdateOneWithFilterAndDocumentAndOptions() {
-        Document filter = new Document("id", 1);
-        Document update = new Document("$set", new Document("a", 1));
-        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
-        UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
-        UpdateResult result = executor.updateOne(filter, (Object) update, opts);
-        Assertions.assertNotNull(result);
-        verify(mockCollection).updateOne(any(Bson.class), any(Bson.class), eq(opts));
-    }
-
-    @Test
-    public void testUpdateManyWithFilterAndDocumentAndOptions() {
-        Document filter = new Document("id", 1);
-        Document update = new Document("$set", new Document("a", 1));
-        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
-        UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollection.updateMany(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
-        UpdateResult result = executor.updateMany(filter, (Object) update, opts);
-        Assertions.assertNotNull(result);
-        verify(mockCollection).updateMany(any(Bson.class), any(Bson.class), eq(opts));
-    }
-
-    @Test
-    public void testReplaceOneWithFilterAndDocumentAndOptions() {
-        Document filter = new Document("id", 1);
-        Document repl = new Document("name", "x");
-        com.mongodb.client.model.ReplaceOptions opts = new com.mongodb.client.model.ReplaceOptions();
-        UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollection.replaceOne(any(Bson.class), any(Document.class), any(com.mongodb.client.model.ReplaceOptions.class))).thenReturn(ur);
-        UpdateResult result = executor.replaceOne(filter, repl, opts);
-        Assertions.assertNotNull(result);
-        verify(mockCollection).replaceOne(any(Bson.class), any(Document.class), eq(opts));
-    }
-
-    @Test
-    public void testBulkInsertWithDocumentsAndOptions() {
-        List<Document> docs = Arrays.asList(new Document("a", 1), new Document("a", 2));
-        com.mongodb.bulk.BulkWriteResult bwr = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(bwr.getInsertedCount()).thenReturn(2);
-        com.mongodb.client.model.BulkWriteOptions opts = new com.mongodb.client.model.BulkWriteOptions();
-        when(mockCollection.bulkWrite(anyList(), any(com.mongodb.client.model.BulkWriteOptions.class))).thenReturn(bwr);
-        BulkWriteResult result = executor.bulkInsert(docs, opts);
-        Assertions.assertSame(bwr, result);
-        Assertions.assertEquals(2, result.getInsertedCount());
-    }
-
-    @Test
-    public void testBulkWriteWithRequestsAndOptions() {
-        List<WriteModel<Document>> requests = Arrays.asList(new com.mongodb.client.model.InsertOneModel<>(new Document("a", 1)));
-        BulkWriteResult bwr = mock(BulkWriteResult.class);
-        com.mongodb.client.model.BulkWriteOptions opts = new com.mongodb.client.model.BulkWriteOptions();
-        when(mockCollection.bulkWrite(anyList(), any(com.mongodb.client.model.BulkWriteOptions.class))).thenReturn(bwr);
-        BulkWriteResult result = executor.bulkWrite(requests, opts);
-        Assertions.assertSame(bwr, result);
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithCollectionOptionsAndRowType_Specific() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        com.mongodb.client.model.FindOneAndUpdateOptions opts = new com.mongodb.client.model.FindOneAndUpdateOptions();
-        Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
-        Document result = executor.findOneAndUpdate(filter, updates, opts, Document.class);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithCollectionAndRowTypeReturnsNullWhenNoDoc() {
-        Document filter = new Document("id", 1);
-        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(null);
-        Document result = executor.findOneAndUpdate(filter, updates, Document.class);
-        Assertions.assertNull(result);
-    }
-
-    @Test
-    public void testUpdateOneWithCollectionOfEntities() {
-        Document filter = new Document("id", 1);
-        TestEntity e1 = new TestEntity();
-        e1.setName("a");
-        TestEntity e2 = new TestEntity();
-        e2.setName("b");
-        List<TestEntity> updates = Arrays.asList(e1, e2);
-        UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollection.updateOne(any(Bson.class), anyList())).thenReturn(ur);
-        UpdateResult result = executor.updateOne(filter, updates);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testUpdateManyWithSetOfBson() {
-        Document filter = new Document("id", 1);
-        java.util.Set<Document> updates = new java.util.LinkedHashSet<>();
-        updates.add(new Document("$set", new Document("a", 1)));
-        UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollection.updateMany(any(Bson.class), anyList())).thenReturn(ur);
-        UpdateResult result = executor.updateMany(filter, updates);
-        Assertions.assertNotNull(result);
-    }
-
-    @Test
-    public void testInsertManyWithSetOfDocuments() {
-        java.util.Set<Document> docs = new java.util.LinkedHashSet<>();
-        docs.add(new Document("a", 1));
-        docs.add(new Document("a", 2));
-        executor.insertMany(docs);
-        verify(mockCollection).insertMany(anyList());
-    }
-
-    @Test
-    public void testInsertManyWithEntities() {
-        TestEntity e1 = new TestEntity();
-        e1.setName("a");
-        TestEntity e2 = new TestEntity();
-        e2.setName("b");
-        List<TestEntity> entities = Arrays.asList(e1, e2);
-        executor.insertMany(entities);
-        verify(mockCollection).insertMany(anyList());
-    }
-
-    @Test
-    public void testBulkInsertWithEntities() {
-        TestEntity e1 = new TestEntity();
-        e1.setName("a");
-        com.mongodb.bulk.BulkWriteResult bwr = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(bwr.getInsertedCount()).thenReturn(1);
-        when(mockCollection.bulkWrite(anyList())).thenReturn(bwr);
-        BulkWriteResult result = executor.bulkInsert(Arrays.asList(e1));
-        Assertions.assertSame(bwr, result);
-        Assertions.assertEquals(1, result.getInsertedCount());
-    }
-
-    @Test
-    public void testFindOneAndDeleteReturnsNullWhenNoDoc() {
-        Document filter = new Document();
-        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(null);
-        Document r = executor.findOneAndDelete(filter, Document.class);
-        Assertions.assertNull(r);
-    }
-
-    @Test
-    public void testFindFirstWithSelectFilterSortAndClassEmpty() {
-        Document filter = new Document();
-        Document sort = new Document();
-        when(mockFindIterable.first()).thenReturn(null);
-        Optional<Document> r = executor.findFirst(Arrays.asList("a"), filter, sort, Document.class);
-        Assertions.assertFalse(r.isPresent());
-    }
-
-    @Test
-    public void testUpdateOneWithFilterAndEntityAndOptions() {
-        Document filter = new Document();
-        TestEntity e = new TestEntity();
-        e.setName("x");
-        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
-        UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
-        UpdateResult r = executor.updateOne(filter, e, opts);
-        Assertions.assertSame(ur, r);
-    }
-
-    @Test
-    public void testUpdateManyWithFilterAndEntityAndOptions() {
-        Document filter = new Document();
-        TestEntity e = new TestEntity();
-        e.setName("x");
-        com.mongodb.client.model.UpdateOptions opts = new com.mongodb.client.model.UpdateOptions();
-        UpdateResult ur = mock(UpdateResult.class);
-        when(mockCollection.updateMany(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(ur);
-        UpdateResult r = executor.updateMany(filter, e, opts);
-        Assertions.assertSame(ur, r);
-    }
-
-    @Test
-    public void testQueryForSingleValueWithMatchedDocAndNonNullValue() {
-        Document filter = new Document("id", 1);
-        Document doc = new Document("v", 42);
-        when(mockFindIterable.first()).thenReturn(doc);
-        Nullable<Integer> r = executor.queryForSingleValue("v", filter, Integer.class);
-        Assertions.assertTrue(r.isPresent());
-        Assertions.assertEquals(42, r.get());
-    }
-
-    @Test
-    public void testQueryForSingleNonNullWithMatchedDocAndNonNullValue() {
-        Document filter = new Document("id", 1);
-        Document doc = new Document("v", 42);
-        when(mockFindIterable.first()).thenReturn(doc);
-        Optional<Integer> r = executor.queryForSingleNonNull("v", filter, Integer.class);
-        Assertions.assertTrue(r.isPresent());
-        Assertions.assertEquals(42, r.get());
-    }
-
-    private static class TestEntity {
-        private String id;
-        private String name;
-
-        public String getId() {
-            return id;
-        }
-
-        public void setId(String id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        public void setName(String name) {
-            this.name = name;
-        }
-    }
-
-    // ========= Regression: null update/replacement must throw IllegalArgumentException (documented), not NPE =========
-
-    @Test
-    public void testUpdateOneWithNullUpdateThrowsIAE() {
-        Document filter = new Document("id", 1);
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, (Object) null));
-    }
-
-    @Test
-    public void testUpdateManyWithNullUpdateThrowsIAE() {
-        Document filter = new Document("id", 1);
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, (Object) null));
-    }
-
-    @Test
-    public void testReplaceOneWithNullReplacementThrowsIAE() {
-        Document filter = new Document("id", 1);
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.replaceOne(filter, (Object) null));
-    }
-
-    @Test
-    public void testFindOneAndUpdateWithNullUpdateThrowsIAE() {
-        Document filter = new Document("id", 1);
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, (Object) null));
-    }
-
-    @Test
-    public void testFindOneAndReplaceWithNullReplacementThrowsIAE() {
-        Document filter = new Document("id", 1);
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, (Object) null));
     }
 
     @Test
@@ -1954,6 +2135,383 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testReplaceOneWithFilterAndDocumentAndOptions() {
+        Document filter = new Document("id", 1);
+        Document repl = new Document("name", "x");
+        com.mongodb.client.model.ReplaceOptions opts = new com.mongodb.client.model.ReplaceOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollection.replaceOne(any(Bson.class), any(Document.class), any(com.mongodb.client.model.ReplaceOptions.class))).thenReturn(ur);
+        UpdateResult result = executor.replaceOne(filter, repl, opts);
+        Assertions.assertNotNull(result);
+        verify(mockCollection).replaceOne(any(Bson.class), any(Document.class), eq(opts));
+    }
+
+    @Test
+    public void testSingleValueQueriesRejectNullValueTypeBeforeQuery() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("name", new Document("active", true), null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull("name", new Document("active", true), null));
+
+        verify(mockCollection, never()).find(any(Bson.class));
+    }
+
+    @Test
+    public void testStream() {
+        when(mockCollection.find()).thenReturn(mockFindIterable);
+
+        Stream<Document> result = executor.stream();
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testStreamRejectsNullRowTypeBeforeOpeningCursor() {
+        // Regression: previously, stream(null) would open a cursor and then throw NPE on
+        // `rowType.isAssignableFrom(...)`, leaking the cursor. The contract says null rowType
+        // must throw IllegalArgumentException, and no cursor should be opened.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Document>) null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find();
+    }
+
+    @Test
+    public void testStreamWithBsonProjectionRejectsNullRowTypeBeforeOpeningCursor() {
+        // Regression: cursor-leak fix for the Bson-projection stream overload.
+        final Bson projection = com.mongodb.client.model.Projections.include("name");
+        final Bson filter = new Document("status", "active");
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream(projection, filter, (Bson) null, 0, 10, (Class<Document>) null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+        verify(mockCollection, org.mockito.Mockito.never()).find();
+    }
+
+    @Test
+    public void testStreamWithBsonProjectionFilterSort() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(projection, filter, sort, Document.class);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    @Test
+    public void testStreamWithCollectionProjectionRejectsNullRowTypeBeforeOpeningCursor() {
+        // Regression: cursor-leak fix for the multi-arg stream overload.
+        final Collection<String> selectPropNames = java.util.Collections.singletonList("name");
+        final Document filter = new Document("status", "active");
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream(selectPropNames, filter, (Bson) null, 0, 10, (Class<Document>) null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+        verify(mockCollection, org.mockito.Mockito.never()).find();
+    }
+
+    @Test
+    public void testStreamWithDocumentClassCallsFindNoArgs() {
+        when(mockCollection.find()).thenReturn(mockFindIterable);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        Stream<Document> s = executor.stream(Document.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    @Test
+    public void testStreamWithFilter() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(filter);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    @Test
+    public void testStreamWithFilterAndRowType() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(filter, Document.class);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    @Test
+    public void testStreamWithObjectRowTypeReturnsRawDocuments() {
+        final Document row = new Document("_id", new ObjectId()).append("a", 1).append("b", 2);
+        when(mockCollection.find()).thenReturn(mockFindIterable);
+        when(mockCursor.hasNext()).thenReturn(true, false);
+        when(mockCursor.next()).thenReturn(row);
+
+        try (Stream<Object> stream = executor.stream(Object.class)) {
+            Assertions.assertSame(row, stream.first().get());
+        }
+    }
+
+    @Test
+    public void testStreamWithProjectionFilterSortAndClass() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        Stream<Document> s = executor.stream(projection, filter, sort, Document.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    @Test
+    public void testStreamWithRowType() {
+        when(mockCollection.find()).thenReturn(mockFindIterable);
+
+        Stream<Document> result = executor.stream(Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testStreamWithSelectFilterSortAndClass() {
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+        Stream<Document> s = executor.stream(Arrays.asList("a"), filter, sort, Document.class);
+        Assertions.assertNotNull(s);
+        s.close();
+    }
+
+    @Test
+    public void testStreamWithSelectPropNamesAndFilter() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(Arrays.asList("name"), filter, Document.class);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    @Test
+    public void testTypedFindAndModifyWithDocumentAssignableRowTypeReturnsRawDocument() {
+        // Regression: findOneAndUpdate/findOneAndReplace/findOneAndDelete(..., Object.class) threw
+        // IllegalArgumentException for a multi-field document via readRow's scalar fallback.
+        final Document filter = new Document("id", 1);
+        final Document update = new Document("$set", new Document("a", 1));
+        final Document returnedDoc = new Document("_id", new ObjectId()).append("a", 1).append("b", 2);
+
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(returnedDoc);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(returnedDoc);
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class))).thenReturn(returnedDoc);
+        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(returnedDoc);
+
+        Assertions.assertSame(returnedDoc, executor.findOneAndUpdate(filter, update, Object.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndUpdate(filter, Arrays.asList(update), Object.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndReplace(filter, new Document("a", 1), Bson.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndDelete(filter, java.util.Map.class));
+        Assertions.assertSame(returnedDoc, executor.findOneAndDelete(filter, Document.class));
+    }
+
+    // Resource lifecycle
+
+    @Test
+    public void testScalarQueriesPreserveNumericOverflowFailures() {
+        final Document row = new Document("value", Long.MAX_VALUE);
+        final Bson filter = new Document();
+        when(mockFindIterable.first()).thenReturn(row);
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForInt("value", filter));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForSingleValue("value", filter, Integer.class));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForSingleNonNull("value", filter, Integer.class));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.findFirst(Arrays.asList("value"), filter, Integer.class));
+        Assertions.assertThrows(ArithmeticException.class, () -> executor.list(Arrays.asList("value"), filter, Integer.class));
+    }
+
+    // Additional contracts
+
+    @Test
+    public void testAsync() {
+        AsyncMongoCollectionExecutor asyncExecutor = executor.async();
+        Assertions.assertNotNull(asyncExecutor);
+    }
+
+    @Test
+    public void testBinaryScalarQueriesPreserveReadablePayloads() {
+        final byte[] bytes = { 1, 2, 3 };
+        final ByteBuffer expected = ByteBuffer.wrap(bytes);
+        final Bson filter = new Document();
+
+        for (final Object value : new Object[] { bytes, new Binary(bytes) }) {
+            final Document row = new Document("value", value);
+            when(mockFindIterable.first()).thenReturn(row);
+            when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+            Assertions.assertEquals(expected, executor.queryForSingleValue("value", filter, ByteBuffer.class).get());
+            Assertions.assertEquals(expected, executor.queryForSingleNonNull("value", filter, ByteBuffer.class).get());
+            Assertions.assertEquals(expected, executor.findFirst(Arrays.asList("value"), filter, ByteBuffer.class).get());
+            Assertions.assertEquals(Arrays.asList(expected), executor.list(Arrays.asList("value"), filter, ByteBuffer.class));
+
+            when(mockCursor.hasNext()).thenReturn(true, false);
+            when(mockCursor.next()).thenReturn(row);
+            try (Stream<ByteBuffer> stream = executor.stream(Arrays.asList("value"), filter, ByteBuffer.class)) {
+                Assertions.assertEquals(Arrays.asList(expected), stream.toList());
+            }
+        }
+    }
+
+    @Test
+    public void testBulkWrite() {
+        List<WriteModel<Document>> requests = Arrays.asList(mock(WriteModel.class));
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(mockCollection.bulkWrite(requests)).thenReturn(bulkWriteResult);
+
+        BulkWriteResult result = executor.bulkWrite(requests);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testBulkWriteRejectsEmptyRequests() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(List.of()));
+    }
+
+    @Test
+    public void testBulkWriteRejectsNullRequests() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(null));
+    }
+
+    @Test
+    public void testBulkWriteWithRequestsAndOptions() {
+        List<WriteModel<Document>> requests = Arrays.asList(new com.mongodb.client.model.InsertOneModel<>(new Document("a", 1)));
+        BulkWriteResult bwr = mock(BulkWriteResult.class);
+        com.mongodb.client.model.BulkWriteOptions opts = new com.mongodb.client.model.BulkWriteOptions();
+        when(mockCollection.bulkWrite(anyList(), any(com.mongodb.client.model.BulkWriteOptions.class))).thenReturn(bwr);
+        BulkWriteResult result = executor.bulkWrite(requests, opts);
+        Assertions.assertSame(bwr, result);
+    }
+
+    @Test
+    public void testColl() {
+        MongoCollection<Document> result = executor.coll();
+        Assertions.assertSame(mockCollection, result);
+    }
+
+    @Test
+    public void testDriverFactoriesRejectNullArgumentsBeforeOpeningPublishersOrCursors() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch((Class<Document>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch((List<? extends Bson>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch(List.of(), null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.distinct("category", (Class<String>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.aggregate(null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("", "function(k, v) { return 1; }", Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("function() { emit(1, 1); }", "", Document.class));
+
+        verify(mockCollection, never()).watch((Class<Document>) any());
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME() {
+        // A document with one non-_id field read as a single value goes through readRow/toList's scalar conversion.
+        final MongoCollectionExecutor dayExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(dayDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("day", 1)));
+
+        Assertions.assertAll(() -> Assertions.assertEquals(Arrays.asList(LOCAL_DAY_coverageME), dayExec.list(filter, java.time.LocalDate.class), "list"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dayExec.findFirst(filter, java.time.LocalDate.class).get(), "findFirst"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(dayExec.stream(filter, java.time.LocalDate.class)), "stream"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(dayExec.aggregate(pipeline, java.time.LocalDate.class)), "aggregate"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dayExec.findOneAndDelete(filter, java.time.LocalDate.class), "findOneAndDelete"));
+    }
+
+    @Test
+    public void testLocalJavaTimeSingleValuesAreReadInUtcOnEveryReadPath_coverageME() {
+        // convertBsonValue: a BSON date requested as LocalDate/LocalDateTime/LocalTime is read in UTC like the driver's codecs
+        // write it (HEAD used the JVM zone: a LocalDate came back as the previous day west of UTC). The single-field-row paths
+        // are in testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME.
+        final MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(entityDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<String> day = Arrays.asList("day");
+
+        Assertions.assertAll(
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.queryForSingleValue("day", filter, java.time.LocalDate.class).get(),
+                        "queryForSingleValue LocalDate"),
+                () -> Assertions.assertEquals(LOCAL_AT_coverageME, exec.queryForSingleValue("at", filter, java.time.LocalDateTime.class).get(),
+                        "queryForSingleValue LocalDateTime"),
+                () -> Assertions.assertEquals(LOCAL_TIME_coverageME, exec.queryForSingleValue("time", filter, java.time.LocalTime.class).get(),
+                        "queryForSingleValue LocalTime"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.queryForSingleNonNull("day", filter, java.time.LocalDate.class).get(),
+                        "queryForSingleNonNull"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.findFirst(day, filter, java.time.LocalDate.class).get(), "findFirst(Collection)"),
+                () -> Assertions.assertEquals(Arrays.asList(LOCAL_DAY_coverageME), exec.list(day, filter, java.time.LocalDate.class), "list(Collection)"),
+                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(exec.stream(day, filter, java.time.LocalDate.class)),
+                        "stream(Collection)"),
+                // Previous behavior kept: other date targets keep the instant.
+                () -> Assertions.assertEquals(DAY_coverageME, exec.queryForSingleValue("day", filter, Date.class).get(), "Date"),
+                () -> Assertions.assertEquals(DAY_coverageME.toInstant(), exec.queryForSingleValue("day", filter, java.time.Instant.class).get(), "Instant"));
+    }
+
+    @Test
+    public void testMapReduce() {
+        String mapFunction = "function() { emit(this.name, 1); }";
+        String reduceFunction = "function(key, values) { return Array.sum(values); }";
+        when(mockCollection.mapReduce(mapFunction, reduceFunction, Document.class)).thenReturn(mock());
+
+        Stream<Document> result = executor.mapReduce(mapFunction, reduceFunction);
+        Assertions.assertNotNull(result);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMapReduceWithDocumentAssignableRowTypeReturnsRawDocuments() {
+        final com.mongodb.client.MapReduceIterable<Document> mapReduceIterable = mock(com.mongodb.client.MapReduceIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+        final Document row = new Document("_id", "sales").append("value", 2).append("extra", "x");
+
+        when(mockCollection.mapReduce(any(String.class), any(String.class), eq(Document.class))).thenReturn(mapReduceIterable);
+        when(mapReduceIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(row);
+
+        final List<java.util.Map> rows = executor
+                .mapReduce("function() { emit(this.name, 1); }", "function(k, v) { return Array.sum(v); }", java.util.Map.class)
+                .toList();
+
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertSame(row, rows.get(0));
+    }
+
+    @Test
+    public void testRecordRowsOnEveryReadPath_coverageME() {
+        // Records: every value converted to its component type (int32 -> Long, List<Integer> -> List<Long>, Date -> LocalDate
+        // in UTC) and the ObjectId _id passed as the String id component; HEAD failed with "argument type mismatch".
+        final MongoCollectionExecutor recordExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(recordDoc_coverageME()), mockAsyncExecutor);
+        final Bson filter = new Document();
+        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        final Class<E2eRecord_coverageME> recordType = E2eRecord_coverageME.class;
+        final E2eRecord_coverageME expected = expectedRecord_coverageME();
+
+        Assertions.assertAll(() -> Assertions.assertEquals(expected, recordExec.list(filter, recordType).get(0), "list"),
+                () -> Assertions.assertEquals(expected, recordExec.findFirst(filter, recordType).get(), "findFirst"),
+                () -> Assertions.assertEquals(expected, recordExec.get(OID_HEX_coverageME, recordType).get(), "get(String)"),
+                () -> Assertions.assertEquals(expected, firstOf_coverageME(recordExec.stream(filter, recordType)), "stream"),
+                () -> Assertions.assertEquals(expected, firstOf_coverageME(recordExec.aggregate(pipeline, recordType)), "aggregate"),
+                () -> Assertions.assertEquals(expected, recordExec.findOneAndDelete(filter, recordType), "findOneAndDelete"),
+                () -> Assertions.assertEquals(Arrays.asList(4L), recordExec.query(filter, recordType).getColumn("nums").get(0), "query Dataset"));
+    }
+
+    @Test
+    public void testReplaceOne() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document replacement = new Document("name", "replaced");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.replaceOne(any(), any())).thenReturn(updateResult);
+
+        UpdateResult result = executor.replaceOne(objectId, replacement);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testReplaceOneWithNullReplacementThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.replaceOne(filter, (Object) null));
+    }
+
+    @Test
     public void testTypedReadAndModifyMethodsRejectNullRowTypeWithIAE() {
         // Regression: findFirst/get/gett, the Dataset query(..., Class) overloads, the typed
         // findOneAndUpdate/findOneAndReplace/findOneAndDelete overloads, and mapReduce(map, reduce,
@@ -1987,363 +2545,63 @@ public class MongoCollectionExecutorTest extends TestBase {
         Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("function(){}", "function(k,v){}", null));
     }
 
-    // ========= Regression: entity/Map update payloads must not carry the immutable _id into $set =========
-
     @Test
-    public void testUpdateManyWithEntityPayloadStripsIdFromSet() {
-        // Regression: the immutable _id is stripped from the converted update document. Previously the
-        // generated {$set: {_id: ..., ...}} failed server-side for every matched document whose _id differs.
-        Document filter = new Document("status", "active");
-        TestEntity entity = new TestEntity();
-        entity.setId("507f1f77bcf86cd799439011");
-        entity.setName("alice");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockCollection.updateMany(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+    public void testWatch() {
+        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
+        when(mockCollection.watch()).thenReturn(changeStream);
 
-        executor.updateMany(filter, entity);
-
-        verify(mockCollection).updateMany(any(Bson.class), updateCaptor.capture());
-        Document captured = (Document) updateCaptor.getValue();
-        Assertions.assertTrue(captured.containsKey("$set"));
-        Document setDoc = (Document) captured.get("$set");
-        Assertions.assertFalse(setDoc.containsKey("_id"));
-        Assertions.assertEquals("alice", setDoc.get("name"));
+        ChangeStreamIterable<Document> result = executor.watch();
+        Assertions.assertNotNull(result);
     }
 
     @Test
-    public void testUpdateOneWithMapPayloadStripsIdFromSet() {
-        Document filter = new Document("status", "active");
-        java.util.Map<String, Object> update = new java.util.HashMap<>();
-        update.put("_id", new ObjectId());
-        update.put("name", "bob");
-        UpdateResult updateResult = mock(UpdateResult.class);
-        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+    public void testWatchWithPipeline() {
+        List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
+        when(mockCollection.watch(pipeline)).thenReturn(changeStream);
 
-        executor.updateOne(filter, update);
-
-        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
-        Document captured = (Document) updateCaptor.getValue();
-        Assertions.assertTrue(captured.containsKey("$set"));
-        Document setDoc = (Document) captured.get("$set");
-        Assertions.assertFalse(setDoc.containsKey("_id"));
-        Assertions.assertEquals("bob", setDoc.get("name"));
+        ChangeStreamIterable<Document> result = executor.watch(pipeline);
+        Assertions.assertNotNull(result);
     }
 
     @Test
-    public void testUpdateOneWithEmptyMapPayloadThrowsIAE() {
-        // This executor rejects an empty plain-object update before calling the driver, even though
-        // MongoDB 5.0+ accepts an empty $set operand as a no-op.
-        Document filter = new Document("status", "active");
+    public void testWatchWithPipelineAndRowType() {
+        List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
+        when(mockCollection.watch(pipeline, Document.class)).thenReturn(changeStream);
 
-        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> executor.updateOne(filter, new java.util.HashMap<String, Object>()));
-
-        Assertions.assertTrue(ex.getMessage().contains("empty"));
-        verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
+        ChangeStreamIterable<Document> result = executor.watch(pipeline, Document.class);
+        Assertions.assertNotNull(result);
     }
 
     @Test
-    public void testUpdateManyWithEntityOnlyIdPayloadThrowsIAE() {
-        // An entity whose only non-null property is the id converts to {_id: ...}; once the immutable
-        // _id is stripped, the payload is empty and must be rejected before reaching the server.
-        Document filter = new Document("status", "active");
-        TestEntity entity = new TestEntity();
-        entity.setId("507f1f77bcf86cd799439011");
+    public void testWatchWithRowType() {
+        ChangeStreamIterable<TestEntity> changeStream = mock(ChangeStreamIterable.class);
+        when(mockCollection.watch(TestEntity.class)).thenReturn(changeStream);
 
-        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, entity));
-
-        Assertions.assertTrue(ex.getMessage().contains("empty"));
-        verify(mockCollection, never()).updateMany(any(Bson.class), any(Bson.class));
+        ChangeStreamIterable<TestEntity> result = executor.watch(TestEntity.class);
+        Assertions.assertNotNull(result);
     }
 
-    // ========= Regression: dotted property paths in queryForSingleValue =========
+    private static class TestEntity {
+        private String id;
+        private String name;
 
-    @Test
-    public void testQueryForSingleValueWithDottedPathReadsNestedValue() {
-        // Regression: a dotted path like "address.city" is a valid projection; the server returns
-        // {address: {city: ...}}. Previously the flat doc.get("address.city") lookup yielded a
-        // present-but-null result; the nested value must be resolved.
-        Document filter = new Document("id", 1);
-        Document doc = new Document("address", new Document("city", "Berlin"));
-        when(mockFindIterable.first()).thenReturn(doc);
-
-        Nullable<String> result = executor.queryForSingleValue("address.city", filter, String.class);
-
-        Assertions.assertTrue(result.isPresent());
-        Assertions.assertEquals("Berlin", result.get());
-    }
-
-    // ========= Regression: aggregate/groupBy reject a null rowType eagerly =========
-
-    @Test
-    public void testAggregateWithNullRowTypeThrowsIAE() {
-        // Regression: a null rowType is now rejected eagerly with IllegalArgumentException, before any
-        // aggregation cursor is opened.
-        List<Document> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.aggregate(pipeline, (Class<Document>) null));
-
-        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
-    }
-
-    @Test
-    public void testGroupByWithNullRowTypeThrowsIAE() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupBy("category", (Class<Document>) null));
-
-        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
-    }
-
-    @Test
-    public void testListSingleDottedProjectionReadsNestedScalarValue() {
-        // A projection of "address.city" is returned as {address: {city: ...}}. Treating the
-        // top-level address document as the scalar produced a JSON-like String instead of "Berlin".
-        Document filter = new Document("active", true);
-        Document row = new Document("_id", new ObjectId()).append("address", new Document("city", "Berlin"));
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
-
-        List<String> result = executor.list(Arrays.asList("address.city"), filter, String.class);
-
-        Assertions.assertEquals(Arrays.asList("Berlin"), result);
-    }
-
-    @Test
-    public void testListSingleMissingProjectionDoesNotReturnImplicitId() {
-        Document filter = new Document("active", true);
-        Document row = new Document("_id", new ObjectId());
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
-
-        List<String> result = executor.list(Arrays.asList("nickname"), filter, String.class);
-
-        Assertions.assertEquals(Arrays.asList((String) null), result);
-    }
-
-    @Test
-    public void testListSingleProjectionPreservesRawDocumentForDocumentSupertypes() {
-        Document filter = new Document("active", true);
-        Document row = new Document("name", "alice");
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
-
-        List<Object> objects = executor.list(Arrays.asList("name"), filter, Object.class);
-        List<Bson> bsons = executor.list(Arrays.asList("name"), filter, Bson.class);
-
-        Assertions.assertSame(row, objects.get(0));
-        Assertions.assertSame(row, bsons.get(0));
-    }
-
-    @Test
-    public void testUpdateRejectsMixedOperatorAndOrdinaryFieldsBeforeDriverCall() {
-        Document filter = new Document("active", true);
-        Document invalidUpdate = new Document("$set", new Document("name", "alice")).append("status", "active");
-        com.mongodb.BasicDBObject reversedInvalidUpdate = new com.mongodb.BasicDBObject("status", "active").append("$set",
-                new com.mongodb.BasicDBObject("name", "alice"));
-
-        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, invalidUpdate));
-
-        Assertions.assertTrue(ex.getMessage().contains("cannot mix"));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, reversedInvalidUpdate));
-        verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
-    }
-
-    @SuppressWarnings({ "rawtypes", "unchecked" })
-    @Test
-    public void testInsertManyPreservesDocumentInstancesInHeterogeneousBatch() {
-        // The driver populates generated _id values into the supplied Document. A mixed batch used
-        // to copy that Document while converting the non-Document rows, so the caller never saw it.
-        Document callerDocument = new Document("name", "document-row");
-        List<Object> rows = Arrays.asList(callerDocument, java.util.Map.of("name", "map-row"));
-        InsertManyResult insertResult = mock(InsertManyResult.class);
-        org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
-        when(mockCollection.insertMany(anyList())).thenReturn(insertResult);
-
-        executor.insertMany(rows);
-
-        verify(mockCollection).insertMany(captor.capture());
-        Assertions.assertSame(callerDocument, captor.getValue().get(0));
-        Assertions.assertTrue(captor.getValue().get(1) instanceof Document);
-    }
-
-    @Test
-    public void testSingleValueQueriesRejectNullValueTypeBeforeQuery() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("name", new Document("active", true), null));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull("name", new Document("active", true), null));
-
-        verify(mockCollection, never()).find(any(Bson.class));
-    }
-
-    @Test
-    public void testDriverFactoriesRejectNullArgumentsBeforeOpeningPublishersOrCursors() {
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch((Class<Document>) null));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch((List<? extends Bson>) null));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch(List.of(), null));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.distinct("category", (Class<String>) null));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.aggregate(null, Document.class));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("", "function(k, v) { return 1; }", Document.class));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("function() { emit(1, 1); }", "", Document.class));
-
-        verify(mockCollection, never()).watch((Class<Document>) any());
-        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
-    }
-
-    @Test
-    public void testScalarQueriesPreserveNumericOverflowFailures() {
-        final Document row = new Document("value", Long.MAX_VALUE);
-        final Bson filter = new Document();
-        when(mockFindIterable.first()).thenReturn(row);
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
-
-        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForInt("value", filter));
-        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForSingleValue("value", filter, Integer.class));
-        Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForSingleNonNull("value", filter, Integer.class));
-        Assertions.assertThrows(ArithmeticException.class, () -> executor.findFirst(Arrays.asList("value"), filter, Integer.class));
-        Assertions.assertThrows(ArithmeticException.class, () -> executor.list(Arrays.asList("value"), filter, Integer.class));
-    }
-
-    @Test
-    public void testBinaryScalarQueriesPreserveReadablePayloads() {
-        final byte[] bytes = { 1, 2, 3 };
-        final ByteBuffer expected = ByteBuffer.wrap(bytes);
-        final Bson filter = new Document();
-
-        for (final Object value : new Object[] { bytes, new Binary(bytes) }) {
-            final Document row = new Document("value", value);
-            when(mockFindIterable.first()).thenReturn(row);
-            when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
-
-            Assertions.assertEquals(expected, executor.queryForSingleValue("value", filter, ByteBuffer.class).get());
-            Assertions.assertEquals(expected, executor.queryForSingleNonNull("value", filter, ByteBuffer.class).get());
-            Assertions.assertEquals(expected, executor.findFirst(Arrays.asList("value"), filter, ByteBuffer.class).get());
-            Assertions.assertEquals(Arrays.asList(expected), executor.list(Arrays.asList("value"), filter, ByteBuffer.class));
-
-            when(mockCursor.hasNext()).thenReturn(true, false);
-            when(mockCursor.next()).thenReturn(row);
-            try (Stream<ByteBuffer> stream = executor.stream(Arrays.asList("value"), filter, ByteBuffer.class)) {
-                Assertions.assertEquals(Arrays.asList(expected), stream.toList());
-            }
+        public String getId() {
+            return id;
         }
-    }
 
-    @SuppressWarnings("unchecked")
-    @Test
-    public void testAggregateWithDocumentAssignableRowTypeReturnsRawDocuments() {
-        // Regression: aggregate(pipeline, Object.class) sent every row through readRow's scalar fallback,
-        // which throws for a multi-field row and silently dropped _id for a single-field row. Result types
-        // that can hold a Document (Object, Bson, Map, Document) must receive the raw row, matching
-        // list/stream/findFirst.
-        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
-        final MongoCursor<Document> cursor = mock(MongoCursor.class);
-        final Document row = new Document("_id", "sales").append("count", 2).append("region", "east");
-        final List<Document> pipeline = Arrays.asList(new Document("$group", new Document("_id", "$department")));
-
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
-        when(aggregateIterable.iterator()).thenReturn(cursor);
-        when(cursor.hasNext()).thenReturn(true, false);
-        when(cursor.next()).thenReturn(row);
-
-        final List<Object> objects = executor.aggregate(pipeline, Object.class).toList();
-
-        Assertions.assertEquals(1, objects.size());
-        Assertions.assertSame(row, objects.get(0));
-
-        when(cursor.hasNext()).thenReturn(true, false);
-        final List<Bson> bsons = executor.aggregate(pipeline, Bson.class).toList();
-        Assertions.assertSame(row, bsons.get(0));
-
-        when(cursor.hasNext()).thenReturn(true, false);
-        final List<Document> documents = executor.aggregate(pipeline, Document.class).toList();
-        Assertions.assertSame(row, documents.get(0));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    public void testMapReduceWithDocumentAssignableRowTypeReturnsRawDocuments() {
-        final com.mongodb.client.MapReduceIterable<Document> mapReduceIterable = mock(com.mongodb.client.MapReduceIterable.class);
-        final MongoCursor<Document> cursor = mock(MongoCursor.class);
-        final Document row = new Document("_id", "sales").append("value", 2).append("extra", "x");
-
-        when(mockCollection.mapReduce(any(String.class), any(String.class), eq(Document.class))).thenReturn(mapReduceIterable);
-        when(mapReduceIterable.iterator()).thenReturn(cursor);
-        when(cursor.hasNext()).thenReturn(true, false);
-        when(cursor.next()).thenReturn(row);
-
-        final List<java.util.Map> rows = executor.mapReduce("function() { emit(this.name, 1); }", "function(k, v) { return Array.sum(v); }", java.util.Map.class)
-                .toList();
-
-        Assertions.assertEquals(1, rows.size());
-        Assertions.assertSame(row, rows.get(0));
-    }
-
-    @Test
-    public void testTypedFindAndModifyWithDocumentAssignableRowTypeReturnsRawDocument() {
-        // Regression: findOneAndUpdate/findOneAndReplace/findOneAndDelete(..., Object.class) threw
-        // IllegalArgumentException for a multi-field document via readRow's scalar fallback.
-        final Document filter = new Document("id", 1);
-        final Document update = new Document("$set", new Document("a", 1));
-        final Document returnedDoc = new Document("_id", new ObjectId()).append("a", 1).append("b", 2);
-
-        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(returnedDoc);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(returnedDoc);
-        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class))).thenReturn(returnedDoc);
-        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(returnedDoc);
-
-        Assertions.assertSame(returnedDoc, executor.findOneAndUpdate(filter, update, Object.class));
-        Assertions.assertSame(returnedDoc, executor.findOneAndUpdate(filter, Arrays.asList(update), Object.class));
-        Assertions.assertSame(returnedDoc, executor.findOneAndReplace(filter, new Document("a", 1), Bson.class));
-        Assertions.assertSame(returnedDoc, executor.findOneAndDelete(filter, java.util.Map.class));
-        Assertions.assertSame(returnedDoc, executor.findOneAndDelete(filter, Document.class));
-    }
-
-    @Test
-    public void testStreamWithObjectRowTypeReturnsRawDocuments() {
-        final Document row = new Document("_id", new ObjectId()).append("a", 1).append("b", 2);
-        when(mockCollection.find()).thenReturn(mockFindIterable);
-        when(mockCursor.hasNext()).thenReturn(true, false);
-        when(mockCursor.next()).thenReturn(row);
-
-        try (Stream<Object> stream = executor.stream(Object.class)) {
-            Assertions.assertSame(row, stream.first().get());
+        public void setId(String id) {
+            this.id = id;
         }
-    }
 
-    // ========= sliceE (2026-09-27): groupBy on a dotted field into a scalar row type =========
+        public String getName() {
+            return name;
+        }
 
-    @SuppressWarnings("unchecked")
-    @Test
-    public void testGroupByDottedFieldIntoScalarTypeEmitsGroupKeys_sliceE() {
-        // Regression: groupBy("a.b", String.class) re-projected the key as {"a.b": "$_id"}, which MongoDB
-        // materializes as {a: {b: key}}; the scalar conversion then received the embedded document
-        // ({"b": "v1"} as JSON text, or NumberFormatException for Integer) instead of the key.
-        final List<List<? extends Bson>> pipelines = new java.util.ArrayList<>();
-
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
-            final List<? extends Bson> pipeline = invocation.getArgument(0);
-            pipelines.add(pipeline);
-
-            // Emit what MongoDB returns for the pipeline (live-verified): $group alone yields {_id: key},
-            // while a trailing $project {"a.b": "$_id", _id: 0} yields {a: {b: key}}.
-            final boolean groupsByNM = "$n.m".equals(((Document) pipeline.get(0)).get("$group", Document.class).get("_id"));
-            final Object key = groupsByNM ? (Object) 7 : "v1";
-            final Document row = pipeline.size() == 1 ? new Document("_id", key)
-                    : groupsByNM ? new Document("n", new Document("m", key)) : new Document("a", new Document("b", key));
-
-            final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
-            final MongoCursor<Document> cursor = mock(MongoCursor.class);
-            when(aggregateIterable.iterator()).thenReturn(cursor);
-            when(cursor.hasNext()).thenReturn(true, false);
-            when(cursor.next()).thenReturn(row);
-            return aggregateIterable;
-        });
-
-        Assertions.assertEquals(Arrays.asList("v1"), executor.groupBy("a.b", String.class).toList());
-        Assertions.assertEquals(1, pipelines.get(pipelines.size() - 1).size());
-
-        Assertions.assertEquals(Arrays.asList(7), executor.groupBy("n.m", Integer.class).toList());
-        Assertions.assertEquals(1, pipelines.get(pipelines.size() - 1).size());
-
-        // Map/bean/Object results keep the named-field projection.
-        Assertions.assertEquals(Arrays.asList(new Document("a", new Document("b", "v1"))), executor.groupBy("a.b", java.util.Map.class).toList());
-        Assertions.assertEquals(2, pipelines.get(pipelines.size() - 1).size());
+        public void setName(String name) {
+            this.name = name;
+        }
     }
 
     public static class GroupRow {
@@ -2376,64 +2634,6 @@ public class MongoCollectionExecutorTest extends TestBase {
             target.addAll(rows);
             return target;
         }).when(mockFindIterable).into(any());
-    }
-
-    @Test
-    public void testQueryWithDottedSelectPropNameFillsNestedColumn_sliceE() {
-        // Regression: the server returns a dotted projection such as "address.city" nested ({address: {city: ...}}),
-        // but the Dataset column was read by the flat key/property "address.city", so the column was all null.
-        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris")),
-                new Document("_id", 2).append("name", "n2")));
-
-        final Dataset mapRows = executor.query(Arrays.asList("name", "address.city"), new Document(), java.util.Map.class);
-        Assertions.assertEquals(Arrays.asList("name", "address.city"), mapRows.columnNames());
-        Assertions.assertEquals(Arrays.asList("n1", "n2"), mapRows.getColumn("name"));
-        Assertions.assertEquals(Arrays.asList("Paris", null), mapRows.getColumn("address.city"));
-
-        final Dataset beanRows = executor.query(Arrays.asList("name", "address.city"), new Document(), null, 0, 10, DottedRow.class);
-        Assertions.assertEquals(Arrays.asList("name", "address.city"), beanRows.columnNames());
-        Assertions.assertEquals(Arrays.asList("n1", "n2"), beanRows.getColumn("name"));
-        Assertions.assertEquals(Arrays.asList("Paris", null), beanRows.getColumn("address.city"));
-
-        final Dataset documentRows = executor.query(Arrays.asList("address.city"), new Document(), 0, 10, Document.class);
-        Assertions.assertEquals(Arrays.asList("Paris", null), documentRows.getColumn("address.city"));
-    }
-
-    @Test
-    public void testQueryWithDottedSelectPropNameEmptyAndArrayResults_sliceE() {
-        stubFindRows_sliceE(java.util.Collections.emptyList());
-        Assertions.assertEquals(0, executor.query(Arrays.asList("name", "address.city"), new Document(), java.util.Map.class).size());
-
-        // Same dotted-path rule as list/findFirst/queryForSingleValue: a path through an array is not a Document path.
-        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("items", Arrays.asList(new Document("sku", "a")))));
-        Assertions.assertThrows(ClassCastException.class, () -> executor.query(Arrays.asList("items.sku"), new Document(), java.util.Map.class));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    public void testGroupByAndCountRejectsGroupFieldNamedCountForNonDocumentRows_sliceE() {
-        // Regression: the {fieldName: "$_id", count: 1} projection overwrote a group field literally named "count"
-        // with the count, silently losing the group key (live: groupByAndCount("count", Map.class) -> [{count=2}, {count=1}]).
-        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
-        final MongoCursor<Document> cursor = mock(MongoCursor.class);
-        when(aggregateIterable.iterator()).thenReturn(cursor);
-        when(cursor.hasNext()).thenReturn(false);
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
-
-        final String expectedMessage = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
-
-        Assertions.assertEquals(expectedMessage,
-                Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", java.util.Map.class)).getMessage());
-        Assertions.assertEquals(expectedMessage, Assertions
-                .assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("count", "cat"), GroupRow.class))
-                .getMessage());
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", Long.class));
-        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
-
-        // Document rows keep the key in _id, so they are unaffected; groupBy (no count column) is unaffected too.
-        Assertions.assertEquals(0, executor.groupByAndCount("count").count());
-        Assertions.assertEquals(0, executor.groupByAndCount(Arrays.asList("count", "cat")).count());
-        Assertions.assertEquals(0, executor.groupBy("count", java.util.Map.class).count());
     }
 
     public static class DottedRow {
@@ -2469,90 +2669,6 @@ public class MongoCollectionExecutorTest extends TestBase {
         }
     }
 
-    // ---- 2026-10-02 verifyME ----
-
-    private static final String COUNT_COLUMN_CONFLICT_verifyME = "Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type";
-
-    @Test
-    public void testQueryDottedSelectNamesOnEveryOverloadKeepOrderAndRawNestedValues_verifyME() {
-        // Every Collection-projection Dataset overload resolves dotted names from the nested documents (they were all-null
-        // columns): requested column order is kept, a missing/null parent or leaf gives null, and the dotted value is the
-        // raw nested value (Integer zip although DottedAddress declares no zip), while plain columns are converted as before.
-        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris").append("zip", 75001)),
-                new Document("_id", 2).append("name", "n2"), new Document("_id", 3).append("name", "n3").append("address", new Document("city", null)),
-                new Document("_id", 4).append("name", "n4").append("address", null)));
-        final List<String> names = Arrays.asList("address.zip", "name", "address.city");
-        final Bson sort = new Document("_id", 1);
-
-        for (final Class<?> rowType : Arrays.asList(java.util.Map.class, java.util.LinkedHashMap.class, Document.class, DottedRow.class)) {
-            for (final Dataset ds : Arrays.asList(executor.query(names, new Document(), rowType), executor.query(names, new Document(), 1, 3, rowType),
-                    executor.query(names, new Document(), sort, rowType), executor.query(names, new Document(), sort, 1, 3, rowType))) {
-                Assertions.assertEquals(names, ds.columnNames(), rowType.getName());
-                Assertions.assertEquals(Arrays.asList("n1", "n2", "n3", "n4"), ds.getColumn("name"), rowType.getName());
-                Assertions.assertEquals(Arrays.asList(75001, null, null, null), ds.getColumn("address.zip"), rowType.getName());
-                Assertions.assertEquals(Arrays.asList("Paris", null, null, null), ds.getColumn("address.city"), rowType.getName());
-                Assertions.assertFalse(ds.isFrozen());
-            }
-        }
-
-        final Dataset withId = executor.query(new java.util.LinkedHashSet<>(Arrays.asList("_id", "address.city")), new Document(), java.util.Map.class);
-        Assertions.assertEquals(Arrays.asList("_id", "address.city"), withId.columnNames());
-        Assertions.assertEquals(Arrays.asList(1, 2, 3, 4), withId.getColumn("_id"));
-        Assertions.assertEquals(Arrays.asList("Paris", null, null, null), withId.getColumn("address.city"));
-    }
-
-    @Test
-    public void testQueryDottedSelectNameThroughArrayFailsOnEveryOverload_verifyME() {
-        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("name", "n1").append("address", new Document("city", "Paris")),
-                new Document("_id", 2).append("name", "n2").append("address", Arrays.asList(new Document("city", "Rome")))));
-        final List<String> names = Arrays.asList("name", "address.city");
-        final Bson sort = new Document("_id", 1);
-
-        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), java.util.Map.class));
-        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), 0, 5, Document.class));
-        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), sort, DottedRowWithoutAddress_verifyME.class));
-        Assertions.assertThrows(ClassCastException.class, () -> executor.query(names, new Document(), sort, 0, 5, java.util.Map.class));
-
-        // Without a dotted name the same rows load as before: the array is just a column value.
-        final Dataset plain = executor.query(Arrays.asList("name", "address"), new Document(), java.util.Map.class);
-        Assertions.assertEquals(Arrays.asList("n1", "n2"), plain.getColumn("name"));
-        Assertions.assertEquals(Arrays.asList(new Document("city", "Rome")), plain.getColumn("address").get(1));
-    }
-
-    @SuppressWarnings({ "unchecked", "rawtypes" })
-    @Test
-    public void testGroupByAndCountCountFieldRejectedForEveryNonDocumentRowType_verifyME() {
-        // Same rule and message as the reactive executor: only Document rows (key kept under _id) accept a group field
-        // named "count"; every other row type is projected as {<field>: key, count: n}, a Document subclass included.
-        final List<List<? extends Bson>> pipelines = new java.util.ArrayList<>();
-        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
-            pipelines.add(invocation.getArgument(0));
-            final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
-            when(aggregateIterable.iterator()).thenReturn(mock(MongoCursor.class));
-            return aggregateIterable;
-        });
-
-        for (final Class rowType : Arrays.<Class> asList(java.util.Map.class, java.util.LinkedHashMap.class, Object.class, Bson.class,
-                CountDocument_verifyME.class, GroupRow.class, Long.class, long.class, String.class)) {
-            Assertions.assertEquals(COUNT_COLUMN_CONFLICT_verifyME,
-                    Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount("count", rowType)).getMessage(), rowType.getName());
-            Assertions.assertEquals(COUNT_COLUMN_CONFLICT_verifyME, Assertions
-                    .assertThrows(IllegalArgumentException.class, () -> executor.groupByAndCount(Arrays.asList("department", "count"), rowType))
-                    .getMessage(), rowType.getName());
-        }
-
-        Assertions.assertTrue(pipelines.isEmpty());
-
-        // Document rows, other field names, and groupBy (no count column) are unaffected.
-        executor.groupByAndCount("count", Document.class).count();
-        executor.groupByAndCount(Arrays.asList("department", "count"), Document.class).count();
-        executor.groupByAndCount("department", java.util.Map.class).count();
-        executor.groupBy("count", CountDocument_verifyME.class).count();
-        executor.groupBy(Arrays.asList("department", "count"), java.util.Map.class).count();
-        Assertions.assertEquals(5, pipelines.size());
-        Assertions.assertEquals(new Document("$project", new Document("_id", 0).append("department", "$_id").append("count", 1)), pipelines.get(2).get(1));
-    }
-
     public static class DottedRowWithoutAddress_verifyME {
         private String name;
 
@@ -2568,22 +2684,6 @@ public class MongoCollectionExecutorTest extends TestBase {
     public static class CountDocument_verifyME extends Document {
         private static final long serialVersionUID = 1L;
     }
-
-    // ---- 2026-10-04 coverageME ----
-
-    // End-to-end coverage of the MongoDBBase read-side changes through the executors' read paths: typed container elements
-    // (int32 Integers in a List<Long>, embedded Documents in a List/Map of beans, String keys of a Map<Integer, Long>), BSON
-    // dates read into LocalDate/LocalDateTime/LocalTime in UTC (as the driver's codecs write them), the type arguments of
-    // generic beans (Box<Long>, LongBox extends Box<Long>) and records (every value converted, _id into the id component).
-    // The documents hold what the driver decodes. Each read path is asserted on its own (assertAll), so every path that
-    // bypassed the conversion is reported. The fixtures are shared with the async, mapper and reactive tests.
-
-    public static final String OID_HEX_coverageME = "65f0a1b2c3d4e5f601234567";
-    public static final Date DAY_coverageME = new Date(java.time.Instant.parse("2024-01-02T00:00:00Z").toEpochMilli());
-    public static final Date AT_coverageME = new Date(java.time.Instant.parse("2024-01-02T03:04:05.006Z").toEpochMilli());
-    public static final java.time.LocalDate LOCAL_DAY_coverageME = java.time.LocalDate.of(2024, 1, 2);
-    public static final java.time.LocalDateTime LOCAL_AT_coverageME = java.time.LocalDateTime.of(2024, 1, 2, 3, 4, 5, 6_000_000);
-    public static final java.time.LocalTime LOCAL_TIME_coverageME = java.time.LocalTime.of(3, 4, 5, 6_000_000);
 
     public static Document entityDoc_coverageME() {
         return new Document("_id", new ObjectId(OID_HEX_coverageME)).append("nums", new java.util.ArrayList<>(Arrays.asList(1, 2)))
@@ -2680,115 +2780,6 @@ public class MongoCollectionExecutorTest extends TestBase {
         try (Stream<T> s = stream) {
             return s.toList().get(0);
         }
-    }
-
-    @Test
-    public void testEntityReadPathsConvertDecodedValuesToDeclaredTypes_coverageME() {
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(entityDoc_coverageME()), mockAsyncExecutor);
-        final Bson filter = new Document();
-        final Bson update = new Document("$set", new Document("x", 1));
-        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final Class<E2eEntity_coverageME> type = E2eEntity_coverageME.class;
-
-        Assertions.assertAll(() -> assertEntity_coverageME("list", exec.list(filter, type).get(0)),
-                () -> assertEntity_coverageME("list(Collection)", exec.list(Arrays.asList("nums", "day"), filter, type).get(0)),
-                () -> assertEntity_coverageME("findFirst", exec.findFirst(filter, type).get()),
-                () -> assertEntity_coverageME("get(ObjectId)", exec.get(new ObjectId(OID_HEX_coverageME), type).get()),
-                () -> assertEntity_coverageME("gett(String)", exec.gett(OID_HEX_coverageME, type)),
-                () -> assertEntity_coverageME("stream", firstOf_coverageME(exec.stream(filter, type))),
-                () -> assertEntity_coverageME("stream(Collection)", firstOf_coverageME(exec.stream(Arrays.asList("nums", "day"), filter, type))),
-                () -> assertEntity_coverageME("aggregate", firstOf_coverageME(exec.aggregate(pipeline, type))),
-                () -> assertEntity_coverageME("findOneAndUpdate", exec.findOneAndUpdate(filter, update, type)),
-                () -> assertEntity_coverageME("findOneAndDelete", exec.findOneAndDelete(filter, type)),
-                () -> assertEntityDataset_coverageME("query(Bson, Class)", exec.query(filter, type)));
-    }
-
-    @Test
-    public void testRecordRowsOnEveryReadPath_coverageME() {
-        // Records: every value converted to its component type (int32 -> Long, List<Integer> -> List<Long>, Date -> LocalDate
-        // in UTC) and the ObjectId _id passed as the String id component; HEAD failed with "argument type mismatch".
-        final MongoCollectionExecutor recordExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(recordDoc_coverageME()),
-                mockAsyncExecutor);
-        final Bson filter = new Document();
-        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final Class<E2eRecord_coverageME> recordType = E2eRecord_coverageME.class;
-        final E2eRecord_coverageME expected = expectedRecord_coverageME();
-
-        Assertions.assertAll(() -> Assertions.assertEquals(expected, recordExec.list(filter, recordType).get(0), "list"),
-                () -> Assertions.assertEquals(expected, recordExec.findFirst(filter, recordType).get(), "findFirst"),
-                () -> Assertions.assertEquals(expected, recordExec.get(OID_HEX_coverageME, recordType).get(), "get(String)"),
-                () -> Assertions.assertEquals(expected, firstOf_coverageME(recordExec.stream(filter, recordType)), "stream"),
-                () -> Assertions.assertEquals(expected, firstOf_coverageME(recordExec.aggregate(pipeline, recordType)), "aggregate"),
-                () -> Assertions.assertEquals(expected, recordExec.findOneAndDelete(filter, recordType), "findOneAndDelete"),
-                () -> Assertions.assertEquals(Arrays.asList(4L), recordExec.query(filter, recordType).getColumn("nums").get(0), "query Dataset"));
-    }
-
-    @Test
-    public void testGenericSubclassRowsOnEveryReadPath_coverageME() {
-        // LongBox extends Box<Long>: the value of its erased T field is converted to the bound Long (HEAD kept the Integer).
-        final MongoCollectionExecutor boxExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(longBoxDoc_coverageME()), mockAsyncExecutor);
-        final Bson filter = new Document();
-        final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final Class<E2eLongBox_coverageME> boxType = E2eLongBox_coverageME.class;
-
-        Assertions.assertAll(() -> Assertions.assertEquals((Object) 9L, boxExec.list(filter, boxType).get(0).getValue(), "list"),
-                () -> Assertions.assertEquals((Object) 9L, boxExec.findFirst(filter, boxType).get().getValue(), "findFirst"),
-                () -> Assertions.assertEquals((Object) 9L, firstOf_coverageME(boxExec.stream(filter, boxType)).getValue(), "stream"),
-                () -> Assertions.assertEquals((Object) 9L, firstOf_coverageME(boxExec.aggregate(pipeline, boxType)).getValue(), "aggregate"),
-                () -> Assertions.assertEquals((Object) 9L, boxExec.findOneAndDelete(filter, boxType).getValue(), "findOneAndDelete"));
-    }
-
-    @Test
-    public void testLocalJavaTimeSingleValuesAreReadInUtcOnEveryReadPath_coverageME() {
-        // convertBsonValue: a BSON date requested as LocalDate/LocalDateTime/LocalTime is read in UTC like the driver's codecs
-        // write it (HEAD used the JVM zone: a LocalDate came back as the previous day west of UTC). The single-field-row paths
-        // are in testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME.
-        final MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(entityDoc_coverageME()), mockAsyncExecutor);
-        final Bson filter = new Document();
-        final List<String> day = Arrays.asList("day");
-
-        Assertions.assertAll(
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.queryForSingleValue("day", filter, java.time.LocalDate.class).get(),
-                        "queryForSingleValue LocalDate"),
-                () -> Assertions.assertEquals(LOCAL_AT_coverageME, exec.queryForSingleValue("at", filter, java.time.LocalDateTime.class).get(),
-                        "queryForSingleValue LocalDateTime"),
-                () -> Assertions.assertEquals(LOCAL_TIME_coverageME, exec.queryForSingleValue("time", filter, java.time.LocalTime.class).get(),
-                        "queryForSingleValue LocalTime"),
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.queryForSingleNonNull("day", filter, java.time.LocalDate.class).get(),
-                        "queryForSingleNonNull"),
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, exec.findFirst(day, filter, java.time.LocalDate.class).get(), "findFirst(Collection)"),
-                () -> Assertions.assertEquals(Arrays.asList(LOCAL_DAY_coverageME), exec.list(day, filter, java.time.LocalDate.class), "list(Collection)"),
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(exec.stream(day, filter, java.time.LocalDate.class)),
-                        "stream(Collection)"),
-                // Previous behavior kept: other date targets keep the instant.
-                () -> Assertions.assertEquals(DAY_coverageME, exec.queryForSingleValue("day", filter, Date.class).get(), "Date"),
-                () -> Assertions.assertEquals(DAY_coverageME.toInstant(), exec.queryForSingleValue("day", filter, java.time.Instant.class).get(), "Instant"));
-    }
-
-    @Test
-    public void testLocalJavaTimeSingleFieldRowsAreReadInUtcOnEveryReadPath_coverageME() {
-        // A document with one non-_id field read as a single value goes through readRow/toList's scalar conversion.
-        final MongoCollectionExecutor dayExec = new MongoCollectionExecutor(mockCollectionReturning_coverageME(dayDoc_coverageME()), mockAsyncExecutor);
-        final Bson filter = new Document();
-        final List<Document> pipeline = Arrays.asList(new Document("$project", new Document("day", 1)));
-
-        Assertions.assertAll(
-                () -> Assertions.assertEquals(Arrays.asList(LOCAL_DAY_coverageME), dayExec.list(filter, java.time.LocalDate.class), "list"),
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dayExec.findFirst(filter, java.time.LocalDate.class).get(), "findFirst"),
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(dayExec.stream(filter, java.time.LocalDate.class)), "stream"),
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, firstOf_coverageME(dayExec.aggregate(pipeline, java.time.LocalDate.class)), "aggregate"),
-                () -> Assertions.assertEquals(LOCAL_DAY_coverageME, dayExec.findOneAndDelete(filter, java.time.LocalDate.class), "findOneAndDelete"));
-    }
-
-    @Test
-    public void testDottedSelectNameCheckToleratesNullNames_coverageME() {
-        // Pin: the dotted-name check of query(Collection, ...) -> Dataset is null-safe, so a null select name still fails
-        // with the projection's IllegalArgumentException (as before the fix), whichever position it has.
-        stubFindRows_sliceE(Arrays.asList(new Document("_id", 1).append("address", new Document("city", "Paris"))));
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList(null, "address.city"), new Document(), java.util.Map.class));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("address.city", null), new Document(), java.util.Map.class));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(Arrays.asList("name", null), new Document(), java.util.Map.class));
     }
 
     public static class E2eAddress_coverageME {
@@ -2922,6 +2913,4 @@ public class MongoCollectionExecutorTest extends TestBase {
             this.boxes = boxes;
         }
     }
-
-    // ---- end 2026-10-04 coverageME ----
 }

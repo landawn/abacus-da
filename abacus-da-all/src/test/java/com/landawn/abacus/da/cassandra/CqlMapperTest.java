@@ -21,7 +21,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.junit.jupiter.api.Test;
@@ -31,9 +30,9 @@ import com.landawn.abacus.da.TestBase;
 
 public class CqlMapperTest extends TestBase {
 
-    // ---------------------------------------------------------------------------------------------
+    // Construction and configuration
+
     // Construction: default ctor + add/get + isEmpty.
-    // ---------------------------------------------------------------------------------------------
 
     @Test
     public void testDefaultConstructor_IsEmpty() {
@@ -42,48 +41,7 @@ public class CqlMapperTest extends TestBase {
         assertTrue(m.ids().isEmpty());
     }
 
-    @Test
-    public void testAddParsedCql_StoresAndRetrieves() {
-        final CqlMapper m = new CqlMapper();
-        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed WHERE id = ?");
-        m.add("findById", parsed);
-        assertEquals(parsed, m.get("findById"));
-        assertFalse(m.isEmpty());
-        // No attributes supplied => empty (never null for a present id).
-        assertTrue(m.getAttributes("findById").isEmpty());
-    }
-
-    @Test
-    public void testAddParsedCql_DuplicateIdThrows() {
-        final CqlMapper m = new CqlMapper();
-        final ParsedCql p1 = ParsedCql.parse("SELECT * FROM mapper_test_replace_a WHERE id = ?");
-        final ParsedCql p2 = ParsedCql.parse("SELECT * FROM mapper_test_replace_b WHERE id = ?");
-        m.add("dup", p1);
-        // add(String, ParsedCql) rejects a reused id (consistent with the String overloads + SqlMapper).
-        assertThrows(IllegalArgumentException.class, () -> m.add("dup", p2));
-        // The original mapping is left intact.
-        assertEquals(p1, m.get("dup"));
-    }
-
-    @Test
-    public void testAddParsedCql_NullParsedCqlThrows() {
-        final CqlMapper m = new CqlMapper();
-        assertThrows(IllegalArgumentException.class, () -> m.add("findById", (ParsedCql) null));
-        assertThrows(IllegalArgumentException.class, () -> m.add("findById", (ParsedCql) null, new HashMap<>()));
-        // Nothing was stored.
-        assertTrue(m.isEmpty());
-    }
-
-    @Test
-    public void testAddParsedCql_WithAttributes() {
-        final CqlMapper m = new CqlMapper();
-        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed_attrs WHERE id = ?");
-        final Map<String, String> attrs = new HashMap<>();
-        attrs.put("consistency", "QUORUM");
-        m.add("findById", parsed, attrs);
-        assertEquals(parsed, m.get("findById"));
-        assertEquals("QUORUM", m.getAttributes("findById").get("consistency"));
-    }
+    // Row and entity mapping
 
     @Test
     public void testAddCqlString_StoresParsedCqlAndAttributes() {
@@ -99,73 +57,120 @@ public class CqlMapperTest extends TestBase {
     }
 
     @Test
-    public void testAddCqlString_NoAttributesOverload() {
+    public void testAddParsedCql_NullParsedCqlThrows() {
         final CqlMapper m = new CqlMapper();
-        m.add("findAll", "SELECT * FROM mapper_test_add_no_attrs");
-        assertNotNull(m.get("findAll"));
-        assertTrue(m.getAttributes("findAll").isEmpty());
-    }
-
-    @Test
-    public void testGetAttributes_AbsentIdReturnsNull() {
-        final CqlMapper m = new CqlMapper();
-        assertNull(m.getAttributes("noSuchId"));
-    }
-
-    @Test
-    public void testRemove_AlsoClearsAttributes() {
-        final CqlMapper m = new CqlMapper();
-        final Map<String, String> attrs = new HashMap<>();
-        attrs.put("timeout", "1000");
-        m.add("k", "SELECT * FROM mapper_test_remove_attrs WHERE id = ?", attrs);
-        m.remove("k");
-        assertNull(m.get("k"));
-        assertNull(m.getAttributes("k"));
-    }
-
-    @Test
-    public void testAddCqlString_DuplicateIdThrows() {
-        final CqlMapper m = new CqlMapper();
-        m.add("k1", "SELECT * FROM mapper_test_dup_id WHERE id = ?", null);
-        assertThrows(IllegalArgumentException.class, () -> m.add("k1", "SELECT * FROM mapper_test_dup_id_2 WHERE id = ?", null));
-    }
-
-    @Test
-    public void testAdd_RejectsNullOrEmptyId() {
-        final CqlMapper m = new CqlMapper();
-        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_invalid_id");
-
-        assertThrows(IllegalArgumentException.class, () -> m.add(null, parsed));
-        assertThrows(IllegalArgumentException.class, () -> m.add("", parsed));
-        assertThrows(IllegalArgumentException.class, () -> m.add(null, "SELECT * FROM mapper_test_invalid_id"));
-        assertThrows(IllegalArgumentException.class, () -> m.add("", "SELECT * FROM mapper_test_invalid_id"));
+        assertThrows(IllegalArgumentException.class, () -> m.add("findById", (ParsedCql) null));
+        assertThrows(IllegalArgumentException.class, () -> m.add("findById", (ParsedCql) null, new HashMap<>()));
+        // Nothing was stored.
         assertTrue(m.isEmpty());
     }
 
     @Test
-    public void testGet_MissingReturnsNull() {
+    public void testAddParsedCql_DuplicateIdThrows() {
         final CqlMapper m = new CqlMapper();
-        assertNull(m.get("nonexistent"));
+        final ParsedCql p1 = ParsedCql.parse("SELECT * FROM mapper_test_replace_a WHERE id = ?");
+        final ParsedCql p2 = ParsedCql.parse("SELECT * FROM mapper_test_replace_b WHERE id = ?");
+        m.add("dup", p1);
+        // add(String, ParsedCql) rejects a reused id (consistent with the String overloads + SqlMapper).
+        assertThrows(IllegalArgumentException.class, () -> m.add("dup", p2));
+        // The original mapping is left intact.
+        assertEquals(p1, m.get("dup"));
     }
 
     @Test
-    public void testContainsId() {
+    public void testAddParsedCql_StoresAndRetrieves() {
         final CqlMapper m = new CqlMapper();
-        m.add("findById", "SELECT * FROM mapper_test_contains WHERE id = ?", null);
-        assertTrue(m.containsId("findById"));
-        assertFalse(m.containsId("missing"));
-        assertFalse(m.containsId(null));
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed WHERE id = ?");
+        m.add("findById", parsed);
+        assertEquals(parsed, m.get("findById"));
+        assertFalse(m.isEmpty());
+        // No attributes supplied => empty (never null for a present id).
+        assertTrue(m.getAttributes("findById").isEmpty());
     }
 
     @Test
-    public void testSize_ReflectsAddAndRemove() {
+    public void testAddParsedCql_WithAttributes() {
         final CqlMapper m = new CqlMapper();
-        assertEquals(0, m.size());
-        m.add("a", "SELECT * FROM mapper_test_size_a", null);
-        m.add("b", "SELECT * FROM mapper_test_size_b", null);
-        assertEquals(2, m.size());
-        m.remove("a");
-        assertEquals(1, m.size());
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed_attrs WHERE id = ?");
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("consistency", "QUORUM");
+        m.add("findById", parsed, attrs);
+        assertEquals(parsed, m.get("findById"));
+        assertEquals("QUORUM", m.getAttributes("findById").get("consistency"));
+    }
+
+    // Factories and insert operations
+
+    @Test
+    public void testSaveToFile_CreatesParentDirsAndReplacesLongerFile() throws Exception {
+        // Pins for the in-memory serialization: missing parent directories are still created, a longer existing file is
+        // fully replaced (truncated), and the file holds exactly the bytes saveTo(OutputStream) writes.
+        final java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("cql-mapper-");
+        final File target = dir.resolve("a").resolve("b").resolve("out.xml").toFile();
+        final CqlMapper m = new CqlMapper();
+        m.add("q", "SELECT * FROM t WHERE name = 'é中😀' AND id = :id");
+
+        m.saveTo(target);
+        final java.io.ByteArrayOutputStream expected = new java.io.ByteArrayOutputStream();
+        m.saveTo(expected);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(expected.toByteArray(), java.nio.file.Files.readAllBytes(target.toPath()));
+
+        java.nio.file.Files.write(target.toPath(), new byte[expected.size() * 4]);
+        m.saveTo(target);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(expected.toByteArray(), java.nio.file.Files.readAllBytes(target.toPath()));
+        assertEquals(m.get("q").originalCql(), CqlMapper.loadFrom(target).get("q").originalCql());
+
+        java.nio.file.Files.delete(target.toPath());
+        java.nio.file.Files.delete(target.getParentFile().toPath());
+        java.nio.file.Files.delete(target.getParentFile().getParentFile().toPath());
+        java.nio.file.Files.delete(dir);
+    }
+
+    @Test
+    public void testSaveToFile_SerializerFailure_createsNoParentDirOrFile() throws Exception {
+        // The document is serialized in memory first: a serializer failure leaves neither an empty target file nor a
+        // newly created parent directory behind, and surfaces as the serializer's failure, not as an I/O failure.
+        final java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("cql-mapper-");
+        final File source = dir.resolve("source.xml").toFile();
+        dir.toFile().deleteOnExit(); // deleted after source (reverse registration order)
+        source.deleteOnExit();
+        java.nio.file.Files.write(source.toPath(),
+                "<cqlMapper xmlns:p=\"urn:p\"><cql id=\"q\" p:t=\"1\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8));
+        final CqlMapper m = CqlMapper.loadFrom(source);
+
+        final File target = dir.resolve("missing").resolve("deeper").resolve("out.xml").toFile();
+        final RuntimeException ex = assertThrows(RuntimeException.class, () -> m.saveTo(target));
+        assertFalse(ex instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(ex));
+        boolean transformerFailure = false;
+
+        for (Throwable t = ex; t != null && !transformerFailure; t = t.getCause()) {
+            transformerFailure = t instanceof javax.xml.transform.TransformerException;
+        }
+
+        assertTrue(transformerFailure, String.valueOf(ex));
+        assertFalse(target.exists());
+        assertFalse(target.getParentFile().getParentFile().exists());
+
+        // saveTo(OutputStream) reports the same failure.
+        assertThrows(ex.getClass(), () -> m.saveTo(new java.io.ByteArrayOutputStream()));
+    }
+
+    // Updates and deletes
+
+    @Test
+    public void test_CqlMapper_keySet_isEmpty_remove() {
+        CqlMapper mapper = new CqlMapper();
+        assertTrue(mapper.isEmpty());
+        assertTrue(mapper.ids().isEmpty());
+
+        mapper.add("k1", "SELECT 3 FROM simplex.users WHERE id = ?", null);
+        assertFalse(mapper.isEmpty());
+        assertTrue(mapper.ids().contains("k1"));
+
+        mapper.remove("k1");
+        assertTrue(mapper.isEmpty());
+        // remove of missing key is a no-op (does not throw)
+        mapper.remove("missing");
     }
 
     @Test
@@ -190,6 +195,17 @@ public class CqlMapperTest extends TestBase {
     }
 
     @Test
+    public void testRemove_AlsoClearsAttributes() {
+        final CqlMapper m = new CqlMapper();
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "1000");
+        m.add("k", "SELECT * FROM mapper_test_remove_attrs WHERE id = ?", attrs);
+        m.remove("k");
+        assertNull(m.get("k"));
+        assertNull(m.getAttributes("k"));
+    }
+
+    @Test
     public void testRemove_DeletesEntry() {
         final CqlMapper m = new CqlMapper();
         m.add("k", "SELECT * FROM mapper_test_remove WHERE id = ?", null);
@@ -206,22 +222,168 @@ public class CqlMapperTest extends TestBase {
         assertTrue(m.isEmpty());
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // copy(): independent map sharing immutable ParsedCql values.
-    // ---------------------------------------------------------------------------------------------
+    @Test
+    public void testSize_ReflectsAddAndRemove() {
+        final CqlMapper m = new CqlMapper();
+        assertEquals(0, m.size());
+        m.add("a", "SELECT * FROM mapper_test_size_a", null);
+        m.add("b", "SELECT * FROM mapper_test_size_b", null);
+        assertEquals(2, m.size());
+        m.remove("a");
+        assertEquals(1, m.size());
+    }
+
+    // Queries and results
 
     @Test
-    public void testCopy_ReturnsIndependentInstance() {
-        final CqlMapper m1 = new CqlMapper();
-        m1.add("k", "SELECT * FROM mapper_test_copy WHERE id = ?", null);
-        final CqlMapper m2 = m1.copy();
-        assertNotSame(m1, m2);
-        // Both contain the same entry initially.
-        assertEquals(m1.get("k"), m2.get("k"));
-        // Mutating m2 does not affect m1.
-        m2.remove("k");
-        assertNotNull(m1.get("k"));
-        assertNull(m2.get("k"));
+    public void test_CqlMapper_addAndGet() {
+        CqlMapper mapper = new CqlMapper();
+        Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "3000");
+
+        mapper.add("findUser", "SELECT * FROM simplex.users WHERE id = ?", attrs);
+
+        ParsedCql parsed = mapper.get("findUser");
+        assertNotNull(parsed);
+        assertEquals(1, parsed.parameterCount());
+        // Attributes live on the mapper, keyed by id (not on ParsedCql).
+        assertEquals("3000", mapper.getAttributes("findUser").get("timeout"));
+        assertNull(mapper.get("nonExistent"));
+    }
+
+    @Test
+    public void testGet_MissingReturnsNull() {
+        final CqlMapper m = new CqlMapper();
+        assertNull(m.get("nonexistent"));
+    }
+
+    @Test
+    public void testGetAttributes_AbsentIdReturnsNull() {
+        final CqlMapper m = new CqlMapper();
+        assertNull(m.getAttributes("noSuchId"));
+    }
+
+    @Test
+    public void testLoad_InputStream_NullThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((InputStream) null));
+    }
+
+    @Test
+    public void testSave_NullTargetsThrow() {
+        final CqlMapper m = new CqlMapper();
+        assertThrows(IllegalArgumentException.class, () -> m.saveTo((File) null));
+        assertThrows(IllegalArgumentException.class, () -> m.saveTo((OutputStream) null));
+    }
+
+    @Test
+    public void testSaveToStream_InvalidXmlCharacterInIdOrAttribute_throwsBeforeWriting() {
+        final java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
+
+        final CqlMapper badId = new CqlMapper();
+        badId.add("q\u0003", "SELECT * FROM t");
+        assertThrows(IllegalStateException.class, () -> badId.saveTo(os));
+
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("note", "bad\u0002");
+        final CqlMapper badAttr = new CqlMapper();
+        badAttr.add("q", "SELECT * FROM t", attrs);
+        assertThrows(IllegalStateException.class, () -> badAttr.saveTo(os));
+
+        assertEquals(0, os.size());
+    }
+
+    // Resource lifecycle
+
+    @Test
+    public void testSaveToFile_SerializerFailure_keepsExistingFile() throws Exception {
+        // Regression: an attribute whose namespace prefix is declared only on the root element of the file it was loaded
+        // from ("p:t") passes the DOM build but fails in the XML serializer ("Namespace for prefix 'p' has not been
+        // declared"). Saving the loaded mapper back to its own file left a 0-byte file behind that exception.
+        final File file = File.createTempFile("cql-mapper-", ".xml");
+        file.deleteOnExit();
+        final String original = "<cqlMapper xmlns:p=\"urn:p\"><cql id=\"q\" p:t=\"1\">SELECT 1 FROM t</cql></cqlMapper>";
+        java.nio.file.Files.write(file.toPath(), original.getBytes(StandardCharsets.UTF_8));
+
+        final CqlMapper m = CqlMapper.loadFrom(file);
+        assertEquals("1", m.getAttributes("q").get("p:t"));
+
+        assertThrows(RuntimeException.class, () -> m.saveTo(file));
+        assertEquals(original, new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void testSaveToFile_WriteFailure_isUncheckedIOException() throws Exception {
+        // saveTo(File) now copies the XML serialized in memory into the file, so a failure while writing the file is the
+        // documented UncheckedIOException (on HEAD the serializer wrote to the file itself and reported the I/O error as an
+        // UncheckedException wrapping a TransformerException). A byte-range lock held through a second handle makes the
+        // write fail; such locks are mandatory only on Windows.
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name", "").startsWith("Windows"), "needs mandatory byte-range locks");
+
+        final File file = File.createTempFile("cql-mapper-lock-", ".xml");
+        file.deleteOnExit();
+        final CqlMapper m = new CqlMapper();
+
+        for (int i = 0; i < 20; i++) {
+            m.add("q" + i, "SELECT * FROM t WHERE id = ?");
+        }
+
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "rw");
+             java.nio.channels.FileLock lock = raf.getChannel().lock(64, 1 << 20, false)) {
+            final RuntimeException ex = assertThrows(RuntimeException.class, () -> m.saveTo(file));
+            assertTrue(ex instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(ex));
+            assertTrue(ex.getCause() instanceof java.io.IOException, String.valueOf(ex.getCause()));
+        }
+
+        // Once the lock is gone the same file is written normally.
+        m.saveTo(file);
+        assertEquals(m.ids(), CqlMapper.loadFrom(file).ids());
+    }
+
+    // Additional contracts
+
+    @Test
+    public void testAdd_RejectsNullOrEmptyId() {
+        final CqlMapper m = new CqlMapper();
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_invalid_id");
+
+        assertThrows(IllegalArgumentException.class, () -> m.add(null, parsed));
+        assertThrows(IllegalArgumentException.class, () -> m.add("", parsed));
+        assertThrows(IllegalArgumentException.class, () -> m.add(null, "SELECT * FROM mapper_test_invalid_id"));
+        assertThrows(IllegalArgumentException.class, () -> m.add("", "SELECT * FROM mapper_test_invalid_id"));
+        assertTrue(m.isEmpty());
+    }
+
+    @Test
+    public void testAddCqlString_DuplicateIdThrows() {
+        final CqlMapper m = new CqlMapper();
+        m.add("k1", "SELECT * FROM mapper_test_dup_id WHERE id = ?", null);
+        assertThrows(IllegalArgumentException.class, () -> m.add("k1", "SELECT * FROM mapper_test_dup_id_2 WHERE id = ?", null));
+    }
+
+    @Test
+    public void testAddCqlString_NoAttributesOverload() {
+        final CqlMapper m = new CqlMapper();
+        m.add("findAll", "SELECT * FROM mapper_test_add_no_attrs");
+        assertNotNull(m.get("findAll"));
+        assertTrue(m.getAttributes("findAll").isEmpty());
+    }
+
+    // Constants surface.
+
+    @Test
+    public void testConstants() {
+        assertEquals("cqlMapper", CqlMapper.CQL_MAPPER);
+        assertEquals("cql", CqlMapper.CQL);
+        assertEquals("id", CqlMapper.ID);
+    }
+
+    @Test
+    public void testContainsId() {
+        final CqlMapper m = new CqlMapper();
+        m.add("findById", "SELECT * FROM mapper_test_contains WHERE id = ?", null);
+        assertTrue(m.containsId("findById"));
+        assertFalse(m.containsId("missing"));
+        assertFalse(m.containsId(null));
     }
 
     @Test
@@ -246,93 +408,58 @@ public class CqlMapperTest extends TestBase {
         assertNull(m2.getAttributes("k"));
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Static load(...) factories: exercised only via input-validation paths (XmlUtil needs
-    // jakarta.xml.bind at runtime, which is not on the test classpath here).
-    // ---------------------------------------------------------------------------------------------
+    // copy(): independent map sharing immutable ParsedCql values.
 
     @Test
-    public void testLoad_String_NullThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((String) null));
-    }
-
-    @Test
-    public void testLoad_String_EmptyThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom(""));
-    }
-
-    @Test
-    public void testLoad_String_BlankThrows() {
-        // Non-empty but resolves to no paths after splitting/trimming.
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom("   "));
-    }
-
-    @Test
-    public void testLoad_String_MissingFileThrows() {
-        // A missing file now fails with a descriptive RuntimeException (was a bare NPE from
-        // formatPath(null)).
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.loadFrom("/definitely/not/an/existing/path/cql-mapper-load-missing.xml"));
-        assertTrue(ex.getMessage().contains("File not found"));
-    }
-
-    @Test
-    public void testLoad_Files_NullArrayThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((File[]) null));
-    }
-
-    @Test
-    public void testLoad_Files_EmptyArrayThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom(new File[0]));
-    }
-
-    @Test
-    public void testLoad_Files_NullElementThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((File) null));
-    }
-
-    @Test
-    public void testLoad_InputStream_NullThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((InputStream) null));
-    }
-
-    @Test
-    public void testRequireCqlMapperRoot_RejectsNestedCqlMapperAsNonRoot() throws Exception {
-        final String xml = "<wrapper><cqlMapper><cql id=\"findAll\">SELECT * FROM users</cql></cqlMapper></wrapper>";
-        final InputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
-        final Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(input);
-
-        final RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.requireCqlMapperRoot(document, "test input"));
-        assertTrue(ex.getMessage().contains("Missing required 'cqlMapper' root element"), ex.getMessage());
-    }
-
-    @Test
-    public void testSave_NullTargetsThrow() {
-        final CqlMapper m = new CqlMapper();
-        assertThrows(IllegalArgumentException.class, () -> m.saveTo((File) null));
-        assertThrows(IllegalArgumentException.class, () -> m.saveTo((OutputStream) null));
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // equals / hashCode / toString.
-    // ---------------------------------------------------------------------------------------------
-
-    @Test
-    public void testEquals_SameContent() {
+    public void testCopy_ReturnsIndependentInstance() {
         final CqlMapper m1 = new CqlMapper();
-        final CqlMapper m2 = new CqlMapper();
-        m1.add("k", "SELECT 1 FROM equals_same_content", null);
-        m2.add("k", "SELECT 1 FROM equals_same_content", null);
-        assertEquals(m1, m2);
-        assertEquals(m1.hashCode(), m2.hashCode());
+        m1.add("k", "SELECT * FROM mapper_test_copy WHERE id = ?", null);
+        final CqlMapper m2 = m1.copy();
+        assertNotSame(m1, m2);
+        // Both contain the same entry initially.
+        assertEquals(m1.get("k"), m2.get("k"));
+        // Mutating m2 does not affect m1.
+        m2.remove("k");
+        assertNotNull(m1.get("k"));
+        assertNull(m2.get("k"));
     }
 
     @Test
-    public void testEquals_DifferentContent() {
-        final CqlMapper m1 = new CqlMapper();
-        final CqlMapper m2 = new CqlMapper();
-        m1.add("k", "SELECT 1 FROM equals_diff_content_a", null);
-        m2.add("k", "SELECT 1 FROM equals_diff_content_b", null);
-        assertNotEquals(m1, m2);
+    public void test_CqlMapper_addDuplicateIdThrows() {
+        CqlMapper mapper = new CqlMapper();
+        mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null);
+        assertThrows(IllegalArgumentException.class, () -> mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null),
+                "Adding a duplicate id should throw");
+    }
+
+    @Test
+    public void test_CqlMapper_attributesDefensiveCopy() {
+        CqlMapper mapper = new CqlMapper();
+        Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "1000");
+        mapper.add("findUser", "SELECT * FROM simplex.users WHERE id = ?", attrs);
+
+        // Mutating the source map after add should not affect the mapper's stored attributes.
+        attrs.put("timeout", "9999");
+        assertEquals("1000", mapper.getAttributes("findUser").get("timeout"));
+    }
+
+    @Test
+    public void test_CqlMapper_copyIsIndependent() {
+        CqlMapper original = new CqlMapper();
+        original.add("a", "SELECT 1 FROM simplex.users WHERE id = ?", null);
+
+        CqlMapper copy = original.copy();
+        assertNotNull(copy.get("a"));
+
+        copy.remove("a");
+        assertNull(copy.get("a"));
+        // Original should still have the entry
+        assertNotNull(original.get("a"));
+
+        original.add("b", "SELECT 2 FROM simplex.users WHERE id = ?", null);
+        // Copy must not have seen the new addition
+        assertNull(copy.get("b"));
     }
 
     @Test
@@ -350,9 +477,12 @@ public class CqlMapperTest extends TestBase {
     }
 
     @Test
-    public void testEquals_SameInstance() {
-        final CqlMapper m = new CqlMapper();
-        assertEquals(m, m);
+    public void testEquals_DifferentContent() {
+        final CqlMapper m1 = new CqlMapper();
+        final CqlMapper m2 = new CqlMapper();
+        m1.add("k", "SELECT 1 FROM equals_diff_content_a", null);
+        m2.add("k", "SELECT 1 FROM equals_diff_content_b", null);
+        assertNotEquals(m1, m2);
     }
 
     @Test
@@ -362,66 +492,75 @@ public class CqlMapperTest extends TestBase {
         assertFalse(m.equals(null));
     }
 
+    // equals / hashCode / toString.
+
     @Test
-    public void testToString_RepresentsInternalMap() {
+    public void testEquals_SameContent() {
+        final CqlMapper m1 = new CqlMapper();
+        final CqlMapper m2 = new CqlMapper();
+        m1.add("k", "SELECT 1 FROM equals_same_content", null);
+        m2.add("k", "SELECT 1 FROM equals_same_content", null);
+        assertEquals(m1, m2);
+        assertEquals(m1.hashCode(), m2.hashCode());
+    }
+
+    @Test
+    public void testEquals_SameInstance() {
         final CqlMapper m = new CqlMapper();
-        m.add("foo", "SELECT 1 FROM tostring_internal_map", null);
-        final String s = m.toString();
-        assertNotNull(s);
-        assertTrue(s.contains("foo"), s);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Constants surface.
-    // ---------------------------------------------------------------------------------------------
-
-    @Test
-    public void testConstants() {
-        assertEquals("cqlMapper", CqlMapper.CQL_MAPPER);
-        assertEquals("cql", CqlMapper.CQL);
-        assertEquals("id", CqlMapper.ID);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // saveTo: invalid XML 1.0 characters are rejected before anything is written.
-    // ---------------------------------------------------------------------------------------------
-
-    @Test
-    public void testSaveToFile_InvalidXmlCharacter_throwsAndKeepsExistingFile() throws Exception {
-        // Regression: the FileOutputStream truncated the existing file first and the XML serializer only failed on
-        // the U+0001 midway through, leaving a 0-byte file behind an opaque UncheckedException(TransformerException).
-        final File file = File.createTempFile("cql-mapper-", ".xml");
-        file.deleteOnExit();
-        final byte[] original = "<cqlMapper><cql id=\"good\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8);
-        java.nio.file.Files.write(file.toPath(), original);
-
-        final CqlMapper m = new CqlMapper();
-        m.add("bad", "SELECT * FROM t WHERE a = 'x\u0001y'");
-
-        final IllegalStateException ex = assertThrows(IllegalStateException.class, () -> m.saveTo(file));
-        assertTrue(ex.getMessage().contains("U+1"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("'bad'"), ex.getMessage());
-        assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+        assertEquals(m, m);
     }
 
     @Test
-    public void testSaveToStream_InvalidXmlCharacterInIdOrAttribute_throwsBeforeWriting() {
-        final java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
-
-        final CqlMapper badId = new CqlMapper();
-        badId.add("q\u0003", "SELECT * FROM t");
-        assertThrows(IllegalStateException.class, () -> badId.saveTo(os));
-
-        final Map<String, String> attrs = new HashMap<>();
-        attrs.put("note", "bad\u0002");
-        final CqlMapper badAttr = new CqlMapper();
-        badAttr.add("q", "SELECT * FROM t", attrs);
-        assertThrows(IllegalStateException.class, () -> badAttr.saveTo(os));
-
-        assertEquals(0, os.size());
+    public void testLoad_Files_EmptyArrayThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom(new File[0]));
     }
 
-    // ---- 2026-09-29 sliceR ----
+    @Test
+    public void testLoad_Files_NullArrayThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((File[]) null));
+    }
+
+    @Test
+    public void testLoad_Files_NullElementThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((File) null));
+    }
+
+    @Test
+    public void testLoad_String_EmptyThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom(""));
+    }
+
+    // Static load(...) factories: exercised only via input-validation paths (XmlUtil needs
+    // jakarta.xml.bind at runtime, which is not on the test classpath here).
+
+    @Test
+    public void testLoad_String_NullThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((String) null));
+    }
+
+    @Test
+    public void testLoad_String_BlankThrows() {
+        // Non-empty but resolves to no paths after splitting/trimming.
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom("   "));
+    }
+
+    @Test
+    public void testLoad_String_MissingFileThrows() {
+        // A missing file now fails with a descriptive RuntimeException (was a bare NPE from
+        // formatPath(null)).
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.loadFrom("/definitely/not/an/existing/path/cql-mapper-load-missing.xml"));
+        assertTrue(ex.getMessage().contains("File not found"));
+    }
+
+    @Test
+    public void testRequireCqlMapperRoot_RejectsNestedCqlMapperAsNonRoot() throws Exception {
+        final String xml = "<wrapper><cqlMapper><cql id=\"findAll\">SELECT * FROM users</cql></cqlMapper></wrapper>";
+        final InputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
+        final Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(input);
+
+        final RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.requireCqlMapperRoot(document, "test input"));
+        assertTrue(ex.getMessage().contains("Missing required 'cqlMapper' root element"), ex.getMessage());
+    }
 
     @Test
     public void testSaveToFile_InvalidAttributeName_throwsAndKeepsExistingFile() throws Exception {
@@ -442,23 +581,24 @@ public class CqlMapperTest extends TestBase {
         assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
     }
 
+    // saveTo: invalid XML 1.0 characters are rejected before anything is written.
+
     @Test
-    public void testSaveToFile_RoundTripsThroughLoadFrom() throws Exception {
+    public void testSaveToFile_InvalidXmlCharacter_throwsAndKeepsExistingFile() throws Exception {
+        // Regression: the FileOutputStream truncated the existing file first and the XML serializer only failed on
+        // the U+0001 midway through, leaving a 0-byte file behind an opaque UncheckedException(TransformerException).
         final File file = File.createTempFile("cql-mapper-", ".xml");
         file.deleteOnExit();
+        final byte[] original = "<cqlMapper><cql id=\"good\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8);
+        java.nio.file.Files.write(file.toPath(), original);
 
-        final Map<String, String> attrs = new HashMap<>();
-        attrs.put("timeout", "30");
         final CqlMapper m = new CqlMapper();
-        m.add("findById", "SELECT * FROM users WHERE id = :id", attrs);
-        m.add("count", "SELECT COUNT(*) FROM users");
-        m.saveTo(file);
+        m.add("bad", "SELECT * FROM t WHERE a = 'x\u0001y'");
 
-        final CqlMapper loaded = CqlMapper.loadFrom(file);
-        assertEquals(m.ids(), loaded.ids());
-        assertEquals("SELECT * FROM users WHERE id = :id", loaded.get("findById").originalCql());
-        assertEquals("30", loaded.getAttributes("findById").get("timeout"));
-        assertEquals("SELECT COUNT(*) FROM users", loaded.get("count").originalCql());
+        final IllegalStateException ex = assertThrows(IllegalStateException.class, () -> m.saveTo(file));
+        assertTrue(ex.getMessage().contains("U+1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("'bad'"), ex.getMessage());
+        assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -516,108 +656,31 @@ public class CqlMapperTest extends TestBase {
         assertEquals(new String(original, StandardCharsets.UTF_8), new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
     }
 
-    // ---- 2026-10-02 sliceR ----
-
     @Test
-    public void testSaveToFile_SerializerFailure_keepsExistingFile() throws Exception {
-        // Regression: an attribute whose namespace prefix is declared only on the root element of the file it was loaded
-        // from ("p:t") passes the DOM build but fails in the XML serializer ("Namespace for prefix 'p' has not been
-        // declared"). Saving the loaded mapper back to its own file left a 0-byte file behind that exception.
+    public void testSaveToFile_RoundTripsThroughLoadFrom() throws Exception {
         final File file = File.createTempFile("cql-mapper-", ".xml");
         file.deleteOnExit();
-        final String original = "<cqlMapper xmlns:p=\"urn:p\"><cql id=\"q\" p:t=\"1\">SELECT 1 FROM t</cql></cqlMapper>";
-        java.nio.file.Files.write(file.toPath(), original.getBytes(StandardCharsets.UTF_8));
 
-        final CqlMapper m = CqlMapper.loadFrom(file);
-        assertEquals("1", m.getAttributes("q").get("p:t"));
-
-        assertThrows(RuntimeException.class, () -> m.saveTo(file));
-        assertEquals(original, new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
-    }
-
-    // ---- 2026-10-02 verifyPC ----
-
-    @Test
-    public void testSaveToFile_SerializerFailure_createsNoParentDirOrFile() throws Exception {
-        // The document is serialized in memory first: a serializer failure leaves neither an empty target file nor a
-        // newly created parent directory behind, and surfaces as the serializer's failure, not as an I/O failure.
-        final java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("cql-mapper-");
-        final File source = dir.resolve("source.xml").toFile();
-        dir.toFile().deleteOnExit(); // deleted after source (reverse registration order)
-        source.deleteOnExit();
-        java.nio.file.Files.write(source.toPath(),
-                "<cqlMapper xmlns:p=\"urn:p\"><cql id=\"q\" p:t=\"1\">SELECT 1 FROM t</cql></cqlMapper>".getBytes(StandardCharsets.UTF_8));
-        final CqlMapper m = CqlMapper.loadFrom(source);
-
-        final File target = dir.resolve("missing").resolve("deeper").resolve("out.xml").toFile();
-        final RuntimeException ex = assertThrows(RuntimeException.class, () -> m.saveTo(target));
-        assertFalse(ex instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(ex));
-        boolean transformerFailure = false;
-
-        for (Throwable t = ex; t != null && !transformerFailure; t = t.getCause()) {
-            transformerFailure = t instanceof javax.xml.transform.TransformerException;
-        }
-
-        assertTrue(transformerFailure, String.valueOf(ex));
-        assertFalse(target.exists());
-        assertFalse(target.getParentFile().getParentFile().exists());
-
-        // saveTo(OutputStream) reports the same failure.
-        assertThrows(ex.getClass(), () -> m.saveTo(new java.io.ByteArrayOutputStream()));
-    }
-
-    @Test
-    public void testSaveToFile_CreatesParentDirsAndReplacesLongerFile() throws Exception {
-        // Pins for the in-memory serialization: missing parent directories are still created, a longer existing file is
-        // fully replaced (truncated), and the file holds exactly the bytes saveTo(OutputStream) writes.
-        final java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("cql-mapper-");
-        final File target = dir.resolve("a").resolve("b").resolve("out.xml").toFile();
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "30");
         final CqlMapper m = new CqlMapper();
-        m.add("q", "SELECT * FROM t WHERE name = 'é中😀' AND id = :id");
-
-        m.saveTo(target);
-        final java.io.ByteArrayOutputStream expected = new java.io.ByteArrayOutputStream();
-        m.saveTo(expected);
-        org.junit.jupiter.api.Assertions.assertArrayEquals(expected.toByteArray(), java.nio.file.Files.readAllBytes(target.toPath()));
-
-        java.nio.file.Files.write(target.toPath(), new byte[expected.size() * 4]);
-        m.saveTo(target);
-        org.junit.jupiter.api.Assertions.assertArrayEquals(expected.toByteArray(), java.nio.file.Files.readAllBytes(target.toPath()));
-        assertEquals(m.get("q").originalCql(), CqlMapper.loadFrom(target).get("q").originalCql());
-
-        java.nio.file.Files.delete(target.toPath());
-        java.nio.file.Files.delete(target.getParentFile().toPath());
-        java.nio.file.Files.delete(target.getParentFile().getParentFile().toPath());
-        java.nio.file.Files.delete(dir);
-    }
-
-    // ---- 2026-10-04 coverageCQ ----
-
-    @Test
-    public void testSaveToFile_WriteFailure_isUncheckedIOException() throws Exception {
-        // saveTo(File) now copies the XML serialized in memory into the file, so a failure while writing the file is the
-        // documented UncheckedIOException (on HEAD the serializer wrote to the file itself and reported the I/O error as an
-        // UncheckedException wrapping a TransformerException). A byte-range lock held through a second handle makes the
-        // write fail; such locks are mandatory only on Windows.
-        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name", "").startsWith("Windows"), "needs mandatory byte-range locks");
-
-        final File file = File.createTempFile("cql-mapper-lock-", ".xml");
-        file.deleteOnExit();
-        final CqlMapper m = new CqlMapper();
-
-        for (int i = 0; i < 20; i++) {
-            m.add("q" + i, "SELECT * FROM t WHERE id = ?");
-        }
-
-        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "rw");
-                java.nio.channels.FileLock lock = raf.getChannel().lock(64, 1 << 20, false)) {
-            final RuntimeException ex = assertThrows(RuntimeException.class, () -> m.saveTo(file));
-            assertTrue(ex instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(ex));
-            assertTrue(ex.getCause() instanceof java.io.IOException, String.valueOf(ex.getCause()));
-        }
-
-        // Once the lock is gone the same file is written normally.
+        m.add("findById", "SELECT * FROM users WHERE id = :id", attrs);
+        m.add("count", "SELECT COUNT(*) FROM users");
         m.saveTo(file);
-        assertEquals(m.ids(), CqlMapper.loadFrom(file).ids());
+
+        final CqlMapper loaded = CqlMapper.loadFrom(file);
+        assertEquals(m.ids(), loaded.ids());
+        assertEquals("SELECT * FROM users WHERE id = :id", loaded.get("findById").originalCql());
+        assertEquals("30", loaded.getAttributes("findById").get("timeout"));
+        assertEquals("SELECT COUNT(*) FROM users", loaded.get("count").originalCql());
+    }
+
+    @Test
+    public void testToString_RepresentsInternalMap() {
+        final CqlMapper m = new CqlMapper();
+        m.add("foo", "SELECT 1 FROM tostring_internal_map", null);
+        final String s = m.toString();
+        assertNotNull(s);
+        assertTrue(s.contains("foo"), s);
     }
 }

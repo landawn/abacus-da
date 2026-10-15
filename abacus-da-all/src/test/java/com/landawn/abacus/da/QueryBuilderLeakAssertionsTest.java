@@ -56,8 +56,7 @@ public class QueryBuilderLeakAssertionsTest extends TestBase {
 
     @Test
     public void unexpectedOutcomeStillFails() {
-        assertThrows(AssertionFailedError.class,
-                () -> QueryBuilderLeakAssertions.assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> {
-                }, "no exception"));
+        assertThrows(AssertionFailedError.class, () -> QueryBuilderLeakAssertions.assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> {
+        }, "no exception"));
     }
 }

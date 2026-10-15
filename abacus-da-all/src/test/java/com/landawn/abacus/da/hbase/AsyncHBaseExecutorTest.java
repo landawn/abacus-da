@@ -39,7 +39,6 @@ import org.junit.jupiter.api.Test;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.google.protobuf.Service;
-
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
@@ -56,9 +55,7 @@ import com.landawn.abacus.util.ContinuableFuture;
  */
 public class AsyncHBaseExecutorTest extends TestBase {
 
-    private AsyncHBaseExecutor newAsync(final HBaseExecutor sync) {
-        return new AsyncHBaseExecutor(sync, new AsyncExecutor(2, 4, 30L, java.util.concurrent.TimeUnit.SECONDS));
-    }
+    // Construction and configuration
 
     @Test
     public void testSync_returnsWrappedExecutor() {
@@ -67,208 +64,42 @@ public class AsyncHBaseExecutorTest extends TestBase {
         assertSame(sync, async.sync());
     }
 
-    // ---------------------------------------------------------------------
-    // exists(...) variants
-    // ---------------------------------------------------------------------
+    // Factories and insert operations
 
     @Test
-    public void testExists_singleGet_dispatchesToSync() throws Exception {
+    public void testAppend_anyAppend_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        Get get = new Get("k".getBytes());
-        when(sync.exists("tbl", get)).thenReturn(true);
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        ContinuableFuture<Boolean> fut = async.exists("tbl", get);
-        assertTrue(fut.get());
-        verify(sync, times(1)).exists("tbl", get);
-    }
-
-    @Test
-    public void testExists_listOfGets_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        List<Get> gets = Arrays.asList(new Get("a".getBytes()));
-        when(sync.exists(eq("tbl"), eq(gets))).thenReturn(Arrays.asList(Boolean.TRUE));
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        List<Boolean> result = async.exists("tbl", gets).get();
-        assertEquals(1, result.size());
-        assertTrue(result.get(0));
-    }
-
-    @Test
-    public void testExists_anyGet_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AnyGet anyGet = AnyGet.of("k");
-        when(sync.exists("tbl", anyGet)).thenReturn(true);
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertTrue(async.exists("tbl", anyGet).get());
-    }
-
-    @Test
-    public void testExists_collectionOfAnyGet_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        Collection<AnyGet> anyGets = Arrays.asList(AnyGet.of("k"));
-        when(sync.exists("tbl", anyGets)).thenReturn(Arrays.asList(Boolean.FALSE));
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertEquals(Arrays.asList(Boolean.FALSE), async.exists("tbl", anyGets).get());
-    }
-
-    // ---------------------------------------------------------------------
-    // get(...) variants
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testGet_singleGet_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        Get get = new Get("k".getBytes());
+        AnyAppend ap = AnyAppend.of("k");
         Result expected = Result.create(Collections.emptyList());
-        when(sync.get("tbl", get)).thenReturn(expected);
+        when(sync.append("tbl", ap)).thenReturn(expected);
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(expected, async.get("tbl", get).get());
+        assertSame(expected, async.append("tbl", ap).get());
     }
 
     @Test
-    public void testGet_listOfGets_dispatchesToSync() throws Exception {
+    public void testAppend_rawAppend_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        List<Get> gets = Arrays.asList(new Get("k".getBytes()));
-        List<Result> expected = Arrays.asList(Result.create(Collections.emptyList()));
-        when(sync.get("tbl", gets)).thenReturn(expected);
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(expected, async.get("tbl", gets).get());
-    }
-
-    @Test
-    public void testGet_anyGet_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AnyGet anyGet = AnyGet.of("k");
+        org.apache.hadoop.hbase.client.Append ap = new org.apache.hadoop.hbase.client.Append("k".getBytes());
         Result expected = Result.create(Collections.emptyList());
-        when(sync.get("tbl", anyGet)).thenReturn(expected);
+        when(sync.append("tbl", ap)).thenReturn(expected);
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(expected, async.get("tbl", anyGet).get());
+        assertSame(expected, async.append("tbl", ap).get());
     }
 
-    @Test
-    public void testGet_collectionOfAnyGet_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        Collection<AnyGet> anyGets = Arrays.asList(AnyGet.of("k"));
-        List<Result> expected = Arrays.asList(Result.create(Collections.emptyList()));
-        when(sync.get("tbl", anyGets)).thenReturn(expected);
+    // Updates and deletes
 
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(expected, async.get("tbl", anyGets).get());
-    }
+    // coprocessorService
 
     @Test
-    public void testGet_singleGetWithClass_dispatchesToSync() throws Exception {
+    public void testCoprocessorService_singleRow_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        Get get = new Get("k".getBytes());
-        when(sync.get("tbl", get, String.class)).thenReturn("hello");
+        org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel ch = mock(org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel.class);
+        when(sync.coprocessorService("tbl", "k")).thenReturn(ch);
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertEquals("hello", async.get("tbl", get, String.class).get());
-    }
-
-    @Test
-    public void testGet_listGetsWithClass_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        List<Get> gets = Arrays.asList(new Get("k".getBytes()));
-        when(sync.get("tbl", gets, String.class)).thenReturn(Arrays.asList("v"));
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertEquals(Arrays.asList("v"), async.get("tbl", gets, String.class).get());
-    }
-
-    @Test
-    public void testGet_anyGetWithClass_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AnyGet anyGet = AnyGet.of("k");
-        when(sync.get("tbl", anyGet, String.class)).thenReturn("v");
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertEquals("v", async.get("tbl", anyGet, String.class).get());
-    }
-
-    @Test
-    public void testGet_collectionAnyGetWithClass_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        Collection<AnyGet> anyGets = Arrays.asList(AnyGet.of("k"));
-        when(sync.get("tbl", anyGets, String.class)).thenReturn(Arrays.asList("v"));
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertEquals(Arrays.asList("v"), async.get("tbl", anyGets, String.class).get());
-    }
-
-    // ---------------------------------------------------------------------
-    // put(...) variants - they all return Void
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testPut_singlePut_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        Put put = new Put("k".getBytes());
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.put("tbl", put).get();
-        verify(sync, times(1)).put("tbl", put);
-    }
-
-    @Test
-    public void testPut_listOfPuts_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        List<Put> puts = Arrays.asList(new Put("k".getBytes()));
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.put("tbl", puts).get();
-        verify(sync, times(1)).put("tbl", puts);
-    }
-
-    @Test
-    public void testPut_anyPut_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AnyPut anyPut = AnyPut.of("k");
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.put("tbl", anyPut).get();
-        verify(sync, times(1)).put("tbl", anyPut);
-    }
-
-    @Test
-    public void testPut_collectionOfAnyPut_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        Collection<AnyPut> anyPuts = Arrays.asList(AnyPut.of("k"));
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.put("tbl", anyPuts).get();
-        verify(sync, times(1)).put("tbl", anyPuts);
-    }
-
-    // ---------------------------------------------------------------------
-    // delete(...) variants
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testDelete_singleDelete_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        Delete del = new Delete("k".getBytes());
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.delete("tbl", del).get();
-        verify(sync, times(1)).delete("tbl", del);
-    }
-
-    @Test
-    public void testDelete_listOfDeletes_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        List<Delete> deletes = Arrays.asList(new Delete("k".getBytes()));
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.delete("tbl", deletes).get();
-        verify(sync, times(1)).delete("tbl", deletes);
+        assertSame(ch, async.coprocessorService("tbl", "k").get());
     }
 
     @Test
@@ -291,119 +122,158 @@ public class AsyncHBaseExecutorTest extends TestBase {
         verify(sync, times(1)).delete("tbl", anyDeletes);
     }
 
-    // ---------------------------------------------------------------------
-    // scan(...) variants
-    // ---------------------------------------------------------------------
-
     @Test
-    public void testScan_byFamily_dispatchesToSync() throws Exception {
+    public void testDelete_listOfDeletes_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
-        when(sync.scan("tbl", "cf")).thenReturn(stream);
+        List<Delete> deletes = Arrays.asList(new Delete("k".getBytes()));
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(stream, async.scan("tbl", "cf").get());
+        async.delete("tbl", deletes).get();
+        verify(sync, times(1)).delete("tbl", deletes);
+    }
+
+    // delete(...) variants
+
+    @Test
+    public void testDelete_singleDelete_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Delete del = new Delete("k".getBytes());
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        async.delete("tbl", del).get();
+        verify(sync, times(1)).delete("tbl", del);
     }
 
     @Test
-    public void testScan_byFamilyAndQualifier_dispatchesToSync() throws Exception {
+    public void testExists_anyGet_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
-        when(sync.scan("tbl", "cf", "q")).thenReturn(stream);
+        AnyGet anyGet = AnyGet.of("k");
+        when(sync.exists("tbl", anyGet)).thenReturn(true);
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(stream, async.scan("tbl", "cf", "q").get());
+        assertTrue(async.exists("tbl", anyGet).get());
     }
 
     @Test
-    public void testScan_byFamilyBytes_dispatchesToSync() throws Exception {
+    public void testExists_collectionOfAnyGet_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
-        byte[] fam = "cf".getBytes();
-        when(sync.scan("tbl", fam)).thenReturn(stream);
+        Collection<AnyGet> anyGets = Arrays.asList(AnyGet.of("k"));
+        when(sync.exists("tbl", anyGets)).thenReturn(Arrays.asList(Boolean.FALSE));
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(stream, async.scan("tbl", fam).get());
+        assertEquals(Arrays.asList(Boolean.FALSE), async.exists("tbl", anyGets).get());
     }
 
     @Test
-    public void testScan_byFamilyAndQualifierBytes_dispatchesToSync() throws Exception {
+    public void testExists_listOfGets_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
-        byte[] fam = "cf".getBytes();
-        byte[] q = "q".getBytes();
-        when(sync.scan("tbl", fam, q)).thenReturn(stream);
+        List<Get> gets = Arrays.asList(new Get("a".getBytes()));
+        when(sync.exists(eq("tbl"), eq(gets))).thenReturn(Arrays.asList(Boolean.TRUE));
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(stream, async.scan("tbl", fam, q).get());
+        List<Boolean> result = async.exists("tbl", gets).get();
+        assertEquals(1, result.size());
+        assertTrue(result.get(0));
+    }
+
+    // exists(...) variants
+
+    @Test
+    public void testExists_singleGet_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Get get = new Get("k".getBytes());
+        when(sync.exists("tbl", get)).thenReturn(true);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        ContinuableFuture<Boolean> fut = async.exists("tbl", get);
+        assertTrue(fut.get());
+        verify(sync, times(1)).exists("tbl", get);
     }
 
     @Test
-    public void testScan_anyScan_dispatchesToSync() throws Exception {
+    public void testGet_anyGet_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
-        AnyScan anyScan = AnyScan.create();
-        when(sync.scan("tbl", anyScan)).thenReturn(stream);
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(stream, async.scan("tbl", anyScan).get());
-    }
-
-    @Test
-    public void testScan_rawScan_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
-        org.apache.hadoop.hbase.client.Scan scan = new org.apache.hadoop.hbase.client.Scan();
-        when(sync.scan("tbl", scan)).thenReturn(stream);
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(stream, async.scan("tbl", scan).get());
-    }
-
-    // ---------------------------------------------------------------------
-    // mutateRow / append / increment
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testMutateRow_anyRowMutations_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AnyRowMutations rm = AnyRowMutations.of("k");
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.mutateRow("tbl", rm).get();
-        verify(sync, times(1)).mutateRow("tbl", rm);
-    }
-
-    @Test
-    public void testMutateRow_rawRowMutations_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        org.apache.hadoop.hbase.client.RowMutations rm = new org.apache.hadoop.hbase.client.RowMutations("k".getBytes());
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        async.mutateRow("tbl", rm).get();
-        verify(sync, times(1)).mutateRow("tbl", rm);
-    }
-
-    @Test
-    public void testAppend_anyAppend_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AnyAppend ap = AnyAppend.of("k");
+        AnyGet anyGet = AnyGet.of("k");
         Result expected = Result.create(Collections.emptyList());
-        when(sync.append("tbl", ap)).thenReturn(expected);
+        when(sync.get("tbl", anyGet)).thenReturn(expected);
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(expected, async.append("tbl", ap).get());
+        assertSame(expected, async.get("tbl", anyGet).get());
     }
 
     @Test
-    public void testAppend_rawAppend_dispatchesToSync() throws Exception {
+    public void testGet_anyGetWithClass_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        org.apache.hadoop.hbase.client.Append ap = new org.apache.hadoop.hbase.client.Append("k".getBytes());
-        Result expected = Result.create(Collections.emptyList());
-        when(sync.append("tbl", ap)).thenReturn(expected);
+        AnyGet anyGet = AnyGet.of("k");
+        when(sync.get("tbl", anyGet, String.class)).thenReturn("v");
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(expected, async.append("tbl", ap).get());
+        assertEquals("v", async.get("tbl", anyGet, String.class).get());
+    }
+
+    @Test
+    public void testGet_collectionAnyGetWithClass_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Collection<AnyGet> anyGets = Arrays.asList(AnyGet.of("k"));
+        when(sync.get("tbl", anyGets, String.class)).thenReturn(Arrays.asList("v"));
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertEquals(Arrays.asList("v"), async.get("tbl", anyGets, String.class).get());
+    }
+
+    @Test
+    public void testGet_collectionOfAnyGet_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Collection<AnyGet> anyGets = Arrays.asList(AnyGet.of("k"));
+        List<Result> expected = Arrays.asList(Result.create(Collections.emptyList()));
+        when(sync.get("tbl", anyGets)).thenReturn(expected);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(expected, async.get("tbl", anyGets).get());
+    }
+
+    @Test
+    public void testGet_listGetsWithClass_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        List<Get> gets = Arrays.asList(new Get("k".getBytes()));
+        when(sync.get("tbl", gets, String.class)).thenReturn(Arrays.asList("v"));
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertEquals(Arrays.asList("v"), async.get("tbl", gets, String.class).get());
+    }
+
+    @Test
+    public void testGet_listOfGets_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        List<Get> gets = Arrays.asList(new Get("k".getBytes()));
+        List<Result> expected = Arrays.asList(Result.create(Collections.emptyList()));
+        when(sync.get("tbl", gets)).thenReturn(expected);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(expected, async.get("tbl", gets).get());
+    }
+
+    // get(...) variants
+
+    @Test
+    public void testGet_singleGet_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Get get = new Get("k".getBytes());
+        Result expected = Result.create(Collections.emptyList());
+        when(sync.get("tbl", get)).thenReturn(expected);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(expected, async.get("tbl", get).get());
+    }
+
+    @Test
+    public void testGet_singleGetWithClass_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Get get = new Get("k".getBytes());
+        when(sync.get("tbl", get, String.class)).thenReturn("hello");
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertEquals("hello", async.get("tbl", get, String.class).get());
     }
 
     @Test
@@ -429,6 +299,24 @@ public class AsyncHBaseExecutorTest extends TestBase {
     }
 
     @Test
+    public void testIncrementColumnValue_byteArrayFamilyQualifier_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        when(sync.incrementColumnValue(anyString(), any(), any(byte[].class), any(byte[].class), anyLong())).thenReturn(7L);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertEquals(7L, async.incrementColumnValue("tbl", "k", "cf".getBytes(), "q".getBytes(), 3L).get().longValue());
+    }
+
+    @Test
+    public void testIncrementColumnValue_byteArrayFamilyQualifierWithDurability_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        when(sync.incrementColumnValue(anyString(), any(), any(byte[].class), any(byte[].class), anyLong(), any(Durability.class))).thenReturn(8L);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertEquals(8L, async.incrementColumnValue("tbl", "k", "cf".getBytes(), "q".getBytes(), 4L, Durability.ASYNC_WAL).get().longValue());
+    }
+
+    @Test
     public void testIncrementColumnValue_stringFamilyQualifier_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
         when(sync.incrementColumnValue(anyString(), any(), anyString(), anyString(), anyLong())).thenReturn(42L);
@@ -447,50 +335,182 @@ public class AsyncHBaseExecutorTest extends TestBase {
     }
 
     @Test
-    public void testIncrementColumnValue_byteArrayFamilyQualifier_dispatchesToSync() throws Exception {
+    public void testIncrementColumnValueOverloads_forwardExactArguments() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        when(sync.incrementColumnValue(anyString(), any(), any(byte[].class), any(byte[].class), anyLong())).thenReturn(7L);
+        AsyncHBaseExecutor async = newAsync(sync);
+        Object rowKey = new Object();
+        byte[] fam = "cf".getBytes();
+        byte[] q = "q".getBytes();
+
+        async.incrementColumnValue("tbl", rowKey, "cf", "q", 7L).get();
+        async.incrementColumnValue("tbl", rowKey, "cf", "q", -3L, Durability.SKIP_WAL).get();
+        async.incrementColumnValue("tbl", rowKey, fam, q, 11L).get();
+        async.incrementColumnValue("tbl", rowKey, fam, q, -5L, Durability.FSYNC_WAL).get();
+
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), eq("cf"), eq("q"), eq(7L));
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), eq("cf"), eq("q"), eq(-3L), same(Durability.SKIP_WAL));
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), same(fam), same(q), eq(11L));
+        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), same(fam), same(q), eq(-5L), same(Durability.FSYNC_WAL));
+    }
+
+    // mutateRow / append / increment
+
+    @Test
+    public void testMutateRow_anyRowMutations_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AnyRowMutations rm = AnyRowMutations.of("k");
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertEquals(7L, async.incrementColumnValue("tbl", "k", "cf".getBytes(), "q".getBytes(), 3L).get().longValue());
+        async.mutateRow("tbl", rm).get();
+        verify(sync, times(1)).mutateRow("tbl", rm);
     }
 
     @Test
-    public void testIncrementColumnValue_byteArrayFamilyQualifierWithDurability_dispatchesToSync() throws Exception {
+    public void testMutateRow_rawRowMutations_dispatchesToSync() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
-        when(sync.incrementColumnValue(anyString(), any(), any(byte[].class), any(byte[].class), anyLong(), any(Durability.class))).thenReturn(8L);
+        org.apache.hadoop.hbase.client.RowMutations rm = new org.apache.hadoop.hbase.client.RowMutations("k".getBytes());
 
         AsyncHBaseExecutor async = newAsync(sync);
-        assertEquals(8L, async.incrementColumnValue("tbl", "k", "cf".getBytes(), "q".getBytes(), 4L, Durability.ASYNC_WAL).get().longValue());
-    }
-
-    // ---------------------------------------------------------------------
-    // coprocessorService
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testCoprocessorService_singleRow_dispatchesToSync() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel ch = mock(org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel.class);
-        when(sync.coprocessorService("tbl", "k")).thenReturn(ch);
-
-        AsyncHBaseExecutor async = newAsync(sync);
-        assertSame(ch, async.coprocessorService("tbl", "k").get());
+        async.mutateRow("tbl", rm).get();
+        verify(sync, times(1)).mutateRow("tbl", rm);
     }
 
     @Test
-    public void testCoprocessorService_nullFunctionalArgs_throwIllegalArgumentException() {
+    public void testPut_anyPut_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AnyPut anyPut = AnyPut.of("k");
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        async.put("tbl", anyPut).get();
+        verify(sync, times(1)).put("tbl", anyPut);
+    }
+
+    @Test
+    public void testPut_collectionOfAnyPut_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Collection<AnyPut> anyPuts = Arrays.asList(AnyPut.of("k"));
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        async.put("tbl", anyPuts).get();
+        verify(sync, times(1)).put("tbl", anyPuts);
+    }
+
+    @Test
+    public void testPut_listOfPuts_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        List<Put> puts = Arrays.asList(new Put("k".getBytes()));
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        async.put("tbl", puts).get();
+        verify(sync, times(1)).put("tbl", puts);
+    }
+
+    // put(...) variants - they all return Void
+
+    @Test
+    public void testPut_singlePut_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        Put put = new Put("k".getBytes());
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        async.put("tbl", put).get();
+        verify(sync, times(1)).put("tbl", put);
+    }
+
+    @Test
+    public void testScan_anyScan_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
+        AnyScan anyScan = AnyScan.create();
+        when(sync.scan("tbl", anyScan)).thenReturn(stream);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(stream, async.scan("tbl", anyScan).get());
+    }
+
+    // scan(...) variants
+
+    @Test
+    public void testScan_byFamily_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
+        when(sync.scan("tbl", "cf")).thenReturn(stream);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(stream, async.scan("tbl", "cf").get());
+    }
+
+    @Test
+    public void testScan_byFamilyAndQualifier_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
+        when(sync.scan("tbl", "cf", "q")).thenReturn(stream);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(stream, async.scan("tbl", "cf", "q").get());
+    }
+
+    @Test
+    public void testScan_byFamilyAndQualifierBytes_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
+        byte[] fam = "cf".getBytes();
+        byte[] q = "q".getBytes();
+        when(sync.scan("tbl", fam, q)).thenReturn(stream);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(stream, async.scan("tbl", fam, q).get());
+    }
+
+    @Test
+    public void testScan_byFamilyBytes_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
+        byte[] fam = "cf".getBytes();
+        when(sync.scan("tbl", fam)).thenReturn(stream);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(stream, async.scan("tbl", fam).get());
+    }
+
+    @Test
+    public void testScan_rawScan_dispatchesToSync() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        com.landawn.abacus.util.stream.Stream<Result> stream = com.landawn.abacus.util.stream.Stream.empty();
+        org.apache.hadoop.hbase.client.Scan scan = new org.apache.hadoop.hbase.client.Scan();
+        when(sync.scan("tbl", scan)).thenReturn(stream);
+
+        AsyncHBaseExecutor async = newAsync(sync);
+        assertSame(stream, async.scan("tbl", scan).get());
+    }
+
+    // Queries and results
+
+    @Test
+    public void testTypedScanOverloads_forwardExactArguments() throws Exception {
         HBaseExecutor sync = mock(HBaseExecutor.class);
         AsyncHBaseExecutor async = newAsync(sync);
+        byte[] fam = "cf".getBytes();
+        byte[] q = "q".getBytes();
+        AnyScan anyScan = AnyScan.create();
+        Scan scan = new Scan();
 
-        assertThrows(IllegalArgumentException.class,
-                () -> async.coprocessorService("tbl", Service.class, "a", "z", (Batch.Call<Service, Object>) null));
-        assertThrows(IllegalArgumentException.class,
-                () -> async.coprocessorService("tbl", Service.class, "a", "z", null, (region, row, result) -> {
-                }));
-        assertThrows(IllegalArgumentException.class,
-                () -> async.coprocessorService("tbl", Service.class, "a", "z", (Batch.Call<Service, Object>) instance -> null, null));
+        async.scan("tbl", "cf", Integer.class).get();
+        async.scan("tbl", "cf", "q", Integer.class).get();
+        async.scan("tbl", fam, Integer.class).get();
+        async.scan("tbl", fam, q, Integer.class).get();
+        async.scan("tbl", anyScan, Integer.class).get();
+        async.scan("tbl", scan, Integer.class).get();
+
+        verify(sync).scan(eq("tbl"), eq("cf"), same(Integer.class));
+        verify(sync).scan(eq("tbl"), eq("cf"), eq("q"), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(fam), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(fam), same(q), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(anyScan), same(Integer.class));
+        verify(sync).scan(eq("tbl"), same(scan), same(Integer.class));
     }
+
+    // Resource lifecycle
 
     @Test
     public void testBatchCoprocessorService_nullCallback_throwsIllegalArgumentException() {
@@ -500,33 +520,25 @@ public class AsyncHBaseExecutorTest extends TestBase {
         final Descriptors.MethodDescriptor methodDescriptor = mock(Descriptors.MethodDescriptor.class);
         final Message request = mock(Message.class);
         final Message responsePrototype = mock(Message.class);
-        assertThrows(IllegalArgumentException.class,
-                () -> async.batchCoprocessorService("tbl", methodDescriptor, request, "a", "z", responsePrototype, null));
+        assertThrows(IllegalArgumentException.class, () -> async.batchCoprocessorService("tbl", methodDescriptor, request, "a", "z", responsePrototype, null));
     }
-
-    // ---------------------------------------------------------------------
-    // End-to-end integration with a real HBaseExecutor (mocked Connection).
-    // ---------------------------------------------------------------------
 
     @Test
-    public void testAsyncAccessor_fromHBaseExecutor_returnsLinkedAsyncExecutor() throws Exception {
-        Connection conn = mock(Connection.class);
-        Admin admin = mock(Admin.class);
-        when(conn.getAdmin()).thenReturn(admin);
-        HBaseExecutor executor = new HBaseExecutor(conn);
-        try {
-            AsyncHBaseExecutor async = executor.async();
-            assertNotNull(async);
-            assertSame(executor, async.sync());
-        } finally {
-            executor.close();
-        }
+    public void testCoprocessorService_nullFunctionalArgs_throwIllegalArgumentException() {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+
+        assertThrows(IllegalArgumentException.class, () -> async.coprocessorService("tbl", Service.class, "a", "z", (Batch.Call<Service, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.coprocessorService("tbl", Service.class, "a", "z", null, (region, row, result) -> {
+        }));
+        assertThrows(IllegalArgumentException.class,
+                () -> async.coprocessorService("tbl", Service.class, "a", "z", (Batch.Call<Service, Object>) instance -> null, null));
     }
 
-    // ---------------------------------------------------------------------
+    // Additional contracts
+
     // Null arguments are rejected eagerly on the calling thread, so the failure
     // is an IllegalArgumentException here and never an ExecutionException later.
-    // ---------------------------------------------------------------------
 
     @Test
     public void testNullArgs_rejectedEagerlyOnCallingThread() {
@@ -553,73 +565,21 @@ public class AsyncHBaseExecutorTest extends TestBase {
         verifyNoInteractions(sync);
     }
 
-    // ---------------------------------------------------------------------
-    // Exact argument forwarding: every async overload must hand the very same argument
-    // instances, in the same positions, to the matching synchronous overload (the dispatch
-    // tests above stub with matchers, which would not catch a dropped or swapped argument).
-    // ---------------------------------------------------------------------
+    // End-to-end integration with a real HBaseExecutor (mocked Connection).
 
     @Test
-    public void testTypedReadOverloads_forwardExactArguments() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AsyncHBaseExecutor async = newAsync(sync);
-        Get get = new Get("k".getBytes());
-        List<Get> gets = Arrays.asList(get);
-        AnyGet anyGet = AnyGet.of("k");
-        Collection<AnyGet> anyGets = Arrays.asList(anyGet);
-
-        async.get("tbl", get, Integer.class).get();
-        async.get("tbl", gets, Integer.class).get();
-        async.get("tbl", anyGet, Integer.class).get();
-        async.get("tbl", anyGets, Integer.class).get();
-
-        verify(sync).get(eq("tbl"), same(get), same(Integer.class));
-        verify(sync).get(eq("tbl"), same(gets), same(Integer.class));
-        verify(sync).get(eq("tbl"), same(anyGet), same(Integer.class));
-        verify(sync).get(eq("tbl"), same(anyGets), same(Integer.class));
-    }
-
-    @Test
-    public void testTypedScanOverloads_forwardExactArguments() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AsyncHBaseExecutor async = newAsync(sync);
-        byte[] fam = "cf".getBytes();
-        byte[] q = "q".getBytes();
-        AnyScan anyScan = AnyScan.create();
-        Scan scan = new Scan();
-
-        async.scan("tbl", "cf", Integer.class).get();
-        async.scan("tbl", "cf", "q", Integer.class).get();
-        async.scan("tbl", fam, Integer.class).get();
-        async.scan("tbl", fam, q, Integer.class).get();
-        async.scan("tbl", anyScan, Integer.class).get();
-        async.scan("tbl", scan, Integer.class).get();
-
-        verify(sync).scan(eq("tbl"), eq("cf"), same(Integer.class));
-        verify(sync).scan(eq("tbl"), eq("cf"), eq("q"), same(Integer.class));
-        verify(sync).scan(eq("tbl"), same(fam), same(Integer.class));
-        verify(sync).scan(eq("tbl"), same(fam), same(q), same(Integer.class));
-        verify(sync).scan(eq("tbl"), same(anyScan), same(Integer.class));
-        verify(sync).scan(eq("tbl"), same(scan), same(Integer.class));
-    }
-
-    @Test
-    public void testIncrementColumnValueOverloads_forwardExactArguments() throws Exception {
-        HBaseExecutor sync = mock(HBaseExecutor.class);
-        AsyncHBaseExecutor async = newAsync(sync);
-        Object rowKey = new Object();
-        byte[] fam = "cf".getBytes();
-        byte[] q = "q".getBytes();
-
-        async.incrementColumnValue("tbl", rowKey, "cf", "q", 7L).get();
-        async.incrementColumnValue("tbl", rowKey, "cf", "q", -3L, Durability.SKIP_WAL).get();
-        async.incrementColumnValue("tbl", rowKey, fam, q, 11L).get();
-        async.incrementColumnValue("tbl", rowKey, fam, q, -5L, Durability.FSYNC_WAL).get();
-
-        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), eq("cf"), eq("q"), eq(7L));
-        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), eq("cf"), eq("q"), eq(-3L), same(Durability.SKIP_WAL));
-        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), same(fam), same(q), eq(11L));
-        verify(sync).incrementColumnValue(eq("tbl"), same(rowKey), same(fam), same(q), eq(-5L), same(Durability.FSYNC_WAL));
+    public void testAsyncAccessor_fromHBaseExecutor_returnsLinkedAsyncExecutor() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
+            AsyncHBaseExecutor async = executor.async();
+            assertNotNull(async);
+            assertSame(executor, async.sync());
+        } finally {
+            executor.close();
+        }
     }
 
     @Test
@@ -647,6 +607,30 @@ public class AsyncHBaseExecutorTest extends TestBase {
         verify(sync).batchCoprocessorService(eq("tbl"), same(methodDescriptor), same(request), same(start), same(end), same(responsePrototype));
         verify(sync).batchCoprocessorService(eq("tbl"), same(methodDescriptor), same(request), same(start), same(end), same(responsePrototype),
                 same(messageCallback));
+    }
+
+    // Exact argument forwarding: every async overload must hand the very same argument
+    // instances, in the same positions, to the matching synchronous overload (the dispatch
+    // tests above stub with matchers, which would not catch a dropped or swapped argument).
+
+    @Test
+    public void testTypedReadOverloads_forwardExactArguments() throws Exception {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+        Get get = new Get("k".getBytes());
+        List<Get> gets = Arrays.asList(get);
+        AnyGet anyGet = AnyGet.of("k");
+        Collection<AnyGet> anyGets = Arrays.asList(anyGet);
+
+        async.get("tbl", get, Integer.class).get();
+        async.get("tbl", gets, Integer.class).get();
+        async.get("tbl", anyGet, Integer.class).get();
+        async.get("tbl", anyGets, Integer.class).get();
+
+        verify(sync).get(eq("tbl"), same(get), same(Integer.class));
+        verify(sync).get(eq("tbl"), same(gets), same(Integer.class));
+        verify(sync).get(eq("tbl"), same(anyGet), same(Integer.class));
+        verify(sync).get(eq("tbl"), same(anyGets), same(Integer.class));
     }
 
     @Test
@@ -679,5 +663,9 @@ public class AsyncHBaseExecutorTest extends TestBase {
         verify(sync).delete(eq("tbl"), same(deletes));
         verify(sync).delete(eq("tbl"), same(anyDelete));
         verify(sync).delete(eq("tbl"), same(anyDeletes));
+    }
+
+    private AsyncHBaseExecutor newAsync(final HBaseExecutor sync) {
+        return new AsyncHBaseExecutor(sync, new AsyncExecutor(2, 4, 30L, java.util.concurrent.TimeUnit.SECONDS));
     }
 }

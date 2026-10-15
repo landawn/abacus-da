@@ -9,23 +9,19 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.annotation.Id;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.query.Filters;
 
-@Tag("base-test")
 public class CassandraReviewRegressionTest extends TestBase {
 
     @Test
     void deletingAllExcludedColumnsCannotBecomeAWholeRowDelete() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PSC.delete(Item.class, Set.of("value")).from("items").where(Filters.eq("id", 1)).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.delete(Item.class, Set.of("value")).from("items").where(Filters.eq("id", 1)).build());
 
-        assertEquals("DELETE value FROM items WHERE id = ?",
-                PSC.delete(Item.class).from("items").where(Filters.eq("id", 1)).build().query());
+        assertEquals("DELETE value FROM items WHERE id = ?", PSC.delete(Item.class).from("items").where(Filters.eq("id", 1)).build().query());
         assertEquals("DELETE FROM items WHERE id = ?", PSC.deleteFrom("items").where(Filters.eq("id", 1)).build().query());
     }
 

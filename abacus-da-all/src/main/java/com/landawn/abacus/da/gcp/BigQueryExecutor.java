@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -134,6 +135,8 @@ import com.landawn.abacus.util.stream.Stream;
  * including {@code java.time} types such as {@code LocalDate}/{@code LocalDateTime}/{@code Instant},
  * enums, and {@code UUID} &mdash; is bound as a {@code STRING} parameter, so use
  * {@code java.sql.Date}/{@code java.sql.Timestamp} to bind native DATE/TIMESTAMP values).
+ * {@code java.sql.Time} binds as a native {@code TIME}, preserving milliseconds and using ASCII digits
+ * independently of the JVM's formatting locale.
  * {@code null} parameters must be wrapped in a {@link QueryParameterValue} so the SQL type is
  * known.</p>
  *
@@ -3443,8 +3446,9 @@ public class BigQueryExecutor {
         queryParameterMap.put(java.sql.Date.class, value -> QueryParameterValue.date(value.toString()));
         // java.sql.Time.toString() renders only HH:mm:ss; append the actual millisecond component
         // (floorMod guards pre-epoch values) instead of a hard-coded ".000000" that would discard it.
+        // SQL parameter text requires ASCII digits even when the JVM's formatting locale uses another digit set.
         queryParameterMap.put(java.sql.Time.class,
-                value -> QueryParameterValue.time(String.format("%s.%03d000", value, Math.floorMod(((java.sql.Time) value).getTime(), 1000L))));
+                value -> QueryParameterValue.time(String.format(Locale.ROOT, "%s.%03d000", value, Math.floorMod(((java.sql.Time) value).getTime(), 1000L))));
         queryParameterMap.put(java.sql.Timestamp.class, value -> QueryParameterValue.timestamp(toMicros((java.sql.Timestamp) value)));
 
         queryParameterMap.put(com.google.cloud.Date.class, value -> QueryParameterValue.date(value.toString()));
@@ -3478,7 +3482,8 @@ public class BigQueryExecutor {
      *       {@code java.util.Date}, {@code java.sql.Date}/{@code Time}/{@code Timestamp},
      *       {@code com.google.cloud.Date}, {@code com.google.cloud.Timestamp}, and {@code byte[]}
      *       are mapped to their canonical BigQuery types; a {@link ByteBuffer} binds its remaining bytes as
-     *       {@code BYTES} without changing its position.</li>
+     *       {@code BYTES} without changing its position. {@code java.sql.Time} preserves milliseconds in its
+     *       native {@code TIME} parameter, using ASCII digits regardless of the JVM's formatting locale.</li>
      *   <li>Arrays, collections, maps, and beans are serialised to JSON via
      *       {@link QueryParameterValue#json(String)}.</li>
      *   <li>Any other scalar (e.g. {@code java.time} types such as {@code LocalDate}, enums,

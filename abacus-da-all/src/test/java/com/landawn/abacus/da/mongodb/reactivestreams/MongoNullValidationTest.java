@@ -33,7 +33,7 @@ public class MongoNullValidationTest extends TestBase {
         when(collection.find(any(Bson.class))).thenReturn(publisher);
         final Document row = new Document("value", "test");
         doAnswer(invocation -> {
-            Flux.just(row).subscribe(invocation.<Subscriber<? super Document>>getArgument(0));
+            Flux.just(row).subscribe(invocation.<Subscriber<? super Document>> getArgument(0));
             return null;
         }).when(publisher).subscribe(any());
         final MongoCollectionExecutor executor = new MongoCollectionExecutor(collection);
@@ -44,7 +44,7 @@ public class MongoNullValidationTest extends TestBase {
         assertSame(row, executor.findFirst(Collections.singletonList(null), new Document(), Document.class).block());
 
         doAnswer(invocation -> {
-            Flux.<Document>empty().subscribe(invocation.<Subscriber<? super Document>>getArgument(0));
+            Flux.<Document> empty().subscribe(invocation.<Subscriber<? super Document>> getArgument(0));
             return null;
         }).when(publisher).subscribe(any());
         assertNull(executor.findFirst(Collections.singletonList(null), new Document(), String.class).block());

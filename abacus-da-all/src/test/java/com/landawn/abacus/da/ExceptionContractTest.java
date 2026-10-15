@@ -40,14 +40,12 @@ public class ExceptionContractTest extends TestBase {
         };
 
         // Both overloads delegate value conversion; the original converter failure must remain visible.
-        assertSame(failure, assertThrows(IllegalStateException.class,
-                () -> com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor.Filters.in("value", value)));
-        assertSame(failure, assertThrows(IllegalStateException.class,
-                () -> com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor.Filters.in("value", List.of(value))));
-        assertSame(failure, assertThrows(IllegalStateException.class,
-                () -> com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.Filters.in("value", value)));
-        assertSame(failure, assertThrows(IllegalStateException.class,
-                () -> com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.Filters.in("value", List.of(value))));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor.Filters.in("value", value)));
+        assertSame(failure,
+                assertThrows(IllegalStateException.class, () -> com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor.Filters.in("value", List.of(value))));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.Filters.in("value", value)));
+        assertSame(failure,
+                assertThrows(IllegalStateException.class, () -> com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.Filters.in("value", List.of(value))));
     }
 
     @Test

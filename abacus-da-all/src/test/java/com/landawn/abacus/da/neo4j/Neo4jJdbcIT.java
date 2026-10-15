@@ -16,7 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 // https://github.com/neo4j-contrib/neo4j-jdbc
-public class Neo4jJdbcTest {
+public class Neo4jJdbcIT {
 
     @BeforeAll
     public static void setUpClass() throws IOException {
@@ -34,9 +34,9 @@ public class Neo4jJdbcTest {
     }
 
     /**
-     * 
      *
-     * @throws Exception 
+     *
+     * @throws Exception
      */
     @Test
     public void test_01() throws Exception {

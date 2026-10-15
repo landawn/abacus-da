@@ -65,7 +65,7 @@ final class ResultSets {
      * fetch the next page via {@link AsyncResultSet#fetchNextPage()}. The execution info of
      * every fetched page is accumulated and returned by {@link ResultSet#getExecutionInfos()}.</p>
      *
-     * <h2>Behavior</h2>
+     * <h4>Behavior</h4>
      * <ul>
      * <li>{@link ResultSet#all()} consumes the iterator and therefore eagerly drains all
      * remaining pages.</li>
@@ -82,7 +82,7 @@ final class ResultSets {
      * If the wait is interrupted, the current thread's interrupt status is restored first.</li>
      * </ul>
      *
-     * <h2>Usage Example</h2>
+     * <h4>Usage Example</h4>
      * <pre>{@code
      * CompletionStage<AsyncResultSet> stage = session.executeAsync(statement);
      * AsyncResultSet asyncRs = stage.toCompletableFuture().get();
@@ -105,101 +105,108 @@ final class ResultSets {
     public static ResultSet wrap(final AsyncResultSet asyncResultSet) throws IllegalArgumentException {
         N.checkArgNotNull(asyncResultSet, cs.asyncResultSet);
 
-        return new ResultSet() {
-            private AsyncResultSet currentResultSet = asyncResultSet;
-            private final List<ExecutionInfo> executionInfos = new ArrayList<>(1);
-            private Iterator<Row> currentRows = N.iterate(asyncResultSet.currentPage());
+        return new PagedResultSet(asyncResultSet);
+    }
 
-            private final Iterator<Row> rowIterator = new Iterator<>() {
-                /**
-                 * @return whether a row remains, fetching subsequent pages as necessary
-                 * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
-                 * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
-                 */
-                @Override
-                public boolean hasNext() throws RuntimeException, UncheckedInterruptedException {
-                    while ((currentRows == null || !currentRows.hasNext()) && currentResultSet.hasMorePages()) {
-                        try {
-                            currentResultSet = currentResultSet.fetchNextPage().toCompletableFuture().get();
-                            executionInfos.add(currentResultSet.getExecutionInfo());
-                        } catch (final InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw ExceptionUtil.toRuntimeException(e, true);
-                        } catch (final ExecutionException e) {
-                            throw ExceptionUtil.toRuntimeException(e, true);
-                        }
+    // A named static wrapper avoids the synthetic capture of the initial page in an anonymous class.
+    // Driver 4.19.3 consumes the encoded rows, but the captured page still retains its emptied queue's backing storage
+    // and iterator state after advancing to later pages.
+    private static final class PagedResultSet implements ResultSet {
+        private AsyncResultSet currentResultSet;
+        private final List<ExecutionInfo> executionInfos = new ArrayList<>(1);
+        private Iterator<Row> currentRows;
 
-                        currentRows = N.iterate(currentResultSet.currentPage());
-                    }
-
-                    return currentRows != null && currentRows.hasNext();
-                }
-
-                /**
-                 * @return the next row, fetching another page if necessary
-                 * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
-                 * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
-                 * @throws NoSuchElementException if all rows in all pages have been consumed
-                 */
-                @Override
-                public Row next() throws RuntimeException, UncheckedInterruptedException, NoSuchElementException {
-                    if (!hasNext()) {
-                        throw new NoSuchElementException();
-                    }
-
-                    return currentRows.next();
-                }
-            };
-
-            {
-                executionInfos.add(asyncResultSet.getExecutionInfo());
-            }
-
-            @Override
-            public ColumnDefinitions getColumnDefinitions() {
-                return currentResultSet.getColumnDefinitions();
-            }
-
-            @Override
-            public List<ExecutionInfo> getExecutionInfos() {
-                return ImmutableList.copyOf(executionInfos);
-            }
-
-            @Override
-            public boolean isFullyFetched() {
-                return !currentResultSet.hasMorePages();
-            }
-
-            @Override
-            public boolean wasApplied() {
-                return currentResultSet.wasApplied();
-            }
-
+        private final Iterator<Row> rowIterator = new Iterator<>() {
             /**
-             * @return the number of rows left in the current page, as reported by {@link AsyncResultSet#remaining()}
-             */
-            @Override
-            public int getAvailableWithoutFetching() {
-                // Must not throw: the driver's default PagingIterable.all() (inherited by rs.map(f)) sizes its list with this
-                // count. The current page's rows are consumed through currentPage(), whose iterator remaining() counts down,
-                // exactly as the driver's own synchronous MultiPageResultSet reports it.
-                return currentResultSet.remaining();
-            }
-
-            /**
-             * @return all remaining rows
+             * @return whether a row remains, fetching subsequent pages as necessary
              * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
              * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
              */
             @Override
-            public List<Row> all() throws RuntimeException, UncheckedInterruptedException {
-                return N.toList(iterator());
+            public boolean hasNext() throws RuntimeException, UncheckedInterruptedException {
+                while ((currentRows == null || !currentRows.hasNext()) && currentResultSet.hasMorePages()) {
+                    try {
+                        currentResultSet = currentResultSet.fetchNextPage().toCompletableFuture().get();
+                        executionInfos.add(currentResultSet.getExecutionInfo());
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw ExceptionUtil.toRuntimeException(e, true);
+                    } catch (final ExecutionException e) {
+                        throw ExceptionUtil.toRuntimeException(e, true);
+                    }
+
+                    currentRows = N.iterate(currentResultSet.currentPage());
+                }
+
+                return currentRows != null && currentRows.hasNext();
             }
 
+            /**
+             * @return the next row, fetching another page if necessary
+             * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
+             * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
+             * @throws NoSuchElementException if all rows in all pages have been consumed
+             */
             @Override
-            public Iterator<Row> iterator() {
-                return rowIterator;
+            public Row next() throws RuntimeException, UncheckedInterruptedException, NoSuchElementException {
+                if (!hasNext()) {
+                    throw new NoSuchElementException();
+                }
+
+                return currentRows.next();
             }
         };
+
+        private PagedResultSet(final AsyncResultSet asyncResultSet) {
+            currentResultSet = asyncResultSet;
+            currentRows = N.iterate(asyncResultSet.currentPage());
+            executionInfos.add(asyncResultSet.getExecutionInfo());
+        }
+
+        @Override
+        public ColumnDefinitions getColumnDefinitions() {
+            return currentResultSet.getColumnDefinitions();
+        }
+
+        @Override
+        public List<ExecutionInfo> getExecutionInfos() {
+            return ImmutableList.copyOf(executionInfos);
+        }
+
+        @Override
+        public boolean isFullyFetched() {
+            return !currentResultSet.hasMorePages();
+        }
+
+        @Override
+        public boolean wasApplied() {
+            return currentResultSet.wasApplied();
+        }
+
+        /**
+         * @return the number of rows left in the current page, as reported by {@link AsyncResultSet#remaining()}
+         */
+        @Override
+        public int getAvailableWithoutFetching() {
+            // Must not throw: the driver's default PagingIterable.all() (inherited by rs.map(f)) sizes its list with this
+            // count. The current page's rows are consumed through currentPage(), whose iterator remaining() counts down,
+            // exactly as the driver's own synchronous MultiPageResultSet reports it.
+            return currentResultSet.remaining();
+        }
+
+        /**
+         * @return all remaining rows
+         * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
+         * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
+         */
+        @Override
+        public List<Row> all() throws RuntimeException, UncheckedInterruptedException {
+            return N.toList(iterator());
+        }
+
+        @Override
+        public Iterator<Row> iterator() {
+            return rowIterator;
+        }
     }
 }

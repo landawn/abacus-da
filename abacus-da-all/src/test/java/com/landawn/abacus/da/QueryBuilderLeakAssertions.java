@@ -37,8 +37,8 @@ public final class QueryBuilderLeakAssertions {
             field.setAccessible(true);
             return (AtomicInteger) field.get(null);
         } catch (final ReflectiveOperationException e) {
-            throw new AssertionError(COUNTER_FIELD_NAME + " not found on AbstractQueryBuilder — the abacus-query field was renamed or removed; update the leak detector",
-                    e);
+            throw new AssertionError(
+                    COUNTER_FIELD_NAME + " not found on AbstractQueryBuilder — the abacus-query field was renamed or removed; update the leak detector", e);
         }
     }
 

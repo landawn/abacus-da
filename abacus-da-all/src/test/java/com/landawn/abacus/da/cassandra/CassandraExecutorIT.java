@@ -2,7 +2,7 @@
  * Copyright (c) 2015, Haiyang Li. All rights reserved.
  */
 
-package com.landawn.abacus.da.cassandra.v3;
+package com.landawn.abacus.da.cassandra;
 
 import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.LCCB;
 import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NLC;
@@ -12,16 +12,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,27 +28,20 @@ import java.util.concurrent.ExecutionException;
 
 import org.junit.jupiter.api.Test;
 
-import com.datastax.driver.core.BatchStatement;
-import com.datastax.driver.core.BoundStatement;
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.CodecRegistry;
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.ProtocolVersion;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.TypeCodec;
-import com.datastax.driver.core.UserType;
-import com.datastax.driver.core.policies.DefaultRetryPolicy;
-import com.datastax.driver.core.policies.FallthroughRetryPolicy;
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.ProtocolVersion;
+import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.BoundStatement;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.Statement;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
+import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
+import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry;
 import com.landawn.abacus.da.TestBase;
-import com.landawn.abacus.da.cassandra.CqlMapper;
-import com.landawn.abacus.da.cassandra.ParsedCql;
-import com.landawn.abacus.da.cassandra.v3.CassandraExecutor.StatementSettings;
-import com.landawn.abacus.da.cassandra.v3.CassandraExecutor.UDTCodec;
+import com.landawn.abacus.da.cassandra.CassandraExecutor.StatementSettings;
+import com.landawn.abacus.da.cassandra.CassandraExecutor.UDTCodec;
 import com.landawn.abacus.da.entity.Song;
 import com.landawn.abacus.da.entity.Users;
 import com.landawn.abacus.query.Filters;
@@ -62,7 +54,7 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.stream.Stream;
 
-public class CassandraExecutorTest extends TestBase {
+public class CassandraExecutorIT extends TestBase {
 
     /*
     
@@ -86,69 +78,27 @@ public class CassandraExecutorTest extends TestBase {
      */
 
     static final String collectionName = "testData";
+    private static final MutableCodecRegistry codecRegistry = new DefaultCodecRegistry("xxx");
 
-    static final CassandraExecutor cassandraExecutor;
+    private static CqlSession session;
 
-    static {
-        final CodecRegistry codecRegistry = new CodecRegistry();
+    private static CassandraExecutor cassandraExecutor;
 
-        // final Cluster cluster = Cluster.builder().withCodecRegistry(codecRegistry).addContactPoint("127.0.0.1:9042").build();
-        final Cluster cluster = Cluster.builder()
-                .withCodecRegistry(codecRegistry) //
-                .addContactPointsWithPorts(new InetSocketAddress("127.0.0.1", 9042))
-                .build();
-
-        codecRegistry.register(UDTCodec.create(cluster, "simplex", "fullname", Users.Name.class));
-
-        codecRegistry.register(UDTCodec.create(cluster, "simplex", "address", Users.Address.class));
-
-        cassandraExecutor = new CassandraExecutor(cluster.connect());
-        cassandraExecutor.registerTypeCodec(LocalDateTime.class);
+    @org.junit.jupiter.api.BeforeAll
+    static void openTestSession() {
+        session = CqlSession.builder().withCodecRegistry(codecRegistry).build();
+        cassandraExecutor = new CassandraExecutor(session);
+        codecRegistry.register(UDTCodec.create(session, "simplex", "fullname", Users.Name.class));
+        codecRegistry.register(UDTCodec.create(session, "simplex", "address", Users.Address.class));
+        cassandraExecutor.registerTypeCodec(Timestamp.class);
     }
 
-    @Test
-    public void test_constructor_rejectsNullSession() {
-        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null));
-    }
-
-    @Test
-    public void test_executorSettingsDoNotMutateSharedPreparedStatement() {
-        // Own the cluster so even a failing old implementation cannot contaminate other tests' prepared statements.
-        try (Cluster reviewCluster = Cluster.builder().addContactPoint("127.0.0.1").build(); Session reviewSession = reviewCluster.connect()) {
-            final CassandraExecutor defaults = new CassandraExecutor(reviewSession);
-            try {
-                final CassandraExecutor configured = new CassandraExecutor(reviewSession, new StatementSettings().consistency(ConsistencyLevel.QUORUM)
-                        .serialConsistency(ConsistencyLevel.LOCAL_SERIAL).retryPolicy(FallthroughRetryPolicy.INSTANCE).traceQuery(true));
-                try {
-                    for (final boolean primeDefaultCache : new boolean[] { false, true }) {
-                        final String query = "SELECT key AS review_shared_settings_" + primeDefaultCache + " FROM system.local LIMIT 1";
-                        final PreparedStatement shared = reviewSession.prepare(query);
-                        final BoundStatement original = shared.bind();
-                        if (primeDefaultCache) {
-                            defaults.prepareStatement(query);
-                        }
-
-                        final Statement configuredStatement = configured.prepareStatement(query);
-                        assertEquals(ConsistencyLevel.QUORUM, configuredStatement.getConsistencyLevel());
-                        assertEquals(ConsistencyLevel.LOCAL_SERIAL, configuredStatement.getSerialConsistencyLevel());
-                        assertSame(FallthroughRetryPolicy.INSTANCE, configuredStatement.getRetryPolicy());
-                        assertTrue(configuredStatement.isTracing());
-
-                        // Driver 3 shares this prepared object; settings belong only to each executor's fresh bound statement.
-                        assertSame(shared, reviewSession.prepare(query));
-                        for (final Statement unaffected : List.of(shared.bind(), defaults.prepareStatement(query))) {
-                            assertEquals(original.getConsistencyLevel(), unaffected.getConsistencyLevel());
-                            assertEquals(original.getSerialConsistencyLevel(), unaffected.getSerialConsistencyLevel());
-                            assertSame(original.getRetryPolicy(), unaffected.getRetryPolicy());
-                            assertEquals(original.isTracing(), unaffected.isTracing());
-                        }
-                    }
-                } finally {
-                    configured.close();
-                }
-            } finally {
-                defaults.close();
-            }
+    @org.junit.jupiter.api.AfterAll
+    static void closeTestSession() {
+        if (cassandraExecutor != null) {
+            cassandraExecutor.close();
+        } else if (session != null) {
+            session.close();
         }
     }
 
@@ -172,7 +122,7 @@ public class CassandraExecutorTest extends TestBase {
 
                 final Row row = cassandraExecutor.execute("SELECT id, bytes FROM simplex.users WHERE id = ?", id).one();
                 assertNotNull(row, "Unconditional UPDATE must create the absent row for mode " + mode);
-                assertEquals(id, row.getUUID("id"));
+                assertEquals(id, row.getUuid("id"));
                 assertEquals(bytes, row.getList("bytes", Byte.class));
             } finally {
                 cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id);
@@ -219,7 +169,7 @@ public class CassandraExecutorTest extends TestBase {
         cassandraExecutor.execute(sql, user);
 
         List<Users> users = Stream.repeat(user, 10).map(Beans::copy).onEach(it -> it.setId(UUID.randomUUID())).toList();
-        cassandraExecutor.batchInsert(users, BatchStatement.Type.LOGGED);
+        cassandraExecutor.batchInsert(users, BatchType.LOGGED);
 
         List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.users");
         N.println(ids);
@@ -256,7 +206,7 @@ public class CassandraExecutorTest extends TestBase {
         cassandraExecutor.execute(sql, user);
 
         List<Users> users = Stream.repeat(user, 10).map(Beans::copy).onEach(it -> it.setId(UUID.randomUUID())).toList();
-        cassandraExecutor.batchInsert(users, BatchStatement.Type.LOGGED);
+        cassandraExecutor.batchInsert(users, BatchType.LOGGED);
 
         List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.users");
         N.println(ids);
@@ -288,7 +238,7 @@ public class CassandraExecutorTest extends TestBase {
         cassandraExecutor.execute(sql, user);
 
         List<Users> users = Stream.repeat(user, 10).map(Beans::copy).onEach(it -> it.setId(UUID.randomUUID())).toList();
-        cassandraExecutor.batchInsert(users, BatchStatement.Type.LOGGED);
+        cassandraExecutor.batchInsert(users, BatchType.LOGGED);
 
         List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.users");
         N.println(ids);
@@ -297,7 +247,7 @@ public class CassandraExecutorTest extends TestBase {
 
         dbUsers.stream().forEach(it -> it.getName().setFirstName("updatedFirstName"));
 
-        cassandraExecutor.batchUpdate(dbUsers, BatchStatement.Type.UNLOGGED);
+        cassandraExecutor.batchUpdate(dbUsers, BatchType.UNLOGGED);
 
         dbUsers = cassandraExecutor.list(Users.class, "SELECT * FROM simplex.users");
 
@@ -708,325 +658,39 @@ public class CassandraExecutorTest extends TestBase {
         System.out.println();
     }
 
-    /**
-     * Verifies that passing a single {@code null} parameter when the query
-     * expects multiple parameters produces an IllegalArgumentException
-     * (not a NullPointerException from {@code parameters[0].getClass()}).
-     */
-    @Test
-    public void test_prepareStatement_nullSingleParamMultiParamQuery_throwsIAE_notNPE() {
-        // The query has two ? placeholders, but only a single null arg is supplied.
-        // Previously this would NPE inside prepareStatement at parameters[0].getClass().
-        // After the fix, the loop sees values.length < parameterCount and throws IAE.
-        try {
-            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", (Object) null);
-            fail("Expected IllegalArgumentException for too-few parameters");
-        } catch (IllegalArgumentException e) {
-            // expected
-        } catch (NullPointerException e) {
-            fail("Got NPE instead of IllegalArgumentException: " + e);
-        }
-    }
-
-    /**
-     * Verifies that passing fewer parameters than the query expects yields
-     * an IllegalArgumentException, not an ArrayIndexOutOfBoundsException
-     * from the parameter-type-conversion loop in prepareStatement.
-     */
-    @Test
-    public void test_prepareStatement_tooFewPositionalParams_throwsIAE_notAIOOBE() {
-        try {
-            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", UUID.randomUUID());
-            fail("Expected IllegalArgumentException for too-few parameters");
-        } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage() == null || e.getMessage().toLowerCase().contains("parameter"), "Message should mention parameters: " + e.getMessage());
-        } catch (ArrayIndexOutOfBoundsException e) {
-            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
-        }
-    }
-
     // ---------------------------------------------------------------------
-    //  ParsedCql parser tests (no DB required)
+    //  Constructor / accessor coverage
     // ---------------------------------------------------------------------
-
-    @Test
-    public void test_ParsedCql_positionalParams() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = ?");
-
-        assertEquals(2, parsed.parameterCount());
-        assertTrue(parsed.namedParameters().isEmpty());
-        assertEquals("SELECT * FROM simplex.users WHERE id = ? AND status = ?", parsed.parameterizedCql());
-    }
-
-    @Test
-    public void test_ParsedCql_namedColonParams() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :userId AND status = :st");
-
-        assertEquals(2, parsed.parameterCount());
-        Map<Integer, String> named = parsed.namedParameters();
-        assertEquals("userId", named.get(0));
-        assertEquals("st", named.get(1));
-        // The colon syntax should be normalized to '?'
-        assertFalse(parsed.parameterizedCql().contains(":"), "Parameterized CQL should not contain ':' " + parsed.parameterizedCql());
-    }
-
-    @Test
-    public void test_ParsedCql_ibatisStyleParams() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{userId} AND name = #{name}");
-
-        assertEquals(2, parsed.parameterCount());
-        assertEquals("userId", parsed.namedParameters().get(0));
-        assertEquals("name", parsed.namedParameters().get(1));
-        assertFalse(parsed.parameterizedCql().contains("#{"), "Parameterized CQL should not contain '#{' " + parsed.parameterizedCql());
-    }
-
-    @Test
-    public void test_ParsedCql_emptyIbatisParameterNameThrows() {
-        // SqlParser keeps `#{...}` tokens whole. An empty `#{}` should be rejected
-        // because the parameter name would be empty.
-        // If the tokenizer ever changes and #{} is split, the test will still pass
-        // because the SELECT statement will simply have no parameters - so we
-        // verify the throw is raised OR the input is parsed without a named param.
-        try {
-            ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{}");
-            // If we got here, no exception was thrown. Make sure no bogus empty-named param was created.
-            assertFalse(parsed.namedParameters().containsValue(""), "Empty-named parameter must not be silently registered: " + parsed.namedParameters());
-        } catch (IllegalArgumentException e) {
-            // expected
-        }
-    }
-
-    @Test
-    public void test_ParsedCql_mixedStylesThrows() {
-        // mix '?' and ':name'
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = :st"),
-                "Mixed parameter styles should throw IAE");
-
-        // mix '?' and '#{name}'
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = #{st}"),
-                "Mixed '?' and '#{}' parameter styles should throw IAE");
-
-        // mix ':name' and '#{name}'
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :id AND status = #{st}"),
-                "Mixed ':name' and '#{}' parameter styles should throw IAE");
-    }
-
-    @Test
-    public void test_ParsedCql_nullCqlThrows() {
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse(null));
-    }
-
-    @Test
-    public void test_ParsedCql_caching() {
-        // The same CQL string should return the same cached instance.
-        String cql = "SELECT * FROM simplex.users WHERE id = ? AND name = ?";
-        ParsedCql first = ParsedCql.parse(cql);
-        ParsedCql second = ParsedCql.parse(cql);
-        assertTrue(first == second, "Cached parse() should return the same instance for identical CQL");
-    }
-
-    @Test
-    public void test_ParsedCql_trailingSemicolonRemoved() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ?;");
-        assertFalse(parsed.parameterizedCql().endsWith(";"), "Trailing semicolon should be removed: " + parsed.parameterizedCql());
-    }
-
-    @Test
-    public void test_ParsedCql_ddlNoParameterParsing() {
-        // For non-DML statements (e.g. CREATE/ALTER/DROP) parameterCount is always 0
-        // and the CQL is kept as-is (parameter style detection is skipped).
-        ParsedCql parsed = ParsedCql.parse("CREATE TABLE if not exists t (id uuid PRIMARY KEY, val text)");
-        assertEquals(0, parsed.parameterCount());
-        assertTrue(parsed.namedParameters().isEmpty());
-    }
-
-    @Test
-    public void test_ParsedCql_originalCqlTrimmed() {
-        ParsedCql parsed = ParsedCql.parse("   SELECT * FROM simplex.users WHERE id = ?   ");
-        // originalCql() returns the trimmed original
-        assertEquals("SELECT * FROM simplex.users WHERE id = ?", parsed.originalCql());
-    }
-
-    @Test
-    public void test_ParsedCql_equalsAndHashCode() {
-        ParsedCql a = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?");
-        ParsedCql b = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?");
-        ParsedCql c = ParsedCql.parse("SELECT 2 FROM simplex.users WHERE id = ?");
-
-        assertEquals(a, b);
-        assertEquals(a.hashCode(), b.hashCode());
-        assertFalse(a.equals(c));
-        // equals against non-ParsedCql
-        assertFalse(a.equals("not a ParsedCql"));
-        assertFalse(a.equals(null));
-    }
-
-    // ---------------------------------------------------------------------
-    //  CqlMapper tests (no DB required)
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_CqlMapper_addAndGet() {
-        CqlMapper mapper = new CqlMapper();
-        Map<String, String> attrs = new HashMap<>();
-        attrs.put("timeout", "3000");
-
-        mapper.add("findUser", "SELECT * FROM simplex.users WHERE id = ?", attrs);
-
-        ParsedCql parsed = mapper.get("findUser");
-        assertNotNull(parsed);
-        assertEquals(1, parsed.parameterCount());
-        // Attributes live on the mapper, keyed by id (not on ParsedCql).
-        assertEquals("3000", mapper.getAttributes("findUser").get("timeout"));
-        assertNull(mapper.get("nonExistent"));
-    }
-
-    @Test
-    public void test_CqlMapper_attributesDefensiveCopy() {
-        CqlMapper mapper = new CqlMapper();
-        Map<String, String> attrs = new HashMap<>();
-        attrs.put("timeout", "1000");
-        mapper.add("findUser", "SELECT * FROM simplex.users WHERE id = ?", attrs);
-
-        // Mutating the source map after add should not affect the mapper's stored attributes.
-        attrs.put("timeout", "9999");
-        assertEquals("1000", mapper.getAttributes("findUser").get("timeout"));
-    }
-
-    @Test
-    public void test_CqlMapper_addDuplicateIdThrows() {
-        CqlMapper mapper = new CqlMapper();
-        mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null);
-        assertThrows(IllegalArgumentException.class, () -> mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null),
-                "Adding a duplicate id should throw");
-    }
-
-    @Test
-    public void test_CqlMapper_copyIsIndependent() {
-        CqlMapper original = new CqlMapper();
-        original.add("a", "SELECT 1 FROM simplex.users WHERE id = ?", null);
-
-        CqlMapper copy = original.copy();
-        assertNotNull(copy.get("a"));
-
-        copy.remove("a");
-        assertNull(copy.get("a"));
-        // Original should still have the entry
-        assertNotNull(original.get("a"));
-
-        original.add("b", "SELECT 2 FROM simplex.users WHERE id = ?", null);
-        // Copy must not have seen the new addition
-        assertNull(copy.get("b"));
-    }
-
-    @Test
-    public void test_CqlMapper_keySet_isEmpty_remove() {
-        CqlMapper mapper = new CqlMapper();
-        assertTrue(mapper.isEmpty());
-        assertTrue(mapper.ids().isEmpty());
-
-        mapper.add("k1", "SELECT 3 FROM simplex.users WHERE id = ?", null);
-        assertFalse(mapper.isEmpty());
-        assertTrue(mapper.ids().contains("k1"));
-
-        mapper.remove("k1");
-        assertTrue(mapper.isEmpty());
-        // remove of missing key is a no-op (does not throw)
-        mapper.remove("missing");
-    }
-
-    // ---------------------------------------------------------------------
-    //  StatementSettings (v3) tests - no DB required
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_StatementSettings_defaultsAreNull() {
-        StatementSettings settings = new StatementSettings();
-        assertNull(settings.consistency());
-        assertNull(settings.serialConsistency());
-        assertNull(settings.retryPolicy());
-        assertNull(settings.fetchSize());
-        assertNull(settings.readTimeoutMillis());
-        assertNull(settings.traceQuery());
-    }
-
-    @Test
-    public void test_StatementSettings_allArgsConstructor() {
-        StatementSettings settings = new StatementSettings(ConsistencyLevel.QUORUM, ConsistencyLevel.SERIAL, DefaultRetryPolicy.INSTANCE, 500, 7000,
-                Boolean.TRUE);
-        assertEquals(ConsistencyLevel.QUORUM, settings.consistency());
-        assertEquals(ConsistencyLevel.SERIAL, settings.serialConsistency());
-        assertEquals(DefaultRetryPolicy.INSTANCE, settings.retryPolicy());
-        assertEquals(500, settings.fetchSize().intValue());
-        assertEquals(7000, settings.readTimeoutMillis().intValue());
-        assertTrue(settings.traceQuery());
-    }
-
-    @Test
-    public void test_StatementSettings_builderAndFluentSetters() {
-        StatementSettings settings = StatementSettings.builder()
-                .consistency(ConsistencyLevel.ONE)
-                .serialConsistency(ConsistencyLevel.LOCAL_SERIAL)
-                .retryPolicy(DefaultRetryPolicy.INSTANCE)
-                .fetchSize(100)
-                .readTimeoutMillis(2000)
-                .traceQuery(Boolean.FALSE)
-                .build();
-
-        assertEquals(ConsistencyLevel.ONE, settings.consistency());
-        assertEquals(ConsistencyLevel.LOCAL_SERIAL, settings.serialConsistency());
-        assertEquals(DefaultRetryPolicy.INSTANCE, settings.retryPolicy());
-        assertEquals(100, settings.fetchSize().intValue());
-        assertEquals(2000, settings.readTimeoutMillis().intValue());
-        assertFalse(settings.traceQuery());
-
-        // Verify fluent setters return same instance
-        StatementSettings s2 = new StatementSettings();
-        assertTrue(s2 == s2.consistency(ConsistencyLevel.TWO));
-        assertEquals(ConsistencyLevel.TWO, s2.consistency());
-    }
-
-    // ---------------------------------------------------------------------
-    //  Constructor / accessor tests (v3) - use live cluster from static init
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_clusterAndSession_accessors() {
-        assertNotNull(cassandraExecutor.cluster());
-        assertNotNull(cassandraExecutor.session());
-        assertNotNull(cassandraExecutor.async());
-        // async() should return same instance per executor
-        assertTrue(cassandraExecutor.async() == cassandraExecutor.async());
-    }
 
     @Test
     public void test_constructor_withSettingsAndMapper() {
-        // Constructor coverage: (Session, settings, mapper, NamingPolicy)
         StatementSettings settings = StatementSettings.builder().fetchSize(50).build();
         CqlMapper mapper = new CqlMapper();
         CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings, mapper, NamingPolicy.SNAKE_CASE);
         assertNotNull(exec);
-        // Verify session was wired correctly
         assertTrue(exec.session() == cassandraExecutor.session());
+        assertNotNull(exec.async());
     }
 
     @Test
-    public void test_constructor_withNullSettings() {
+    public void test_constructor_withSettingsOnly() {
         CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), null);
         assertNotNull(exec);
-        assertTrue(exec.session() == cassandraExecutor.session());
+        assertNotNull(exec.async());
     }
 
-    // TODO: test_mapper_returnsNonNull requires a class with com.datastax.driver.mapping.annotations.@Table
-    //       annotation, which neither Users nor Song carry; skipping to avoid forging a test entity.
+    @Test
+    public void test_async_returnsSameInstance() {
+        // async() should return the same AsyncCassandraExecutor every time
+        assertTrue(cassandraExecutor.async() == cassandraExecutor.async());
+    }
 
     // ---------------------------------------------------------------------
-    //  Static helper tests against live ResultSets - no extra DB needed
+    //  Static helper tests against live ResultSets
     // ---------------------------------------------------------------------
 
     @Test
-    public void test_extractData_withTargetClass() {
-        // Insert a known row and verify extractData with target class converts properly.
+    public void test_extractData_withEntityClass() {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist) VALUES (?, ?, ?, ?)", id, "t", "a", "ar");
         try {
@@ -1056,10 +720,10 @@ public class CassandraExecutorTest extends TestBase {
     @Test
     public void test_toList_withRowClass() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "t");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "rowTest");
         try {
             ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id);
-            // toList with Row.class fast-path
+            // Fast-path: target is Row.class -> returns resultSet.all() directly.
             List<Row> rows = CassandraExecutor.toList(rs, Row.class);
             assertEquals(1, rows.size());
         } finally {
@@ -1068,28 +732,28 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_toList_withSingleColumn() {
+    public void test_toList_singleColumnValue() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "myTitle");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "scalar");
         try {
             ResultSet rs = cassandraExecutor.execute("SELECT title FROM simplex.songs WHERE id = ?", id);
             List<String> titles = CassandraExecutor.toList(rs, String.class);
             assertEquals(1, titles.size());
-            assertEquals("myTitle", titles.get(0));
+            assertEquals("scalar", titles.get(0));
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
         }
     }
 
     @Test
-    public void test_toMap_withCustomSupplier() {
+    public void test_toMap_withSupplier() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "t");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "mapT");
         try {
             ResultSet rs = cassandraExecutor.execute("SELECT id, title FROM simplex.songs WHERE id = ?", id);
             Row row = rs.one();
             assertNotNull(row);
-            // Use a LinkedHashMap supplier to exercise the supplier branch
+            // Use a LinkedHashMap supplier to verify the supplier branch is exercised.
             Map<String, Object> map = CassandraExecutor.toMap(row, IntFunctions.ofLinkedHashMap());
             assertNotNull(map);
             assertEquals(2, map.size());
@@ -1103,14 +767,14 @@ public class CassandraExecutorTest extends TestBase {
     @Test
     public void test_toEntity_song() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist) VALUES (?, ?, ?, ?)", id, "myT", "myA", "myAr");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album) VALUES (?, ?, ?)", id, "t1", "a1");
         try {
             Row row = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id).one();
             assertNotNull(row);
             Song s = CassandraExecutor.toEntity(row, Song.class);
             assertNotNull(s);
             assertEquals(id, s.getId());
-            assertEquals("myT", s.getTitle());
+            assertEquals("t1", s.getTitle());
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
         }
@@ -1150,13 +814,13 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     // ---------------------------------------------------------------------
-    //  stream(...) / execute(...) coverage
+    //  stream(...) coverage
     // ---------------------------------------------------------------------
 
     @Test
     public void test_stream_withBiFunctionRowMapper() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stream-title");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "sTitle");
         try {
             long count = cassandraExecutor.stream("SELECT * FROM simplex.songs WHERE id = ?", (cds, r) -> r.getString("title"), id).count();
             assertEquals(1L, count);
@@ -1168,11 +832,10 @@ public class CassandraExecutorTest extends TestBase {
     @Test
     public void test_stream_withStatement_BiFunctionRowMapper() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stmt-title");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stmtT");
         try {
-            // Prepare a statement via the live session so we can stream over it.
             BoundStatement bs = cassandraExecutor.session().prepare("SELECT * FROM simplex.songs WHERE id = ?").bind(id);
-            long count = cassandraExecutor.stream((Statement) bs, (cds, r) -> r.getString("title")).count();
+            long count = cassandraExecutor.stream((Statement<?>) bs, (cds, r) -> r.getString("title")).count();
             assertEquals(1L, count);
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
@@ -1182,16 +845,15 @@ public class CassandraExecutorTest extends TestBase {
     @Test
     public void test_stream_nullRowMapper_throwsIAE() {
         assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.stream("SELECT * FROM simplex.songs",
-                (java.util.function.BiFunction<com.datastax.driver.core.ColumnDefinitions, Row, Object>) null));
+                (java.util.function.BiFunction<com.datastax.oss.driver.api.core.cql.ColumnDefinitions, Row, Object>) null));
     }
 
     @Test
     public void test_execute_withMapNamedParams() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "named-t");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "nT");
         try {
-            // Exercise the Map-parameter overload of execute(String, Map)
-            Map<String, Object> params = new HashMap<>();
+            Map<String, Object> params = new java.util.HashMap<>();
             params.put("id", id);
             ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :id", params);
             assertNotNull(rs);
@@ -1203,227 +865,209 @@ public class CassandraExecutorTest extends TestBase {
 
     @Test
     public void test_execute_missingNamedParameter_throwsIAE() {
-        // Map missing :id key -> "Missing required parameter"
-        Map<String, Object> params = new HashMap<>();
-        params.put("wrongKey", UUID.randomUUID());
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("wrong", UUID.randomUUID());
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :id", params));
         assertTrue(ex.getMessage() == null || ex.getMessage().toLowerCase().contains("missing") || ex.getMessage().toLowerCase().contains("parameter"));
     }
 
-    // ---------------------------------------------------------------------
-    //  StringCodec (v3 driver) tests - access via registerTypeCodec since
-    //  StringCodec is package-private with a protected constructor.
-    // ---------------------------------------------------------------------
-
-    /** Helper: build a StringCodec via the codec registry. */
-    @SuppressWarnings("unchecked")
-    private static <T> TypeCodec<T> newStringCodec(Class<T> cls) {
-        com.datastax.driver.core.CodecRegistry reg = new com.datastax.driver.core.CodecRegistry();
-        CassandraExecutor.registerTypeCodec(reg, cls);
-        return (TypeCodec<T>) reg.codecFor(DataType.varchar(), cls);
+    /**
+     * Verifies that passing a single {@code null} parameter when the query
+     * expects multiple parameters produces an IllegalArgumentException
+     * (not a NullPointerException from {@code parameters[0].getClass()} and
+     * not an ArrayIndexOutOfBoundsException from the parameter-conversion loop).
+     */
+    @Test
+    public void test_prepareStatement_nullSingleParamMultiParamQuery_throwsIAE_notNPE() {
+        // The query has two ? placeholders, but only a single null arg is supplied.
+        // Previously this would NPE inside prepareStatement at parameters[0].getClass(),
+        // and even after the null-guard it would AIOOBE in the value-conversion loop.
+        // After the fix, values.length < parameterCount throws IAE.
+        try {
+            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", (Object) null);
+            fail("Expected IllegalArgumentException for too-few parameters");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (NullPointerException e) {
+            fail("Got NPE instead of IllegalArgumentException: " + e);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
+        }
     }
 
+    /**
+     * Verifies that passing fewer parameters than the query expects yields
+     * an IllegalArgumentException, not an ArrayIndexOutOfBoundsException
+     * from the parameter-type-conversion loop in prepareStatement.
+     */
     @Test
-    public void test_v3_StringCodec_format_null_returnsNULL() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        assertEquals("NULL", codec.format(null));
-    }
-
-    @Test
-    public void test_v3_StringCodec_format_value_returnsJson() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        Song s = new Song();
-        s.setTitle("v3t");
-        String json = codec.format(s);
-        assertNotNull(json);
-        assertTrue(json.contains("v3t"));
-    }
-
-    @Test
-    public void test_v3_StringCodec_parse_empty_returnsNull() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        assertNull(codec.parse(""));
-    }
-
-    @Test
-    public void test_v3_StringCodec_parse_NULL_returnsNull() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        assertNull(codec.parse("NULL"));
-    }
-
-    @Test
-    public void test_v3_StringCodec_parse_json_returnsObject() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        Song s = new Song();
-        s.setTitle("p3");
-        String json = codec.format(s);
-        Song parsed = codec.parse(json);
-        assertNotNull(parsed);
-        assertEquals("p3", parsed.getTitle());
-    }
-
-    @Test
-    public void test_v3_StringCodec_encodeDecode_roundtrip() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        Song s = new Song();
-        s.setTitle("rt3");
-        s.setAlbum("alb3");
-        ByteBuffer encoded = codec.serialize(s, ProtocolVersion.V4);
-        assertNotNull(encoded);
-        Song decoded = codec.deserialize(encoded, ProtocolVersion.V4);
-        assertNotNull(decoded);
-        assertEquals("rt3", decoded.getTitle());
-        assertEquals("alb3", decoded.getAlbum());
+    public void test_prepareStatement_tooFewPositionalParams_throwsIAE_notAIOOBE() {
+        try {
+            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", UUID.randomUUID());
+            fail("Expected IllegalArgumentException for too-few parameters");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage() == null || e.getMessage().toLowerCase().contains("parameter"), "Message should mention parameters: " + e.getMessage());
+        } catch (ArrayIndexOutOfBoundsException e) {
+            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
+        }
     }
 
     // ---------------------------------------------------------------------
-    //  UDTCodec (v3 driver) tests - rely on UDTs registered in static init.
+    //  UDTCodec (v4 driver) tests - rely on UDTs registered in static init.
     // ---------------------------------------------------------------------
 
-    /** Helper: get a UserType from the live cluster metadata. */
-    private static UserType lookupUDT(String name) {
-        return cassandraExecutor.cluster().getMetadata().getKeyspace("simplex").getUserType(name);
+    /** Helper: get a UserDefinedType from the session metadata. */
+    private static UserDefinedType lookupUDT(String name) {
+        return session.getMetadata().getKeyspace("simplex").orElseThrow().getUserDefinedType(name).orElseThrow();
     }
 
     @Test
-    public void test_v3_UDTCodec_create_fromUserType_returnsCodec() {
+    public void test_UDTCodec_create_fromUserType_returnsCodec() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         assertNotNull(codec);
+        assertNotNull(codec.getJavaType());
         assertEquals(Users.Name.class, codec.getJavaType().getRawType());
     }
 
     @Test
-    public void test_v3_UDTCodec_create_withCluster_returnsCodec() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(cassandraExecutor.cluster(), "simplex", "fullname", Users.Name.class);
+    public void test_UDTCodec_create_withSession_returnsCodec() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(session, "simplex", "fullname", Users.Name.class);
         assertNotNull(codec);
         assertNotNull(codec.getCqlType());
     }
 
     @Test
-    public void test_v3_UDTCodec_format_null_returnsNULL() {
+    public void test_UDTCodec_format_null_returnsNULL() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         assertEquals("NULL", codec.format(null));
     }
 
     @Test
-    public void test_v3_UDTCodec_parse_empty_returnsNull() {
+    public void test_UDTCodec_parse_empty_returnsNull() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         assertNull(codec.parse(""));
         assertNull(codec.parse("NULL"));
     }
 
     @Test
-    public void test_v3_UDTCodec_format_value_returnsCqlLiteral() {
+    public void test_UDTCodec_serialize_null_returnsNull() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        // The protected serialize(T) returns null for null input.
+        java.lang.reflect.Method m;
+        try {
+            // serialize(T) is protected abstract in the parent and overridden in anonymous subclass
+            // Find it among the declared methods of the runtime class.
+            m = null;
+            for (java.lang.reflect.Method dm : codec.getClass().getDeclaredMethods()) {
+                if (dm.getName().equals("serialize") && dm.getParameterCount() == 1) {
+                    m = dm;
+                    break;
+                }
+            }
+            assertNotNull(m);
+            m.setAccessible(true);
+            Object result = m.invoke(codec, (Object) null);
+            assertNull(result);
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+    }
+
+    @Test
+    public void test_UDTCodec_format_value_returnsCqlLiteral() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         Users.Name n = new Users.Name();
-        n.setFirstName("a3");
-        n.setLastName("b3");
+        n.setFirstName("a");
+        n.setLastName("b");
         String literal = codec.format(n);
         assertNotNull(literal);
         assertTrue(literal.startsWith("{") && literal.endsWith("}"), literal);
-        assertTrue(literal.contains("a3"));
+        assertTrue(literal.contains("a"));
+        assertTrue(literal.contains("b"));
     }
 
     @Test
-    public void test_v3_UDTCodec_parse_cqlLiteral_returnsObject() {
+    public void test_UDTCodec_parse_cqlLiteral_returnsObject() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         Users.Name source = new Users.Name();
-        source.setFirstName("x3");
-        source.setLastName("y3");
+        source.setFirstName("x");
+        source.setLastName("y");
         Users.Name n = codec.parse(codec.format(source));
         assertNotNull(n);
-        assertEquals("x3", n.getFirstName());
-        assertEquals("y3", n.getLastName());
+        assertEquals("x", n.getFirstName());
+        assertEquals("y", n.getLastName());
     }
 
     @Test
-    public void test_v3_UDTCodec_serializeBean_roundtrip() {
+    public void test_UDTCodec_getCqlType_isUDT() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        assertNotNull(codec.getCqlType());
+        // The CQL type should equal the underlying UDT.
+        assertEquals(lookupUDT("fullname").asCql(true, true), codec.getCqlType().asCql(true, true));
+    }
+
+    @Test
+    public void test_UDTCodec_serializeBean_thenDeserialize_roundtrip() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         Users.Name n = new Users.Name();
-        n.setFirstName("first3");
-        n.setLastName("last3");
-        ByteBuffer encoded = codec.serialize(n, ProtocolVersion.V4);
+        n.setFirstName("first");
+        n.setLastName("last");
+        ByteBuffer encoded = codec.encode(n, ProtocolVersion.DEFAULT);
         assertNotNull(encoded);
-        Users.Name back = codec.deserialize(encoded, ProtocolVersion.V4);
+        Users.Name back = codec.decode(encoded, ProtocolVersion.DEFAULT);
         assertNotNull(back);
-        assertEquals("first3", back.getFirstName());
-        assertEquals("last3", back.getLastName());
+        assertEquals("first", back.getFirstName());
+        assertEquals("last", back.getLastName());
     }
 
     @Test
-    public void test_v3_UDTCodec_serialize_invalidType_throwsIAE() {
+    public void test_UDTCodec_serialize_invalidType_throwsIAE() {
+        // The UDTCodec produced by create() throws IAE if the class is neither Collection, Map, nor Bean.
         UDTCodec<Integer> codec = UDTCodec.create(lookupUDT("fullname"), Integer.class);
-        assertThrows(IllegalArgumentException.class, () -> codec.serialize(42, ProtocolVersion.V4));
+        assertThrows(IllegalArgumentException.class, () -> codec.encode(42, ProtocolVersion.DEFAULT));
     }
 
     @Test
-    public void test_v3_UDTCodec_serializeMap_roundtrip() {
+    public void test_UDTCodec_serializeMap_roundtrip() {
         UDTCodec<Map> codec = UDTCodec.create(lookupUDT("fullname"), Map.class);
-        Map<String, Object> m = new HashMap<>();
-        m.put("firstname", "fm");
-        m.put("lastname", "lm");
-        ByteBuffer encoded = codec.serialize(m, ProtocolVersion.V4);
+        // Cassandra unquoted identifiers are lowercased - use lower-case keys.
+        Map<String, Object> m = new java.util.HashMap<>();
+        m.put("firstname", "f");
+        m.put("lastname", "l");
+        ByteBuffer encoded = codec.encode(m, ProtocolVersion.DEFAULT);
         assertNotNull(encoded);
-        Map back = codec.deserialize(encoded, ProtocolVersion.V4);
+        Map back = codec.decode(encoded, ProtocolVersion.DEFAULT);
         assertNotNull(back);
-        assertEquals("fm", back.get("firstname"));
-        assertEquals("lm", back.get("lastname"));
+        assertEquals("f", back.get("firstname"));
+        assertEquals("l", back.get("lastname"));
     }
 
     @Test
-    public void test_v3_UDTCodec_serializeCollection_roundtrip() {
+    public void test_UDTCodec_serializeCollection_roundtrip() {
         UDTCodec<List> codec = UDTCodec.create(lookupUDT("fullname"), List.class);
-        List<Object> values = N.asList("first3c", "last3c");
-        ByteBuffer encoded = codec.serialize(values, ProtocolVersion.V4);
+        List<Object> values = N.asList("first", "last");
+        ByteBuffer encoded = codec.encode(values, ProtocolVersion.DEFAULT);
         assertNotNull(encoded);
-        List back = codec.deserialize(encoded, ProtocolVersion.V4);
+        // Decoding into a List returns a list of the values in field order.
+        List back = codec.decode(encoded, ProtocolVersion.DEFAULT);
         assertNotNull(back);
         assertEquals(2, back.size());
     }
 
     @Test
-    public void test_v3_UDTCodec_serialize_null_returnsNullBuffer() {
+    public void test_UDTCodec_deprecated_serializeDeserialize_roundtrip() throws Exception {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        ByteBuffer bb = codec.serialize(null, ProtocolVersion.V4);
-        // The protected serialize(T) returns null for null input; the wrapping codec produces null buffer.
-        assertNull(bb);
-    }
-
-    // ---------------------------------------------------------------------
-    //  StatementSettings (v3) — extra equals/hashCode/toString coverage
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_v3_StatementSettings_equalsAndHashCode() {
-        StatementSettings a = new StatementSettings(ConsistencyLevel.ONE, ConsistencyLevel.SERIAL, DefaultRetryPolicy.INSTANCE, 5, 1000, Boolean.TRUE);
-        StatementSettings b = new StatementSettings(ConsistencyLevel.ONE, ConsistencyLevel.SERIAL, DefaultRetryPolicy.INSTANCE, 5, 1000, Boolean.TRUE);
-        StatementSettings c = new StatementSettings(ConsistencyLevel.TWO, ConsistencyLevel.SERIAL, DefaultRetryPolicy.INSTANCE, 5, 1000, Boolean.TRUE);
-        assertEquals(a, b);
-        assertEquals(a.hashCode(), b.hashCode());
-        assertFalse(a.equals(c));
-    }
-
-    @Test
-    public void test_v3_StatementSettings_toString_containsValues() {
-        StatementSettings s = new StatementSettings();
-        s.fetchSize(456);
-        String str = s.toString();
-        assertNotNull(str);
-        assertTrue(str.contains("456"));
-    }
-
-    @Test
-    public void test_v3_StatementSettings_allFluentSetters_returnSelf() {
-        StatementSettings s = new StatementSettings();
-        assertTrue(s == s.consistency(ConsistencyLevel.ONE));
-        assertTrue(s == s.serialConsistency(ConsistencyLevel.SERIAL));
-        assertTrue(s == s.retryPolicy(DefaultRetryPolicy.INSTANCE));
-        assertTrue(s == s.fetchSize(11));
-        assertTrue(s == s.readTimeoutMillis(2222));
-        assertTrue(s == s.traceQuery(Boolean.TRUE));
-        assertEquals(11, s.fetchSize().intValue());
-        assertEquals(2222, s.readTimeoutMillis().intValue());
+        Users.Name n = new Users.Name();
+        n.setFirstName("d1");
+        n.setLastName("d2");
+        // Use the deprecated public serialize(T, ProtocolVersion) overload.
+        ByteBuffer bb = codec.serialize(n, ProtocolVersion.DEFAULT);
+        assertNotNull(bb);
+        Users.Name back = codec.deserialize(bb, ProtocolVersion.DEFAULT);
+        assertNotNull(back);
+        assertEquals("d1", back.getFirstName());
+        assertEquals("d2", back.getLastName());
     }
 
     // ---------------------------------------------------------------------
@@ -1431,14 +1075,14 @@ public class CassandraExecutorTest extends TestBase {
     // ---------------------------------------------------------------------
 
     @Test
-    public void test_v3_batchInsert_withMapPropsList() {
-        // Exercises prepareBatchInsertStatement(Class, Collection<Map>, BatchStatement.Type) - 0% coverage
+    public void test_batchInsert_withMapPropsList() {
+        // Exercises prepareBatchInsertStatement(Class, Collection<Map>, BatchType) - 0% coverage
         // Users has @Table("simplex.users") so the keyspace is resolved.
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
         List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1), N.asMap("id", (Object) id2));
         try {
-            ResultSet rs = cassandraExecutor.batchInsert(Users.class, propsList, BatchStatement.Type.LOGGED);
+            ResultSet rs = cassandraExecutor.batchInsert(Users.class, propsList, BatchType.LOGGED);
             assertNotNull(rs);
             assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", id1));
             assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", id2));
@@ -1449,8 +1093,8 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_batchUpdate_withMapPropsList() {
-        // Exercises prepareBatchUpdateStatement(Class, Collection<Map>, BatchStatement.Type) - 0% coverage
+    public void test_batchUpdate_withMapPropsList() {
+        // Exercises prepareBatchUpdateStatement(Class, Collection<Map>, BatchType) - 0% coverage
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.users (id, someDate) VALUES (?, ?)", id1, "d-before1");
@@ -1458,7 +1102,7 @@ public class CassandraExecutorTest extends TestBase {
         try {
             List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1, "someDate", (Object) "d-after1"),
                     N.asMap("id", (Object) id2, "someDate", (Object) "d-after2"));
-            ResultSet rs = cassandraExecutor.batchUpdate(Users.class, propsList, BatchStatement.Type.LOGGED);
+            ResultSet rs = cassandraExecutor.batchUpdate(Users.class, propsList, BatchType.LOGGED);
             assertNotNull(rs);
             assertEquals("d-after1", cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id1).orElse(null));
             assertEquals("d-after2", cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id2).orElse(null));
@@ -1469,15 +1113,15 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_batchUpdate_withQueryAndParametersList() {
-        // Exercises prepareBatchUpdateStatement(String, Collection, BatchStatement.Type) - 0% coverage
+    public void test_batchUpdate_withQueryAndParametersList() {
+        // Exercises prepareBatchUpdateStatement(String, Collection, BatchType) - 0% coverage
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id1, "x");
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id2, "y");
         try {
             List<Object[]> params = N.asList(new Object[] { "u1", id1 }, new Object[] { "u2", id2 });
-            ResultSet rs = cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchStatement.Type.LOGGED);
+            ResultSet rs = cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchType.LOGGED);
             assertNotNull(rs);
             assertEquals("u1", cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id1).orElse(null));
             assertEquals("u2", cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id2).orElse(null));
@@ -1488,53 +1132,52 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_batchInsert_emptyEntities_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchInsert(N.<Users> emptyList(), BatchStatement.Type.LOGGED));
+    public void test_batchInsert_emptyEntities_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchInsert(N.<Users> emptyList(), BatchType.LOGGED));
     }
 
     @Test
-    public void test_v3_batchInsert_emptyPropsList_throwsIAE() {
-        assertThrows(IllegalArgumentException.class,
-                () -> cassandraExecutor.batchInsert(Users.class, N.<Map<String, Object>> emptyList(), BatchStatement.Type.LOGGED));
+    public void test_batchInsert_emptyPropsList_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchInsert(Users.class, N.<Map<String, Object>> emptyList(), BatchType.LOGGED));
     }
 
     @Test
-    public void test_v3_batchUpdate_emptyPropsList_throwsIAE() {
-        assertThrows(IllegalArgumentException.class,
-                () -> cassandraExecutor.batchUpdate(Users.class, N.<Map<String, Object>> emptyList(), BatchStatement.Type.LOGGED));
+    public void test_batchUpdate_emptyPropsList_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchUpdate(Users.class, N.<Map<String, Object>> emptyList(), BatchType.LOGGED));
     }
 
     @Test
-    public void test_v3_batchUpdate_emptyQueryParams_throwsIAE() {
+    public void test_batchUpdate_emptyQueryParams_throwsIAE() {
         assertThrows(IllegalArgumentException.class,
-                () -> cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", N.emptyList(), BatchStatement.Type.LOGGED));
+                () -> cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", N.emptyList(), BatchType.LOGGED));
     }
 
     // ---------------------------------------------------------------------
-    //  configStatement(Statement) coverage - exec with non-null settings
+    //  configStatement(Statement) coverage - executor created with StatementSettings
     // ---------------------------------------------------------------------
 
     @Test
-    public void test_v3_configStatement_appliedViaCustomSettings() {
+    public void test_configStatement_appliedViaCustomSettings() {
+        // Build settings exercising the consistency / fetchSize / timeout / tracing branches.
         StatementSettings settings = StatementSettings.builder()
                 .consistency(ConsistencyLevel.ONE)
-                .serialConsistency(ConsistencyLevel.LOCAL_SERIAL)
                 .fetchSize(10)
-                .readTimeoutMillis(5000)
+                .timeout(Duration.ofSeconds(5))
                 .traceQuery(Boolean.FALSE)
                 .build();
         CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings);
         UUID id = UUID.randomUUID();
         exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "cfgT");
         try {
+            // Run a select to ensure configStatement is exercised on a bound stmt path.
             assertTrue(exec.exists("SELECT * FROM simplex.songs WHERE id = ?", id));
-            // Exercise configStatement on a BatchStatement via batchUpdate(String,...).
+            // Exercise configStatement on a BatchStatement via batchUpdate(String, ...).
             UUID b1 = UUID.randomUUID();
             UUID b2 = UUID.randomUUID();
             exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", b1, "b1");
             exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", b2, "b2");
             List<Object[]> params = N.asList(new Object[] { "b1-new", b1 }, new Object[] { "b2-new", b2 });
-            assertNotNull(exec.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchStatement.Type.LOGGED));
+            assertNotNull(exec.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchType.LOGGED));
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", b1);
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", b2);
         } finally {
@@ -1543,22 +1186,26 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_configStatement_withRetryPolicy() {
-        StatementSettings settings = StatementSettings.builder().retryPolicy(DefaultRetryPolicy.INSTANCE).build();
+    public void test_configStatement_withSerialConsistency() {
+        // Cover the serialConsistency branch of configStatement.
+        StatementSettings settings = StatementSettings.builder().serialConsistency(ConsistencyLevel.LOCAL_SERIAL).build();
         CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings);
+        // Plain SELECT - just confirms the configured stmt executes.
         ResultSet rs = exec.execute("SELECT id FROM simplex.songs LIMIT 1");
         assertNotNull(rs);
     }
 
     // ---------------------------------------------------------------------
-    //  readRow / createRowMapper coverage - object[], collection, primitive
+    //  readRow / createRowMapper coverage - exercise object[], collection,
+    //  and single-column-with-conversion lambda branches.
     // ---------------------------------------------------------------------
 
     @Test
-    public void test_v3_list_withObjectArrayClass() {
+    public void test_list_withObjectArrayClass() {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "oa");
         try {
+            // Use list(Object[].class, ...) which exercises the isObjectArray branch in createRowMapper/readRow.
             List<Object[]> rows = cassandraExecutor.list(Object[].class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
             assertEquals(1, rows.size());
             assertEquals(2, rows.get(0).length);
@@ -1568,10 +1215,11 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_list_withListClass() {
+    public void test_list_withListClass() {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "lc");
         try {
+            // Use list(List.class, ...) which exercises the isCollection branch.
             List<List> rows = (List) cassandraExecutor.list(List.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
             assertEquals(1, rows.size());
             assertEquals(2, rows.get(0).size());
@@ -1581,7 +1229,8 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_stream_withMapClass() {
+    public void test_stream_withMapClass() {
+        // Stream with Map.class exercises the isMap branch in createRowMapper.
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stM");
         try {
@@ -1593,7 +1242,7 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_stream_withObjectArrayClass() {
+    public void test_stream_withObjectArrayClass() {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stOA");
         try {
@@ -1605,11 +1254,26 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_list_singleColumn_typeConversion() {
+    public void test_stream_withStringClass_singleColumn() {
+        // Exercises the single-column-conversion lambda branch (rowClass=String, value=UUID -> N.convert).
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stC");
+        try {
+            List<String> titles = cassandraExecutor.stream(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id).toList();
+            assertEquals(1, titles.size());
+            assertEquals("stC", titles.get(0));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_list_singleColumn_typeConversion() {
+        // Exercises N.convert path in single-column row mapper: UUID -> String conversion.
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "convT");
         try {
-            // Force conversion path in single-column row mapper: UUID -> String.
+            // Force a conversion: the column is a UUID, but request String back.
             List<String> ids = cassandraExecutor.list(String.class, "SELECT id FROM simplex.songs WHERE id = ?", id);
             assertEquals(1, ids.size());
             assertEquals(id.toString(), ids.get(0));
@@ -1618,30 +1282,10 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
-    // Coverage additions: mapper(Class), close(), bean params, batch on entities
-
-    // TODO: test_v3_mapper_returnsDataStaxMapper - requires entity annotated with
-    // com.datastax.driver.mapping.annotations.Table; test entities use landawn @Table.
+    // Coverage additions
 
     @Test
-    public void test_v3_close_onIndependentExecutor() {
-        Cluster cluster = Cluster.builder().addContactPointsWithPorts(new InetSocketAddress("127.0.0.1", 9042)).build();
-        CassandraExecutor closeExec = new CassandraExecutor(cluster.connect());
-        closeExec.close();
-        assertTrue(closeExec.session().isClosed());
-    }
-
-    @Test
-    public void test_v3_close_idempotent() {
-        Cluster cluster = Cluster.builder().addContactPointsWithPorts(new InetSocketAddress("127.0.0.1", 9042)).build();
-        CassandraExecutor closeExec = new CassandraExecutor(cluster.connect());
-        closeExec.close();
-        closeExec.close();
-        assertTrue(closeExec.session().isClosed());
-    }
-
-    @Test
-    public void test_v3_execute_withBeanParam() {
+    public void test_execute_withBeanParam() {
         Users user = createUser();
         String sql = NSC.insertInto(Users.class).build().query();
         cassandraExecutor.execute(sql, user);
@@ -1653,7 +1297,7 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_execute_withBeanParam_missingPropertyThrowsIAE() {
+    public void test_execute_withBeanParam_missingPropertyThrowsIAE() {
         Song s = new Song();
         s.setId(UUID.randomUUID());
         s.setTitle("t");
@@ -1661,7 +1305,7 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_list_singleColumn_noConversionNeeded() {
+    public void test_list_singleColumn_noConversionNeeded() {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "noConv");
         try {
@@ -1674,19 +1318,7 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_stream_singleColumn_typeConversion() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "streamConv");
-        try {
-            long count = cassandraExecutor.stream(String.class, "SELECT id FROM simplex.songs WHERE id = ?", id).count();
-            assertEquals(1L, count);
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_v3_toList_mapClass_columnsAreCopiedAsMap() {
+    public void test_toList_mapClass_columnsAsMap() {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "asMap");
         try {
@@ -1701,7 +1333,7 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_execute_collectionArgWrappedInArray() {
+    public void test_execute_collectionArgWrappedInArray() {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "collArg");
         try {
@@ -1712,42 +1344,17 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
-    // ---- sliceP 2026-09-22: byte[] <-> BLOB round trip (N.convert used to bind an empty blob / read null) ----
-
     @Test
-    public void test_sliceP_blobByteArrayRoundTrip() {
+    public void test_extractData_listClassConversionForUuid() {
         UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, data) VALUES (?, ?, ?)", id, "blobRoundTrip", new byte[] { 1, 2, 3 });
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "convForExtract");
         try {
-            final ByteBuffer raw = cassandraExecutor.queryForSingleValue(ByteBuffer.class, "SELECT data FROM simplex.songs WHERE id = ?", id).get();
-            assertEquals(3, raw.remaining());
-
-            org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2, 3 },
-                    cassandraExecutor.queryForSingleValue(byte[].class, "SELECT data FROM simplex.songs WHERE id = ?", id).get());
-            org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2, 3 },
-                    cassandraExecutor.list(byte[].class, "SELECT data FROM simplex.songs WHERE id = ?", id).get(0));
+            ResultSet rs = cassandraExecutor.execute("SELECT id FROM simplex.songs WHERE id = ?", id);
+            Dataset ds = CassandraExecutor.extractData(rs, String.class);
+            assertNotNull(ds);
+            assertEquals(1, ds.size());
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    // ---- sliceP 2026-09-27: named Map container on a single map-column marker; typed array row targets ----
-
-    @Test
-    public void test_sliceP_namedMapParameterForMapColumnAndTypedArrayRows() {
-        cassandraExecutor.execute("CREATE TABLE IF NOT EXISTS simplex.slice_p_named_map (id int PRIMARY KEY, m map<text, int>)");
-        cassandraExecutor.execute("INSERT INTO simplex.slice_p_named_map (id) VALUES (1)");
-        try {
-            // Used to bind the whole container {m={a=1}} as the column value and fail inside the driver's map codec.
-            cassandraExecutor.execute("UPDATE simplex.slice_p_named_map SET m = :m WHERE id = 1", N.asMap("m", N.asMap("a", 1)));
-            assertEquals(N.asMap("a", 1), cassandraExecutor.queryForSingleValue(Map.class, "SELECT m FROM simplex.slice_p_named_map WHERE id = 1").get());
-
-            // Used to throw ArrayStoreException (an int column stored into String[] / Long[]).
-            final List<String[]> rows = cassandraExecutor.list(String[].class, "SELECT id FROM simplex.slice_p_named_map WHERE id = 1");
-            assertEquals("1", rows.get(0)[0]);
-            assertEquals(1L, cassandraExecutor.findFirst(Long[].class, "SELECT id FROM simplex.slice_p_named_map WHERE id = 1").get()[0]);
-        } finally {
-            cassandraExecutor.execute("DROP TABLE IF EXISTS simplex.slice_p_named_map");
         }
     }
 
@@ -1755,7 +1362,6 @@ public class CassandraExecutorTest extends TestBase {
 
     public static class CoverageCSTimeUdt {
         private java.sql.Time t;
-        private java.time.LocalTime lt;
 
         public java.sql.Time getT() {
             return t;
@@ -1764,19 +1370,11 @@ public class CassandraExecutorTest extends TestBase {
         public void setT(final java.sql.Time t) {
             this.t = t;
         }
-
-        public java.time.LocalTime getLt() {
-            return lt;
-        }
-
-        public void setLt(final java.time.LocalTime lt) {
-            this.lt = lt;
-        }
     }
 
-    public static class CoverageCSLocalTimeRow {
+    public static class CoverageCSTimeRow {
         private int id;
-        private java.time.LocalTime t;
+        private java.sql.Time t;
         private CoverageCSTimeUdt u;
 
         public int getId() {
@@ -1787,11 +1385,11 @@ public class CassandraExecutorTest extends TestBase {
             this.id = id;
         }
 
-        public java.time.LocalTime getT() {
+        public java.sql.Time getT() {
             return t;
         }
 
-        public void setT(final java.time.LocalTime t) {
+        public void setT(final java.sql.Time t) {
             this.t = t;
         }
 
@@ -1804,83 +1402,48 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
-    public static class CoverageCSSqlTimeRow {
-        private int id;
-        private java.sql.Time t;
-
-        public int getId() {
-            return id;
-        }
-
-        public void setId(final int id) {
-            this.id = id;
-        }
-
-        public java.sql.Time getT() {
-            return t;
-        }
-
-        public void setT(final java.sql.Time t) {
-            this.t = t;
-        }
-    }
-
-    /** Schema changes get a generous timeout (they wait for schema agreement). */
+    /** Schema changes can take longer than the driver's default 2s request timeout. */
     private static void coverageCSSchemaChange(final String cql) {
-        cassandraExecutor.execute(new com.datastax.driver.core.SimpleStatement(cql).setReadTimeoutMillis(60_000));
+        cassandraExecutor.execute(com.datastax.oss.driver.api.core.cql.SimpleStatement.newInstance(cql).setTimeout(Duration.ofSeconds(60)));
     }
 
     @Test
     public void test_coverageCS_dateTimeAndValueTypeParametersBindRoundTrip() throws Exception {
-        final String table = "simplex.coverage_cs_binds3";
+        final String table = "simplex.coverage_cs_binds4";
         coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, ts timestamp, b blob)");
 
         try {
             final String readT = "SELECT t FROM " + table + " WHERE id = ?";
-            final java.time.LocalTime nanoTime = java.time.LocalTime.of(10, 15, 30, 123_456_789);
-            final java.sql.Time sqlTime = new java.sql.Time(java.sql.Time.valueOf(java.time.LocalTime.of(10, 15, 30)).getTime() + 123);
+            final java.sql.Time sqlTime = new java.sql.Time(java.sql.Time.valueOf(LocalTime.of(10, 15, 30)).getTime() + 123);
             final java.util.Calendar calendar = java.util.Calendar.getInstance();
             calendar.setTime(sqlTime);
-            final LocalDate date = LocalDate.of(2020, 1, 2);
-            final java.time.ZoneOffset offset = java.time.ZoneOffset.ofHours(5);
 
-            // Binds into the time column, which driver 3 stores from a Long of nanoseconds since midnight: a Date/Calendar or a
-            // LocalDateTime/OffsetDateTime/ZonedDateTime/Instant was bound as epoch milliseconds (silently stored ~00:00:00.0xx or
-            // 00:26:17.98...), a LocalTime/OffsetTime could not be bound at all. Each value's own time of day is stored now - among
-            // two parameters and as the single parameter of a single marker (a single Calendar was read as a bean of named values).
-            final long millisNanos = 36_930_123_000_000L; // 10:15:30.123
-            final List<Object[]> valuesAndNanos = List.of(new Object[] { nanoTime, nanoTime.toNanoOfDay() }, new Object[] { sqlTime, millisNanos },
-                    new Object[] { new java.util.Date(sqlTime.getTime()), millisNanos }, new Object[] { new java.sql.Timestamp(sqlTime.getTime()), millisNanos },
-                    new Object[] { calendar, millisNanos }, new Object[] { LocalDateTime.of(date, nanoTime), nanoTime.toNanoOfDay() },
-                    new Object[] { java.time.OffsetDateTime.of(date, nanoTime, offset), nanoTime.toNanoOfDay() },
-                    new Object[] { java.time.ZonedDateTime.of(date, nanoTime, java.time.ZoneId.of("Asia/Tokyo")), nanoTime.toNanoOfDay() },
-                    new Object[] { java.time.OffsetTime.of(nanoTime, offset), nanoTime.toNanoOfDay() },
-                    new Object[] { java.time.ZonedDateTime.of(date, nanoTime, java.time.ZoneId.systemDefault()).toInstant(), nanoTime.toNanoOfDay() },
-                    new Object[] { nanoTime.toNanoOfDay(), nanoTime.toNanoOfDay() }); // unchanged: a Long is the nanosecond count itself
+            // Binds into the time column: a LocalTime as is; a Date/Calendar (converted to the column's LocalTime) - among two
+            // parameters and as the single parameter of a single marker (a single Calendar was read as a bean of named values:
+            // "Missing required parameter: 't'").
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 1, LocalTime.of(10, 15, 30, 123_456_789));
+            assertEquals(LocalTime.of(10, 15, 30, 123_456_789), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 1).get());
 
-            for (final Object[] valueAndNanos : valuesAndNanos) {
-                final String type = valueAndNanos[0].getClass().getName();
-                cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 2, valueAndNanos[0]);
-                assertEquals(valueAndNanos[1], cassandraExecutor.queryForSingleValue(Long.class, readT, 2).get(), type);
-                cassandraExecutor.execute("UPDATE " + table + " SET t = ? WHERE id = 3", valueAndNanos[0]);
-                assertEquals(valueAndNanos[1], cassandraExecutor.queryForSingleValue(Long.class, readT, 3).get(), type);
+            for (final Object value : List.of(sqlTime, new java.util.Date(sqlTime.getTime()), new Timestamp(sqlTime.getTime()), calendar)) {
+                cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 2, value);
+                assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 2).get(),
+                        value.getClass().getName());
+                cassandraExecutor.execute("UPDATE " + table + " SET t = ? WHERE id = 3", value);
+                assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 3).get(),
+                        value.getClass().getName());
             }
 
-            // An entity's LocalTime / java.sql.Time property bound as a named parameter goes through the same conversion.
-            final CoverageCSLocalTimeRow localTimeRow = new CoverageCSLocalTimeRow();
-            localTimeRow.setId(5);
-            localTimeRow.setT(nanoTime);
-            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (:id, :t)", localTimeRow);
-            assertEquals(nanoTime.toNanoOfDay(), cassandraExecutor.queryForSingleValue(Long.class, readT, 5).get());
-            final CoverageCSSqlTimeRow sqlTimeRow = new CoverageCSSqlTimeRow();
-            sqlTimeRow.setId(6);
-            sqlTimeRow.setT(sqlTime);
-            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (:id, :t)", sqlTimeRow);
-            assertEquals(millisNanos, cassandraExecutor.queryForSingleValue(Long.class, readT, 6).get());
+            // Unchanged: an entity's java.sql.Time property bound as a named parameter is converted the same way.
+            final CoverageCSTimeRow entity = new CoverageCSTimeRow();
+            entity.setId(5);
+            entity.setT(sqlTime);
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (:id, :t)", entity);
+            assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 5).get());
 
             // A single Calendar for a single timestamp marker, too.
             cassandraExecutor.execute("UPDATE " + table + " SET ts = ? WHERE id = 3", calendar);
-            assertEquals(calendar.getTime(), cassandraExecutor.queryForSingleValue(java.util.Date.class, "SELECT ts FROM " + table + " WHERE id = 3").get());
+            assertEquals(calendar.toInstant(),
+                    cassandraExecutor.queryForSingleValue(java.time.Instant.class, "SELECT ts FROM " + table + " WHERE id = 3").get());
 
             // A single ByteBuffer is one positional value: bound to a single blob marker, too few values for two markers.
             cassandraExecutor.execute("UPDATE " + table + " SET b = ? WHERE id = 3", ByteBuffer.wrap(new byte[] { 1, 2 }));
@@ -1895,69 +1458,202 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_coverageCS_timeColumnReadsIntoTimeTargetsOnEveryPath() throws Exception {
-        final String table = "simplex.coverage_cs_reads3";
-        coverageCSSchemaChange("CREATE TYPE IF NOT EXISTS simplex.coverage_cs_time_udt3 (t time, lt time)");
-        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, u frozen<coverage_cs_time_udt3>)");
+    public void test_coverageCS_timeColumnReadsIntoSqlTimeOnEveryPath() throws Exception {
+        final String table = "simplex.coverage_cs_reads4";
+        coverageCSSchemaChange("CREATE TYPE IF NOT EXISTS simplex.coverage_cs_time_udt4 (t time)");
+        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, u frozen<coverage_cs_time_udt4>)");
 
         try {
             final String readT = "SELECT t FROM " + table + " WHERE id = ?";
             final java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss.SSS");
-            final java.time.LocalTime nanoTime = java.time.LocalTime.of(10, 15, 30, 123_456_789);
 
-            // Reads: driver 3 decodes a time as a Long of nanoseconds since midnight, which N.convert/setPropValue read as epoch
-            // milliseconds (10:00 came back as 09:00 or 16:xx); every read path into a LocalTime or java.sql.Time target uses the
-            // nanoseconds since midnight.
-            cassandraExecutor.execute("INSERT INTO " + table + " (id, t, u) VALUES (1, '10:15:30.123456789', {t: '10:15:30.123456789', lt: '10:15:30.123456789'})");
+            // Reads into java.sql.Time: a time with a fractional second (id 1) and one on a whole minute (id 4) both failed the
+            // N.convert text parse; every read path converts them (to the millisecond).
+            cassandraExecutor.execute("INSERT INTO " + table + " (id, t, u) VALUES (1, '10:15:30.123456789', {t: '10:15:30.123456789'})");
             cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (4, '12:30:00')");
-            cassandraExecutor.session()
-                    .getCluster()
-                    .getConfiguration()
-                    .getCodecRegistry()
-                    .register(UDTCodec.create(cassandraExecutor.session().getCluster(), "simplex", "coverage_cs_time_udt3", CoverageCSTimeUdt.class));
+            codecRegistry.register(UDTCodec.create(session, "simplex", "coverage_cs_time_udt4", CoverageCSTimeUdt.class));
 
-            for (final java.time.LocalTime expected : List.of(nanoTime, java.time.LocalTime.of(12, 30))) {
-                final int id = expected.equals(nanoTime) ? 1 : 4;
-                final String expectedText = timeFormat.format(new java.sql.Time(java.sql.Time.valueOf(expected.withNano(0)).getTime() + expected.getNano() / 1_000_000));
+            for (final Object[] idAndText : new Object[][] { { 1, "10:15:30.123" }, { 4, "12:30:00.000" } }) {
+                final int id = (Integer) idAndText[0];
+                final String expected = (String) idAndText[1];
                 final String readRow = "SELECT id, t FROM " + table + " WHERE id = ?";
 
-                assertEquals(expected, cassandraExecutor.queryForSingleValue(java.time.LocalTime.class, readT, id).get());
-                assertEquals(expected, cassandraExecutor.queryForSingleNonNull(java.time.LocalTime.class, readT, id).get());
-                assertEquals(expected, cassandraExecutor.findFirst(java.time.LocalTime.class, readT, id).get());
-                assertEquals(expected, cassandraExecutor.list(java.time.LocalTime.class, readT, id).get(0));
-                assertEquals(expected, cassandraExecutor.list(java.time.LocalTime[].class, readT, id).get(0)[0]);
-                assertEquals(expected, cassandraExecutor.stream(java.time.LocalTime.class, readT, id).first().get());
-                assertEquals(expected, cassandraExecutor.findFirst(CoverageCSLocalTimeRow.class, readRow, id).get().getT());
-                assertEquals(expected, cassandraExecutor.query(CoverageCSLocalTimeRow.class, readRow, id).getColumn("t").get(0));
-                assertEquals(expected, cassandraExecutor.async().queryForSingleValue(java.time.LocalTime.class, readT, id).get().get());
-                assertEquals(expected, cassandraExecutor.async().list(java.time.LocalTime.class, readT, id).get().get(0));
-
-                assertEquals(expectedText, timeFormat.format(cassandraExecutor.queryForSingleValue(java.sql.Time.class, readT, id).get()));
-                assertEquals(expectedText, timeFormat.format(cassandraExecutor.list(java.sql.Time.class, readT, id).get(0)));
-                assertEquals(expectedText, timeFormat.format(cassandraExecutor.list(java.sql.Time[].class, readT, id).get(0)[0]));
-                assertEquals(expectedText, timeFormat.format(cassandraExecutor.findFirst(CoverageCSSqlTimeRow.class, readRow, id).get().getT()));
-                assertEquals(expectedText,
-                        timeFormat.format(cassandraExecutor.query(CoverageCSSqlTimeRow.class, readRow, id).<java.sql.Time> getColumn("t").get(0)));
-                assertEquals(expectedText, timeFormat.format(cassandraExecutor.async().queryForSingleNonNull(java.sql.Time.class, readT, id).get().get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.queryForSingleValue(java.sql.Time.class, readT, id).get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.queryForSingleNonNull(java.sql.Time.class, readT, id).get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.findFirst(java.sql.Time.class, readT, id).get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.list(java.sql.Time.class, readT, id).get(0)));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.list(java.sql.Time[].class, readT, id).get(0)[0]));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.stream(java.sql.Time.class, readT, id).first().get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.findFirst(CoverageCSTimeRow.class, readRow, id).get().getT()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.query(CoverageCSTimeRow.class, readRow, id).<java.sql.Time> getColumn("t").get(0)));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.async().queryForSingleValue(java.sql.Time.class, readT, id).get().get()));
+                assertEquals(expected, timeFormat.format(cassandraExecutor.async().list(java.sql.Time.class, readT, id).get().get(0)));
             }
 
             // Several rows: every row is converted, not only the first.
-            assertEquals(N.asSet(nanoTime, java.time.LocalTime.of(12, 30)),
-                    N.newHashSet(cassandraExecutor.list(java.time.LocalTime.class, "SELECT t FROM " + table + " WHERE id IN (1, 4)")));
+            assertEquals(N.asSet("10:15:30.123", "12:30:00.000"), N.newHashSet(
+                    cassandraExecutor.list(java.sql.Time.class, "SELECT t FROM " + table + " WHERE id IN (1, 4)").stream().map(timeFormat::format).toList()));
 
-            // UDT time fields decoded into java.sql.Time / LocalTime bean properties (through the registered UDT codec).
-            final CoverageCSTimeUdt udt = cassandraExecutor.findFirst(CoverageCSLocalTimeRow.class, "SELECT id, t, u FROM " + table + " WHERE id = ?", 1)
-                    .get()
-                    .getU();
-            assertEquals("10:15:30.123", timeFormat.format(udt.getT()));
-            assertEquals(nanoTime, udt.getLt());
+            // A UDT time field decoded into a java.sql.Time bean property (through the registered UDT codec).
+            assertEquals("10:15:30.123", timeFormat
+                    .format(cassandraExecutor.findFirst(CoverageCSTimeRow.class, "SELECT id, t, u FROM " + table + " WHERE id = ?", 1).get().getU().getT()));
         } finally {
             coverageCSSchemaChange("DROP TABLE IF EXISTS " + table);
-            coverageCSSchemaChange("DROP TYPE IF EXISTS simplex.coverage_cs_time_udt3");
+            coverageCSSchemaChange("DROP TYPE IF EXISTS simplex.coverage_cs_time_udt4");
         }
     }
 
     // ---- 2026-10-04 coverageCS end ----
+
+    // ---- 2026-10-04 coverageCQ ----
+
+    /** Entity of the coverageCQ live check: its primary key (user_id, tenant_id) is declared only via registerKeys. */
+    @com.landawn.abacus.annotation.Table("simplex.coverage_cq_probe")
+    public static class CoverageCqProbe {
+        private String userId;
+        private String tenantId;
+        private String name;
+        private Map<String, Integer> scores;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(final String userId) {
+            this.userId = userId;
+        }
+
+        public String getTenantId() {
+            return tenantId;
+        }
+
+        public void setTenantId(final String tenantId) {
+            this.tenantId = tenantId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public Map<String, Integer> getScores() {
+            return scores;
+        }
+
+        public void setScores(final Map<String, Integer> scores) {
+            this.scores = scores;
+        }
+    }
+
+    /** Schema changes can take longer than the driver's default 2s request timeout. */
+    private static void coverageCQSchemaChange(final String cql) {
+        cassandraExecutor.execute(com.datastax.oss.driver.api.core.cql.SimpleStatement.newInstance(cql).setTimeout(Duration.ofSeconds(60)));
+    }
+
+    /**
+     * The CQL rendered by the fixed CqlBuilder paths (registered keys left out of SET / set(bean) / the column DELETE;
+     * update(Class).usingTTL(..).set(..)) and by ParsedCql's glued-marker rewrite is prepared, bound and applied by a real
+     * Cassandra. Each check uses its own partition, so the HEAD run reports every statement Cassandra rejected there (key
+     * columns in SET or in the DELETE column list, the implicit SET list duplicated after USING, a raw "#{street}" in the CQL).
+     */
+    @Test
+    public void test_coverageCQ_fixedRenderingsPrepareAndApplyOnCassandra() {
+        // A fresh table (and UDT) name per run: this Cassandra serves stale prepared statements for a table that was dropped
+        // and re-created under the same name ("table ... does not exist"). The CQL rendered for the entity's @Table name is
+        // redirected to it with onTable.
+        final String suffix = Long.toString(System.currentTimeMillis(), 36);
+        final String table = "simplex.coverage_cq_probe_" + suffix;
+        final String udt = "simplex.coverage_cq_addr_" + suffix;
+        final java.util.function.UnaryOperator<String> onTable = cql -> cql.replace("simplex.coverage_cq_probe ", table + " ");
+        coverageCQSchemaChange("CREATE TYPE " + udt + " (street text, city text, zip int)");
+        coverageCQSchemaChange("CREATE TABLE " + table + " (user_id text, tenant_id text, name text, scores map<text, int>, addr frozen<"
+                + udt.substring("simplex.".length()) + ">, PRIMARY KEY (user_id, tenant_id))");
+        CassandraExecutorBase.registerKeys(CoverageCqProbe.class, N.asList("userId", "tenantId"));
+
+        try {
+            final String select = "SELECT name, scores, TTL(name) AS name_ttl, addr.city AS city, addr.zip AS zip FROM " + table
+                    + " WHERE user_id = ? AND tenant_id = ?";
+            final java.util.function.Function<String, CoverageCqProbe> insert = userId -> {
+                final CoverageCqProbe probe = new CoverageCqProbe();
+                probe.setUserId(userId);
+                probe.setTenantId("t");
+                probe.setName("n0");
+                probe.setScores(N.asMap("a", 1));
+                cassandraExecutor.execute(onTable.apply(NSC.insertInto(CoverageCqProbe.class).build().query()), probe);
+                return probe;
+            };
+            final java.util.function.Function<String, com.landawn.abacus.query.condition.Condition> key = userId -> Filters.and(Filters.eq("userId", userId),
+                    Filters.eq("tenantId", "t"));
+
+            org.junit.jupiter.api.Assertions.assertAll(() -> {
+                // update(Class): the implicit SET list leaves out the registered keys.
+                final CoverageCqProbe probe = insert.apply("u1");
+                probe.setName("n1");
+                probe.setScores(N.asMap("b", 2));
+                cassandraExecutor.execute(onTable.apply(NSC.update(CoverageCqProbe.class).where(key.apply("u1")).build().query()), probe);
+                final Row row = cassandraExecutor.execute(select, "u1", "t").one();
+                assertEquals("n1", row.getString("name"));
+                assertEquals(N.asMap("b", 2), row.getMap("scores", String.class, Integer.class));
+            }, () -> {
+                // update(table).set(bean): the bean's key properties are not SET either.
+                final CoverageCqProbe probe = insert.apply("u2");
+                probe.setName("n2");
+                cassandraExecutor.execute(NSC.update(table).set(probe).where(key.apply("u2")).build().query(), probe);
+                assertEquals("n2", cassandraExecutor.execute(select, "u2", "t").one().getString("name"));
+            }, () -> {
+                // USING before set(...): only the explicit column is SET (the implicit list is replaced), with the TTL applied.
+                final CoverageCqProbe probe = insert.apply("u3");
+                probe.setName("n3");
+                probe.setScores(N.asMap("c", 3));
+                cassandraExecutor.execute(onTable.apply(
+                        NSC.update(CoverageCqProbe.class, N.asSet("userId", "tenantId")).usingTTL(3600).set("name").where(key.apply("u3")).build().query()),
+                        probe);
+                final Row row = cassandraExecutor.execute(select, "u3", "t").one();
+                assertEquals("n3", row.getString("name"));
+                assertEquals(N.asMap("a", 1), row.getMap("scores", String.class, Integer.class));
+                final int ttl = row.getInt("name_ttl");
+                assertTrue(ttl > 0 && ttl <= 3600, String.valueOf(ttl));
+            }, () -> {
+                // delete(Class).from(Class): only the non-key columns are deleted; the row itself remains.
+                insert.apply("u4");
+                final Map<String, Object> keyValues = new java.util.HashMap<>();
+                keyValues.put("userId", "u4");
+                keyValues.put("tenantId", "t");
+                cassandraExecutor.execute(onTable.apply(NSC.delete(CoverageCqProbe.class).from(CoverageCqProbe.class).where(key.apply("u4")).build().query()),
+                        keyValues);
+                final Row row = cassandraExecutor.execute(select, "u4", "t").one();
+                assertNotNull(row);
+                assertNull(row.getString("name"));
+                assertTrue(row.getMap("scores", String.class, Integer.class).isEmpty());
+            }, () -> {
+                // ParsedCql: MyBatis markers glued to the fields of a UDT literal (also with metadata / whitespace inside the
+                // marker). The map-literal shapes are covered offline only: this Cassandra (5.0) rejects any bind marker inside
+                // a set/list/map literal ("bind variables are not supported inside collection literals").
+                insert.apply("u5");
+                final Map<String, Object> params = new java.util.HashMap<>();
+                params.put("street", "s");
+                params.put("city", "c");
+                params.put("zip", 12345);
+                params.put("userId", "u5");
+                params.put("tenantId", "t");
+                cassandraExecutor.execute("UPDATE " + table + " SET addr = {street:#{street,jdbcType=VARCHAR},city:#{ city },zip:#{zip}}"
+                        + " WHERE user_id = #{userId} AND tenant_id = #{tenantId}", params);
+                final Row row = cassandraExecutor.execute(select, "u5", "t").one();
+                assertEquals("c", row.getString("city"));
+                assertEquals(12345, row.getInt("zip"));
+                assertEquals("n0", row.getString("name"));
+            });
+        } finally {
+            CassandraExecutorBase.entityKeyNamesMap.remove(CoverageCqProbe.class);
+            coverageCQSchemaChange("DROP TABLE IF EXISTS " + table);
+            coverageCQSchemaChange("DROP TYPE IF EXISTS " + udt);
+        }
+    }
+
+    // ---- 2026-10-04 coverageCQ end ----
 
     private Users createUser() {
         Users user = new Users();
@@ -1975,7 +1671,7 @@ public class CassandraExecutorTest extends TestBase {
         user.setAddresses(addresses);
 
         user.setSomeDate(LocalDate.now());
-        // user.setLastUpdateTime(LocalTime.now());
+        user.setLastUpdateTime(LocalTime.now());
         user.setCreatedTime(Dates.currentTimestamp());
 
         user.setBytes(N.asList((byte) 1, (byte) 2, (byte) 3));

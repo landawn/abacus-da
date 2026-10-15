@@ -35,22 +35,83 @@ import com.landawn.abacus.da.TestBase;
  */
 public class AnyIncrementTest extends TestBase {
 
-    // ---------------------------------------------------------------------
-    // Factory methods
-    // ---------------------------------------------------------------------
+    // Construction and configuration
 
     @Test
-    public void testOf_stringRowKey() {
-        AnyIncrement inc = AnyIncrement.of("row-1");
-        assertNotNull(inc);
-        assertArrayEquals(Bytes.toBytes("row-1"), inc.getRow());
+    public void testOf_familyMapConstructorRetainsNegativeTimestampAndExistingCells() {
+        final byte[] row = Bytes.toBytes("row");
+        final byte[] family = Bytes.toBytes("cf");
+        final Cell cell = new KeyValue(row, family, Bytes.toBytes("q"), 42L, Bytes.toBytes(1L));
+        final NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+        familyMap.put(family, List.of(cell));
+
+        final AnyIncrement increment = AnyIncrement.of(row, -1L, familyMap);
+
+        assertEquals(-1L, increment.getTimestamp());
+        assertSame(familyMap, increment.val().getFamilyCellMap());
+        assertSame(cell, increment.val().getFamilyCellMap().get(family).get(0));
+        assertEquals(42L, cell.getTimestamp());
+        assertThrows(IllegalArgumentException.class, () -> increment.setTimestamp(-1L));
+    }
+
+    // Factories and insert operations
+
+    @Test
+    public void testAddColumn_byteArray() {
+        AnyIncrement inc = AnyIncrement.of("row").addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 5L);
+        assertTrue(inc.hasFamilies());
     }
 
     @Test
-    public void testOf_byteArrayRowKey() {
-        byte[] row = Bytes.toBytes("row-bytes");
-        AnyIncrement inc = AnyIncrement.of(row);
-        assertArrayEquals(row, inc.getRow());
+    public void testAddColumn_chaining() {
+        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q1", 1L).addColumn("cf", "q2", 2L).addColumn("cf2", "q3", 3L);
+        Map<byte[], NavigableMap<byte[], Long>> map = inc.getFamilyMapOfLongs();
+        assertEquals(2, map.size());
+    }
+
+    @Test
+    public void testAddColumn_negativeAmount_decrement() {
+        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", -3L);
+        assertTrue(inc.hasFamilies());
+    }
+
+    // addColumn variants
+
+    @Test
+    public void testAddColumn_string_returnsSelf() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        AnyIncrement returned = inc.addColumn("cf", "q", 1L);
+        assertSame(inc, returned);
+        assertTrue(inc.hasFamilies());
+    }
+
+    @Test
+    public void testHasFamilies_afterAddColumn_returnsTrue() {
+        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", 1L);
+        assertTrue(inc.hasFamilies());
+    }
+
+    // Updates and deletes
+
+    @Test
+    public void testEquals_nonAnyIncrementObject_returnsFalse() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        assertFalse(inc.equals("not an AnyIncrement"));
+        assertFalse(inc.equals(null));
+    }
+
+    // hasFamilies and getFamilyMapOfLongs
+
+    @Test
+    public void testHasFamilies_emptyIncrement_returnsFalse() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        assertFalse(inc.hasFamilies());
+    }
+
+    @Test
+    public void testHashCode_matchesUnderlyingIncrement() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        assertEquals(inc.val().hashCode(), inc.hashCode());
     }
 
     @Test
@@ -58,15 +119,6 @@ public class AnyIncrementTest extends TestBase {
         byte[] data = Bytes.toBytes("abcdefgh");
         AnyIncrement inc = AnyIncrement.of(data, 1, 3);
         assertArrayEquals(Bytes.toBytes("bcd"), inc.getRow());
-    }
-
-    @Test
-    public void testOf_withTimestampAndFamilyMap() {
-        long ts = 1L;
-        NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
-        AnyIncrement inc = AnyIncrement.of(Bytes.toBytes("row"), ts, familyMap);
-        assertArrayEquals(Bytes.toBytes("row"), inc.getRow());
-        assertEquals(ts, inc.getTimestamp());
     }
 
     @Test
@@ -80,238 +132,6 @@ public class AnyIncrementTest extends TestBase {
         assertNotSame(original, copy.val());
         assertArrayEquals(Bytes.toBytes("orig"), copy.getRow());
         assertTrue(copy.hasFamilies());
-    }
-
-    // ---------------------------------------------------------------------
-    // val()
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testVal_returnsUnderlyingIncrement() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        Increment underlying = inc.val();
-        assertNotNull(underlying);
-        assertArrayEquals(Bytes.toBytes("row"), underlying.getRow());
-    }
-
-    @Test
-    public void testVal_consistentAcrossCalls() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        assertSame(inc.val(), inc.val());
-    }
-
-    // ---------------------------------------------------------------------
-    // addColumn variants
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testAddColumn_string_returnsSelf() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        AnyIncrement returned = inc.addColumn("cf", "q", 1L);
-        assertSame(inc, returned);
-        assertTrue(inc.hasFamilies());
-    }
-
-    @Test
-    public void testAddColumn_byteArray() {
-        AnyIncrement inc = AnyIncrement.of("row").addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 5L);
-        assertTrue(inc.hasFamilies());
-    }
-
-    @Test
-    public void testAddColumn_negativeAmount_decrement() {
-        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", -3L);
-        assertTrue(inc.hasFamilies());
-    }
-
-    @Test
-    public void testAddColumn_chaining() {
-        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q1", 1L).addColumn("cf", "q2", 2L).addColumn("cf2", "q3", 3L);
-        Map<byte[], NavigableMap<byte[], Long>> map = inc.getFamilyMapOfLongs();
-        assertEquals(2, map.size());
-    }
-
-    // ---------------------------------------------------------------------
-    // hasFamilies and getFamilyMapOfLongs
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testHasFamilies_emptyIncrement_returnsFalse() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        assertFalse(inc.hasFamilies());
-    }
-
-    @Test
-    public void testHasFamilies_afterAddColumn_returnsTrue() {
-        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", 1L);
-        assertTrue(inc.hasFamilies());
-    }
-
-    @Test
-    public void testGetFamilyMapOfLongs_emptyByDefault() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        Map<byte[], NavigableMap<byte[], Long>> map = inc.getFamilyMapOfLongs();
-        assertNotNull(map);
-        assertEquals(0, map.size());
-    }
-
-    @Test
-    public void testGetFamilyMapOfLongs_returnsAmounts() {
-        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", 7L);
-        Map<byte[], NavigableMap<byte[], Long>> map = inc.getFamilyMapOfLongs();
-        assertEquals(1, map.size());
-        NavigableMap<byte[], Long> col = map.get(Bytes.toBytes("cf"));
-        assertNotNull(col);
-        assertEquals(Long.valueOf(7L), col.get(Bytes.toBytes("q")));
-    }
-
-    // ---------------------------------------------------------------------
-    // Time range
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testSetTimeRange_andGetter() {
-        AnyIncrement inc = AnyIncrement.of("row").setTimeRange(100L, 200L);
-        TimeRange range = inc.getTimeRange();
-        assertNotNull(range);
-        assertEquals(100L, range.getMin());
-        assertEquals(200L, range.getMax());
-    }
-
-    @Test
-    public void testSetTimeRange_invalidRange_throws() {
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of("row").setTimeRange(200L, 100L));
-    }
-
-    // ---------------------------------------------------------------------
-    // setReturnResults / isReturnResults
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testSetReturnResults_false_andGetter() {
-        AnyIncrement inc = AnyIncrement.of("row").setReturnResults(false);
-        assertFalse(inc.isReturnResults());
-    }
-
-    @Test
-    public void testSetReturnResults_true_andGetter() {
-        AnyIncrement inc = AnyIncrement.of("row").setReturnResults(true);
-        assertTrue(inc.isReturnResults());
-    }
-
-    // ---------------------------------------------------------------------
-    // setAttribute
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testSetAttribute_andGetter() {
-        AnyIncrement inc = AnyIncrement.of("row").setAttribute("trace_id", Bytes.toBytes("trace-1"));
-        assertArrayEquals(Bytes.toBytes("trace-1"), inc.getAttribute("trace_id"));
-    }
-
-    @Test
-    public void testSetAttribute_nullValue_doesNotThrow() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        inc.setAttribute("k", null);
-        // After setting null, retrieved value should be null
-        assertEquals(null, inc.getAttribute("k"));
-    }
-
-    // ---------------------------------------------------------------------
-    // Mutation inherited: durability, timestamp, TTL
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testSetDurability_andGetter() {
-        AnyIncrement inc = AnyIncrement.of("row").setDurability(Durability.SKIP_WAL);
-        assertEquals(Durability.SKIP_WAL, inc.getDurability());
-    }
-
-    @Test
-    public void testSetTimestamp_andGetter() {
-        AnyIncrement inc = AnyIncrement.of("row").setTimestamp(42L);
-        assertEquals(42L, inc.getTimestamp());
-    }
-
-    @Test
-    public void testSetTTL_andGetter() {
-        AnyIncrement inc = AnyIncrement.of("row").setTTL(86_400_000L);
-        assertEquals(86_400_000L, inc.getTTL());
-    }
-
-    // ---------------------------------------------------------------------
-    // equals, hashCode, toString
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testEquals_sameInstance() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        assertEquals(inc, inc);
-    }
-
-    @Test
-    public void testEquals_nonAnyIncrementObject_returnsFalse() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        assertFalse(inc.equals("not an AnyIncrement"));
-        assertFalse(inc.equals(null));
-    }
-
-    @Test
-    public void testHashCode_matchesUnderlyingIncrement() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        assertEquals(inc.val().hashCode(), inc.hashCode());
-    }
-
-    @Test
-    public void testToString_notNull() {
-        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", 1L);
-        String s = inc.toString();
-        assertNotNull(s);
-    }
-
-    // ---------------------------------------------------------------------
-    // Copy independence
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testOf_copyExistingIncrement_isIndependent() {
-        Increment orig = new Increment(Bytes.toBytes("k"));
-        orig.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L);
-        AnyIncrement copy = AnyIncrement.of(orig);
-        copy.addColumn("cf2", "q2", 2L);
-
-        assertEquals(2, copy.getFamilyMapOfLongs().size());
-        // Original increment should still have only 1 family
-        assertEquals(1, orig.getFamilyMapOfLongs().size());
-    }
-
-    /**
-     * {@code AnyIncrement.add(Cell)} validates the cell up front, so a {@code null} cell is rejected
-     * with an {@code IllegalArgumentException} -- the same contract as {@code AnyPut}/{@code AnyDelete}/
-     * {@code AnyAppend.add(Cell)}.
-     */
-    @Test
-    public void testAdd_nullCell_throwsIae() {
-        AnyIncrement inc = AnyIncrement.of("row");
-        assertThrows(IllegalArgumentException.class, () -> inc.add((Cell) null));
-        assertEquals(0, inc.size());
-    }
-
-    /**
-     * A {@code null} row key, family map or source {@code Increment} is rejected with an
-     * {@code IllegalArgumentException} by every {@code of(...)} overload (previously some overloads
-     * leaked HBase's {@code NullPointerException}).
-     */
-    @Test
-    public void testOf_nullArguments_throwIae() {
-        final java.util.NavigableMap<byte[], java.util.List<Cell>> familyMap = new java.util.TreeMap<>(Bytes.BYTES_COMPARATOR);
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((Object) null));
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null));
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null, 0, 1));
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((Object) null, 0, 1));
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null, 1L, familyMap));
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(Bytes.toBytes("r"), 1L, null));
-        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((org.apache.hadoop.hbase.client.Increment) null));
     }
 
     /**
@@ -341,14 +161,117 @@ public class AnyIncrementTest extends TestBase {
         assertEquals(Durability.SKIP_WAL, orig.getDurability());
     }
 
-    @Test
-    public void testAdd_matchingCell_returnsSelfAndQueuesAmount() throws IOException {
-        Cell cell = new KeyValue(Bytes.toBytes("row"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes(3L));
-        AnyIncrement inc = AnyIncrement.of("row");
+    // Copy independence
 
-        assertSame(inc, inc.add(cell));
-        assertEquals(Long.valueOf(3L), inc.getFamilyMapOfLongs().get(Bytes.toBytes("cf")).get(Bytes.toBytes("q")));
+    @Test
+    public void testOf_copyExistingIncrement_isIndependent() {
+        Increment orig = new Increment(Bytes.toBytes("k"));
+        orig.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L);
+        AnyIncrement copy = AnyIncrement.of(orig);
+        copy.addColumn("cf2", "q2", 2L);
+
+        assertEquals(2, copy.getFamilyMapOfLongs().size());
+        // Original increment should still have only 1 family
+        assertEquals(1, orig.getFamilyMapOfLongs().size());
     }
+
+    // setAttribute
+
+    @Test
+    public void testSetAttribute_andGetter() {
+        AnyIncrement inc = AnyIncrement.of("row").setAttribute("trace_id", Bytes.toBytes("trace-1"));
+        assertArrayEquals(Bytes.toBytes("trace-1"), inc.getAttribute("trace_id"));
+    }
+
+    @Test
+    public void testSetAttribute_nullValue_doesNotThrow() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        inc.setAttribute("k", null);
+        // After setting null, retrieved value should be null
+        assertEquals(null, inc.getAttribute("k"));
+    }
+
+    // Mutation inherited: durability, timestamp, TTL
+
+    @Test
+    public void testSetDurability_andGetter() {
+        AnyIncrement inc = AnyIncrement.of("row").setDurability(Durability.SKIP_WAL);
+        assertEquals(Durability.SKIP_WAL, inc.getDurability());
+    }
+
+    // setReturnResults / isReturnResults
+
+    @Test
+    public void testSetReturnResults_false_andGetter() {
+        AnyIncrement inc = AnyIncrement.of("row").setReturnResults(false);
+        assertFalse(inc.isReturnResults());
+    }
+
+    @Test
+    public void testSetReturnResults_true_andGetter() {
+        AnyIncrement inc = AnyIncrement.of("row").setReturnResults(true);
+        assertTrue(inc.isReturnResults());
+    }
+
+    // Time range
+
+    @Test
+    public void testSetTimeRange_andGetter() {
+        AnyIncrement inc = AnyIncrement.of("row").setTimeRange(100L, 200L);
+        TimeRange range = inc.getTimeRange();
+        assertNotNull(range);
+        assertEquals(100L, range.getMin());
+        assertEquals(200L, range.getMax());
+    }
+
+    @Test
+    public void testSetTimeRange_invalidRange_throws() {
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of("row").setTimeRange(200L, 100L));
+    }
+
+    @Test
+    public void testSetTimestamp_andGetter() {
+        AnyIncrement inc = AnyIncrement.of("row").setTimestamp(42L);
+        assertEquals(42L, inc.getTimestamp());
+    }
+
+    @Test
+    public void testSetTTL_andGetter() {
+        AnyIncrement inc = AnyIncrement.of("row").setTTL(86_400_000L);
+        assertEquals(86_400_000L, inc.getTTL());
+    }
+
+    // val()
+
+    @Test
+    public void testVal_returnsUnderlyingIncrement() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        Increment underlying = inc.val();
+        assertNotNull(underlying);
+        assertArrayEquals(Bytes.toBytes("row"), underlying.getRow());
+    }
+
+    // Queries and results
+
+    @Test
+    public void testGetFamilyMapOfLongs_emptyByDefault() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        Map<byte[], NavigableMap<byte[], Long>> map = inc.getFamilyMapOfLongs();
+        assertNotNull(map);
+        assertEquals(0, map.size());
+    }
+
+    @Test
+    public void testGetFamilyMapOfLongs_returnsAmounts() {
+        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", 7L);
+        Map<byte[], NavigableMap<byte[], Long>> map = inc.getFamilyMapOfLongs();
+        assertEquals(1, map.size());
+        NavigableMap<byte[], Long> col = map.get(Bytes.toBytes("cf"));
+        assertNotNull(col);
+        assertEquals(Long.valueOf(7L), col.get(Bytes.toBytes("q")));
+    }
+
+    // Resource lifecycle
 
     /**
      * Unlike {@code AnyAppend.add(Cell)}, the wrapped {@code Increment} reports a row mismatch with
@@ -363,6 +286,8 @@ public class AnyIncrementTest extends TestBase {
         assertEquals(0, inc.size());
     }
 
+    // Additional contracts
+
     @Test
     public void testAdd_cellWithEmptyFamily_throwsIae() {
         Cell cell = new KeyValue(Bytes.toBytes("row"), new byte[0], Bytes.toBytes("q"), Bytes.toBytes(1L));
@@ -370,5 +295,89 @@ public class AnyIncrementTest extends TestBase {
 
         assertThrows(IllegalArgumentException.class, () -> inc.add(cell));
         assertEquals(0, inc.size());
+    }
+
+    @Test
+    public void testAdd_matchingCell_returnsSelfAndQueuesAmount() throws IOException {
+        Cell cell = new KeyValue(Bytes.toBytes("row"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes(3L));
+        AnyIncrement inc = AnyIncrement.of("row");
+
+        assertSame(inc, inc.add(cell));
+        assertEquals(Long.valueOf(3L), inc.getFamilyMapOfLongs().get(Bytes.toBytes("cf")).get(Bytes.toBytes("q")));
+    }
+
+    /**
+     * {@code AnyIncrement.add(Cell)} validates the cell up front, so a {@code null} cell is rejected
+     * with an {@code IllegalArgumentException} -- the same contract as {@code AnyPut}/{@code AnyDelete}/
+     * {@code AnyAppend.add(Cell)}.
+     */
+    @Test
+    public void testAdd_nullCell_throwsIae() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        assertThrows(IllegalArgumentException.class, () -> inc.add((Cell) null));
+        assertEquals(0, inc.size());
+    }
+
+    // equals, hashCode, toString
+
+    @Test
+    public void testEquals_sameInstance() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        assertEquals(inc, inc);
+    }
+
+    @Test
+    public void testOf_byteArrayRowKey() {
+        byte[] row = Bytes.toBytes("row-bytes");
+        AnyIncrement inc = AnyIncrement.of(row);
+        assertArrayEquals(row, inc.getRow());
+    }
+
+    /**
+     * A {@code null} row key, family map or source {@code Increment} is rejected with an
+     * {@code IllegalArgumentException} by every {@code of(...)} overload (previously some overloads
+     * leaked HBase's {@code NullPointerException}).
+     */
+    @Test
+    public void testOf_nullArguments_throwIae() {
+        final java.util.NavigableMap<byte[], java.util.List<Cell>> familyMap = new java.util.TreeMap<>(Bytes.BYTES_COMPARATOR);
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((Object) null, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((byte[]) null, 1L, familyMap));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(Bytes.toBytes("r"), 1L, null));
+        assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of((org.apache.hadoop.hbase.client.Increment) null));
+    }
+
+    // Factory methods
+
+    @Test
+    public void testOf_stringRowKey() {
+        AnyIncrement inc = AnyIncrement.of("row-1");
+        assertNotNull(inc);
+        assertArrayEquals(Bytes.toBytes("row-1"), inc.getRow());
+    }
+
+    @Test
+    public void testOf_withTimestampAndFamilyMap() {
+        long ts = 1L;
+        NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+        AnyIncrement inc = AnyIncrement.of(Bytes.toBytes("row"), ts, familyMap);
+        assertArrayEquals(Bytes.toBytes("row"), inc.getRow());
+        assertEquals(ts, inc.getTimestamp());
+    }
+
+    @Test
+    public void testToString_notNull() {
+        AnyIncrement inc = AnyIncrement.of("row").addColumn("cf", "q", 1L);
+        String s = inc.toString();
+        assertNotNull(s);
+    }
+
+    @Test
+    public void testVal_consistentAcrossCalls() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        assertSame(inc.val(), inc.val());
     }
 }

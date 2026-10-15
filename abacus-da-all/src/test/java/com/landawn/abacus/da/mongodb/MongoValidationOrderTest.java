@@ -38,8 +38,7 @@ public class MongoValidationOrderTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.insertMany(Arrays.asList(bean, null)));
         assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(Arrays.asList(bean, null)));
         assertThrows(IllegalArgumentException.class, () -> executor.updateMany(new Document(), Arrays.asList(bean, null)));
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.bulkWrite(Arrays.asList(new InsertOneModel<>(new Document()), null)));
+        assertThrows(IllegalArgumentException.class, () -> executor.bulkWrite(Arrays.asList(new InsertOneModel<>(new Document()), null)));
 
         assertEquals(0, bean.readCount);
         verifyNoInteractions(collection);

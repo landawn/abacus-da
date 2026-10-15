@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Collection;
 import java.util.Iterator;
 
-import org.junit.jupiter.api.Tag;
-
 import com.landawn.abacus.parser.JsonParser;
 import com.landawn.abacus.parser.ParserFactory;
 import com.landawn.abacus.parser.XmlParser;
@@ -22,7 +20,6 @@ import com.landawn.abacus.util.TriIterator;
 import com.landawn.abacus.util.Triple;
 import com.landawn.abacus.util.TypeReference;
 
-@Tag("base-test")
 public abstract class TestBase {
 
     public static final char[] NULL_CHAR_ARRAY = "null".toCharArray();

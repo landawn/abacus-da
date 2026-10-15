@@ -77,7 +77,7 @@ public class CassandraNullValidationTest extends TestBase {
     void emptyResultStillAcceptsAnUnspecifiedMappingClass() {
         final CassandraExecutor executor = executor(mock(CqlSession.class), null);
         final ResultSet resultSet = mock(ResultSet.class);
-        when(resultSet.iterator()).thenReturn(List.<Row>of().iterator());
+        when(resultSet.iterator()).thenReturn(List.<Row> of().iterator());
 
         assertNull(executor.fetchOnlyOne(null, resultSet));
     }

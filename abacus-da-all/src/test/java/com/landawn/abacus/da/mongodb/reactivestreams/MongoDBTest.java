@@ -16,13 +16,12 @@ import org.bson.codecs.configuration.CodecRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
-import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.da.MockitoTestBase;
 import com.mongodb.reactivestreams.client.MongoCollection;
 import com.mongodb.reactivestreams.client.MongoDatabase;
 
-public class MongoDBTest extends TestBase {
+public class MongoDBTest extends MockitoTestBase {
 
     @Mock
     private MongoDatabase mockDatabase;
@@ -34,15 +33,40 @@ public class MongoDBTest extends TestBase {
 
     @BeforeEach
     public void setUp() {
-        MockitoAnnotations.openMocks(this);
         when(mockDatabase.withCodecRegistry(any(CodecRegistry.class))).thenReturn(mockDatabase);
         mongoDB = new MongoDB(mockDatabase);
     }
 
+    // Row and entity mapping
+
     @Test
-    public void testDb() {
-        MongoDatabase result = mongoDB.db();
-        assertEquals(mockDatabase, result);
+    public void testReadRow() {
+        // This is a protected static method that uses the parent class implementation
+        // We'll test it indirectly through the mapper/executor functionality
+        Document doc = new Document("name", "test").append("value", 123);
+
+        // Since readRow is protected, we can't test it directly here
+        // It would be tested through the MongoCollectionExecutor and MongoCollectionMapper tests
+        assertTrue(true, "readRow is tested through executor and mapper tests");
+    }
+
+    // Additional contracts
+
+    @Test
+    public void testCollectionNamesForDifferentTypes() {
+        when(mockDatabase.getCollection(anyString())).thenReturn(mockCollection);
+
+        Class<TestEntity> type1 = TestEntity.class;
+        Class<AnotherEntity> type2 = AnotherEntity.class;
+
+        MongoCollectionMapper<TestEntity> firstMapper = mongoDB.collectionMapper(type1);
+        MongoCollectionMapper<AnotherEntity> secondMapper = mongoDB.collectionMapper(type2);
+
+        assertNotNull(firstMapper);
+        assertNotNull(secondMapper);
+
+        verify(mockDatabase).getCollection("TestEntity");
+        verify(mockDatabase).getCollection("AnotherEntity");
     }
 
     @Test
@@ -71,6 +95,20 @@ public class MongoDBTest extends TestBase {
     }
 
     @Test
+    public void testCollExecutorWithNullCollectionName() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            mongoDB.collectionExecutor((String) null);
+        });
+    }
+
+    @Test
+    public void testCollExecutorWithNullMongoCollection() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            mongoDB.collectionExecutor((MongoCollection<Document>) null);
+        });
+    }
+
+    @Test
     public void testCollExecutorWithCollectionName() {
         String collectionName = "executorTest";
         when(mockDatabase.getCollection(collectionName)).thenReturn(mockCollection);
@@ -83,13 +121,6 @@ public class MongoDBTest extends TestBase {
     }
 
     @Test
-    public void testCollExecutorWithNullCollectionName() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collectionExecutor((String) null);
-        });
-    }
-
-    @Test
     public void testCollExecutorWithMongoCollection() {
         MongoCollectionExecutor executor = mongoDB.collectionExecutor(mockCollection);
 
@@ -98,24 +129,24 @@ public class MongoDBTest extends TestBase {
     }
 
     @Test
-    public void testCollExecutorWithNullMongoCollection() {
+    public void testCollMapperWithNullCollectionName() {
         assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collectionExecutor((MongoCollection<Document>) null);
+            mongoDB.collectionMapper((String) null, TestEntity.class);
         });
     }
 
     @Test
-    public void testCollMapperWithRowType() {
-        Class<TestEntity> rowType = TestEntity.class;
-        String expectedCollectionName = "TestEntity";
+    public void testCollMapperWithNullMongoCollection() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            mongoDB.collectionMapper((MongoCollection<Document>) null, TestEntity.class);
+        });
+    }
 
-        when(mockDatabase.getCollection(expectedCollectionName)).thenReturn(mockCollection);
-
-        MongoCollectionMapper<TestEntity> mapper = mongoDB.collectionMapper(rowType);
-
-        assertNotNull(mapper);
-        assertNotNull(mapper.collectionExecutor());
-        verify(mockDatabase).getCollection(expectedCollectionName);
+    @Test
+    public void testCollMapperWithNullRowType() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            mongoDB.collectionMapper("collection", null);
+        });
     }
 
     @Test
@@ -133,16 +164,9 @@ public class MongoDBTest extends TestBase {
     }
 
     @Test
-    public void testCollMapperWithNullCollectionName() {
+    public void testCollMapperWithMongoCollectionAndNullRowType() {
         assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collectionMapper((String) null, TestEntity.class);
-        });
-    }
-
-    @Test
-    public void testCollMapperWithNullRowType() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collectionMapper("collection", null);
+            mongoDB.collectionMapper(mockCollection, null);
         });
     }
 
@@ -158,28 +182,23 @@ public class MongoDBTest extends TestBase {
     }
 
     @Test
-    public void testCollMapperWithNullMongoCollection() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collectionMapper((MongoCollection<Document>) null, TestEntity.class);
-        });
+    public void testCollMapperWithRowType() {
+        Class<TestEntity> rowType = TestEntity.class;
+        String expectedCollectionName = "TestEntity";
+
+        when(mockDatabase.getCollection(expectedCollectionName)).thenReturn(mockCollection);
+
+        MongoCollectionMapper<TestEntity> mapper = mongoDB.collectionMapper(rowType);
+
+        assertNotNull(mapper);
+        assertNotNull(mapper.collectionExecutor());
+        verify(mockDatabase).getCollection(expectedCollectionName);
     }
 
     @Test
-    public void testCollMapperWithMongoCollectionAndNullRowType() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collectionMapper(mockCollection, null);
-        });
-    }
-
-    @Test
-    public void testReadRow() {
-        // This is a protected static method that uses the parent class implementation
-        // We'll test it indirectly through the mapper/executor functionality
-        Document doc = new Document("name", "test").append("value", 123);
-
-        // Since readRow is protected, we can't test it directly here
-        // It would be tested through the MongoCollectionExecutor and MongoCollectionMapper tests
-        assertTrue(true, "readRow is tested through executor and mapper tests");
+    public void testDb() {
+        MongoDatabase result = mongoDB.db();
+        assertEquals(mockDatabase, result);
     }
 
     @Test
@@ -209,25 +228,6 @@ public class MongoDBTest extends TestBase {
         assertNotNull(secondMapper);
         assertNotSame(firstMapper, secondMapper, "Each call should return a new mapper instance");
     }
-
-    @Test
-    public void testCollectionNamesForDifferentTypes() {
-        when(mockDatabase.getCollection(anyString())).thenReturn(mockCollection);
-
-        Class<TestEntity> type1 = TestEntity.class;
-        Class<AnotherEntity> type2 = AnotherEntity.class;
-
-        MongoCollectionMapper<TestEntity> firstMapper = mongoDB.collectionMapper(type1);
-        MongoCollectionMapper<AnotherEntity> secondMapper = mongoDB.collectionMapper(type2);
-
-        assertNotNull(firstMapper);
-        assertNotNull(secondMapper);
-
-        verify(mockDatabase).getCollection("TestEntity");
-        verify(mockDatabase).getCollection("AnotherEntity");
-    }
-
-    // ---- 2026-10-02 verifyME ----
 
     @Test
     public void testSuppliedCollectionIsUsedAsIsWithItsOwnCodecRegistry_verifyME() {

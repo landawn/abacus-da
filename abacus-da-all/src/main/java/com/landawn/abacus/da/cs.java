@@ -317,7 +317,7 @@ public final class cs { // NOSONAR
     public static final String entityClass = "entityClass";
 
     /**
-     * Parameter name for a query or table expression.
+     * Parameter name for a table name or expression.
      */
     public static final String expr = "expr";
 
@@ -657,7 +657,7 @@ public final class cs { // NOSONAR
     public static final String querySpec = "querySpec";
 
     /**
-     * Parameter name for the type that read results are converted to.
+     * Parameter name for an HBase scan {@code ReadType} (STREAM, PREAD, or DEFAULT).
      */
     public static final String readType = "readType";
 

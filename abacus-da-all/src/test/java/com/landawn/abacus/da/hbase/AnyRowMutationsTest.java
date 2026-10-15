@@ -33,84 +33,17 @@ import com.landawn.abacus.da.TestBase;
  */
 public class AnyRowMutationsTest extends TestBase {
 
-    // ---------------------------------------------------------------------
-    // Factory methods
-    // ---------------------------------------------------------------------
+    // Construction and configuration
+
+    // getRow / compareTo
 
     @Test
-    public void testOf_stringRowKey() {
-        AnyRowMutations rm = AnyRowMutations.of("row-1");
-        assertNotNull(rm);
-        assertArrayEquals(Bytes.toBytes("row-1"), rm.getRow());
+    public void testGetRow_matchesConstructorRowKey() {
+        AnyRowMutations rm = AnyRowMutations.of("the-row-key");
+        assertArrayEquals(Bytes.toBytes("the-row-key"), rm.getRow());
     }
 
-    @Test
-    public void testOf_byteArrayRowKey() {
-        byte[] row = Bytes.toBytes("row-bytes");
-        AnyRowMutations rm = AnyRowMutations.of(row);
-        assertArrayEquals(row, rm.getRow());
-    }
-
-    @Test
-    public void testOf_stringRowKeyWithCapacity() {
-        AnyRowMutations rm = AnyRowMutations.of("row-1", 10);
-        assertNotNull(rm);
-        assertArrayEquals(Bytes.toBytes("row-1"), rm.getRow());
-    }
-
-    @Test
-    public void testOf_byteArrayWithCapacity() {
-        byte[] row = Bytes.toBytes("row-bytes");
-        AnyRowMutations rm = AnyRowMutations.of(row, 5);
-        assertArrayEquals(row, rm.getRow());
-    }
-
-    // ---------------------------------------------------------------------
-    // val()
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testVal_returnsUnderlyingRowMutations() {
-        AnyRowMutations rm = AnyRowMutations.of("row");
-        RowMutations underlying = rm.val();
-        assertNotNull(underlying);
-        assertArrayEquals(Bytes.toBytes("row"), underlying.getRow());
-    }
-
-    @Test
-    public void testVal_consistentAcrossCalls() {
-        AnyRowMutations rm = AnyRowMutations.of("row");
-        assertSame(rm.val(), rm.val());
-    }
-
-    // ---------------------------------------------------------------------
-    // add(Mutation)
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testAdd_putMutation_returnsSelf() throws IOException {
-        AnyRowMutations rm = AnyRowMutations.of("row");
-        Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
-        AnyRowMutations returned = rm.add(put);
-        assertSame(rm, returned);
-        assertEquals(1, rm.val().getMutations().size());
-    }
-
-    @Test
-    public void testAdd_deleteMutation() throws IOException {
-        AnyRowMutations rm = AnyRowMutations.of("row");
-        Delete delete = new Delete(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"));
-        rm.add(delete);
-        assertEquals(1, rm.val().getMutations().size());
-    }
-
-    @Test
-    public void testAdd_mismatchedRowKey_throws() {
-        // Adding a mutation with a different row key should fail.
-        AnyRowMutations rm = AnyRowMutations.of("row-a");
-        Put put = new Put(Bytes.toBytes("row-b")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
-        assertThrows(IOException.class, () -> rm.add(put));
-    }
+    // Factories and insert operations
 
     @Test
     public void testAdd_incrementAndAppend_areAccepted() throws IOException {
@@ -126,15 +59,26 @@ public class AnyRowMutationsTest extends TestBase {
     }
 
     @Test
-    public void testAdd_nullMutation_throws() {
+    public void testAdd_listWithIncrementAndAppend_isAccepted() throws IOException {
         AnyRowMutations rm = AnyRowMutations.of("row");
+        Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
 
-        assertThrows(IllegalArgumentException.class, () -> rm.add((Mutation) null));
+        rm.add(Arrays.<Mutation> asList(put, new Append(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"))));
+
+        assertEquals(2, rm.val().getMutations().size());
     }
 
-    // ---------------------------------------------------------------------
+    // Updates and deletes
+
+    @Test
+    public void testAdd_deleteMutation() throws IOException {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+        Delete delete = new Delete(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"));
+        rm.add(delete);
+        assertEquals(1, rm.val().getMutations().size());
+    }
+
     // add(List<Mutation>)
-    // ---------------------------------------------------------------------
 
     @Test
     public void testAdd_listOfMutations() throws IOException {
@@ -155,64 +99,21 @@ public class AnyRowMutationsTest extends TestBase {
     }
 
     @Test
-    public void testAdd_listWithIncrementAndAppend_isAccepted() throws IOException {
+    public void testAdd_nullMutation_throws() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> rm.add((Mutation) null));
+    }
+
+    // add(Mutation)
+
+    @Test
+    public void testAdd_putMutation_returnsSelf() throws IOException {
         AnyRowMutations rm = AnyRowMutations.of("row");
         Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
-
-        rm.add(Arrays.<Mutation> asList(put, new Append(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"))));
-
-        assertEquals(2, rm.val().getMutations().size());
-    }
-
-    @Test
-    public void testAdd_listWithNullElement_isRejectedWithoutPartialAdd() {
-        AnyRowMutations rm = AnyRowMutations.of("row");
-        Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
-
-        assertThrows(IllegalArgumentException.class, () -> rm.add(Arrays.<Mutation> asList(put, null)));
-        assertEquals(0, rm.val().getMutations().size());
-    }
-
-    @Test
-    public void testAdd_nullList_throws() {
-        AnyRowMutations rm = AnyRowMutations.of("row");
-
-        assertThrows(IllegalArgumentException.class, () -> rm.add((java.util.List<Mutation>) null));
-    }
-
-    // ---------------------------------------------------------------------
-    // getRow / compareTo
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testGetRow_matchesConstructorRowKey() {
-        AnyRowMutations rm = AnyRowMutations.of("the-row-key");
-        assertArrayEquals(Bytes.toBytes("the-row-key"), rm.getRow());
-    }
-
-    @Test
-    public void testCompareTo_sameRow_returnsZero() {
-        AnyRowMutations a = AnyRowMutations.of("k");
-        AnyRowMutations b = AnyRowMutations.of("k");
-        assertEquals(0, a.compareTo(b));
-    }
-
-    @Test
-    public void testCompareTo_differentRows() {
-        AnyRowMutations a = AnyRowMutations.of("a");
-        AnyRowMutations b = AnyRowMutations.of("b");
-        assertTrue(a.compareTo(b) < 0);
-        assertTrue(b.compareTo(a) > 0);
-    }
-
-    // ---------------------------------------------------------------------
-    // equals, hashCode, toString
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void testEquals_sameInstance() {
-        AnyRowMutations rm = AnyRowMutations.of("row");
-        assertEquals(rm, rm);
+        AnyRowMutations returned = rm.add(put);
+        assertSame(rm, returned);
+        assertEquals(1, rm.val().getMutations().size());
     }
 
     @Test
@@ -235,6 +136,106 @@ public class AnyRowMutationsTest extends TestBase {
         assertEquals(rm.val().hashCode(), rm.hashCode());
     }
 
+    // Independence: different instances are not aliased
+
+    @Test
+    public void testTwoInstances_differentUnderlyingRowMutations() {
+        AnyRowMutations a = AnyRowMutations.of("row");
+        AnyRowMutations b = AnyRowMutations.of("row");
+        assertNotSame(a.val(), b.val());
+    }
+
+    // val()
+
+    @Test
+    public void testVal_returnsUnderlyingRowMutations() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+        RowMutations underlying = rm.val();
+        assertNotNull(underlying);
+        assertArrayEquals(Bytes.toBytes("row"), underlying.getRow());
+    }
+
+    // Queries and results
+
+    @Test
+    public void testAdd_listWithNullElement_isRejectedWithoutPartialAdd() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+        Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+
+        assertThrows(IllegalArgumentException.class, () -> rm.add(Arrays.<Mutation> asList(put, null)));
+        assertEquals(0, rm.val().getMutations().size());
+    }
+
+    @Test
+    public void testAdd_nullList_throws() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> rm.add((java.util.List<Mutation>) null));
+    }
+
+    // Additional contracts
+
+    @Test
+    public void testAdd_mismatchedRowKey_throws() {
+        // Adding a mutation with a different row key should fail.
+        AnyRowMutations rm = AnyRowMutations.of("row-a");
+        Put put = new Put(Bytes.toBytes("row-b")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        assertThrows(IOException.class, () -> rm.add(put));
+    }
+
+    @Test
+    public void testCompareTo_differentRows() {
+        AnyRowMutations a = AnyRowMutations.of("a");
+        AnyRowMutations b = AnyRowMutations.of("b");
+        assertTrue(a.compareTo(b) < 0);
+        assertTrue(b.compareTo(a) > 0);
+    }
+
+    @Test
+    public void testCompareTo_sameRow_returnsZero() {
+        AnyRowMutations a = AnyRowMutations.of("k");
+        AnyRowMutations b = AnyRowMutations.of("k");
+        assertEquals(0, a.compareTo(b));
+    }
+
+    // equals, hashCode, toString
+
+    @Test
+    public void testEquals_sameInstance() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+        assertEquals(rm, rm);
+    }
+
+    @Test
+    public void testOf_byteArrayRowKey() {
+        byte[] row = Bytes.toBytes("row-bytes");
+        AnyRowMutations rm = AnyRowMutations.of(row);
+        assertArrayEquals(row, rm.getRow());
+    }
+
+    @Test
+    public void testOf_byteArrayWithCapacity() {
+        byte[] row = Bytes.toBytes("row-bytes");
+        AnyRowMutations rm = AnyRowMutations.of(row, 5);
+        assertArrayEquals(row, rm.getRow());
+    }
+
+    // Factory methods
+
+    @Test
+    public void testOf_stringRowKey() {
+        AnyRowMutations rm = AnyRowMutations.of("row-1");
+        assertNotNull(rm);
+        assertArrayEquals(Bytes.toBytes("row-1"), rm.getRow());
+    }
+
+    @Test
+    public void testOf_stringRowKeyWithCapacity() {
+        AnyRowMutations rm = AnyRowMutations.of("row-1", 10);
+        assertNotNull(rm);
+        assertArrayEquals(Bytes.toBytes("row-1"), rm.getRow());
+    }
+
     @Test
     public void testToString_notNull() {
         AnyRowMutations rm = AnyRowMutations.of("row");
@@ -242,14 +243,9 @@ public class AnyRowMutationsTest extends TestBase {
         assertNotNull(s);
     }
 
-    // ---------------------------------------------------------------------
-    // Independence: different instances are not aliased
-    // ---------------------------------------------------------------------
-
     @Test
-    public void testTwoInstances_differentUnderlyingRowMutations() {
-        AnyRowMutations a = AnyRowMutations.of("row");
-        AnyRowMutations b = AnyRowMutations.of("row");
-        assertNotSame(a.val(), b.val());
+    public void testVal_consistentAcrossCalls() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+        assertSame(rm.val(), rm.val());
     }
 }

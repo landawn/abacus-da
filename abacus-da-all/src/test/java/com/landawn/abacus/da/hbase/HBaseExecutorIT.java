@@ -33,7 +33,6 @@ import org.junit.jupiter.api.Test;
 import com.landawn.abacus.annotation.Column;
 import com.landawn.abacus.annotation.Id;
 import com.landawn.abacus.annotation.Table;
-import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.hbase.HBaseExecutor.HBaseMapper;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
 import com.landawn.abacus.util.Dates;
@@ -47,12 +46,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-public class HBaseExecutorTest {
-    // Install HBase and create tables:
-    // create 'account', 'id', 'gui', 'name', 'emailAddress', 'lastUpdateTime', 'createTime', 'contact'
-    // create 'contact', 'id', 'accountId', 'telephone', 'city', 'state', 'zipCode', 'status', 'lastUpdateTime', 'createTime'
-
+public class HBaseExecutorIT {
+    // Requires a local HBase instance and an unused account table name.
     private static HBaseExecutor hbaseExecutor;
+    private static boolean tableCreated;
 
     private static HBaseMapper<Account, String> accountMapper;
 
@@ -76,11 +73,13 @@ public class HBaseExecutorTest {
         final List<ColumnFamilyDescriptor> families = Stream.of("id", "gui", "fullName", "emailAddress", //
                 "time", "createTime", "contact", "columnFamily2B").map(it -> ColumnFamilyDescriptorBuilder.newBuilder(it.getBytes()).build()).toList();
 
-        hbaseExecutor.admin().disableTable(tableName);
-        hbaseExecutor.admin().deleteTable(tableName);
+        if (hbaseExecutor.admin().tableExists(tableName)) {
+            throw new IllegalStateException("Integration tests require an unused table name: " + tableName);
+        }
 
         final TableDescriptor desc = TableDescriptorBuilder.newBuilder(tableName).setColumnFamilies(families).build();
         hbaseExecutor.admin().createTable(desc);
+        tableCreated = true;
 
         accountMapper = hbaseExecutor.mapper(Account.class);
 
@@ -91,10 +90,19 @@ public class HBaseExecutorTest {
     public static void tearDownClass() throws IOException {
         if (hbaseExecutor != null) {
             try {
-                hbaseExecutor.close();
+                if (tableCreated) {
+                    final TableName tableName = TableName.valueOf("account");
+                    hbaseExecutor.admin().disableTable(tableName);
+                    hbaseExecutor.admin().deleteTable(tableName);
+                }
             } finally {
-                hbaseExecutor = null;
-                accountMapper = null;
+                try {
+                    hbaseExecutor.close();
+                } finally {
+                    hbaseExecutor = null;
+                    accountMapper = null;
+                    tableCreated = false;
+                }
             }
         }
     }
@@ -270,9 +278,9 @@ public class HBaseExecutorTest {
     }
 
     /**
-     * 
      *
-     * @throws IOException 
+     *
+     * @throws IOException
      */
     @Test
     public void test_HBaseColumn() throws IOException {

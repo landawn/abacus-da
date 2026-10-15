@@ -82,4 +82,9 @@ public class CassandraNullValidationTest extends TestBase {
 
         assertNull(executor.fetchOnlyOne(null, resultSet));
     }
+
+    @Test
+    public void test_constructor_rejectsNullSession() {
+        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null));
+    }
 }

@@ -1,1721 +1,1363 @@
-/*
- * Copyright (c) 2015, Haiyang Li. All rights reserved.
- */
-
 package com.landawn.abacus.da.cassandra;
 
-import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.LCCB;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NLC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NSC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.SCCB;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.nio.ByteBuffer;
-import java.sql.Timestamp;
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.LocalTime;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.datastax.oss.driver.api.core.ConsistencyLevel;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.ProtocolVersion;
+import com.datastax.oss.driver.api.core.cql.AsyncResultSet;
 import com.datastax.oss.driver.api.core.cql.BatchType;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.Statement;
-import com.datastax.oss.driver.api.core.type.DataTypes;
-import com.datastax.oss.driver.api.core.type.UserDefinedType;
+import com.datastax.oss.driver.api.core.type.DataType;
 import com.datastax.oss.driver.api.core.type.codec.TypeCodec;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
-import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry;
+import com.datastax.oss.protocol.internal.ProtocolConstants;
+import com.landawn.abacus.annotation.Column;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CassandraExecutor.StatementSettings;
-import com.landawn.abacus.da.cassandra.CassandraExecutor.UDTCodec;
-import com.landawn.abacus.da.entity.Song;
-import com.landawn.abacus.da.entity.Users;
+import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.query.Filters;
-import com.landawn.abacus.util.Beans;
+import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
-import com.landawn.abacus.util.Dates;
-import com.landawn.abacus.util.Fn;
-import com.landawn.abacus.util.IntFunctions;
-import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.stream.Stream;
+import com.landawn.abacus.util.u.Nullable;
+import com.landawn.abacus.util.u.Optional;
 
+@ExtendWith(MockitoExtension.class)
 public class CassandraExecutorTest extends TestBase {
 
-    /*
-    
-    https://stackoverflow.com/questions/50810922/how-to-connect-my-java-application-to-cassandra-running-through-docker
-    run command from windows Command:
-    docker run --name cassandra -p 9042:9042 cassandra:5.0
-    docker start cassandra
-    
-    CREATE KEYSPACE IF NOT EXISTS simplex WITH replication  = {'class':'SimpleStrategy', 'replication_factor':3};
-    DROP TYPE IF EXISTS simplex.fullname;
-    DROP TYPE IF EXISTS simplex.address;
-    DROP TABLE IF EXISTS simplex.users;
-    CREATE TYPE IF NOT EXISTS simplex.fullname(firstName text, lastName text);
-    CREATE TYPE IF NOT EXISTS simplex.address(street text, city text, zipCode int);
-    CREATE TABLE IF NOT EXISTS simplex.users(id uuid PRIMARY KEY, name frozen <fullname>, addresses map<text, frozen <address>>, someDate varchar, last_update_time time, created_time timestamp, bytes list<tinyint>, shorts set<smallint>);
-    CREATE TABLE IF NOT EXISTS simplex.users(id uuid PRIMARY KEY, name text, addresses text);
-    
-    CREATE TABLE IF NOT EXISTS simplex.songs (id uuid PRIMARY KEY, title text, album text, artist text, tags set<text>, data blob);
-    CREATE TABLE IF NOT EXISTS simplex.playlists (id uuid, title text, album text,  artist text, song_id uuid, PRIMARY KEY (id, title, album, artist));
-    
-     */
+    @Mock
+    private CqlSession mockSession;
 
-    static final String collectionName = "testData";
-    private static final MutableCodecRegistry codecRegistry = new DefaultCodecRegistry("xxx");
+    @Mock
+    private MutableCodecRegistry mockCodecRegistry;
 
-    static final CqlSession session = CqlSession.builder().withCodecRegistry(codecRegistry).build();
-    static final CassandraExecutor cassandraExecutor;
+    @Mock
+    private ResultSet mockResultSet;
 
-    static {
-        cassandraExecutor = new CassandraExecutor(session);
+    @Mock
+    private AsyncResultSet mockAsyncResultSet;
 
-        //    final String queries = """
-        //            CREATE KEYSPACE IF NOT EXISTS simplex WITH replication  = {'class':'SimpleStrategy', 'replication_factor':3};
-        //            DROP TYPE IF EXISTS simplex.fullname;
-        //            DROP TYPE IF EXISTS simplex.address;
-        //            DROP TABLE IF EXISTS simplex.users;
-        //            CREATE TYPE IF NOT EXISTS simplex.fullname(firstName text, lastName text);
-        //            CREATE TYPE IF NOT EXISTS simplex.address(street text, city text, zipCode int);
-        //            CREATE TABLE IF NOT EXISTS simplex.users(id uuid PRIMARY KEY, name frozen <fullname>, addresses map<text, frozen <address>>, someDate varchar, last_update_time time, created_time timestamp, bytes list<tinyint>, shorts set<smallint>);
-        //            CREATE TABLE IF NOT EXISTS simplex.users(id uuid PRIMARY KEY, name text, addresses text);
-        //
-        //            CREATE TABLE IF NOT EXISTS simplex.songs (id uuid PRIMARY KEY, title text, album text, artist text, tags set<text>, data blob);
-        //            CREATE TABLE IF NOT EXISTS simplex.playlists (id uuid, title text, album text,  artist text, song_id uuid, PRIMARY KEY (id, title, album, artist));
-        //                        """;
-        //
-        //    StreamEx.split(queries, ";").map(Fn.strip()).peek(Fn.println()).forEach(query -> Try.run(() -> cassandraExecutor.execute(query), Fn.doNothing()));
+    @Mock
+    private Row mockRow;
 
-        codecRegistry.register(UDTCodec.create(session, "simplex", "fullname", Users.Name.class));
+    @Mock
+    private PreparedStatement mockPreparedStatement;
 
-        codecRegistry.register(UDTCodec.create(session, "simplex", "address", Users.Address.class));
+    @Mock
+    private BoundStatement mockBoundStatement;
 
-        cassandraExecutor.registerTypeCodec(Timestamp.class);
+    @Mock
+    private ColumnDefinitions mockColumnDefinitions;
+
+    @Mock
+    private ColumnDefinition mockColumnDef;
+
+    @Mock
+    private DataType mockDataType;
+
+    @Mock
+    private TypeCodec<Object> mockTypeCodec;
+
+    private CassandraExecutor executor;
+
+    @BeforeEach
+    public void setUp() {
+        when(mockSession.getContext()).thenReturn(mock(com.datastax.oss.driver.api.core.context.DriverContext.class));
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(mockCodecRegistry);
+        executor = new CassandraExecutor(mockSession);
     }
 
-    @Test
-    public void test_asyncUnconditionalUpdateCreatesMissingRow() throws Exception {
-        // Contract coverage for the three corrected async UPDATE examples; the implementation already upserts.
-        for (int mode = 0; mode < 3; mode++) {
-            final UUID id = UUID.randomUUID();
-            final List<Byte> bytes = List.of((byte) (mode + 1));
-
-            try {
-                assertFalse(cassandraExecutor.exists("SELECT id FROM simplex.users WHERE id = ?", id));
-
-                if (mode == 0) {
-                    cassandraExecutor.async().update(Users.class, Map.of("bytes", bytes), Filters.eq("id", id)).get();
-                } else if (mode == 1) {
-                    cassandraExecutor.async().update("UPDATE simplex.users SET bytes = ? WHERE id = ?", bytes, id).get();
-                } else {
-                    cassandraExecutor.async().execute("UPDATE simplex.users SET bytes = ? WHERE id = ?", bytes, id).get();
-                }
-
-                final Row row = cassandraExecutor.execute("SELECT id, bytes FROM simplex.users WHERE id = ?", id).one();
-                assertNotNull(row, "Unconditional UPDATE must create the absent row for mode " + mode);
-                assertEquals(id, row.getUuid("id"));
-                assertEquals(bytes, row.getList("bytes", Byte.class));
-            } finally {
-                cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id);
-            }
-        }
-    }
+    // Construction and configuration
 
     @Test
-    public void test_sync() {
-        Users user = createUser();
-
-        String sql = NSC.insertInto(Users.class).build().query();
-        N.println(sql);
-        cassandraExecutor.execute(sql, user);
-
-        List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.users");
-        N.println(ids);
-        cassandraExecutor.delete(Users.class, Filters.in("id", ids));
-    }
-
-    /**
-     *
-     * @throws Exception
-     */
-    @Test
-    public void test_async() throws Exception {
-        Users user = createUser();
-
-        String sql = NSC.insertInto(Users.class).build().query();
-        N.println(sql);
-        cassandraExecutor.execute(sql, user);
-
-        List<Users> dbUsers = cassandraExecutor.async().list(Users.class, "SELECT * FROM simplex.users").get();
-        N.println(dbUsers);
-        cassandraExecutor.async().delete(Users.class, Filters.in("id", N.map(dbUsers, Users::getId)));
-    }
-
-    @Test
-    public void test_delete() {
-        Users user = createUser();
-
-        String sql = NSC.insertInto(Users.class).build().query();
-        N.println(sql);
-        cassandraExecutor.execute(sql, user);
-
-        List<Users> users = Stream.repeat(user, 10).map(Beans::copy).onEach(it -> it.setId(UUID.randomUUID())).toList();
-        cassandraExecutor.batchInsert(users, BatchType.LOGGED);
-
-        List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.users");
-        N.println(ids);
-
-        String cql = NSC.deleteFrom(Users.class).where("id = ?").build().query();
-        assertFalse(cassandraExecutor.get(Users.class, ids.get(0)).isEmpty());
-        cassandraExecutor.execute(cql, ids.get(0));
-        assertTrue(cassandraExecutor.get(Users.class, ids.get(0)).isEmpty());
-
-        cql = NSC.deleteFrom(Users.class).where("id = :id").build().query();
-        assertFalse(cassandraExecutor.get(Users.class, ids.get(1)).isEmpty());
-        cassandraExecutor.execute(cql, ids.get(1));
-        assertTrue(cassandraExecutor.get(Users.class, ids.get(1)).isEmpty());
-
-        assertFalse(cassandraExecutor.get(Users.class, ids.get(2)).isEmpty());
-        cassandraExecutor.execute(cql, ids.get(2));
-        assertTrue(cassandraExecutor.get(Users.class, N.asMap("id", ids.get(2))).isEmpty());
-
-        assertFalse(cassandraExecutor.get(Users.class, ids.get(3)).isEmpty());
-        cassandraExecutor.delete(Users.class, Filters.eq("id", ids.get(3)));
-        assertTrue(cassandraExecutor.get(Users.class, N.asMap("id", ids.get(3))).isEmpty());
-
-        assertFalse(cassandraExecutor.list(Users.class, Filters.in("id", ids)).isEmpty());
-        cassandraExecutor.delete(Users.class, Filters.in("id", ids));
-        assertTrue(cassandraExecutor.list(Users.class, Filters.in("id", ids)).isEmpty());
-    }
-
-    @Test
-    public void test_delete_2() {
-        Users user = createUser();
-
-        String sql = NSC.insertInto(Users.class).build().query();
-        N.println(sql);
-        cassandraExecutor.execute(sql, user);
-
-        List<Users> users = Stream.repeat(user, 10).map(Beans::copy).onEach(it -> it.setId(UUID.randomUUID())).toList();
-        cassandraExecutor.batchInsert(users, BatchType.LOGGED);
-
-        List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.users");
-        N.println(ids);
-
-        String cql = NSC.delete(N.asList("name")).from(Users.class).where("id = ?").build().query();
-        N.println(cql);
-        UUID id = ids.get(0);
-
-        cassandraExecutor.get(Users.class, Filters.eq("id", id)).ifPresent(Fn.println());
-
-        cassandraExecutor.queryForSingleValue(Users.class, Users.Name.class, "name", Filters.eq("id", id)).ifPresent(Fn.println());
-        assertFalse(cassandraExecutor.queryForSingleValue(Users.class, Users.Name.class, "name", Filters.eq("id", id)).isNull());
-        cassandraExecutor.execute(cql, id);
-        assertTrue(cassandraExecutor.queryForSingleValue(Users.class, Users.Name.class, "name", Filters.eq("id", id)).isNull());
-
-        cassandraExecutor.delete(Users.class, Filters.in("id", ids));
-    }
-
-    /**
-     *
-     * @throws Exception
-     */
-    @Test
-    public void test_batch_update() throws Exception {
-        Users user = createUser();
-
-        String sql = NSC.insertInto(Users.class).build().query();
-        N.println(sql);
-        cassandraExecutor.execute(sql, user);
-
-        List<Users> users = Stream.repeat(user, 10).map(Beans::copy).onEach(it -> it.setId(UUID.randomUUID())).toList();
-        cassandraExecutor.batchInsert(users, BatchType.LOGGED);
-
-        List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.users");
-        N.println(ids);
-
-        List<Users> dbUsers = cassandraExecutor.list(Users.class, "SELECT * FROM simplex.users");
-
-        dbUsers.stream().forEach(it -> it.getName().setFirstName("updatedFirstName"));
-
-        cassandraExecutor.batchUpdate(dbUsers, BatchType.UNLOGGED);
-
-        dbUsers = cassandraExecutor.list(Users.class, "SELECT * FROM simplex.users");
-
-        dbUsers.forEach(it -> assertEquals("updatedFirstName", it.getName().getFirstName()));
-
-        cassandraExecutor.batchDelete(dbUsers, N.asList("name", "lastUpdateTime"));
-
-        dbUsers = cassandraExecutor.list(Users.class, "SELECT * FROM simplex.users");
-        dbUsers.forEach(Fn.println());
-
-        dbUsers.forEach(it -> assertEquals(null, it.getName()));
-        dbUsers.forEach(it -> assertEquals(null, it.getLastUpdateTime()));
-
-        cassandraExecutor.async().batchDelete(dbUsers).get();
-
-        assertTrue(cassandraExecutor.list(Users.class, "SELECT * FROM simplex.users").isEmpty());
-    }
-
-    @Test
-    public void test_hello() {
-        cassandraExecutor.execute(
-                "INSERT INTO simplex.songs (id, title, album, artist, tags)  VALUES ( 756716f7-2e54-4715-9f00-91dcbea6cf50,'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker', {'jazz', '2013'});");
-
-        cassandraExecutor.execute(
-                "INSERT INTO simplex.playlists (id, song_id, title, album, artist)  VALUES ( 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, 756716f7-2e54-4715-9f00-91dcbea6cf50, 'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker');");
-
-        ResultSet results = cassandraExecutor.execute("SELECT * FROM simplex.playlists WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d;");
-
-        System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "title", "album", "artist",
-                "-------------------------------+-----------------------+--------------------"));
-        for (Row row : results) {
-            System.out.println(String.format("%-30s\t%-20s\t%-20s", row.getString("title"), row.getString("album"), row.getString("artist")));
-
-            N.println(CassandraExecutor.toMap(row));
-        }
-
-        N.println(CassandraExecutor.extractData(results));
-
-        results = cassandraExecutor.execute("SELECT * FROM simplex.playlists WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d;");
-        N.println(CassandraExecutor.extractData(results));
-
-        System.out.println();
-    }
-
-    @Test
-    public void test_hello_2() {
-        cassandraExecutor.execute(
-                "INSERT INTO simplex.songs (id, title, album, artist, tags)  VALUES ( 756716f7-2e54-4715-9f00-91dcbea6cf50, 'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker', {'jazz', '2013'});");
-
-        ResultSet results = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = 756716f7-2e54-4715-9f00-91dcbea6cf50;");
-
-        System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "title", "album", "artist",
-                "-------------------------------+-----------------------+--------------------"));
-        for (Row row : results) {
-            System.out.println(String.format("%-30s\t%-20s\t%-20s", row.getString("title"), row.getString("album"), row.getString("artist")));
-
-            N.println(CassandraExecutor.toEntity(row, Song.class));
-            N.println(CassandraExecutor.toMap(row));
-        }
-
-        N.println(CassandraExecutor.extractData(results));
-
-        Dataset dataset = cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 756716f7-2e54-4715-9f00-91dcbea6cf50;");
-
-        dataset.println();
-    }
-
-    @Test
-    public void test_query() {
-        Song song = new Song();
-        song.setId(UUID.fromString("756716f7-2e54-4715-9f00-91dcbea6cf50"));
-        song.setTitle("La Petite Tonkinoise");
-        song.setAlbum("Bye Bye Blackbird");
-        song.setArtist("Joséphine Baker");
-        song.setTags(N.asSet("jazz", "2013"));
-
-        ResultSet resultSet = cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist, tags)  VALUES (?, ?, ?, ?, ?)", song.getId(),
-                song.getTitle(), song.getAlbum(), song.getArtist(), N.stringOf(song.getTags()));
-
-        N.println(resultSet.one());
-
-        assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()));
-
-        assertEquals(1, cassandraExecutor.count("SELECT count(*) FROM simplex.songs WHERE id = ?", song.getId()));
-
-        Song dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        Map<String, Object> map = cassandraExecutor.findFirst(Map.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
-        N.println(map);
-        assertEquals(song.getId(), map.get("id"));
-
-        Dataset dataset = cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 756716f7-2e54-4715-9f00-91dcbea6cf50;");
-        dataset.println();
-        assertEquals(song.getId(), dataset.get("id"));
-
-        UUID uuid = cassandraExecutor.queryForSingleValue(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
-        N.println(uuid);
-        assertEquals(song.getId(), uuid);
-
-        String strUUID = cassandraExecutor.queryForSingleValue(String.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
-        N.println(strUUID);
-        assertEquals(song.getId().toString(), strUUID);
-
-        assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()));
-
-        cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", song.getId());
-        assertFalse(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()));
-    }
-
-    @Test
-    public void test_find() {
-        Song song = new Song();
-        song.setId(UUID.fromString("756716f7-2e54-4715-9f00-91dcbea6cf50"));
-        song.setTitle("La Petite Tonkinoise");
-        song.setAlbum("Bye Bye Blackbird");
-        song.setArtist("Joséphine Baker");
-        song.setTags(N.asSet("jazz", "2013"));
-
-        ResultSet resultSet = cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist, tags)  VALUES (?, ?, ?, ?, ?)", song.getId(),
-                song.getTitle(), song.getAlbum(), song.getArtist(), N.stringOf(song.getTags()));
-
-        N.println(resultSet.one());
-
-        assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()));
-
-        assertEquals(1, cassandraExecutor.count("SELECT count(*) FROM simplex.songs WHERE id = ?", song.getId()));
-
-        List<Song> dbSongs = cassandraExecutor.list(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId());
-        N.println(dbSongs);
-        assertEquals(song.getId(), dbSongs.get(0).getId());
-
-        List<Map<String, String>> maps = (List) cassandraExecutor.list(Map.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId());
-        N.println(maps);
-        assertEquals(song.getId(), maps.get(0).get("id"));
-
-        List<String> strs = cassandraExecutor.list(String.class, "SELECT title FROM simplex.songs WHERE id = ?", song.getId());
-        N.println(strs);
-        assertEquals(song.getTitle(), strs.get(0));
-
-        cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", song.getId());
-        assertFalse(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()));
-    }
-
-    /**
-     *
-     * @throws InterruptedException
-     * @throws ExecutionException
-     */
-    @Test
-    public void test_query_async() throws InterruptedException, ExecutionException {
-        Song song = new Song();
-        song.setId(UUID.fromString("756716f7-2e54-4715-9f00-91dcbea6cf50"));
-        song.setTitle("La Petite Tonkinoise");
-        song.setAlbum("Bye Bye Blackbird");
-        song.setArtist("Joséphine Baker");
-        song.setTags(N.asSet("jazz", "2013"));
-
-        ResultSet resultSet = cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist, tags)  VALUES (?, ?, ?, ?, ?)", song.getId(),
-                song.getTitle(), song.getAlbum(), song.getArtist(), N.stringOf(song.getTags()));
-
-        N.println(resultSet.one());
-
-        assertTrue(cassandraExecutor.async().exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get());
-
-        assertEquals(1, cassandraExecutor.async().count("SELECT count(*) FROM simplex.songs WHERE id = ?", song.getId()).get().longValue());
-
-        Song dbSong = cassandraExecutor.async().findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        Map<String, Object> map = cassandraExecutor.async().findFirst(Map.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
-        N.println(map);
-        assertEquals(song.getId(), map.get("id"));
-
-        Dataset dataset = cassandraExecutor.async().query("SELECT * FROM simplex.songs WHERE id = 756716f7-2e54-4715-9f00-91dcbea6cf50;").get();
-        dataset.println();
-        assertEquals(song.getId(), dataset.get("id"));
-
-        UUID uuid = cassandraExecutor.async().queryForSingleValue(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
-        N.println(uuid);
-        assertEquals(song.getId(), uuid);
-
-        String strUUID = cassandraExecutor.async()
-                .queryForSingleValue(String.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId())
-                .get()
-                .orElse(null);
-        N.println(strUUID);
-        assertEquals(song.getId().toString(), strUUID);
-
-        assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()));
-
-        cassandraExecutor.async().execute("DELETE FROM simplex.songs WHERE id = ?", song.getId()).get();
-        assertFalse(cassandraExecutor.async().exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get());
-    }
-
-    @Test
-    public void test_parameterized() {
-        Song song = new Song();
-        song.setId(UUID.fromString("756716f7-2e54-4715-9f00-91dcbea6cf50"));
-        song.setTitle("La Petite Tonkinoise");
-        song.setAlbum("Bye Bye Blackbird");
-        song.setArtist("Joséphine Baker");
-        song.setTags(N.asSet("jazz", "2013"));
-
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist, tags)  VALUES (#{id}, #{title}, #{album}, #{artist}, #{tags});", song);
-
-        Song dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", N.asList(song.getId())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", N.asMap("id", song.getId())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", song.getId()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", N.asList(song.getId())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", N.asMap("id", song.getId())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", song).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", song.getId()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", N.asList(song.getId())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", N.asMap("id", song.getId())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", song).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", song.getId()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", N.asList(song.getId())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        try {
-            cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", N.asMap("id", song.getId()));
-            fail("Should throw IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-
-        }
-
-        try {
-            cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", song);
-            fail("Should throw IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-
-        }
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId().toString()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", N.asList(song.getId().toString())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", N.asMap("id", song.getId().toString())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", song.getId().toString()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", N.asList(song.getId().toString())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", N.asMap("id", song.getId().toString())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = #{id}", song).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", song.getId().toString()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", N.asList(song.getId().toString())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", N.asMap("id", song.getId().toString())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :id", song).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", song.getId().toString()).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        dbSong = cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", N.asList(song.getId().toString())).orElse(null);
-        N.println(dbSong);
-        assertEquals(song.getId(), dbSong.getId());
-
-        try {
-            cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", N.asMap("id", song.getId().toString()));
-            fail("Should throw IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-
-        }
-
-        try {
-            cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = :a", song);
-            fail("Should throw IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-
-        }
-
-        cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = #{id}", song.getId());
-        assertFalse(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = #{id}", song.getId()));
-    }
-
-    @Test
-    public void test_update() {
-
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist, tags)  VALUES ( 756716f7-2e54-4715-9f00-91dcbea6cf50,"
-                + "'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker', {'jazz', '2013'})");
-
-        cassandraExecutor.execute("INSERT INTO simplex.playlists (id, song_id, title, album, artist)  VALUES ( 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d,"
-                + "756716f7-2e54-4715-9f00-91dcbea6cf50, 'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker' )");
-
-        ResultSet results = cassandraExecutor.execute("SELECT * FROM simplex.playlists WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d");
-
-        System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "title", "album", "artist",
-                "-------------------------------+-----------------------+--------------------"));
-        for (Row row : results) {
-            System.out.println(String.format("%-30s\t%-20s\t%-20s", row.getString("title"), row.getString("album"), row.getString("artist")));
-
-            N.println(CassandraExecutor.toMap(row));
-        }
-
-        N.println(CassandraExecutor.extractData(results));
-
-        results = cassandraExecutor.execute("SELECT * FROM simplex.playlists WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d");
-        N.println(CassandraExecutor.extractData(results));
-
-        cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").println();
-
-        String sql = LCCB.update("simplex.songs").set(N.asList("title", "album")).where("id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").build().query();
-        N.println(sql);
-        ResultSet resultSet = cassandraExecutor.execute(sql, "new new title", "new new Album");
-        N.println(resultSet);
-        N.println(resultSet.one());
-        N.println(resultSet.wasApplied());
-        assertTrue(resultSet.wasApplied());
-
-        cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").println();
-
-        sql = SCCB.deleteFrom("simplex.songs").where("id = ?").build().query();
-        N.println(sql);
-        resultSet = cassandraExecutor.execute(sql, "2cc9ccb7-6221-4ccb-8387-f22b6a1b354d");
-        N.println(resultSet);
-        N.println(resultSet.one());
-        N.println(resultSet.wasApplied());
-        assertTrue(resultSet.wasApplied());
-        cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").println();
-
-        sql = NLC.update("simplex.songs").set("album").where("id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").build().query();
-        N.println(sql);
-        resultSet = cassandraExecutor.execute(sql, "new new new Album");
-        N.println(resultSet);
-        N.println(resultSet.one());
-        N.println(resultSet.wasApplied());
-        assertTrue(resultSet.wasApplied());
-
-        cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").println();
-
-        System.out.println();
-    }
-
-    // ---------------------------------------------------------------------
-    //  StatementSettings (v2) tests - no DB required
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_StatementSettings_defaultsAreNull() {
-        StatementSettings settings = new StatementSettings();
-        assertNull(settings.consistency());
-        assertNull(settings.serialConsistency());
-        assertNull(settings.fetchSize());
-        assertNull(settings.timeout());
-        assertNull(settings.traceQuery());
-    }
-
-    @Test
-    public void test_StatementSettings_allArgsConstructorAndBuilder() {
-        java.time.Duration d = java.time.Duration.ofSeconds(15);
-        StatementSettings s1 = new StatementSettings(ConsistencyLevel.QUORUM, ConsistencyLevel.LOCAL_SERIAL, 250, d, Boolean.TRUE);
-        assertEquals(ConsistencyLevel.QUORUM, s1.consistency());
-        assertEquals(ConsistencyLevel.LOCAL_SERIAL, s1.serialConsistency());
-        assertEquals(250, s1.fetchSize().intValue());
-        assertEquals(d, s1.timeout());
-        assertTrue(s1.traceQuery());
-
-        StatementSettings s2 = StatementSettings.builder()
-                .consistency(ConsistencyLevel.ONE)
-                .serialConsistency(ConsistencyLevel.SERIAL)
-                .fetchSize(99)
-                .timeout(java.time.Duration.ofMillis(500))
-                .traceQuery(Boolean.FALSE)
-                .build();
-        assertEquals(ConsistencyLevel.ONE, s2.consistency());
-        assertEquals(99, s2.fetchSize().intValue());
-        assertFalse(s2.traceQuery());
-    }
-
-    // ---------------------------------------------------------------------
-    //  Constructor / accessor coverage
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_constructor_withSettingsAndMapper() {
-        StatementSettings settings = StatementSettings.builder().fetchSize(50).build();
+    public void testConstructors() {
+        // Test constructor with session only
+        CassandraExecutor executor1 = new CassandraExecutor(mockSession);
+        assertNotNull(executor1);
+
+        // Test constructor with settings
+        StatementSettings settings = StatementSettings.builder().fetchSize(100).build();
+        CassandraExecutor executor2 = new CassandraExecutor(mockSession, settings);
+        assertNotNull(executor2);
+
+        // Test constructor with CqlMapper
         CqlMapper mapper = new CqlMapper();
-        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings, mapper, NamingPolicy.SNAKE_CASE);
-        assertNotNull(exec);
-        assertTrue(exec.session() == cassandraExecutor.session());
-        assertNotNull(exec.async());
+        CassandraExecutor executor3 = new CassandraExecutor(mockSession, settings, mapper);
+        assertNotNull(executor3);
+
+        // Test constructor with NamingPolicy
+        CassandraExecutor executor4 = new CassandraExecutor(mockSession, settings, mapper, NamingPolicy.SNAKE_CASE);
+        assertNotNull(executor4);
+
+        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null));
     }
 
     @Test
-    public void test_constructor_withSettingsOnly() {
-        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), null);
-        assertNotNull(exec);
-        assertNotNull(exec.async());
-    }
-
-    @Test
-    public void test_async_returnsSameInstance() {
-        // async() should return the same AsyncCassandraExecutor every time
-        assertTrue(cassandraExecutor.async() == cassandraExecutor.async());
-    }
-
-    // ---------------------------------------------------------------------
-    //  Static helper tests against live ResultSets
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_extractData_withEntityClass() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist) VALUES (?, ?, ?, ?)", id, "t", "a", "ar");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id);
-            Dataset ds = CassandraExecutor.extractData(rs, Song.class);
-            assertNotNull(ds);
-            assertEquals(1, ds.size());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_extractData_withMapClass() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "t");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT id, title FROM simplex.songs WHERE id = ?", id);
-            Dataset ds = CassandraExecutor.extractData(rs, Map.class);
-            assertNotNull(ds);
-            assertEquals(1, ds.size());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_toList_withRowClass() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "rowTest");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id);
-            // Fast-path: target is Row.class -> returns resultSet.all() directly.
-            List<Row> rows = CassandraExecutor.toList(rs, Row.class);
-            assertEquals(1, rows.size());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_toList_singleColumnValue() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "scalar");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT title FROM simplex.songs WHERE id = ?", id);
-            List<String> titles = CassandraExecutor.toList(rs, String.class);
-            assertEquals(1, titles.size());
-            assertEquals("scalar", titles.get(0));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_toMap_withSupplier() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "mapT");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT id, title FROM simplex.songs WHERE id = ?", id);
-            Row row = rs.one();
-            assertNotNull(row);
-            // Use a LinkedHashMap supplier to verify the supplier branch is exercised.
-            Map<String, Object> map = CassandraExecutor.toMap(row, IntFunctions.ofLinkedHashMap());
-            assertNotNull(map);
-            assertEquals(2, map.size());
-            assertTrue(map.containsKey("id"));
-            assertTrue(map.containsKey("title"));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_toEntity_song() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album) VALUES (?, ?, ?)", id, "t1", "a1");
-        try {
-            Row row = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id).one();
-            assertNotNull(row);
-            Song s = CassandraExecutor.toEntity(row, Song.class);
-            assertNotNull(s);
-            assertEquals(id, s.getId());
-            assertEquals("t1", s.getTitle());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    //  findFirst / queryForSingle empty-result branches
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_findFirst_noRows_returnsEmpty() {
-        UUID nonExistent = UUID.randomUUID();
-        assertTrue(cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", nonExistent).isEmpty());
-    }
-
-    @Test
-    public void test_queryForSingleValue_noRows_returnsEmptyNullable() {
-        UUID nonExistent = UUID.randomUUID();
-        assertTrue(cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", nonExistent).isEmpty());
-    }
-
-    @Test
-    public void test_queryForSingleNonNull_noRows_returnsEmptyOptional() {
-        UUID nonExistent = UUID.randomUUID();
-        assertTrue(cassandraExecutor.queryForSingleNonNull(String.class, "SELECT title FROM simplex.songs WHERE id = ?", nonExistent).isEmpty());
-    }
-
-    @Test
-    public void test_queryForSingleNonNull_withValue() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "x");
-        try {
-            assertEquals("x", cassandraExecutor.queryForSingleNonNull(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id).orElse(null));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    //  stream(...) coverage
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_stream_withBiFunctionRowMapper() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "sTitle");
-        try {
-            long count = cassandraExecutor.stream("SELECT * FROM simplex.songs WHERE id = ?", (cds, r) -> r.getString("title"), id).count();
-            assertEquals(1L, count);
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_stream_withStatement_BiFunctionRowMapper() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stmtT");
-        try {
-            BoundStatement bs = cassandraExecutor.session().prepare("SELECT * FROM simplex.songs WHERE id = ?").bind(id);
-            long count = cassandraExecutor.stream((Statement<?>) bs, (cds, r) -> r.getString("title")).count();
-            assertEquals(1L, count);
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_stream_nullRowMapper_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.stream("SELECT * FROM simplex.songs",
-                (java.util.function.BiFunction<com.datastax.oss.driver.api.core.cql.ColumnDefinitions, Row, Object>) null));
-    }
-
-    @Test
-    public void test_execute_withMapNamedParams() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "nT");
-        try {
-            Map<String, Object> params = new java.util.HashMap<>();
-            params.put("id", id);
-            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :id", params);
-            assertNotNull(rs);
-            assertNotNull(rs.one());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_execute_missingNamedParameter_throwsIAE() {
-        Map<String, Object> params = new java.util.HashMap<>();
-        params.put("wrong", UUID.randomUUID());
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :id", params));
-        assertTrue(ex.getMessage() == null || ex.getMessage().toLowerCase().contains("missing") || ex.getMessage().toLowerCase().contains("parameter"));
-    }
-
-    /**
-     * Verifies that passing a single {@code null} parameter when the query
-     * expects multiple parameters produces an IllegalArgumentException
-     * (not a NullPointerException from {@code parameters[0].getClass()} and
-     * not an ArrayIndexOutOfBoundsException from the parameter-conversion loop).
-     */
-    @Test
-    public void test_prepareStatement_nullSingleParamMultiParamQuery_throwsIAE_notNPE() {
-        // The query has two ? placeholders, but only a single null arg is supplied.
-        // Previously this would NPE inside prepareStatement at parameters[0].getClass(),
-        // and even after the null-guard it would AIOOBE in the value-conversion loop.
-        // After the fix, values.length < parameterCount throws IAE.
-        try {
-            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", (Object) null);
-            fail("Expected IllegalArgumentException for too-few parameters");
-        } catch (IllegalArgumentException e) {
-            // expected
-        } catch (NullPointerException e) {
-            fail("Got NPE instead of IllegalArgumentException: " + e);
-        } catch (ArrayIndexOutOfBoundsException e) {
-            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
-        }
-    }
-
-    /**
-     * Verifies that passing fewer parameters than the query expects yields
-     * an IllegalArgumentException, not an ArrayIndexOutOfBoundsException
-     * from the parameter-type-conversion loop in prepareStatement.
-     */
-    @Test
-    public void test_prepareStatement_tooFewPositionalParams_throwsIAE_notAIOOBE() {
-        try {
-            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", UUID.randomUUID());
-            fail("Expected IllegalArgumentException for too-few parameters");
-        } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage() == null || e.getMessage().toLowerCase().contains("parameter"), "Message should mention parameters: " + e.getMessage());
-        } catch (ArrayIndexOutOfBoundsException e) {
-            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    //  StringCodec (v4 driver) tests - access via registerTypeCodec since
-    //  StringCodec is package-private with a protected constructor.
-    // ---------------------------------------------------------------------
-
-    /** Helper: build a StringCodec via the codec registry (same as registerTypeCodec). */
-    @SuppressWarnings("unchecked")
-    private static <T> TypeCodec<T> newStringCodec(Class<T> cls) {
-        // Use a fresh registry so this test does not interfere with the static one.
-        MutableCodecRegistry reg = new DefaultCodecRegistry("test-" + cls.getSimpleName());
-        CassandraExecutor.registerTypeCodec(reg, cls);
-        return (TypeCodec<T>) reg.codecFor(DataTypes.TEXT, cls);
-    }
-
-    @Test
-    public void test_StringCodec_format_null_returnsNULL() {
-        TypeCodec<String> codec = newStringCodec(String.class);
-        assertEquals("NULL", codec.format(null));
-    }
-
-    @Test
-    public void test_StringCodec_format_value_returnsJson() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        Song s = new Song();
-        s.setTitle("t1");
-        String json = codec.format(s);
-        assertNotNull(json);
-        assertTrue(json.contains("t1"));
-    }
-
-    @Test
-    public void test_StringCodec_parse_empty_returnsNull() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        assertNull(codec.parse(""));
-    }
-
-    @Test
-    public void test_StringCodec_parse_NULL_returnsNull() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        assertNull(codec.parse("NULL"));
-    }
-
-    @Test
-    public void test_StringCodec_parse_json_returnsObject() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        Song s = new Song();
-        s.setTitle("hello");
-        String json = codec.format(s);
-        Song parsed = codec.parse(json);
-        assertNotNull(parsed);
-        assertEquals("hello", parsed.getTitle());
-    }
-
-    @Test
-    public void test_StringCodec_encode_null_doesNotThrow() {
-        TypeCodec<String> codec = newStringCodec(String.class);
-        // encode delegates to TEXT codec on serialize(null) result; just verify it does not throw.
-        ByteBuffer bb = codec.encode(null, ProtocolVersion.DEFAULT);
-        // Either null or empty buffer is acceptable - both indicate "no value".
-        if (bb != null) {
-            assertTrue(bb.remaining() >= 0);
-        }
-    }
-
-    @Test
-    public void test_StringCodec_encodeDecode_roundtrip() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        Song s = new Song();
-        s.setTitle("rt");
-        s.setAlbum("alb");
-        ByteBuffer encoded = codec.encode(s, ProtocolVersion.DEFAULT);
-        assertNotNull(encoded);
-        Song decoded = codec.decode(encoded, ProtocolVersion.DEFAULT);
-        assertNotNull(decoded);
-        assertEquals("rt", decoded.getTitle());
-        assertEquals("alb", decoded.getAlbum());
-    }
-
-    @Test
-    public void test_StringCodec_getJavaType() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        assertNotNull(codec.getJavaType());
-        assertEquals(Song.class, codec.getJavaType().getRawType());
-    }
-
-    @Test
-    public void test_StringCodec_getCqlType_isText() {
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        assertEquals(DataTypes.TEXT, codec.getCqlType());
-    }
-
-    @Test
-    public void test_StringCodec_deprecated_serializeDeserialize_roundtrip() throws Exception {
-        // Exercise the @Deprecated serialize(T, ProtocolVersion) / deserialize(ByteBuffer, ProtocolVersion) overloads via reflection.
-        TypeCodec<Song> codec = newStringCodec(Song.class);
-        Song s = new Song();
-        s.setTitle("dep");
-        java.lang.reflect.Method ser = codec.getClass().getMethod("serialize", Object.class, ProtocolVersion.class);
-        java.lang.reflect.Method des = codec.getClass().getMethod("deserialize", ByteBuffer.class, ProtocolVersion.class);
-        ByteBuffer bb = (ByteBuffer) ser.invoke(codec, s, ProtocolVersion.DEFAULT);
-        assertNotNull(bb);
-        Song back = (Song) des.invoke(codec, bb, ProtocolVersion.DEFAULT);
-        assertNotNull(back);
-        assertEquals("dep", back.getTitle());
-    }
-
-    // ---------------------------------------------------------------------
-    //  UDTCodec (v4 driver) tests - rely on UDTs registered in static init.
-    // ---------------------------------------------------------------------
-
-    /** Helper: get a UserDefinedType from the session metadata. */
-    private static UserDefinedType lookupUDT(String name) {
-        return session.getMetadata().getKeyspace("simplex").orElseThrow().getUserDefinedType(name).orElseThrow();
-    }
-
-    @Test
-    public void test_UDTCodec_create_fromUserType_returnsCodec() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        assertNotNull(codec);
-        assertNotNull(codec.getJavaType());
-        assertEquals(Users.Name.class, codec.getJavaType().getRawType());
-    }
-
-    @Test
-    public void test_UDTCodec_create_withSession_returnsCodec() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(session, "simplex", "fullname", Users.Name.class);
-        assertNotNull(codec);
-        assertNotNull(codec.getCqlType());
-    }
-
-    @Test
-    public void test_UDTCodec_format_null_returnsNULL() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        assertEquals("NULL", codec.format(null));
-    }
-
-    @Test
-    public void test_UDTCodec_parse_empty_returnsNull() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        assertNull(codec.parse(""));
-        assertNull(codec.parse("NULL"));
-    }
-
-    @Test
-    public void test_UDTCodec_serialize_null_returnsNull() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        // The protected serialize(T) returns null for null input.
-        java.lang.reflect.Method m;
-        try {
-            // serialize(T) is protected abstract in the parent and overridden in anonymous subclass
-            // Find it among the declared methods of the runtime class.
-            m = null;
-            for (java.lang.reflect.Method dm : codec.getClass().getDeclaredMethods()) {
-                if (dm.getName().equals("serialize") && dm.getParameterCount() == 1) {
-                    m = dm;
-                    break;
-                }
-            }
-            assertNotNull(m);
-            m.setAccessible(true);
-            Object result = m.invoke(codec, (Object) null);
-            assertNull(result);
-        } catch (Exception e) {
-            fail(e.getMessage());
-        }
-    }
-
-    @Test
-    public void test_UDTCodec_format_value_returnsCqlLiteral() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        Users.Name n = new Users.Name();
-        n.setFirstName("a");
-        n.setLastName("b");
-        String literal = codec.format(n);
-        assertNotNull(literal);
-        assertTrue(literal.startsWith("{") && literal.endsWith("}"), literal);
-        assertTrue(literal.contains("a"));
-        assertTrue(literal.contains("b"));
-    }
-
-    @Test
-    public void test_UDTCodec_parse_cqlLiteral_returnsObject() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        Users.Name source = new Users.Name();
-        source.setFirstName("x");
-        source.setLastName("y");
-        Users.Name n = codec.parse(codec.format(source));
-        assertNotNull(n);
-        assertEquals("x", n.getFirstName());
-        assertEquals("y", n.getLastName());
-    }
-
-    @Test
-    public void test_UDTCodec_getCqlType_isUDT() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        assertNotNull(codec.getCqlType());
-        // The CQL type should equal the underlying UDT.
-        assertEquals(lookupUDT("fullname").asCql(true, true), codec.getCqlType().asCql(true, true));
-    }
-
-    @Test
-    public void test_UDTCodec_serializeBean_thenDeserialize_roundtrip() {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        Users.Name n = new Users.Name();
-        n.setFirstName("first");
-        n.setLastName("last");
-        ByteBuffer encoded = codec.encode(n, ProtocolVersion.DEFAULT);
-        assertNotNull(encoded);
-        Users.Name back = codec.decode(encoded, ProtocolVersion.DEFAULT);
-        assertNotNull(back);
-        assertEquals("first", back.getFirstName());
-        assertEquals("last", back.getLastName());
-    }
-
-    @Test
-    public void test_UDTCodec_serialize_invalidType_throwsIAE() {
-        // The UDTCodec produced by create() throws IAE if the class is neither Collection, Map, nor Bean.
-        UDTCodec<Integer> codec = UDTCodec.create(lookupUDT("fullname"), Integer.class);
-        assertThrows(IllegalArgumentException.class, () -> codec.encode(42, ProtocolVersion.DEFAULT));
-    }
-
-    @Test
-    public void test_UDTCodec_serializeMap_roundtrip() {
-        UDTCodec<Map> codec = UDTCodec.create(lookupUDT("fullname"), Map.class);
-        // Cassandra unquoted identifiers are lowercased - use lower-case keys.
-        Map<String, Object> m = new java.util.HashMap<>();
-        m.put("firstname", "f");
-        m.put("lastname", "l");
-        ByteBuffer encoded = codec.encode(m, ProtocolVersion.DEFAULT);
-        assertNotNull(encoded);
-        Map back = codec.decode(encoded, ProtocolVersion.DEFAULT);
-        assertNotNull(back);
-        assertEquals("f", back.get("firstname"));
-        assertEquals("l", back.get("lastname"));
-    }
-
-    @Test
-    public void test_UDTCodec_serializeCollection_roundtrip() {
-        UDTCodec<List> codec = UDTCodec.create(lookupUDT("fullname"), List.class);
-        List<Object> values = N.asList("first", "last");
-        ByteBuffer encoded = codec.encode(values, ProtocolVersion.DEFAULT);
-        assertNotNull(encoded);
-        // Decoding into a List returns a list of the values in field order.
-        List back = codec.decode(encoded, ProtocolVersion.DEFAULT);
-        assertNotNull(back);
-        assertEquals(2, back.size());
-    }
-
-    @Test
-    public void test_UDTCodec_deprecated_serializeDeserialize_roundtrip() throws Exception {
-        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        Users.Name n = new Users.Name();
-        n.setFirstName("d1");
-        n.setLastName("d2");
-        // Use the deprecated public serialize(T, ProtocolVersion) overload.
-        ByteBuffer bb = codec.serialize(n, ProtocolVersion.DEFAULT);
-        assertNotNull(bb);
-        Users.Name back = codec.deserialize(bb, ProtocolVersion.DEFAULT);
-        assertNotNull(back);
-        assertEquals("d1", back.getFirstName());
-        assertEquals("d2", back.getLastName());
-    }
-
-    // ---------------------------------------------------------------------
-    //  StatementSettings (v4) — extra fluent-setter and equals/hashCode coverage
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_StatementSettings_fluentSetters_returnSelf() {
-        StatementSettings s = new StatementSettings();
-        assertTrue(s == s.consistency(ConsistencyLevel.ONE));
-        assertTrue(s == s.serialConsistency(ConsistencyLevel.SERIAL));
-        assertTrue(s == s.fetchSize(10));
-        assertTrue(s == s.timeout(Duration.ofSeconds(1)));
-        assertTrue(s == s.traceQuery(Boolean.TRUE));
-        assertEquals(ConsistencyLevel.ONE, s.consistency());
-        assertEquals(10, s.fetchSize().intValue());
-    }
-
-    @Test
-    public void test_StatementSettings_equalsAndHashCode() {
-        Duration d = Duration.ofSeconds(5);
-        StatementSettings a = new StatementSettings(ConsistencyLevel.ONE, ConsistencyLevel.SERIAL, 5, d, Boolean.TRUE);
-        StatementSettings b = new StatementSettings(ConsistencyLevel.ONE, ConsistencyLevel.SERIAL, 5, d, Boolean.TRUE);
-        StatementSettings c = new StatementSettings(ConsistencyLevel.TWO, ConsistencyLevel.SERIAL, 5, d, Boolean.TRUE);
-        assertEquals(a, b);
-        assertEquals(a.hashCode(), b.hashCode());
-        assertFalse(a.equals(c));
-    }
-
-    @Test
-    public void test_StatementSettings_toString_containsValues() {
-        StatementSettings s = new StatementSettings();
-        s.fetchSize(123);
-        String str = s.toString();
-        assertNotNull(str);
-        assertTrue(str.contains("123"));
-    }
-
-    // ---------------------------------------------------------------------
-    //  Coverage gap fillers: batchInsert/Update with Map propsList, query, etc.
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_batchInsert_withMapPropsList() {
-        // Exercises prepareBatchInsertStatement(Class, Collection<Map>, BatchType) - 0% coverage
-        // Users has @Table("simplex.users") so the keyspace is resolved.
-        UUID id1 = UUID.randomUUID();
-        UUID id2 = UUID.randomUUID();
-        List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1), N.asMap("id", (Object) id2));
-        try {
-            ResultSet rs = cassandraExecutor.batchInsert(Users.class, propsList, BatchType.LOGGED);
-            assertNotNull(rs);
-            assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", id1));
-            assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", id2));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id1);
-            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id2);
-        }
-    }
-
-    @Test
-    public void test_batchUpdate_withMapPropsList() {
-        // Exercises prepareBatchUpdateStatement(Class, Collection<Map>, BatchType) - 0% coverage
-        UUID id1 = UUID.randomUUID();
-        UUID id2 = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.users (id, someDate) VALUES (?, ?)", id1, "d-before1");
-        cassandraExecutor.execute("INSERT INTO simplex.users (id, someDate) VALUES (?, ?)", id2, "d-before2");
-        try {
-            List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1, "someDate", (Object) "d-after1"),
-                    N.asMap("id", (Object) id2, "someDate", (Object) "d-after2"));
-            ResultSet rs = cassandraExecutor.batchUpdate(Users.class, propsList, BatchType.LOGGED);
-            assertNotNull(rs);
-            assertEquals("d-after1", cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id1).orElse(null));
-            assertEquals("d-after2", cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id2).orElse(null));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id1);
-            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id2);
-        }
-    }
-
-    @Test
-    public void test_batchUpdate_withQueryAndParametersList() {
-        // Exercises prepareBatchUpdateStatement(String, Collection, BatchType) - 0% coverage
-        UUID id1 = UUID.randomUUID();
-        UUID id2 = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id1, "x");
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id2, "y");
-        try {
-            List<Object[]> params = N.asList(new Object[] { "u1", id1 }, new Object[] { "u2", id2 });
-            ResultSet rs = cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchType.LOGGED);
-            assertNotNull(rs);
-            assertEquals("u1", cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id1).orElse(null));
-            assertEquals("u2", cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id2).orElse(null));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id1);
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id2);
-        }
-    }
-
-    @Test
-    public void test_batchInsert_emptyEntities_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchInsert(N.<Users> emptyList(), BatchType.LOGGED));
-    }
-
-    @Test
-    public void test_batchInsert_emptyPropsList_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchInsert(Users.class, N.<Map<String, Object>> emptyList(), BatchType.LOGGED));
-    }
-
-    @Test
-    public void test_batchUpdate_emptyPropsList_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchUpdate(Users.class, N.<Map<String, Object>> emptyList(), BatchType.LOGGED));
-    }
-
-    @Test
-    public void test_batchUpdate_emptyQueryParams_throwsIAE() {
-        assertThrows(IllegalArgumentException.class,
-                () -> cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", N.emptyList(), BatchType.LOGGED));
-    }
-
-    // ---------------------------------------------------------------------
-    //  configStatement(Statement) coverage - executor created with StatementSettings
-    // ---------------------------------------------------------------------
-
-    @Test
-    public void test_configStatement_appliedViaCustomSettings() {
-        // Build settings exercising the consistency / fetchSize / timeout / tracing branches.
+    public void testStatementSettings() {
+        // Test StatementSettings builder
         StatementSettings settings = StatementSettings.builder()
-                .consistency(ConsistencyLevel.ONE)
-                .fetchSize(10)
-                .timeout(Duration.ofSeconds(5))
-                .traceQuery(Boolean.FALSE)
+                .consistency(com.datastax.oss.driver.api.core.ConsistencyLevel.QUORUM)
+                .serialConsistency(com.datastax.oss.driver.api.core.ConsistencyLevel.LOCAL_SERIAL)
+                .fetchSize(100)
+                .timeout(java.time.Duration.ofSeconds(10))
+                .traceQuery(true)
                 .build();
-        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings);
-        UUID id = UUID.randomUUID();
-        exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "cfgT");
-        try {
-            // Run a select to ensure configStatement is exercised on a bound stmt path.
-            assertTrue(exec.exists("SELECT * FROM simplex.songs WHERE id = ?", id));
-            // Exercise configStatement on a BatchStatement via batchUpdate(String, ...).
-            UUID b1 = UUID.randomUUID();
-            UUID b2 = UUID.randomUUID();
-            exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", b1, "b1");
-            exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", b2, "b2");
-            List<Object[]> params = N.asList(new Object[] { "b1-new", b1 }, new Object[] { "b2-new", b2 });
-            assertNotNull(exec.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchType.LOGGED));
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", b1);
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", b2);
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
+
+        assertNotNull(settings);
+        assertEquals(com.datastax.oss.driver.api.core.ConsistencyLevel.QUORUM, settings.consistency());
+        assertEquals(com.datastax.oss.driver.api.core.ConsistencyLevel.LOCAL_SERIAL, settings.serialConsistency());
+        assertEquals(100, settings.fetchSize());
+        assertEquals(java.time.Duration.ofSeconds(10), settings.timeout());
+        assertTrue(settings.traceQuery());
+    }
+
+    // Metadata and validation
+
+    @Test
+    public void testRegisteredBeanCodecTakesPrecedenceOverParameterExpansion() {
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("bean-test");
+        CassandraExecutor.registerTypeCodec(registry, TestEntity.class);
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "INSERT INTO custom_values (payload) VALUES (?)";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.TEXT);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("payload"));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final TestEntity value = new TestEntity();
+        value.setName("original");
+
+        codecExecutor.prepareStatement(query, value);
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertSame(value, bound[0][0]);
     }
 
     @Test
-    public void test_configStatement_withSerialConsistency() {
-        // Cover the serialConsistency branch of configStatement.
-        StatementSettings settings = StatementSettings.builder().serialConsistency(ConsistencyLevel.LOCAL_SERIAL).build();
-        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings);
-        // Plain SELECT - just confirms the configured stmt executes.
-        ResultSet rs = exec.execute("SELECT id FROM simplex.songs LIMIT 1");
-        assertNotNull(rs);
-    }
+    public void testRegisteredEnumCodecTakesPrecedenceOverScalarConversion() {
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("enum-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "INSERT INTO custom_values (payload) VALUES (?)";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.TEXT);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("payload"));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final java.time.DayOfWeek value = java.time.DayOfWeek.MONDAY;
 
-    // ---------------------------------------------------------------------
-    //  readRow / createRowMapper coverage - exercise object[], collection,
-    //  and single-column-with-conversion lambda branches.
-    // ---------------------------------------------------------------------
+        // Without a value-specific codec, the existing scalar conversion remains available.
+        codecExecutor.prepareStatement(query, value);
+        assertEquals("MONDAY", bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertEquals("MONDAY", bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertEquals("MONDAY", bound[0][0]);
 
-    @Test
-    public void test_list_withObjectArrayClass() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "oa");
-        try {
-            // Use list(Object[].class, ...) which exercises the isObjectArray branch in createRowMapper/readRow.
-            List<Object[]> rows = cassandraExecutor.list(Object[].class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
-            assertEquals(1, rows.size());
-            assertEquals(2, rows.get(0).length);
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_list_withListClass() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "lc");
-        try {
-            // Use list(List.class, ...) which exercises the isCollection branch.
-            List<List> rows = (List) cassandraExecutor.list(List.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
-            assertEquals(1, rows.size());
-            assertEquals(2, rows.get(0).size());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_stream_withMapClass() {
-        // Stream with Map.class exercises the isMap branch in createRowMapper.
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stM");
-        try {
-            long count = cassandraExecutor.stream(Map.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id).count();
-            assertEquals(1L, count);
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_stream_withObjectArrayClass() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stOA");
-        try {
-            long count = cassandraExecutor.stream(Object[].class, "SELECT id, title FROM simplex.songs WHERE id = ?", id).count();
-            assertEquals(1L, count);
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_stream_withStringClass_singleColumn() {
-        // Exercises the single-column-conversion lambda branch (rowClass=String, value=UUID -> N.convert).
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stC");
-        try {
-            List<String> titles = cassandraExecutor.stream(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id).toList();
-            assertEquals(1, titles.size());
-            assertEquals("stC", titles.get(0));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_list_singleColumn_typeConversion() {
-        // Exercises N.convert path in single-column row mapper: UUID -> String conversion.
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "convT");
-        try {
-            // Force a conversion: the column is a UUID, but request String back.
-            List<String> ids = cassandraExecutor.list(String.class, "SELECT id FROM simplex.songs WHERE id = ?", id);
-            assertEquals(1, ids.size());
-            assertEquals(id.toString(), ids.get(0));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    // Coverage additions
-
-    @Test
-    public void test_execute_withBeanParam() {
-        Users user = createUser();
-        String sql = NSC.insertInto(Users.class).build().query();
-        cassandraExecutor.execute(sql, user);
-        try {
-            assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", user.getId()));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", user.getId());
-        }
-    }
-
-    @Test
-    public void test_execute_withBeanParam_missingPropertyThrowsIAE() {
-        Song s = new Song();
-        s.setId(UUID.randomUUID());
-        s.setTitle("t");
-        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :nonExistentBeanProp", s));
-    }
-
-    @Test
-    public void test_list_singleColumn_noConversionNeeded() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "noConv");
-        try {
-            List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", id);
-            assertEquals(1, ids.size());
-            assertEquals(id, ids.get(0));
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_toList_mapClass_columnsAsMap() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "asMap");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT id, title FROM simplex.songs WHERE id = ?", id);
-            @SuppressWarnings("rawtypes")
-            List<Map> rows = CassandraExecutor.toList(rs, Map.class);
-            assertEquals(1, rows.size());
-            assertEquals(2, rows.get(0).size());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_execute_collectionArgWrappedInArray() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "collArg");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", N.asList(id));
-            assertNotNull(rs.one());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    @Test
-    public void test_extractData_listClassConversionForUuid() {
-        UUID id = UUID.randomUUID();
-        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "convForExtract");
-        try {
-            ResultSet rs = cassandraExecutor.execute("SELECT id FROM simplex.songs WHERE id = ?", id);
-            Dataset ds = CassandraExecutor.extractData(rs, String.class);
-            assertNotNull(ds);
-            assertEquals(1, ds.size());
-        } finally {
-            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
-        }
-    }
-
-    // ---- 2026-10-04 coverageCS ----
-
-    public static class CoverageCSTimeUdt {
-        private java.sql.Time t;
-
-        public java.sql.Time getT() {
-            return t;
-        }
-
-        public void setT(final java.sql.Time t) {
-            this.t = t;
-        }
-    }
-
-    public static class CoverageCSTimeRow {
-        private int id;
-        private java.sql.Time t;
-        private CoverageCSTimeUdt u;
-
-        public int getId() {
-            return id;
-        }
-
-        public void setId(final int id) {
-            this.id = id;
-        }
-
-        public java.sql.Time getT() {
-            return t;
-        }
-
-        public void setT(final java.sql.Time t) {
-            this.t = t;
-        }
-
-        public CoverageCSTimeUdt getU() {
-            return u;
-        }
-
-        public void setU(final CoverageCSTimeUdt u) {
-            this.u = u;
-        }
-    }
-
-    /** Schema changes can take longer than the driver's default 2s request timeout. */
-    private static void coverageCSSchemaChange(final String cql) {
-        cassandraExecutor.execute(com.datastax.oss.driver.api.core.cql.SimpleStatement.newInstance(cql).setTimeout(Duration.ofSeconds(60)));
-    }
-
-    @Test
-    public void test_coverageCS_dateTimeAndValueTypeParametersBindRoundTrip() throws Exception {
-        final String table = "simplex.coverage_cs_binds4";
-        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, ts timestamp, b blob)");
-
-        try {
-            final String readT = "SELECT t FROM " + table + " WHERE id = ?";
-            final java.sql.Time sqlTime = new java.sql.Time(java.sql.Time.valueOf(LocalTime.of(10, 15, 30)).getTime() + 123);
-            final java.util.Calendar calendar = java.util.Calendar.getInstance();
-            calendar.setTime(sqlTime);
-
-            // Binds into the time column: a LocalTime as is; a Date/Calendar (converted to the column's LocalTime) - among two
-            // parameters and as the single parameter of a single marker (a single Calendar was read as a bean of named values:
-            // "Missing required parameter: 't'").
-            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 1, LocalTime.of(10, 15, 30, 123_456_789));
-            assertEquals(LocalTime.of(10, 15, 30, 123_456_789), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 1).get());
-
-            for (final Object value : List.of(sqlTime, new java.util.Date(sqlTime.getTime()), new Timestamp(sqlTime.getTime()), calendar)) {
-                cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (?, ?)", 2, value);
-                assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 2).get(),
-                        value.getClass().getName());
-                cassandraExecutor.execute("UPDATE " + table + " SET t = ? WHERE id = 3", value);
-                assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 3).get(),
-                        value.getClass().getName());
+        final java.util.concurrent.atomic.AtomicReference<RuntimeException> acceptanceFailure = new java.util.concurrent.atomic.AtomicReference<>();
+        registry.register(new CassandraExecutor.StringCodec<java.time.DayOfWeek>(java.time.DayOfWeek.class) {
+            @Override
+            public boolean accepts(final Object candidate) {
+                if (candidate instanceof java.time.DayOfWeek && acceptanceFailure.get() != null) {
+                    throw acceptanceFailure.get();
+                }
+                return super.accepts(candidate);
             }
+        });
 
-            // Unchanged: an entity's java.sql.Time property bound as a named parameter is converted the same way.
-            final CoverageCSTimeRow entity = new CoverageCSTimeRow();
-            entity.setId(5);
-            entity.setT(sqlTime);
-            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (:id, :t)", entity);
-            assertEquals(LocalTime.of(10, 15, 30, 123_000_000), cassandraExecutor.queryForSingleValue(LocalTime.class, readT, 5).get());
+        codecExecutor.prepareStatement(query, value);
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, List.of(value));
+        assertSame(value, bound[0][0]);
+        codecExecutor.prepareStatement(query, Map.of("payload", value));
+        assertSame(value, bound[0][0]);
 
-            // A single Calendar for a single timestamp marker, too.
-            cassandraExecutor.execute("UPDATE " + table + " SET ts = ? WHERE id = 3", calendar);
-            assertEquals(calendar.toInstant(), cassandraExecutor.queryForSingleValue(java.time.Instant.class, "SELECT ts FROM " + table + " WHERE id = 3").get());
+        // A registered codec's failure must propagate, rather than silently falling back to String.
+        final IllegalStateException failure = new IllegalStateException("codec acceptance failed");
+        acceptanceFailure.set(failure);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, value)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, List.of(value))));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> codecExecutor.prepareStatement(query, Map.of("payload", value))));
+    }
 
-            // A single ByteBuffer is one positional value: bound to a single blob marker, too few values for two markers.
-            cassandraExecutor.execute("UPDATE " + table + " SET b = ? WHERE id = 3", ByteBuffer.wrap(new byte[] { 1, 2 }));
-            org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 1, 2 },
-                    cassandraExecutor.queryForSingleValue(byte[].class, "SELECT b FROM " + table + " WHERE id = 3").get());
-            final IllegalArgumentException tooFew = assertThrows(IllegalArgumentException.class,
-                    () -> cassandraExecutor.execute("UPDATE " + table + " SET b = ? WHERE id = ?", ByteBuffer.wrap(new byte[] { 1 })));
-            assertTrue(tooFew.getMessage().startsWith("Not enough parameters for parameterized query: expected 2 but got 1"), tooFew.getMessage());
-        } finally {
-            coverageCSSchemaChange("DROP TABLE IF EXISTS " + table);
+    // Row and entity mapping
+
+    @Test
+    public void testExtractData() {
+        // Setup mock data
+        List<Row> rows = Arrays.asList(mockRow);
+        when(mockResultSet.iterator()).thenAnswer(invocation -> rows.iterator());
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+        when(mockColumnDefinitions.get(0)).thenReturn(mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class));
+        when(mockColumnDefinitions.get(1)).thenReturn(mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class));
+        when(mockColumnDefinitions.get(0).getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(mockColumnDefinitions.get(1).getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name"));
+
+        // Test without target class
+        Dataset dataset1 = CassandraExecutor.extractData(mockResultSet);
+        assertNotNull(dataset1);
+
+        // Test with target class
+        Dataset dataset2 = CassandraExecutor.extractData(mockResultSet, TestEntity.class);
+        assertNotNull(dataset2);
+    }
+
+    /**
+     * Regression guard for {@code extractData(ResultSet, Class)} with a non-bean, non-Map target
+     * class: scalar column values must be kept raw. Previously the column class for non-bean targets
+     * defaulted to {@code Object[].class}, which forced every scalar through
+     * {@code N.convert(value, Object[].class)} and wrapped it into an {@code Object[]}.
+     */
+    @Test
+    public void testExtractData_nonBeanTargetClass_keepsScalarValuesRaw() {
+        when(mockResultSet.iterator()).thenAnswer(invocation -> Arrays.asList(mockRow).iterator());
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("title"));
+        when(mockRow.getObject(0)).thenReturn("abc");
+
+        Dataset ds = CassandraExecutor.extractData(mockResultSet, String.class);
+
+        assertEquals(1, ds.size());
+        // The Dataset cursor starts at row 0; the scalar must be the raw String, not Object[].
+        Object value = ds.get("title");
+        assertEquals("abc", value);
+    }
+
+    @Test
+    public void testExtractDataUsesColumnToPropertyMappingForTypeConversion() {
+        final ColumnDefinition column = mock(ColumnDefinition.class);
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(column);
+        when(column.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("order_count"));
+        when(mockResultSet.iterator()).thenAnswer(invocation -> Arrays.asList(mockRow).iterator());
+        when(mockRow.getObject(0)).thenReturn(7L);
+
+        final Dataset dataset = CassandraExecutor.extractData(mockResultSet, TestEntity.class);
+        assertEquals(Integer.valueOf(7), dataset.getColumn("order_count").get(0));
+    }
+
+    @Test
+    public void testRowMappingTargetClassIsRejectedAsAnIllegalArgument() {
+        // The target/value class is consumed by the abacus row-mapping layer, not by the driver,
+        // so a null is rejected up front rather than surfacing as an NPE (or a silent Object[] mapping)
+        // once a row is read.
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Object>) null, "SELECT name FROM test"));
+
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList(mockResultSet, (Class<Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity(mockRow, (Class<Object>) null));
+    }
+
+    @Test
+    public void testSliceN_udtCodecMapDecodeReadsCaseDistinctFieldsByPosition() {
+        // UDT fields "Val" and val differ only by case. Reading a field by its internal name goes through the driver's
+        // CQL-form (case-insensitive) lookup, so both map entries used to receive the first field's value
+        // ({Val=1, val=1}, reproduced against a live Cassandra).
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("case_type"),
+                false,
+                List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("Val"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("val")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.INT, com.datastax.oss.driver.api.core.type.DataTypes.INT));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+
+        final Map<?, ?> decoded = mapCodec.decode(mapCodec.encode(Map.of("Val", 1, "val", 2), ProtocolVersion.V4), ProtocolVersion.V4);
+
+        assertEquals(1, decoded.get("Val"));
+        assertEquals(2, decoded.get("val"));
+    }
+
+    @Test
+    public void testToEntity() {
+        // Setup mock data
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+        when(mockColumnDefinitions.get(0)).thenReturn(mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class));
+        when(mockColumnDefinitions.get(1)).thenReturn(mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class));
+        when(mockColumnDefinitions.get(0).getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(mockColumnDefinitions.get(1).getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name"));
+        when(mockRow.getObject(0)).thenReturn(1L);
+        when(mockRow.getObject(1)).thenReturn("test");
+
+        TestEntity entity = CassandraExecutor.toEntity(mockRow, TestEntity.class);
+        assertNotNull(entity);
+    }
+
+    @Test
+    public void testToList() {
+        // Setup mock data
+        List<Row> rows = Arrays.asList(mockRow);
+        when(mockResultSet.all()).thenReturn(rows);
+        when(mockResultSet.iterator()).thenAnswer(invocation -> rows.iterator());
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+
+        // Test with Row class
+        List<Row> rowList = CassandraExecutor.toList(mockResultSet, Row.class);
+        assertEquals(1, rowList.size());
+
+        // Test with other target class
+        List<TestEntity> entityList = CassandraExecutor.toList(mockResultSet, TestEntity.class);
+        assertNotNull(entityList);
+    }
+
+    @Test
+    public void testToListObjectClassReturnsRawRows() {
+        // Object.class is assignable from Row, so toList returns the raw driver Row objects
+        // (passthrough) without mapping or first-column extraction.
+        when(mockResultSet.all()).thenReturn(Arrays.asList(mockRow));
+
+        final List<Object> result = CassandraExecutor.toList(mockResultSet, Object.class);
+
+        assertEquals(1, result.size());
+        org.junit.jupiter.api.Assertions.assertSame(mockRow, result.get(0));
+    }
+
+    @Test
+    public void testToMap() {
+        // Setup mock data
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+        when(mockColumnDefinitions.get(0)).thenReturn(mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class));
+        when(mockColumnDefinitions.get(1)).thenReturn(mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class));
+        when(mockColumnDefinitions.get(0).getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(mockColumnDefinitions.get(1).getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name"));
+        when(mockRow.getObject(0)).thenReturn(1L);
+        when(mockRow.getObject(1)).thenReturn("test");
+
+        // Test default toMap
+        Map<String, Object> map1 = CassandraExecutor.toMap(mockRow);
+        assertNotNull(map1);
+        assertEquals(2, map1.size());
+
+        // Test toMap with supplier
+        Map<String, Object> map2 = CassandraExecutor.toMap(mockRow, HashMap::new);
+        assertNotNull(map2);
+        assertEquals(2, map2.size());
+    }
+
+    @Test
+    public void testToMapPropagatesColumnDecodingFailure() {
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("payload"));
+        final IllegalStateException failure = new IllegalStateException("column codec failed");
+        when(mockRow.getObject(0)).thenThrow(failure);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(mockRow)));
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> CassandraExecutor.toMap(mockRow, HashMap::new)));
+    }
+
+    @Test
+    public void testTypedArrayRowTargetConvertsColumnValuesToComponentType() {
+        // Typed array targets (documented alongside Object[]) used to store the raw driver value, so an int column
+        // read into String[]/Long[] threw ArrayStoreException (reproduced against a live Cassandra).
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+        when(mockResultSet.iterator()).thenAnswer(invocation -> List.of(mockRow).iterator());
+        when(mockRow.getObject(0)).thenReturn(1);
+        when(mockRow.getObject(1)).thenReturn(null);
+
+        final List<String[]> strings = CassandraExecutor.toList(mockResultSet, String[].class);
+        assertEquals(1, strings.size());
+        assertEquals(Arrays.asList("1", null), Arrays.asList(strings.get(0)));
+
+        final List<Object[]> objects = CassandraExecutor.toList(mockResultSet, Object[].class);
+        assertEquals(Arrays.asList(1, null), Arrays.asList(objects.get(0)));
+
+        // Single-row path (findFirst/gett) goes through readRow.
+        when(mockResultSet.iterator()).thenReturn(List.of(mockRow).iterator());
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        final Long[] longs = executor.fetchOnlyOne(Long[].class, mockResultSet);
+        assertEquals(Arrays.asList(1L, null), Arrays.asList(longs));
+    }
+
+    // Queries and results
+
+    @Test
+    public void testAsyncFindFirst() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        ContinuableFuture<Optional<TestEntity>> future = executor.async().findFirst(TestEntity.class, "SELECT * FROM test", new Object[0]);
+        assertNotNull(future);
+    }
+
+    @Test
+    public void testAsyncGet() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        ContinuableFuture<Optional<TestEntity>> future = executor.async().get(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
+        assertNotNull(future);
+    }
+
+    @Test
+    public void testAsyncGett() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        ContinuableFuture<TestEntity> future = executor.async().gett(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
+        assertNotNull(future);
+    }
+
+    @Test
+    public void testAsyncQueryForSingleNonNull() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        ContinuableFuture<Optional<String>> future = executor.async().queryForSingleNonNull(String.class, "SELECT name FROM test", new Object[0]);
+        assertNotNull(future);
+    }
+
+    @Test
+    public void testAsyncqueryForSingleValue() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        ContinuableFuture<Nullable<String>> future = executor.async().queryForSingleValue(String.class, "SELECT name FROM test", new Object[0]);
+        assertNotNull(future);
+    }
+
+    @Test
+    public void testAsyncStream() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        // Test asyncStream with query and parameters
+        ContinuableFuture<Stream<Object[]>> future1 = executor.async().stream("SELECT * FROM test", new Object[0]);
+        assertNotNull(future1);
+
+        // Test asyncStream with BiFunction rowMapper
+        ContinuableFuture<Stream<TestEntity>> future2 = executor.async().stream("SELECT * FROM test", (columnDefs, row) -> new TestEntity(), new Object[0]);
+        assertNotNull(future2);
+    }
+
+    @Test
+    public void testAsyncStreamWithStatement() {
+        // Setup mock data
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        ContinuableFuture<Stream<TestEntity>> future = executor.async().stream(mockBoundStatement, (columnDefs, row) -> new TestEntity());
+        assertNotNull(future);
+    }
+
+    @Test
+    public void testCoverageCS_sqlTimeTargetOnLaterRowsStreamFindFirstAndSingleNonNull() {
+        // N.convert(LocalTime, java.sql.Time) parses the text and rejects a fractional second or a whole minute. The single-value
+        // row mapper converts later rows (and a leading null) on a separate branch from the first row; stream, findFirst and
+        // queryForSingleNonNull are separate read paths as well.
+        final java.time.LocalTime fractional = java.time.LocalTime.of(1, 2, 3, 456_789_000);
+        final java.time.LocalTime wholeMinute = java.time.LocalTime.of(12, 30);
+        final java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss.SSS");
+        final List<String> expected = Arrays.asList(null, "01:02:03.456", "00:00:00.000", "12:30:00.000");
+        final ResultSet withLeadingNull = coverageCSTimeResultSet(null, fractional, java.time.LocalTime.MIDNIGHT, wholeMinute);
+        final ResultSet firstFractional = coverageCSTimeResultSet(fractional, wholeMinute);
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockSession.execute(any(Statement.class))).thenReturn(withLeadingNull, withLeadingNull, firstFractional, firstFractional, firstFractional);
+
+        assertEquals(expected,
+                CassandraExecutor.toList(withLeadingNull, java.sql.Time.class).stream().map(t -> t == null ? null : timeFormat.format(t)).toList());
+        assertEquals(expected, executor.list(java.sql.Time.class, "SELECT t FROM times").stream().map(t -> t == null ? null : timeFormat.format(t)).toList());
+        assertEquals(expected, executor.stream(java.sql.Time.class, "SELECT t FROM times").map(t -> t == null ? null : timeFormat.format(t)).toList());
+        assertEquals("01:02:03.456", timeFormat.format(executor.findFirst(java.sql.Time.class, "SELECT t FROM times").get()));
+        assertEquals("01:02:03.456", timeFormat.format(executor.queryForSingleNonNull(java.sql.Time.class, "SELECT t FROM times").get()));
+        assertEquals(Arrays.asList("01:02:03.456", "12:30:00.000"),
+                executor.list(java.sql.Time.class, "SELECT t FROM times").stream().map(timeFormat::format).toList());
+    }
+
+    @Test
+    public void testExecuteRejectsParametersForParameterlessQuery() {
+        final String query = "SELECT * FROM parameterless_query";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(0);
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.execute(query, 1L));
+        assertTrue(ex.getMessage().contains("expected 0 but got 1"), ex.getMessage());
+    }
+
+    @Test
+    public void testFindFirst() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+
+        Optional<TestEntity> result = executor.findFirst(TestEntity.class, "SELECT * FROM test WHERE id = ?", 1L);
+        assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testFindFirst_singleColumnNullValue_throwsNullPointerException() {
+        // Separate column-defs mock for the result-set side, so we don't have
+        // to set up bound-statement variable types.
+        ColumnDefinitions rowCols = mock(ColumnDefinitions.class);
+        when(rowCols.size()).thenReturn(1);
+
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getColumnDefinitions()).thenReturn(rowCols);
+        when(mockRow.getObject(0)).thenReturn(null);
+
+        assertThrows(NullPointerException.class, () -> executor.findFirst(String.class, "SELECT name FROM test WHERE id = ?", 1L));
+    }
+
+    @Test
+    public void testGett() throws DuplicateResultException {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+
+        // Test gett with selectPropNames and whereClause
+        TestEntity result = executor.gett(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L));
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testQueryForSingleNonNull() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getObject(0)).thenReturn("test");
+
+        Optional<String> result = executor.queryForSingleNonNull(String.class, "SELECT name FROM test WHERE id = ?", 1L);
+        assertTrue(result.isPresent());
+        assertEquals("test", result.get());
+    }
+
+    @Test
+    public void testQueryForSingleNonNull_nullValue_throwsNullPointerException() {
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getObject(0)).thenReturn(null);
+
+        assertThrows(NullPointerException.class, () -> executor.queryForSingleNonNull(String.class, "SELECT name FROM test WHERE id = ?", 1L));
+    }
+
+    @Test
+    public void testqueryForSingleValue() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        stubSingleBigintParameter();
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getObject(0)).thenReturn("test");
+
+        Nullable<String> result = executor.queryForSingleValue(String.class, "SELECT name FROM test WHERE id = ?", 1L);
+        assertTrue(result.isPresent());
+        assertEquals("test", result.get());
+    }
+
+    @Test
+    public void testSliceN_blobColumnReadIntoByteArrayTargetsKeepsBytes() {
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition dataCol = mock(ColumnDefinition.class);
+        when(cols.size()).thenReturn(1);
+        when(cols.get(0)).thenReturn(dataCol);
+        when(dataCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("data"));
+        when(mockRow.getColumnDefinitions()).thenReturn(cols);
+        when(mockRow.getObject(0)).thenAnswer(invocation -> ByteBuffer.wrap(new byte[] { 4, 5 }));
+        when(mockResultSet.getColumnDefinitions()).thenReturn(cols);
+        when(mockResultSet.iterator()).thenAnswer(invocation -> Arrays.asList(mockRow).iterator());
+
+        // toEntity: byte[] bean property
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, CassandraExecutor.toEntity(mockRow, SliceNBlobEntity.class).getData());
+
+        // readFirstColumn (queryForSingleValue family) and single-value row mapping (list/findFirst/stream)
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, executor.readFirstColumn(mockRow, byte[].class));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, CassandraExecutor.toList(mockResultSet, byte[].class).get(0));
+
+        // extractData with an entity whose matching property is byte[]
+        final Dataset ds = CassandraExecutor.extractData(mockResultSet, SliceNBlobEntity.class);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] { 4, 5 }, (byte[]) ds.getColumn("data").get(0));
+    }
+
+    @Test
+    public void testSliceN_emptyParameterContainerForParameterlessQueryBindsNothing() {
+        // An empty Map/Collection/array supplies zero parameters, which matches a query without bind markers; the
+        // container itself used to be counted as one value ("expected 0 but got 1", reproduced against a live Cassandra).
+        final String query = "SELECT * FROM parameterless_query";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(0);
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+
+        for (final Object emptyContainer : new Object[] { new HashMap<String, Object>(), List.of(), new Object[0] }) {
+            bound[0] = null;
+            assertSame(mockBoundStatement, executor.prepareStatement(query, emptyContainer));
+            assertEquals(0, bound[0].length);
+        }
+
+        // A non-empty container or a scalar is still rejected for a parameterless query.
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, List.of(1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query, 1L));
+    }
+
+    @Test
+    public void testStream() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
+
+        // Test stream with BiFunction rowMapper
+        Stream<TestEntity> stream = executor.stream("SELECT * FROM test", (columnDefs, row) -> new TestEntity(), new Object[0]);
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testStreamWithStatement() {
+        // Setup mock data
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
+
+        Stream<TestEntity> stream = executor.stream(mockBoundStatement, (columnDefs, row) -> new TestEntity());
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testUdtBlobFieldsAcceptByteArraysInBeansMapsAndLists() {
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("blob_type"),
+                false, List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("data")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.BLOB));
+        final CassandraExecutor.UDTCodec<SliceNBlobEntity> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNBlobEntity.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final CassandraExecutor.UDTCodec<List> listCodec = CassandraExecutor.UDTCodec.create(userType, List.class);
+
+        for (final byte[] bytes : new byte[][] { new byte[0], { 1, 2, 3 } }) {
+            final SliceNBlobEntity bean = new SliceNBlobEntity();
+            bean.setData(bytes);
+            org.junit.jupiter.api.Assertions.assertArrayEquals(bytes,
+                    beanCodec.decode(beanCodec.encode(bean, ProtocolVersion.V4), ProtocolVersion.V4).getData());
+            assertEquals(ByteBuffer.wrap(bytes), mapCodec.decode(mapCodec.encode(Map.of("data", bytes), ProtocolVersion.V4), ProtocolVersion.V4).get("data"));
+            assertEquals(ByteBuffer.wrap(bytes), listCodec.decode(listCodec.encode(List.of(bytes), ProtocolVersion.V4), ProtocolVersion.V4).get(0));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, beanCodec.parse(beanCodec.format(bean)).getData());
+        }
+
+        final ByteBuffer buffer = ByteBuffer.wrap(new byte[] { 9, 4, 5 });
+        buffer.position(1);
+        assertEquals(ByteBuffer.wrap(new byte[] { 4, 5 }),
+                mapCodec.decode(mapCodec.encode(Map.of("data", buffer), ProtocolVersion.V4), ProtocolVersion.V4).get("data"));
+        assertEquals(1, buffer.position());
+        assertNull(beanCodec.decode(beanCodec.encode(new SliceNBlobEntity(), ProtocolVersion.V4), ProtocolVersion.V4).getData());
+    }
+
+    @Test
+    public void testVerifyCS_valueTypeParametersWithGettersAreBoundAsValues() {
+        when(mockSession.getContext().getCodecRegistry())
+                .thenReturn(new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("verify-cs-value-params"));
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+
+        // A Calendar subclass (abacus handles every Calendar as a value) is converted to the timestamp column's Instant.
+        final Object[][] tsBound = verifyCSPrepare("SELECT * FROM ev WHERE ts = ?", "ts", com.datastax.oss.driver.api.core.type.DataTypes.TIMESTAMP);
+        final java.util.GregorianCalendar calendarSubclass = new java.util.GregorianCalendar() {
+        };
+        calendarSubclass.setTimeInMillis(1_600_000_000_000L);
+        codecExecutor.prepareStatement("SELECT * FROM ev WHERE ts = ?", calendarSubclass);
+        assertEquals(Arrays.asList(java.time.Instant.ofEpochMilli(1_600_000_000_000L)), Arrays.asList(tsBound[0]));
+
+        // A heap or direct ByteBuffer is one positional value, not a bean of named values: too few values for two markers
+        // (it was read as a bean and failed with "Missing required parameter: 'a'").
+        final String twoBlobs = "SELECT * FROM blobs WHERE a = ? AND b = ?";
+        verifyCSPrepare(twoBlobs, "a", com.datastax.oss.driver.api.core.type.DataTypes.BLOB, "b", com.datastax.oss.driver.api.core.type.DataTypes.BLOB);
+
+        for (final ByteBuffer buffer : List.of(ByteBuffer.wrap(new byte[] { 1 }), ByteBuffer.allocateDirect(1))) {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> codecExecutor.prepareStatement(twoBlobs, buffer));
+            assertTrue(e.getMessage().startsWith("Not enough parameters for parameterized query: expected 2 but got 1"), e.getMessage());
+        }
+
+        // Beans and records still supply named values.
+        final String byKey = "SELECT * FROM t WHERE id = ? AND name = ?";
+        final Object[][] keyBound = verifyCSPrepare(byKey, "id", com.datastax.oss.driver.api.core.type.DataTypes.BIGINT, "name",
+                com.datastax.oss.driver.api.core.type.DataTypes.TEXT);
+        final TestEntity entity = new TestEntity();
+        entity.setId(7L);
+        entity.setName("n");
+        codecExecutor.prepareStatement(byKey, entity);
+        assertEquals(Arrays.asList(7L, "n"), Arrays.asList(keyBound[0]));
+        codecExecutor.prepareStatement(byKey, new VerifyCSKey(8L, "r"));
+        assertEquals(Arrays.asList(8L, "r"), Arrays.asList(keyBound[0]));
+    }
+
+    // Resource lifecycle
+
+    @Test
+    public void testClose() {
+        when(mockSession.isClosed()).thenReturn(false);
+        executor.close();
+        verify(mockSession, times(1)).close();
+    }
+
+    // Additional contracts
+
+    @Test
+    public void testNullFunctionalInterfaceArguments() {
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap(mock(Row.class), null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream("SELECT * FROM test", (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement<?>) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+    }
+
+    /** A null required argument of the v4 executor's public API is rejected with IllegalArgumentException, not NullPointerException. */
+    @Test
+    public void testNullRequiredArgumentsThrowIAE() {
+        assertThrows(IllegalArgumentException.class, () -> new CassandraExecutor(null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.registerTypeCodec(null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.registerTypeCodec((MutableCodecRegistry) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.registerTypeCodec(mockCodecRegistry, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.extractData((ResultSet) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.extractData((ResultSet) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList((ResultSet) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity((Row) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.execute((Statement<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett(null, "id-1"));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, Filters.eq("id", 1)));
+        assertThrows(IllegalArgumentException.class,
+                () -> CassandraExecutor.UDTCodec.create((com.datastax.oss.driver.api.core.type.UserDefinedType) null, (Class<Object>) null));
+        assertThrows(IllegalArgumentException.class,
+                () -> CassandraExecutor.UDTCodec.create((com.datastax.oss.driver.api.core.session.Session) null, "ks", "udt", Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(mockSession, null, "udt", Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(mockSession, "ks", null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.UDTCodec.create(mockSession, "ks", "udt", null));
+
+        // A null user type is still accepted at construction (the driver's udtOf codec does not validate it).
+        assertNotNull(CassandraExecutor.UDTCodec.create((com.datastax.oss.driver.api.core.type.UserDefinedType) null, Map.class));
+    }
+
+    @Test
+    public void testAsyncExecute() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(mockDataType);
+        when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
+        // lenient: a named Map keyed by the marker name now goes straight to named binding without a codec lookup
+        org.mockito.Mockito.lenient().when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
+        when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
+
+        // Test asyncExecute with query only
+        ContinuableFuture<ResultSet> future1 = executor.async().execute("SELECT * FROM test");
+        assertNotNull(future1);
+
+        // Test asyncExecute with parameters
+        ContinuableFuture<ResultSet> future2 = executor.async().execute("SELECT * FROM test WHERE id = ?", 1L);
+        assertNotNull(future2);
+
+        // Test asyncExecute with Map parameters
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", 1L);
+        ContinuableFuture<ResultSet> future3 = executor.async().execute("SELECT * FROM test WHERE id = :id", params);
+        assertNotNull(future3);
+
+        // Test asyncExecute with Statement
+        ContinuableFuture<ResultSet> future4 = executor.async().execute(mockBoundStatement);
+        assertNotNull(future4);
+    }
+
+    @Test
+    public void testAsyncExecuteWithSingleEntryMapStillUsesNamedBinding() {
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+
+        final Map<String, Object> params = new HashMap<>();
+        params.put("firstName", "John");
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> executor.async().execute("SELECT * FROM test WHERE first_name = :firstName AND last_name = :lastName", params));
+
+        assertTrue(ex.getMessage().contains("Missing required parameter"));
+    }
+
+    @Test
+    public void testEntityParameterBindingResolvesColumnAnnotatedProperty() {
+        // A bean bound as the parameter source resolves a driver variable named by @Column ("cnt") through the
+        // column-to-property mapping, as toEntity/extractData already do, instead of failing as a missing parameter.
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("column-annotation-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "INSERT INTO renamed_columns (id, cnt) VALUES (?, ?)";
+        final ColumnDefinition idDef = mock(ColumnDefinition.class);
+        final ColumnDefinition cntDef = mock(ColumnDefinition.class);
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+        when(mockColumnDefinitions.get(0)).thenReturn(idDef);
+        when(mockColumnDefinitions.get(1)).thenReturn(cntDef);
+        when(idDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.BIGINT);
+        when(idDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(cntDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.INT);
+        when(cntDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("cnt"));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final RenamedColumnEntity entity = new RenamedColumnEntity();
+        entity.setId(7L);
+        entity.setOrderCount(3);
+
+        codecExecutor.prepareStatement(query, entity);
+
+        assertEquals(2, bound[0].length);
+        assertEquals(7L, bound[0][0]);
+        assertEquals(3, bound[0][1]);
+
+        // A variable that matches neither a property nor a @Column name is still reported as missing.
+        when(cntDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("no_such_column"));
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> codecExecutor.prepareStatement(query, entity));
+        assertTrue(ex.getMessage().contains("no_such_column"), ex.getMessage());
+    }
+
+    @Test
+    public void testExecute() {
+        // Setup mock data
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(mockDataType);
+        when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
+        // lenient: a named Map keyed by the marker name now goes straight to named binding without a codec lookup
+        org.mockito.Mockito.lenient().when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+
+        // Test execute with query only
+        ResultSet result1 = executor.execute("SELECT * FROM test");
+        assertNotNull(result1);
+
+        // Test execute with parameters
+        ResultSet result2 = executor.execute("SELECT * FROM test WHERE id = ?", 1L);
+        assertNotNull(result2);
+
+        // Test execute with Map parameters
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", 1L);
+        ResultSet result3 = executor.execute("SELECT * FROM test WHERE id = :id", params);
+        assertNotNull(result3);
+
+        // Test execute with Statement
+        ResultSet result4 = executor.execute(mockBoundStatement);
+        assertNotNull(result4);
+    }
+
+    @Test
+    public void testExecuteRejectsTooManyPositionalParameters() {
+        final String query = "SELECT * FROM one_parameter_query WHERE id = ?";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.execute(query, 1L, 2L));
+        assertTrue(ex.getMessage().contains("Too many parameters"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("expected 1 but got 2"), ex.getMessage());
+    }
+
+    @Test
+    public void testExecuteWithSingleEntryMapStillUsesNamedBinding() {
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(2);
+
+        final Map<String, Object> params = new HashMap<>();
+        params.put("firstName", "John");
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> executor.execute("SELECT * FROM test WHERE first_name = :firstName AND last_name = :lastName", params));
+
+        assertTrue(ex.getMessage().contains("Missing required parameter"));
+    }
+
+    @Test
+    public void invalidLaterBatchRowIsRejectedBeforePreparingAnyStatement() {
+        final List<Map<String, Object>> props = List.of(Map.of("id", 1L), Map.of());
+
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareBatchInsertStatement(TestEntity.class, props, BatchType.LOGGED));
+
+        verify(mockSession, never()).prepare(anyString());
+    }
+
+    @Test
+    public void testNamedMapParameterForSingleMapColumnMarkerBindsTheNamedValue() {
+        // execute(String, Map) documents the Map as NAME -> VALUE. For a query with one named marker whose column is itself a
+        // map type, the Map used to be bound as the column value (a Map is assignable to the map column's Java type), which
+        // the driver then failed to encode (ClassCastException against a live Cassandra).
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("named-map-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String namedQuery = "UPDATE t SET m = :m WHERE id = 1";
+        final String positionalQuery = "UPDATE t SET m = ? WHERE id = 1";
+        when(mockSession.prepare(positionalQuery)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.mapOf(com.datastax.oss.driver.api.core.type.DataTypes.TEXT,
+                com.datastax.oss.driver.api.core.type.DataTypes.INT));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final Map<String, Integer> columnValue = Map.of("a", 1);
+
+        codecExecutor.prepareStatement(namedQuery, Map.of("m", columnValue));
+        assertEquals(1, bound[0].length);
+        assertEquals(columnValue, bound[0][0]);
+
+        // A Map that is not keyed by the marker name, or a Map for a positional marker, is still bound as the column value.
+        codecExecutor.prepareStatement(namedQuery, columnValue);
+        assertSame(columnValue, bound[0][0]);
+        final Map<String, Integer> positionalValue = Map.of("m", 5);
+        codecExecutor.prepareStatement(positionalQuery, positionalValue);
+        assertSame(positionalValue, bound[0][0]);
+    }
+
+    @Test
+    public void testPrepareStatementCachesResolvedCqlButReturnsFreshBoundStatements() {
+        final String firstCql = "SELECT * FROM mapper_cache_first";
+        final String secondCql = "SELECT * FROM mapper_cache_second";
+        final CqlMapper mapper = new CqlMapper();
+        mapper.add("lookup", firstCql);
+
+        final PreparedStatement firstPrepared = mock(PreparedStatement.class);
+        final PreparedStatement secondPrepared = mock(PreparedStatement.class);
+        final BoundStatement firstBound = mock(BoundStatement.class);
+        final BoundStatement nextFirstBound = mock(BoundStatement.class);
+        final BoundStatement secondBound = mock(BoundStatement.class);
+        when(mockSession.prepare(firstCql)).thenReturn(firstPrepared);
+        when(mockSession.prepare(secondCql)).thenReturn(secondPrepared);
+        when(firstPrepared.bind(any(Object[].class))).thenReturn(firstBound, nextFirstBound);
+        when(secondPrepared.bind(any(Object[].class))).thenReturn(secondBound);
+
+        final CassandraExecutor mappedExecutor = new CassandraExecutor(mockSession, null, mapper);
+        assertSame(firstBound, mappedExecutor.prepareStatement("lookup"));
+        assertSame(nextFirstBound, mappedExecutor.prepareStatement("lookup"));
+        assertNotSame(firstBound, nextFirstBound);
+        verify(mockSession, times(1)).prepare(firstCql);
+
+        mapper.remove("lookup");
+        mapper.add("lookup", secondCql);
+
+        assertSame(secondBound, mappedExecutor.prepareStatement("lookup"));
+        verify(mockSession, times(1)).prepare(secondCql);
+    }
+
+    @Test
+    public void testPrepareStatementWithoutRequiredParametersThrows() {
+        final String query = "SELECT * FROM users WHERE id = ?";
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query));
+        assertTrue(ex.getMessage().contains("expected 1"), ex.getMessage());
+    }
+
+    @Test
+    public void testReadOnlyCodecRegistryIsAcceptedUntilRegistrationIsRequested() {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        final CodecRegistry readOnlyRegistry = mock(CodecRegistry.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(readOnlyRegistry);
+
+        final CassandraExecutor readOnlyExecutor = new CassandraExecutor(session);
+        assertThrows(IllegalStateException.class, () -> readOnlyExecutor.registerTypeCodec(TestEntity.class));
+    }
+
+    @Test
+    public void testSession() {
+        assertEquals(mockSession, executor.session());
+    }
+
+    // abacus-common 8.x N.convert maps ByteBuffer -> byte[] to null and byte[] -> ByteBuffer to a buffer whose
+    // position == limit, and PropInfo.setPropValue(ByteBuffer into a byte[] property) stores null. Every BLOB
+    // read into a byte[] target therefore came back null, and a byte[] bound to a BLOB marker was sent as an
+    // empty blob.
+
+    @Test
+    public void testSliceN_bindByteArrayToBlobMarkerKeepsAllBytes() {
+        final String query = "SELECT * FROM slice_n_blobs WHERE data = ?";
+        final Object[][] bound = new Object[1][];
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(mockDataType);
+        when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BLOB);
+        when(mockCodecRegistry.codecFor(mockDataType)).thenReturn(mockTypeCodec);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+
+        executor.prepareStatement(query, new byte[] { 1, 2, 3 });
+
+        assertEquals(1, bound[0].length);
+        assertEquals(ByteBuffer.wrap(new byte[] { 1, 2, 3 }), bound[0][0]);
+        assertEquals(3, ((ByteBuffer) bound[0][0]).remaining());
+    }
+
+    @Test
+    public void testSliceN_readOnlyPropertyInheritedFromEntitySuperclassIsSkippedOnRead() {
+        // abacus-common 8.1.0 lists a getter-only property inherited from an @Entity superclass, so the generated
+        // INSERT/SELECT include its column; reading it back used to fail the whole row with UnsupportedOperationException
+        // (reproduced against a live Cassandra through list/findFirst/gett/stream).
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition nameCol = mock(ColumnDefinition.class);
+        final ColumnDefinition displayCol = mock(ColumnDefinition.class);
+        when(cols.size()).thenReturn(2);
+        when(cols.get(0)).thenReturn(nameCol);
+        when(cols.get(1)).thenReturn(displayCol);
+        when(nameCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name"));
+        when(displayCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("display"));
+        when(mockRow.getColumnDefinitions()).thenReturn(cols);
+        when(mockRow.getObject(0)).thenReturn("n1");
+        when(mockRow.getObject(1)).thenReturn("stored");
+
+        final SliceNReadOnlyChild entity = CassandraExecutor.toEntity(mockRow, SliceNReadOnlyChild.class);
+        assertEquals("n1", entity.getName());
+        assertEquals("computed", entity.getDisplay());
+
+        // Same for a UDT decoded into such a bean.
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ro_type"),
+                false,
+                List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name"),
+                        com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("display")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.TEXT, com.datastax.oss.driver.api.core.type.DataTypes.TEXT));
+        final CassandraExecutor.UDTCodec<SliceNReadOnlyChild> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNReadOnlyChild.class);
+        final SliceNReadOnlyChild source = new SliceNReadOnlyChild();
+        source.setName("n2");
+
+        final SliceNReadOnlyChild decoded = beanCodec.decode(beanCodec.encode(source, ProtocolVersion.V4), ProtocolVersion.V4);
+        assertEquals("n2", decoded.getName());
+    }
+
+    @Test
+    public void testSliceN_singleBeanLikeValueTypeParameterIsBoundPositionally() {
+        // Beans.isBeanClass is true for value types such as GregorianCalendar (Calendar.getInstance()) and ByteBuffer, so a
+        // single such value was read as a named-parameter bean ("Missing required parameter: 'ts'"), although the same value
+        // among two or more positional parameters is converted to the column's Java type and bound.
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("bean-like-value-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String query = "SELECT * FROM ev WHERE ts = ?";
+        when(mockSession.prepare(query)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        org.mockito.Mockito.lenient().when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ts"));
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.TIMESTAMP);
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.setTimeInMillis(1_600_000_000_000L);
+
+        assertSame(mockBoundStatement, codecExecutor.prepareStatement(query, calendar));
+
+        assertEquals(1, bound[0].length);
+        assertEquals(java.time.Instant.ofEpochMilli(1_600_000_000_000L), bound[0][0]);
+    }
+
+    @Test
+    public void testSliceN_sortedMapWithNonStringKeysForSingleNamedMarkerIsBoundAsValue() {
+        // The named-container check probed the Map with the marker's String name; a TreeMap<Integer, String> (the value
+        // of a map<int, text> column) threw ClassCastException from containsKey instead of being bound as the value.
+        final MutableCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry("sorted-map-test");
+        when(mockSession.getContext().getCodecRegistry()).thenReturn(registry);
+        final CassandraExecutor codecExecutor = new CassandraExecutor(mockSession);
+        final String namedQuery = "UPDATE t SET m = :m WHERE id = 1";
+        final String positionalQuery = "UPDATE t SET m = ? WHERE id = 1";
+        when(mockSession.prepare(positionalQuery)).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.mapOf(com.datastax.oss.driver.api.core.type.DataTypes.INT,
+                com.datastax.oss.driver.api.core.type.DataTypes.TEXT));
+        final Object[][] bound = new Object[1][];
+        when(mockPreparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+        final java.util.TreeMap<Integer, String> columnValue = new java.util.TreeMap<>(Map.of(1, "a"));
+
+        codecExecutor.prepareStatement(namedQuery, columnValue);
+
+        assertEquals(1, bound[0].length);
+        assertSame(columnValue, bound[0][0]);
+    }
+
+    @Test
+    public void testSliceN_timeColumnWithFractionalSecondReadsIntoSqlTime() {
+        // A CQL time value has nanosecond precision and the driver decodes it as a LocalTime. The abacus conversion to
+        // java.sql.Time goes through the text "01:02:03.456" and rejects the fractional second, so reading such a value into
+        // a java.sql.Time property/target failed the whole row (so did a time on a whole minute, "01:02"; other whole seconds
+        // converted fine).
+        final java.time.LocalTime localTime = java.time.LocalTime.of(1, 2, 3, 456_789_000);
+        final long expectedMillis = java.sql.Time.valueOf(java.time.LocalTime.of(1, 2, 3)).getTime() + 456;
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition timeCol = mock(ColumnDefinition.class);
+        when(cols.size()).thenReturn(1);
+        when(cols.get(0)).thenReturn(timeCol);
+        when(timeCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t"));
+        when(mockRow.getColumnDefinitions()).thenReturn(cols);
+        when(mockRow.getObject(0)).thenReturn(localTime);
+
+        assertEquals(expectedMillis, CassandraExecutor.toEntity(mockRow, SliceNTimeBean.class).getT().getTime());
+
+        // Single-value targets (findFirst/gett/list/queryForSingleValue) convert through the same helper.
+        when(mockResultSet.getColumnDefinitions()).thenReturn(cols);
+        when(mockResultSet.iterator()).thenAnswer(invocation -> List.of(mockRow).iterator());
+        assertEquals(expectedMillis, CassandraExecutor.toList(mockResultSet, java.sql.Time.class).get(0).getTime());
+
+        // A UDT time field decoded into a java.sql.Time bean property.
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("time_type"),
+                false, List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t")),
+                List.of(com.datastax.oss.driver.api.core.type.DataTypes.TIME));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final CassandraExecutor.UDTCodec<SliceNTimeBean> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNTimeBean.class);
+        final ByteBuffer bytes = mapCodec.encode(Map.of("t", localTime), ProtocolVersion.V4);
+
+        assertEquals(expectedMillis, beanCodec.decode(bytes, ProtocolVersion.V4).getT().getTime());
+    }
+
+    @Test
+    public void testSliceN_udtCodecUnsupportedJavaTypeMessageNamesTheClass() {
+        // The message concatenated the Class object, rendering "Invalid Java class type: class java.lang.String".
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"), com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("msg_type"),
+                false, List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("v")), List.of(com.datastax.oss.driver.api.core.type.DataTypes.INT));
+        final CassandraExecutor.UDTCodec<String> stringCodec = CassandraExecutor.UDTCodec.create(userType, String.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final ByteBuffer bytes = mapCodec.encode(Map.of("v", 1), ProtocolVersion.V4);
+
+        final IllegalArgumentException encodeError = assertThrows(IllegalArgumentException.class, () -> stringCodec.encode("x", ProtocolVersion.V4));
+        final IllegalArgumentException decodeError = assertThrows(IllegalArgumentException.class, () -> stringCodec.decode(bytes, ProtocolVersion.V4));
+
+        for (final IllegalArgumentException e : List.of(encodeError, decodeError)) {
+            assertTrue(e.getMessage().startsWith("Invalid Java class type: java.lang.String."), e.getMessage());
         }
     }
 
     @Test
-    public void test_coverageCS_timeColumnReadsIntoSqlTimeOnEveryPath() throws Exception {
-        final String table = "simplex.coverage_cs_reads4";
-        coverageCSSchemaChange("CREATE TYPE IF NOT EXISTS simplex.coverage_cs_time_udt4 (t time)");
-        coverageCSSchemaChange("CREATE TABLE IF NOT EXISTS " + table + " (id int PRIMARY KEY, t time, u frozen<coverage_cs_time_udt4>)");
+    public void testStringCodecHonorsCqlLiteralAndNullContracts() {
+        final CassandraExecutor.StringCodec<TestEntity> codec = new CassandraExecutor.StringCodec<>(TestEntity.class);
+        final TestEntity entity = new TestEntity();
+        entity.setId(11L);
+        entity.setName("O'Brien");
 
-        try {
-            final String readT = "SELECT t FROM " + table + " WHERE id = ?";
-            final java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss.SSS");
+        final String literal = codec.format(entity);
+        assertTrue(literal.startsWith("'") && literal.endsWith("'"), literal);
+        assertEquals(entity.getName(), codec.parse(literal).getName());
 
-            // Reads into java.sql.Time: a time with a fractional second (id 1) and one on a whole minute (id 4) both failed the
-            // N.convert text parse; every read path converts them (to the millisecond).
-            cassandraExecutor.execute("INSERT INTO " + table + " (id, t, u) VALUES (1, '10:15:30.123456789', {t: '10:15:30.123456789'})");
-            cassandraExecutor.execute("INSERT INTO " + table + " (id, t) VALUES (4, '12:30:00')");
-            codecRegistry.register(UDTCodec.create(session, "simplex", "coverage_cs_time_udt4", CoverageCSTimeUdt.class));
+        final ByteBuffer encodedNull = codec.encode(null, ProtocolVersion.DEFAULT);
+        assertNull(encodedNull);
+        assertNull(codec.decode(null, ProtocolVersion.DEFAULT));
+    }
 
-            for (final Object[] idAndText : new Object[][] { { 1, "10:15:30.123" }, { 4, "12:30:00.000" } }) {
-                final int id = (Integer) idAndText[0];
-                final String expected = (String) idAndText[1];
-                final String readRow = "SELECT id, t FROM " + table + " WHERE id = ?";
+    @Test
+    public void testUDTCodec() {
+        // Test UDTCodec creation
+        com.datastax.oss.driver.api.core.type.UserDefinedType mockUDT = mock(com.datastax.oss.driver.api.core.type.UserDefinedType.class);
 
-                assertEquals(expected, timeFormat.format(cassandraExecutor.queryForSingleValue(java.sql.Time.class, readT, id).get()));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.queryForSingleNonNull(java.sql.Time.class, readT, id).get()));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.findFirst(java.sql.Time.class, readT, id).get()));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.list(java.sql.Time.class, readT, id).get(0)));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.list(java.sql.Time[].class, readT, id).get(0)[0]));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.stream(java.sql.Time.class, readT, id).first().get()));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.findFirst(CoverageCSTimeRow.class, readRow, id).get().getT()));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.query(CoverageCSTimeRow.class, readRow, id).<java.sql.Time> getColumn("t").get(0)));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.async().queryForSingleValue(java.sql.Time.class, readT, id).get().get()));
-                assertEquals(expected, timeFormat.format(cassandraExecutor.async().list(java.sql.Time.class, readT, id).get().get(0)));
-            }
+        CassandraExecutor.UDTCodec<TestEntity> codec = CassandraExecutor.UDTCodec.create(mockUDT, TestEntity.class);
+        assertNotNull(codec);
 
-            // Several rows: every row is converted, not only the first.
-            assertEquals(N.asSet("10:15:30.123", "12:30:00.000"), N.newHashSet(
-                    cassandraExecutor.list(java.sql.Time.class, "SELECT t FROM " + table + " WHERE id IN (1, 4)").stream().map(timeFormat::format).toList()));
+        // Test with Collection
+        CassandraExecutor.UDTCodec<List> listCodec = CassandraExecutor.UDTCodec.create(mockUDT, List.class);
+        assertNotNull(listCodec);
 
-            // A UDT time field decoded into a java.sql.Time bean property (through the registered UDT codec).
-            assertEquals("10:15:30.123", timeFormat.format(
-                    cassandraExecutor.findFirst(CoverageCSTimeRow.class, "SELECT id, t, u FROM " + table + " WHERE id = ?", 1).get().getU().getT()));
-        } finally {
-            coverageCSSchemaChange("DROP TABLE IF EXISTS " + table);
-            coverageCSSchemaChange("DROP TYPE IF EXISTS simplex.coverage_cs_time_udt4");
+        // Test with Map
+        CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(mockUDT, Map.class);
+        assertNotNull(mapCodec);
+    }
+
+    @Test
+    public void testVerifyCS_timeColumnReadsIntoSqlTimeOnEveryReadPath() {
+        // N.convert(LocalTime, java.sql.Time) parses the LocalTime's text, so it failed for a fractional second AND for a
+        // time on a whole minute ("00:00", "12:00"); every read path into a java.sql.Time target must convert it.
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition timeCol = mock(ColumnDefinition.class);
+        org.mockito.Mockito.lenient().when(cols.size()).thenReturn(1);
+        org.mockito.Mockito.lenient().when(cols.get(0)).thenReturn(timeCol);
+        org.mockito.Mockito.lenient().when(timeCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t"));
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("ks"),
+                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("verify_cs_time"), false,
+                List.of(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t")), List.of(com.datastax.oss.driver.api.core.type.DataTypes.TIME));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final CassandraExecutor.UDTCodec<SliceNTimeBean> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceNTimeBean.class);
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+
+        for (final java.time.LocalTime localTime : List.of(java.time.LocalTime.of(1, 2, 3, 456_789_000), java.time.LocalTime.MIDNIGHT, java.time.LocalTime.NOON,
+                java.time.LocalTime.MAX, java.time.LocalTime.of(1, 2, 3))) {
+            final long expected = java.sql.Time.valueOf(localTime.withNano(0)).getTime() + localTime.getNano() / 1_000_000;
+            final Row row = mock(Row.class);
+            org.mockito.Mockito.lenient().when(row.getColumnDefinitions()).thenReturn(cols);
+            org.mockito.Mockito.lenient().when(row.getObject(0)).thenReturn(localTime);
+            final ResultSet resultSet = mock(ResultSet.class);
+            org.mockito.Mockito.lenient().when(resultSet.getColumnDefinitions()).thenReturn(cols);
+            org.mockito.Mockito.lenient().when(resultSet.one()).thenReturn(row);
+            org.mockito.Mockito.lenient().when(resultSet.iterator()).thenAnswer(invocation -> List.of(row).iterator());
+            when(mockSession.execute(any(Statement.class))).thenReturn(resultSet);
+
+            assertEquals(expected, CassandraExecutor.toEntity(row, SliceNTimeBean.class).getT().getTime(), localTime::toString); // bean property
+            assertEquals(expected, CassandraExecutor.toList(resultSet, java.sql.Time.class).get(0).getTime(), localTime::toString); // row mapper
+            assertEquals(expected, CassandraExecutor.toList(resultSet, java.sql.Time[].class).get(0)[0].getTime(), localTime::toString); // typed array
+            assertEquals(expected, executor.fetchOnlyOne(java.sql.Time.class, resultSet).getTime(), localTime::toString); // readRow
+            assertEquals(expected, executor.fetchOnlyOne(java.sql.Time[].class, resultSet)[0].getTime(), localTime::toString);
+            assertEquals(expected, ((java.sql.Time) CassandraExecutor.extractData(resultSet, SliceNTimeBean.class).getColumn("t").get(0)).getTime(),
+                    localTime::toString);
+            assertEquals(expected, executor.readFirstColumn(row, java.sql.Time.class).getTime(), localTime::toString); // async single value
+            assertEquals(expected, executor.queryForSingleValue(java.sql.Time.class, "SELECT t FROM times").get().getTime(), localTime::toString);
+            assertEquals(expected, beanCodec.decode(mapCodec.encode(Map.of("t", localTime), ProtocolVersion.V4), ProtocolVersion.V4).getT().getTime(),
+                    localTime::toString); // UDT field
+
+            // A LocalTime target keeps the driver value.
+            assertSame(localTime, CassandraExecutor.toList(resultSet, java.time.LocalTime.class).get(0));
         }
     }
 
-    // ---- 2026-10-04 coverageCS end ----
+    private void stubSingleBigintParameter() {
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(mockDataType);
+        when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
+    }
 
-    // ---- 2026-10-04 coverageCQ ----
+    public static class SliceNBlobEntity {
+        private byte[] data;
 
-    /** Entity of the coverageCQ live check: its primary key (user_id, tenant_id) is declared only via registerKeys. */
-    @com.landawn.abacus.annotation.Table("simplex.coverage_cq_probe")
-    public static class CoverageCqProbe {
-        private String userId;
-        private String tenantId;
+        public byte[] getData() {
+            return data;
+        }
+
+        public void setData(byte[] data) {
+            this.data = data;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class SliceNReadOnlyBase {
+        public String getDisplay() {
+            return "computed";
+        }
+    }
+
+    public static class SliceNReadOnlyChild extends SliceNReadOnlyBase {
         private String name;
-        private Map<String, Integer> scores;
-
-        public String getUserId() {
-            return userId;
-        }
-
-        public void setUserId(final String userId) {
-            this.userId = userId;
-        }
-
-        public String getTenantId() {
-            return tenantId;
-        }
-
-        public void setTenantId(final String tenantId) {
-            this.tenantId = tenantId;
-        }
 
         public String getName() {
             return name;
@@ -1724,145 +1366,134 @@ public class CassandraExecutorTest extends TestBase {
         public void setName(final String name) {
             this.name = name;
         }
-
-        public Map<String, Integer> getScores() {
-            return scores;
-        }
-
-        public void setScores(final Map<String, Integer> scores) {
-            this.scores = scores;
-        }
     }
 
-    /** Schema changes can take longer than the driver's default 2s request timeout. */
-    private static void coverageCQSchemaChange(final String cql) {
-        cassandraExecutor.execute(com.datastax.oss.driver.api.core.cql.SimpleStatement.newInstance(cql).setTimeout(Duration.ofSeconds(60)));
-    }
+    public static class SliceNTimeBean {
+        private java.sql.Time t;
 
-    /**
-     * The CQL rendered by the fixed CqlBuilder paths (registered keys left out of SET / set(bean) / the column DELETE;
-     * update(Class).usingTTL(..).set(..)) and by ParsedCql's glued-marker rewrite is prepared, bound and applied by a real
-     * Cassandra. Each check uses its own partition, so the HEAD run reports every statement Cassandra rejected there (key
-     * columns in SET or in the DELETE column list, the implicit SET list duplicated after USING, a raw "#{street}" in the CQL).
-     */
-    @Test
-    public void test_coverageCQ_fixedRenderingsPrepareAndApplyOnCassandra() {
-        // A fresh table (and UDT) name per run: this Cassandra serves stale prepared statements for a table that was dropped
-        // and re-created under the same name ("table ... does not exist"). The CQL rendered for the entity's @Table name is
-        // redirected to it with onTable.
-        final String suffix = Long.toString(System.currentTimeMillis(), 36);
-        final String table = "simplex.coverage_cq_probe_" + suffix;
-        final String udt = "simplex.coverage_cq_addr_" + suffix;
-        final java.util.function.UnaryOperator<String> onTable = cql -> cql.replace("simplex.coverage_cq_probe ", table + " ");
-        coverageCQSchemaChange("CREATE TYPE " + udt + " (street text, city text, zip int)");
-        coverageCQSchemaChange("CREATE TABLE " + table + " (user_id text, tenant_id text, name text, scores map<text, int>, addr frozen<"
-                + udt.substring("simplex.".length()) + ">, PRIMARY KEY (user_id, tenant_id))");
-        CassandraExecutorBase.registerKeys(CoverageCqProbe.class, N.asList("userId", "tenantId"));
+        public java.sql.Time getT() {
+            return t;
+        }
 
-        try {
-            final String select = "SELECT name, scores, TTL(name) AS name_ttl, addr.city AS city, addr.zip AS zip FROM " + table
-                    + " WHERE user_id = ? AND tenant_id = ?";
-            final java.util.function.Function<String, CoverageCqProbe> insert = userId -> {
-                final CoverageCqProbe probe = new CoverageCqProbe();
-                probe.setUserId(userId);
-                probe.setTenantId("t");
-                probe.setName("n0");
-                probe.setScores(N.asMap("a", 1));
-                cassandraExecutor.execute(onTable.apply(NSC.insertInto(CoverageCqProbe.class).build().query()), probe);
-                return probe;
-            };
-            final java.util.function.Function<String, com.landawn.abacus.query.condition.Condition> key = userId -> Filters.and(Filters.eq("userId", userId),
-                    Filters.eq("tenantId", "t"));
-
-            org.junit.jupiter.api.Assertions.assertAll(() -> {
-                // update(Class): the implicit SET list leaves out the registered keys.
-                final CoverageCqProbe probe = insert.apply("u1");
-                probe.setName("n1");
-                probe.setScores(N.asMap("b", 2));
-                cassandraExecutor.execute(onTable.apply(NSC.update(CoverageCqProbe.class).where(key.apply("u1")).build().query()), probe);
-                final Row row = cassandraExecutor.execute(select, "u1", "t").one();
-                assertEquals("n1", row.getString("name"));
-                assertEquals(N.asMap("b", 2), row.getMap("scores", String.class, Integer.class));
-            }, () -> {
-                // update(table).set(bean): the bean's key properties are not SET either.
-                final CoverageCqProbe probe = insert.apply("u2");
-                probe.setName("n2");
-                cassandraExecutor.execute(NSC.update(table).set(probe).where(key.apply("u2")).build().query(), probe);
-                assertEquals("n2", cassandraExecutor.execute(select, "u2", "t").one().getString("name"));
-            }, () -> {
-                // USING before set(...): only the explicit column is SET (the implicit list is replaced), with the TTL applied.
-                final CoverageCqProbe probe = insert.apply("u3");
-                probe.setName("n3");
-                probe.setScores(N.asMap("c", 3));
-                cassandraExecutor.execute(onTable.apply(
-                        NSC.update(CoverageCqProbe.class, N.asSet("userId", "tenantId")).usingTTL(3600).set("name").where(key.apply("u3")).build().query()),
-                        probe);
-                final Row row = cassandraExecutor.execute(select, "u3", "t").one();
-                assertEquals("n3", row.getString("name"));
-                assertEquals(N.asMap("a", 1), row.getMap("scores", String.class, Integer.class));
-                final int ttl = row.getInt("name_ttl");
-                assertTrue(ttl > 0 && ttl <= 3600, String.valueOf(ttl));
-            }, () -> {
-                // delete(Class).from(Class): only the non-key columns are deleted; the row itself remains.
-                insert.apply("u4");
-                final Map<String, Object> keyValues = new java.util.HashMap<>();
-                keyValues.put("userId", "u4");
-                keyValues.put("tenantId", "t");
-                cassandraExecutor.execute(onTable.apply(NSC.delete(CoverageCqProbe.class).from(CoverageCqProbe.class).where(key.apply("u4")).build().query()),
-                        keyValues);
-                final Row row = cassandraExecutor.execute(select, "u4", "t").one();
-                assertNotNull(row);
-                assertNull(row.getString("name"));
-                assertTrue(row.getMap("scores", String.class, Integer.class).isEmpty());
-            }, () -> {
-                // ParsedCql: MyBatis markers glued to the fields of a UDT literal (also with metadata / whitespace inside the
-                // marker). The map-literal shapes are covered offline only: this Cassandra (5.0) rejects any bind marker inside
-                // a set/list/map literal ("bind variables are not supported inside collection literals").
-                insert.apply("u5");
-                final Map<String, Object> params = new java.util.HashMap<>();
-                params.put("street", "s");
-                params.put("city", "c");
-                params.put("zip", 12345);
-                params.put("userId", "u5");
-                params.put("tenantId", "t");
-                cassandraExecutor.execute("UPDATE " + table + " SET addr = {street:#{street,jdbcType=VARCHAR},city:#{ city },zip:#{zip}}"
-                        + " WHERE user_id = #{userId} AND tenant_id = #{tenantId}", params);
-                final Row row = cassandraExecutor.execute(select, "u5", "t").one();
-                assertEquals("c", row.getString("city"));
-                assertEquals(12345, row.getInt("zip"));
-                assertEquals("n0", row.getString("name"));
-            });
-        } finally {
-            CassandraExecutorBase.entityKeyNamesMap.remove(CoverageCqProbe.class);
-            coverageCQSchemaChange("DROP TABLE IF EXISTS " + table);
-            coverageCQSchemaChange("DROP TYPE IF EXISTS " + udt);
+        public void setT(final java.sql.Time t) {
+            this.t = t;
         }
     }
 
-    // ---- 2026-10-04 coverageCQ end ----
+    // ---- 2026-10-02 sliceN end ----
 
-    private Users createUser() {
-        Users user = new Users();
-        user.setId(UUID.randomUUID());
-        Users.Name name = new Users.Name();
-        name.setFirstName("fn");
-        name.setLastName("ln");
-        user.setName(name);
+    // ---- 2026-10-02 verifyCS ----
 
-        Users.Address address = new Users.Address();
-        address.setCity("sunnyvale");
-        address.setStreet("1");
-        address.setZipCode(123);
-        Map<String, Users.Address> addresses = N.asMap("home", address);
-        user.setAddresses(addresses);
+    public record VerifyCSKey(Long id, String name) {
+    }
 
-        user.setSomeDate(LocalDate.now());
-        user.setLastUpdateTime(LocalTime.now());
-        user.setCreatedTime(Dates.currentTimestamp());
+    /** Stubs {@code mockSession.prepare(query)} with the given variables; element 0 of the result receives the bound values. */
+    private Object[][] verifyCSPrepare(final String query, final Object... namesAndTypes) {
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final Object[][] bound = new Object[1][];
+        org.mockito.Mockito.lenient().when(mockSession.prepare(query)).thenReturn(preparedStatement);
+        org.mockito.Mockito.lenient().when(preparedStatement.getVariableDefinitions()).thenReturn(variables);
+        org.mockito.Mockito.lenient().when(variables.size()).thenReturn(namesAndTypes.length / 2);
 
-        user.setBytes(N.asList((byte) 1, (byte) 2, (byte) 3));
-        user.setShorts(N.asSet((short) 1, (short) 2, (short) 3));
+        for (int i = 0; i < namesAndTypes.length; i += 2) {
+            final ColumnDefinition variable = mock(ColumnDefinition.class);
+            org.mockito.Mockito.lenient().when(variables.get(i / 2)).thenReturn(variable);
+            org.mockito.Mockito.lenient()
+                    .when(variable.getName())
+                    .thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal((String) namesAndTypes[i]));
+            org.mockito.Mockito.lenient().when(variable.getType()).thenReturn((DataType) namesAndTypes[i + 1]);
+        }
 
-        return user;
+        org.mockito.Mockito.lenient().when(preparedStatement.bind(any(Object[].class))).thenAnswer(invocation -> {
+            bound[0] = (Object[]) invocation.getRawArguments()[0];
+            return mockBoundStatement;
+        });
+
+        return bound;
+    }
+
+    // ---- 2026-10-02 verifyCS end ----
+
+    // ---- 2026-10-04 coverageCS ----
+
+    /** A result set over single-column {@code time} rows holding the driver's LocalTime values. */
+    private static ResultSet coverageCSTimeResultSet(final java.time.LocalTime... times) {
+        final ColumnDefinitions cols = mock(ColumnDefinitions.class);
+        final ColumnDefinition timeCol = mock(ColumnDefinition.class);
+        org.mockito.Mockito.lenient().when(cols.size()).thenReturn(1);
+        org.mockito.Mockito.lenient().when(cols.get(0)).thenReturn(timeCol);
+        org.mockito.Mockito.lenient().when(timeCol.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("t"));
+        final List<Row> rows = new java.util.ArrayList<>();
+
+        for (final java.time.LocalTime time : times) {
+            final Row row = mock(Row.class);
+            org.mockito.Mockito.lenient().when(row.getColumnDefinitions()).thenReturn(cols);
+            org.mockito.Mockito.lenient().when(row.getObject(0)).thenReturn(time);
+            rows.add(row);
+        }
+
+        final ResultSet resultSet = mock(ResultSet.class);
+        org.mockito.Mockito.lenient().when(resultSet.getColumnDefinitions()).thenReturn(cols);
+        org.mockito.Mockito.lenient().when(resultSet.iterator()).thenAnswer(invocation -> rows.iterator());
+        org.mockito.Mockito.lenient().when(resultSet.one()).thenReturn(rows.isEmpty() ? null : rows.get(0));
+
+        return resultSet;
+    }
+
+    // ---- 2026-10-04 coverageCS end ----
+
+    // Test entity class
+    public static class RenamedColumnEntity {
+        private Long id;
+        @Column("cnt")
+        private Integer orderCount;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public Integer getOrderCount() {
+            return orderCount;
+        }
+
+        public void setOrderCount(Integer orderCount) {
+            this.orderCount = orderCount;
+        }
+    }
+
+    public static class TestEntity {
+        private Long id;
+        private String name;
+        @Column("order_count")
+        private Integer orderCount;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public Integer getOrderCount() {
+            return orderCount;
+        }
+
+        public void setOrderCount(Integer orderCount) {
+            this.orderCount = orderCount;
+        }
     }
 }

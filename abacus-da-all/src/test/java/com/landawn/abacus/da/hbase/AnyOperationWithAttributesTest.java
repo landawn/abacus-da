@@ -27,15 +27,42 @@ import com.landawn.abacus.da.TestBase;
  */
 public class AnyOperationWithAttributesTest extends TestBase {
 
-    // setAttribute / getAttribute
-    @Test
-    public void testSetAttribute_stringValue_andGetAttribute() {
-        AnyGet get = AnyGet.of("row");
-        AnyGet returned = get.setAttribute("k1", "hello");
-        assertSame(get, returned, "setAttribute must return this for chaining");
+    // Construction and configuration
 
-        byte[] v = get.getAttribute("k1");
-        assertArrayEquals(Bytes.toBytes("hello"), v);
+    @Test
+    public void testConstructor_nonNull_succeeds() {
+        Get g = new Get(Bytes.toBytes("row"));
+        TestOwa op = new TestOwa(g);
+        assertNotNull(op);
+        // Round-trip a set/get to confirm the wrapped instance is reachable.
+        op.setId("x");
+        assertEquals("x", op.getId());
+    }
+
+    // Constructor null-check
+    @Test
+    public void testConstructor_nullOwa_throws() {
+        assertThrows(IllegalArgumentException.class, () -> new TestOwa(null));
+    }
+
+    // Updates and deletes
+
+    @Test
+    public void testGetAttributesMap_afterSet_containsKeys() {
+        AnyGet get = AnyGet.of("row").setAttribute("a", "1").setAttribute("b", "2");
+        Map<String, byte[]> map = get.getAttributesMap();
+        assertEquals(2, map.size());
+        assertTrue(map.containsKey("a"));
+        assertTrue(map.containsKey("b"));
+    }
+
+    @Test
+    public void testSetAttribute_intValue_storedAsBytes() {
+        AnyGet get = AnyGet.of("row").setAttribute("count", 42);
+        byte[] stored = get.getAttribute("count");
+        assertNotNull(stored);
+        // HBaseExecutor.toValueBytes(int 42) uses Bytes.toBytes("42") (String form).
+        assertArrayEquals(Bytes.toBytes("42"), stored);
     }
 
     @Test
@@ -47,19 +74,6 @@ public class AnyOperationWithAttributesTest extends TestBase {
     }
 
     @Test
-    public void testGetAttribute_missingKey_returnsNull() {
-        AnyGet get = AnyGet.of("row");
-        assertNull(get.getAttribute("missing"));
-    }
-
-    @Test
-    public void testGetAttribute_nullKey_returnsNull() {
-        // HBase returns null for a missing/null attribute key rather than throwing.
-        AnyGet get = AnyGet.of("row");
-        assertNull(get.getAttribute(null));
-    }
-
-    @Test
     public void testSetAttribute_overwriteSameKey() {
         AnyGet get = AnyGet.of("row");
         get.setAttribute("k", "v1");
@@ -67,22 +81,15 @@ public class AnyOperationWithAttributesTest extends TestBase {
         assertArrayEquals(Bytes.toBytes("v2"), get.getAttribute("k"));
     }
 
-    // getAttributesMap
+    // setAttribute / getAttribute
     @Test
-    public void testGetAttributesMap_initiallyEmpty() {
+    public void testSetAttribute_stringValue_andGetAttribute() {
         AnyGet get = AnyGet.of("row");
-        Map<String, byte[]> map = get.getAttributesMap();
-        assertNotNull(map);
-        assertEquals(0, map.size());
-    }
+        AnyGet returned = get.setAttribute("k1", "hello");
+        assertSame(get, returned, "setAttribute must return this for chaining");
 
-    @Test
-    public void testGetAttributesMap_afterSet_containsKeys() {
-        AnyGet get = AnyGet.of("row").setAttribute("a", "1").setAttribute("b", "2");
-        Map<String, byte[]> map = get.getAttributesMap();
-        assertEquals(2, map.size());
-        assertTrue(map.containsKey("a"));
-        assertTrue(map.containsKey("b"));
+        byte[] v = get.getAttribute("k1");
+        assertArrayEquals(Bytes.toBytes("hello"), v);
     }
 
     // setId / getId
@@ -95,9 +102,9 @@ public class AnyOperationWithAttributesTest extends TestBase {
     }
 
     @Test
-    public void testGetId_initiallyNull() {
-        AnyGet get = AnyGet.of("row");
-        assertNull(get.getId());
+    public void testSetId_emptyString_isAllowed() {
+        AnyGet get = AnyGet.of("row").setId("");
+        assertEquals("", get.getId());
     }
 
     @Test
@@ -106,12 +113,6 @@ public class AnyOperationWithAttributesTest extends TestBase {
         AnyGet get = AnyGet.of("row");
         assertThrows(IllegalArgumentException.class, () -> get.setId(null));
         assertNull(get.getId());
-    }
-
-    @Test
-    public void testSetId_emptyString_isAllowed() {
-        AnyGet get = AnyGet.of("row").setId("");
-        assertEquals("", get.getId());
     }
 
     // setPriority / getPriority
@@ -141,6 +142,38 @@ public class AnyOperationWithAttributesTest extends TestBase {
         assertEquals(0, get.getPriority());
     }
 
+    // Queries and results
+
+    @Test
+    public void testGetAttribute_missingKey_returnsNull() {
+        AnyGet get = AnyGet.of("row");
+        assertNull(get.getAttribute("missing"));
+    }
+
+    @Test
+    public void testGetAttribute_nullKey_returnsNull() {
+        // HBase returns null for a missing/null attribute key rather than throwing.
+        AnyGet get = AnyGet.of("row");
+        assertNull(get.getAttribute(null));
+    }
+
+    // getAttributesMap
+    @Test
+    public void testGetAttributesMap_initiallyEmpty() {
+        AnyGet get = AnyGet.of("row");
+        Map<String, byte[]> map = get.getAttributesMap();
+        assertNotNull(map);
+        assertEquals(0, map.size());
+    }
+
+    @Test
+    public void testGetId_initiallyNull() {
+        AnyGet get = AnyGet.of("row");
+        assertNull(get.getId());
+    }
+
+    // Additional contracts
+
     // Fluent chaining of multiple inherited setters
     @Test
     public void testFluentChaining_attributesIdPriority() {
@@ -154,31 +187,6 @@ public class AnyOperationWithAttributesTest extends TestBase {
         // also be stored as an internal HBase attribute, so we don't assert ==).
         assertTrue(get.getAttributesMap().containsKey("k1"));
         assertTrue(get.getAttributesMap().containsKey("k2"));
-    }
-
-    // Constructor null-check
-    @Test
-    public void testConstructor_nullOwa_throws() {
-        assertThrows(IllegalArgumentException.class, () -> new TestOwa(null));
-    }
-
-    @Test
-    public void testConstructor_nonNull_succeeds() {
-        Get g = new Get(Bytes.toBytes("row"));
-        TestOwa op = new TestOwa(g);
-        assertNotNull(op);
-        // Round-trip a set/get to confirm the wrapped instance is reachable.
-        op.setId("x");
-        assertEquals("x", op.getId());
-    }
-
-    @Test
-    public void testSetAttribute_intValue_storedAsBytes() {
-        AnyGet get = AnyGet.of("row").setAttribute("count", 42);
-        byte[] stored = get.getAttribute("count");
-        assertNotNull(stored);
-        // HBaseExecutor.toValueBytes(int 42) uses Bytes.toBytes("42") (String form).
-        assertArrayEquals(Bytes.toBytes("42"), stored);
     }
 
     // Minimal concrete subclass to drive the constructor null-guard directly.

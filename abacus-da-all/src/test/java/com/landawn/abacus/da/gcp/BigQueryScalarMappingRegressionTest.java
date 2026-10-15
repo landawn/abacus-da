@@ -11,7 +11,6 @@ import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.google.cloud.bigquery.BigQuery;
@@ -25,7 +24,6 @@ import com.google.cloud.bigquery.StandardSQLTypeName;
 import com.google.cloud.bigquery.TableResult;
 import com.landawn.abacus.da.TestBase;
 
-@Tag("base-test")
 public class BigQueryScalarMappingRegressionTest extends TestBase {
 
     @Test
