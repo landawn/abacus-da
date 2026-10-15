@@ -69,7 +69,10 @@ tests fails instead of reporting a successful empty run.
 - Split large classes by responsibility. BigQuery has query, mutation,
   parameter, mapping, structured mapping, generic mapping, matrix, and builder
   lifecycle suites. DynamoDB has executor, mapper, mapping, and filter suites
-  for each SDK. CQL builder tests are grouped by statement family.
+  for each SDK. CQL builder tests are grouped by statement family. MongoDB executor
+  suites separate mutation, query, scalar-query, streaming, and mapping contracts;
+  the async facade has corresponding delegation suites. Cassandra base executor
+  tests separate statement construction, synchronous operations, and async facades.
 - Within a class, place fields and lifecycle methods first, related test
   families together, and fixture/helper types last. Keep success, empty/null,
   invalid input, and regression cases near the operation they exercise. Source
@@ -84,11 +87,19 @@ tests fails instead of reporting a successful empty run.
 - Reuse `MockitoTestBase` where annotation-based mocks are initialized manually;
   it closes the returned Mockito resource after each test. Existing
   MockitoExtension fixtures may continue to use the extension. Keep shared
-  helpers limited to the tests that actually use them.
+  helpers limited to the tests that actually use them. Keep reusable mapping data
+  and assertions in fixture/support classes without test methods, so tests do not
+  depend on another executable test class.
+- Async delegation tests must execute submitted work. Use a real
+  `AsyncExecutor(Runnable::run)` for deterministic delegation checks, then assert
+  arguments and result identity/value at the synchronous boundary. Keep explicit
+  scheduling and future-failure checks separate. A mocked task runner returning a
+  prebuilt future does not verify the delegated operation.
 - Use fixed timestamps and bounded completion signals. Pagination cancellation
   checks use `ObservedPageFuture` to await the page-processing stage after the
   public result completes; do not replace that signal with a sleep.
 
-The [cleanup report](report/unit-test-cleanup.md) records the validation baseline,
-coverage comparison, moved suites, and the retained owner of each consolidated
-case.
+The [initial cleanup report](report/unit-test-cleanup.md) records the earlier suite
+migration. The [standardization report](report/unit-test-standardization.md) and
+[consolidation ledger](report/unit-test-standardization.tsv) record the current
+cleanup, retained test owners, and coverage comparison.
