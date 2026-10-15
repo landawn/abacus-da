@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import com.landawn.abacus.da.MockitoTestBase;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -30,7 +31,6 @@ import com.landawn.abacus.util.u.OptionalFloat;
 import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
-import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.CountOptions;
@@ -60,48 +60,43 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         mapper = new MongoCollectionMapper<>(mockCollExecutor, TestEntity.class);
     }
 
-    // Row and entity mapping
-
     @Test
-    public void testDecodedValueConversionsOnMapperReadPaths_coverageME() {
+    public void testDecodedValueConversionsOnMapperReadPaths() {
         // The mapper reads through the executor with its entity class as row type, so the MongoDBBase read-side conversions
         // (typed container elements, java.time Local* in UTC, generic bean type arguments, records incl. _id into the record's
-        // id component) must hold for mapped entities too. Fixtures are shared with MongoCollectionExecutorTest (*_coverageME);
+        // id component) must hold for mapped entities too. Fixtures are shared with MongoCollectionExecutorTest (*);
         // each read path is asserted on its own.
-        final MongoCollectionMapper<MongoCollectionExecutorTest.E2eEntity_coverageME> entityMapper = mapperReturning_coverageME(
-                MongoCollectionExecutorTest.entityDoc_coverageME(), MongoCollectionExecutorTest.E2eEntity_coverageME.class);
-        final MongoCollectionMapper<MongoCollectionExecutorTest.E2eRecord_coverageME> recordMapper = mapperReturning_coverageME(
-                MongoCollectionExecutorTest.recordDoc_coverageME(), MongoCollectionExecutorTest.E2eRecord_coverageME.class);
-        final MongoCollectionMapper<MongoCollectionExecutorTest.E2eLongBox_coverageME> boxMapper = mapperReturning_coverageME(
-                MongoCollectionExecutorTest.longBoxDoc_coverageME(), MongoCollectionExecutorTest.E2eLongBox_coverageME.class);
+        final MongoCollectionMapper<MongoMappingFixtures.MappedEntity> entityMapper = mapperReturning(MongoMappingFixtures.entityDoc(),
+                MongoMappingFixtures.MappedEntity.class);
+        final MongoCollectionMapper<MongoMappingFixtures.MappedRecord> recordMapper = mapperReturning(MongoMappingFixtures.recordDoc(),
+                MongoMappingFixtures.MappedRecord.class);
+        final MongoCollectionMapper<MongoMappingFixtures.LongBox> boxMapper = mapperReturning(MongoMappingFixtures.longBoxDoc(),
+                MongoMappingFixtures.LongBox.class);
         final Document filter = new Document();
         final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final ObjectId oid = new ObjectId(MongoCollectionExecutorTest.OID_HEX_coverageME);
+        final ObjectId oid = new ObjectId(MongoMappingFixtures.OID_HEX);
 
-        Assertions.assertAll(() -> MongoCollectionExecutorTest.assertEntity_coverageME("list", entityMapper.list(filter).get(0)),
-                () -> MongoCollectionExecutorTest.assertEntity_coverageME("list(Collection)", entityMapper.list(Arrays.asList("nums", "day"), filter).get(0)),
-                () -> MongoCollectionExecutorTest.assertEntity_coverageME("findFirst", entityMapper.findFirst(filter).get()),
-                () -> MongoCollectionExecutorTest.assertEntity_coverageME("get(ObjectId)", entityMapper.get(oid).get()),
-                () -> MongoCollectionExecutorTest.assertEntity_coverageME("gett(String)", entityMapper.gett(MongoCollectionExecutorTest.OID_HEX_coverageME)),
-                () -> {
-                    try (Stream<MongoCollectionExecutorTest.E2eEntity_coverageME> stream = entityMapper.stream(filter)) {
-                        MongoCollectionExecutorTest.assertEntity_coverageME("stream", stream.toList().get(0));
+        Assertions.assertAll(() -> MongoMappingFixtures.assertEntity("list", entityMapper.list(filter).get(0)),
+                () -> MongoMappingFixtures.assertEntity("list(Collection)", entityMapper.list(Arrays.asList("nums", "day"), filter).get(0)),
+                () -> MongoMappingFixtures.assertEntity("findFirst", entityMapper.findFirst(filter).get()),
+                () -> MongoMappingFixtures.assertEntity("get(ObjectId)", entityMapper.get(oid).get()),
+                () -> MongoMappingFixtures.assertEntity("gett(String)", entityMapper.gett(MongoMappingFixtures.OID_HEX)), () -> {
+                    try (Stream<MongoMappingFixtures.MappedEntity> stream = entityMapper.stream(filter)) {
+                        MongoMappingFixtures.assertEntity("stream", stream.toList().get(0));
                     }
                 }, () -> {
-                    try (Stream<MongoCollectionExecutorTest.E2eEntity_coverageME> stream = entityMapper.aggregate(pipeline)) {
-                        MongoCollectionExecutorTest.assertEntity_coverageME("aggregate", stream.toList().get(0));
+                    try (Stream<MongoMappingFixtures.MappedEntity> stream = entityMapper.aggregate(pipeline)) {
+                        MongoMappingFixtures.assertEntity("aggregate", stream.toList().get(0));
                     }
-                }, () -> MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndDelete", entityMapper.findOneAndDelete(filter)),
-                () -> MongoCollectionExecutorTest.assertEntityDataset_coverageME("query(Bson)", entityMapper.query(filter)),
-                () -> Assertions.assertEquals(MongoCollectionExecutorTest.LOCAL_DAY_coverageME,
-                        entityMapper.queryForSingleValue("day", filter, java.time.LocalDate.class).get(), "queryForSingleValue LocalDate"),
-                () -> Assertions.assertEquals(MongoCollectionExecutorTest.expectedRecord_coverageME(), recordMapper.get(oid).get(), "record get(ObjectId)"),
-                () -> Assertions.assertEquals(MongoCollectionExecutorTest.expectedRecord_coverageME(), recordMapper.list(filter).get(0), "record list"),
+                }, () -> MongoMappingFixtures.assertEntity("findOneAndDelete", entityMapper.findOneAndDelete(filter)),
+                () -> MongoMappingFixtures.assertEntityDataset("query(Bson)", entityMapper.query(filter)),
+                () -> Assertions.assertEquals(MongoMappingFixtures.LOCAL_DAY, entityMapper.queryForSingleValue("day", filter, java.time.LocalDate.class).get(),
+                        "queryForSingleValue LocalDate"),
+                () -> Assertions.assertEquals(MongoMappingFixtures.expectedRecord(), recordMapper.get(oid).get(), "record get(ObjectId)"),
+                () -> Assertions.assertEquals(MongoMappingFixtures.expectedRecord(), recordMapper.list(filter).get(0), "record list"),
                 () -> Assertions.assertEquals((Object) 9L, boxMapper.list(filter).get(0).getValue(), "LongBox list"),
                 () -> Assertions.assertEquals((Object) 9L, boxMapper.findFirst(filter).get().getValue(), "LongBox findFirst"));
     }
-
-    // Factories and insert operations
 
     @Test
     public void testBulkInsert() {
@@ -171,8 +166,6 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         verify(mockCollExecutor).insertOne(entity, options);
         Assertions.assertSame(insertResult, result);
     }
-
-    // Updates and deletes
 
     @Test
     public void testDeleteMany() {
@@ -556,8 +549,6 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         verify(mockCollExecutor).updateOne(objectId, update);
     }
 
-    // Queries and results
-
     @Test
     public void testAggregate() {
         List<Document> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
@@ -911,14 +902,14 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
 
     @SuppressWarnings("unchecked")
     @Test
-    public void testGroupByAndCountCountFieldMessageAndDocumentMapper_verifyME() {
+    public void testGroupByAndCountCountFieldMessageAndDocumentMapper() {
         final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
         final com.mongodb.client.AggregateIterable<Document> aggregateIterable = mock(com.mongodb.client.AggregateIterable.class);
         when(aggregateIterable.iterator()).thenReturn(mock(com.mongodb.client.MongoCursor.class));
         when(collection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenReturn(aggregateIterable);
         final MongoCollectionExecutor collExecutor = new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class));
 
-        final MongoCollectionMapper<DottedEntity_verifyME> entityMapper = new MongoCollectionMapper<>(collExecutor, DottedEntity_verifyME.class);
+        final MongoCollectionMapper<DottedEntity> entityMapper = new MongoCollectionMapper<>(collExecutor, DottedEntity.class);
         Assertions.assertEquals("Group field name 'count' conflicts with the count column of groupByAndCount; use Document as the row type",
                 Assertions.assertThrows(IllegalArgumentException.class, () -> entityMapper.groupByAndCount("count")).getMessage());
         org.mockito.Mockito.verifyNoInteractions(collection);
@@ -1037,7 +1028,7 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
 
     @SuppressWarnings("unchecked")
     @Test
-    public void testQueryDottedSelectNameThroughMapperFillsNestedColumn_verifyME() {
+    public void testQueryDottedSelectNameThroughMapperFillsNestedColumn() {
         // The mapper's Collection-projection Dataset overloads delegate with the entity class as row type, so a dotted
         // select name must come back as the nested value (it was an all-null column) and a path through an array fails.
         final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
@@ -1055,8 +1046,8 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
             return target;
         }).when(findIterable).into(org.mockito.ArgumentMatchers.any());
 
-        final MongoCollectionMapper<DottedEntity_verifyME> entityMapper = new MongoCollectionMapper<>(
-                new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), DottedEntity_verifyME.class);
+        final MongoCollectionMapper<DottedEntity> entityMapper = new MongoCollectionMapper<>(
+                new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), DottedEntity.class);
         final List<String> names = Arrays.asList("name", "address.city");
         final Document filter = new Document();
         final Document sort = new Document("_id", 1);
@@ -1310,8 +1301,6 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         verify(mockCollExecutor).stream(select, filter, sort, TestEntity.class);
     }
 
-    // Additional contracts
-
     @Test
     public void testBulkWrite() {
         List<WriteModel<Document>> requests = Arrays.asList();
@@ -1388,7 +1377,7 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         verify(mockCollExecutor).replaceOne(objectId, replacement);
     }
 
-    public static class DottedEntity_verifyME {
+    public static class DottedEntity {
         private String id;
         private String name;
 
@@ -1409,16 +1398,10 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         }
     }
 
-    // ---- end 2026-10-02 verifyME ----
-
-    // ---- 2026-10-04 coverageME ----
-
-    private static <E> MongoCollectionMapper<E> mapperReturning_coverageME(final Document row, final Class<E> entityClass) {
-        return new MongoCollectionMapper<>(new MongoCollectionExecutor(MongoCollectionExecutorTest.mockCollectionReturning_coverageME(row),
-                mock(com.landawn.abacus.util.AsyncExecutor.class)), entityClass);
+    private static <E> MongoCollectionMapper<E> mapperReturning(final Document row, final Class<E> entityClass) {
+        return new MongoCollectionMapper<>(
+                new MongoCollectionExecutor(MongoMappingFixtures.mockCollectionReturning(row), mock(com.landawn.abacus.util.AsyncExecutor.class)), entityClass);
     }
-
-    // ---- end 2026-10-04 coverageME ----
 
     // Test entity class
     private static class TestEntity {

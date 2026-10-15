@@ -10,27 +10,20 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.landawn.abacus.annotation.Id;
-import com.landawn.abacus.da.QueryBuilderLeakAssertions;
-import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.condition.Condition;
-import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.ImmutableList;
 import com.landawn.abacus.util.NamingPolicy;
+import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -41,108 +34,24 @@ import com.landawn.abacus.util.u.OptionalFloat;
 import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
-import com.landawn.abacus.util.stream.Stream;
 
-public class CassandraExecutorBaseTest extends TestBase {
-
-    private TestCassandraExecutor executor;
-
-    @BeforeEach
-    public void setUp() {
-        CassandraExecutorBase.entityKeyNamesMap.remove(TestEntity.class);
-        executor = new TestCassandraExecutor();
-    }
-
-    // Construction and configuration
-
-    // The constructor fails fast on a naming policy the prepare* methods can't render.
-    @Test
-    public void testConstructor_unsupportedNamingPolicy_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> new TestCassandraExecutor(NamingPolicy.NO_CHANGE));
-    }
-
-    // Metadata and validation
+public class CassandraExecutorBaseTest extends CassandraExecutorBaseTestSupport {
 
     @Test
-    public void testRegisterKeys() {
-        // Test deprecated registerKeys method
-        CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", "name"));
+    public void testBatchDelete() {
+        // Test batch delete entities
+        TestEntity e1 = new TestEntity();
+        e1.setId(1L);
+        TestEntity e2 = new TestEntity();
+        e2.setId(2L);
+        List<TestEntity> entities = Arrays.asList(e1, e2);
+        TestResultSet result1 = executor.batchDelete(entities);
+        assertNotNull(result1);
 
-        // Verify keys are registered
-        ImmutableList<String> keyNames = CassandraExecutorBase.getKeyNames(TestEntity.class);
-        assertTrue(keyNames.contains("id"));
-        assertTrue(keyNames.contains("name"));
+        // Test batch delete with propNamesToDelete
+        TestResultSet result2 = executor.batchDelete(entities, Arrays.asList("name"));
+        assertNotNull(result2);
     }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testRegisterKeys_nullOrBlankKeyName_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", null)));
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("")));
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(String.class, Arrays.asList("length")));
-    }
-
-    // registerKeys documents IllegalArgumentException for a key name that does not resolve to a readable property;
-    // the failure used to surface as the unrelated "'getSetMethod' cannot be null" from Beans.getPropNameByMethod(null).
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testRegisterKeys_unknownPropertyName_throwsIAENamingTheKey() {
-        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", "noSuchProp")));
-
-        assertTrue(e.getMessage().contains("noSuchProp"), e.getMessage());
-        assertTrue(e.getMessage().contains(TestEntity.class.getCanonicalName()), e.getMessage());
-        // nothing was registered for the class
-        assertTrue(!CassandraExecutorBase.entityKeyNamesMap.containsKey(TestEntity.class));
-    }
-
-    // Row and entity mapping
-
-    @Test
-    public void test_failedTableMappingReleasesInternalBuilder() throws Exception {
-        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
-            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
-            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareInsert(BadTableEntity.class, Map.of("name", "value")));
-            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareQuery(BadTableEntity.class, List.of("name"), null, 0));
-            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
-                    () -> current.exposedPrepareDelete(BadTableEntity.class, List.of("name"), Filters.eq("id", 1)));
-            // The update and whole-row delete factories validate the derived table name up front (CqlBuilder
-            // update(Class)/deleteFrom(Class) checkCqlTableReference), so these fail at factory time too.
-            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
-                    () -> current.exposedPrepareUpdate(BadTableEntity.class, Map.of("name", "value"), Filters.eq("id", 1)));
-            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
-                    () -> current.exposedPrepareDelete(BadTableEntity.class, null, Filters.eq("id", 1)));
-        }
-    }
-
-    @Test
-    public void testParseCql_passThrough() {
-        // parseCql() through the executor; defaults (no cqlMapper) -> ParsedCql.parse
-        com.landawn.abacus.da.cassandra.ParsedCql parsed = executor.exposedParseCql("SELECT * FROM t WHERE id = ?");
-        assertNotNull(parsed);
-        assertEquals(1, parsed.parameterCount());
-    }
-
-    @Test
-    public void testParseCql_withMapper_fallbackToParse() {
-        CqlMapper mapper = new CqlMapper();
-        TestCassandraExecutor mapExec = new TestCassandraExecutor(mapper, NamingPolicy.SNAKE_CASE);
-        ParsedCql parsed = mapExec.exposedParseCql("SELECT * FROM t WHERE id = ?");
-        assertNotNull(parsed);
-        assertEquals(1, parsed.parameterCount());
-    }
-
-    @Test
-    public void testParseCql_withMapper_passesThroughMapper() {
-        CqlMapper mapper = new CqlMapper();
-        mapper.add("findById", "SELECT * FROM t WHERE id = ?", new HashMap<>());
-        TestCassandraExecutor mapExec = new TestCassandraExecutor(mapper, NamingPolicy.SNAKE_CASE);
-        ParsedCql parsed = mapExec.exposedParseCql("findById");
-        assertNotNull(parsed);
-        assertEquals(1, parsed.parameterCount());
-    }
-
-    // Factories and insert operations
 
     @Test
     public void testBatchInsert() {
@@ -176,134 +85,6 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
-    public void test_failedInsertReleasesInternalBuilder() throws Exception {
-        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
-            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
-            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class, () -> current.exposedPrepareInsert(new TestEntity()));
-        }
-    }
-
-    @Test
-    public void testInsert() {
-        // Test insert entity
-        TestEntity entity = new TestEntity();
-        entity.setId(1L);
-        entity.setName("test");
-
-        TestResultSet result1 = executor.insert(entity);
-        assertNotNull(result1);
-
-        // Test insert with props
-        Map<String, Object> props = new HashMap<>();
-        props.put("id", 1L);
-        props.put("name", "test");
-
-        TestResultSet result2 = executor.insert(TestEntity.class, props);
-        assertNotNull(result2);
-    }
-
-    // Null-entity guards: insert/update/delete reject a null entity eagerly with IAE (was NPE).
-
-    @Test
-    public void testInsert_nullEntity_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> executor.insert((Object) null));
-    }
-
-    @Test
-    public void testPrepareInsert_entity_camelCase() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        TestEntity e = new TestEntity();
-        e.setId(1L);
-        e.setName("nm");
-        SP sp = ccExec.exposedPrepareInsert(e);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("INSERT"));
-    }
-
-    // Coverage additions: Naming-policy branches for prepareInsert/Update/Delete/Query
-
-    @Test
-    public void testPrepareInsert_entity_screamingSnakeCase() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        TestEntity e = new TestEntity();
-        e.setId(1L);
-        e.setName("nm");
-        SP sp = scExec.exposedPrepareInsert(e);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("INSERT"));
-    }
-
-    @Test
-    public void testPrepareInsert_entity_snakeCase() {
-        TestEntity e = new TestEntity();
-        e.setId(1L);
-        e.setName("nm");
-        SP sp = executor.exposedPrepareInsert(e);
-        assertNotNull(sp);
-        assertNotNull(sp.query());
-        assertTrue(sp.query().toUpperCase().contains("INSERT"));
-    }
-
-    @Test
-    public void testPrepareInsert_propsMap_camelCase() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("id", 1L);
-        props.put("name", "nm");
-        SP sp = ccExec.exposedPrepareInsert(TestEntity.class, props);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("INSERT"));
-    }
-
-    @Test
-    public void testPrepareInsert_propsMap_screamingSnakeCase() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("id", 1L);
-        props.put("name", "nm");
-        SP sp = scExec.exposedPrepareInsert(TestEntity.class, props);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("INSERT"));
-    }
-
-    @Test
-    public void testPrepareInsert_propsMap_snakeCase() {
-        Map<String, Object> props = new HashMap<>();
-        props.put("id", 1L);
-        props.put("name", "nm");
-        SP sp = executor.exposedPrepareInsert(TestEntity.class, props);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("INSERT"));
-    }
-
-    // insert(entity)/prepareInsert(entity) document IllegalArgumentException for an entity that exposes no
-    // insertable properties; the CqlBuilder used to leak an IllegalStateException ("Column names must be set
-    // by insert() before calling into()") for an all-null bean instead.
-    @Test
-    public void testSliceN_insert_entityWithNoInsertableProperties_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> executor.insert(new TestEntity()));
-        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareInsert(new TestEntity()));
-    }
-
-    // Updates and deletes
-
-    @Test
-    public void testBatchDelete() {
-        // Test batch delete entities
-        TestEntity e1 = new TestEntity();
-        e1.setId(1L);
-        TestEntity e2 = new TestEntity();
-        e2.setId(2L);
-        List<TestEntity> entities = Arrays.asList(e1, e2);
-        TestResultSet result1 = executor.batchDelete(entities);
-        assertNotNull(result1);
-
-        // Test batch delete with propNamesToDelete
-        TestResultSet result2 = executor.batchDelete(entities, Arrays.asList("name"));
-        assertNotNull(result2);
-    }
-
-    @Test
     public void testBatchUpdate() {
         // Test batch update entities
         List<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
@@ -327,6 +108,23 @@ public class CassandraExecutorBaseTest extends TestBase {
 
         TestResultSet result4 = executor.batchUpdate("UPDATE test SET name = ? WHERE id = ?", parametersList, TestBatchType.LOGGED);
         assertNotNull(result4);
+    }
+
+    // The constructor fails fast on a naming policy the prepare* methods can't render.
+    @Test
+    public void testConstructor_unsupportedNamingPolicy_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> new TestCassandraExecutor(NamingPolicy.NO_CHANGE));
+    }
+
+    @Test
+    public void testCount() {
+        // Test count with condition
+        long result1 = executor.count(TestEntity.class, Filters.eq("status", "active"));
+        assertEquals(0L, result1);
+
+        // Test deprecated count with query
+        long result2 = executor.count("SELECT COUNT(*) FROM test WHERE status = ?", "active");
+        assertEquals(0L, result2);
     }
 
     @Test
@@ -367,866 +165,6 @@ public class CassandraExecutorBaseTest extends TestBase {
     @Test
     public void testDelete_nullEntityWithPropNames_throwsIAE() {
         assertThrows(IllegalArgumentException.class, () -> executor.delete((Object) null, java.util.Arrays.asList("name")));
-    }
-
-    @Test
-    public void test_failedDeleteConditionReleasesInternalBuilder() throws Exception {
-        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
-            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
-            for (final Collection<String> properties : Arrays.asList(null, List.of("name"))) {
-                assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
-                        () -> current.exposedPrepareDelete(TestEntity.class, properties, Filters.or(Filters.eq("id", 1), Filters.eq("id", 2))));
-            }
-        }
-    }
-
-    @Test
-    public void test_failedUpdateConditionReleasesInternalBuilder() throws Exception {
-        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
-            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
-            assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
-                    () -> current.exposedPrepareUpdate(TestEntity.class, Map.of("name", "value"), Filters.or(Filters.eq("id", 1), Filters.eq("id", 2))));
-        }
-    }
-
-    @Test
-    public void test_failedUpdateGetterReleasesInternalBuilder() throws Exception {
-        final ThrowingUpdateEntity entity = new ThrowingUpdateEntity();
-        entity.setId(1L);
-        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
-            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
-            assertRejectedWithoutBuilderLeak(RuntimeException.class, () -> current.exposedPrepareUpdate(entity, List.of("name")));
-        }
-    }
-
-    @Test
-    public void testGetKeyNameSet_repeatedCallReturnsSameCached() {
-        java.util.Set<String> first = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
-        java.util.Set<String> second = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
-        assertEquals(first.size(), second.size());
-    }
-
-    @Test
-    public void testGetKeyNameSet_returnsSet() {
-        // exercise getKeyNameSet (overlap with getKeyNames, but distinct accessor)
-        java.util.Set<String> set = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
-        assertNotNull(set);
-        assertTrue(set.contains("id"));
-    }
-
-    @Test
-    public void testPrepareBatchMapUpdateValidatesPrimaryKeys() {
-        final Map<String, Object> valid = new HashMap<>();
-        valid.put("id", 7L);
-        valid.put("name", "updated");
-        final SP statement = executor.prepareBatchMapUpdateForTest(TestEntity.class, valid);
-        assertTrue(statement.query().contains("WHERE id = :id"), statement.query());
-
-        assertThrows(IllegalArgumentException.class, () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, Map.of("name", "updated")));
-        assertThrows(IllegalArgumentException.class, () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, Map.of("id", 7L)));
-    }
-
-    @Test
-    public void testPrepareDelete_noPropNames() {
-        SP sp = executor.exposedPrepareDelete(TestEntity.class, null, Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("DELETE"));
-    }
-
-    @Test
-    public void testPrepareDelete_noPropNames_camelCase() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        SP sp = ccExec.exposedPrepareDelete(TestEntity.class, null, Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("DELETE"));
-    }
-
-    @Test
-    public void testPrepareDelete_noPropNames_screamingSnakeCase() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        SP sp = scExec.exposedPrepareDelete(TestEntity.class, null, Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("DELETE"));
-    }
-
-    @Test
-    public void testPrepareDelete_nullCondition() {
-        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareDelete(TestEntity.class, null, null));
-    }
-
-    @Test
-    public void testPrepareDelete_rejectsPrimaryKeyProperty() {
-        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareDelete(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L)));
-    }
-
-    @Test
-    public void testPrepareDelete_withPropNames() {
-        SP sp = executor.exposedPrepareDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("DELETE"));
-    }
-
-    @Test
-    public void testPrepareDelete_withPropNames_camelCase() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        SP sp = ccExec.exposedPrepareDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("DELETE"));
-    }
-
-    @Test
-    public void testPrepareDelete_withPropNames_screamingSnakeCase() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        SP sp = scExec.exposedPrepareDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("DELETE"));
-    }
-
-    @Test
-    public void testPrepareUpdate_classMapNullCondition() {
-        Map<String, Object> props = new HashMap<>();
-        props.put("name", "x");
-
-        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(TestEntity.class, props, null));
-    }
-
-    @Test
-    public void testPrepareUpdate_classMapRejectsPrimaryKeyProperty() {
-        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(TestEntity.class, Map.of("id", 2L), Filters.eq("id", 1L)));
-    }
-
-    @Test
-    public void testPrepareUpdate_classMapCondition() {
-        Map<String, Object> props = new HashMap<>();
-        props.put("name", "x");
-        SP sp = executor.exposedPrepareUpdate(TestEntity.class, props, Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
-    }
-
-    @Test
-    public void testPrepareUpdate_classMapCondition_camelCase() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("name", "x");
-        SP sp = ccExec.exposedPrepareUpdate(TestEntity.class, props, Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
-    }
-
-    @Test
-    public void testPrepareUpdate_classMapCondition_screamingSnakeCase() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("name", "x");
-        SP sp = scExec.exposedPrepareUpdate(TestEntity.class, props, Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
-    }
-
-    @Test
-    public void testPrepareUpdate_entityRejectsPrimaryKeyProperty() {
-        TestEntity e = new TestEntity();
-        e.setId(1L);
-
-        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(e, Arrays.asList("id")));
-    }
-
-    @Test
-    public void testPrepareUpdate_entity_camelCase() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        TestEntity e = new TestEntity();
-        e.setId(1L);
-        e.setName("u1");
-        SP sp = ccExec.exposedPrepareUpdate(e, Arrays.asList("name"));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
-    }
-
-    @Test
-    public void testPrepareUpdate_entity_screamingSnakeCase() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        TestEntity e = new TestEntity();
-        e.setId(1L);
-        e.setName("u1");
-        SP sp = scExec.exposedPrepareUpdate(e, Arrays.asList("name"));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
-    }
-
-    @Test
-    public void testPrepareUpdate_entityMissingKey_throwsIAE() {
-        TestEntity e = new TestEntity();
-        e.setName("u1");
-
-        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(e, Arrays.asList("name")));
-    }
-
-    @Test
-    public void testPrepareUpdate_entityWithProps() {
-        TestEntity e = new TestEntity();
-        e.setId(1L);
-        e.setName("u1");
-        SP sp = executor.exposedPrepareUpdate(e, Arrays.asList("name"));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
-    }
-
-    @Test
-    public void testUpdate() {
-        // Test update entity
-        TestEntity entity = new TestEntity();
-        entity.setId(1L);
-        entity.setName("test");
-
-        TestResultSet result1 = executor.update(entity);
-        assertNotNull(result1);
-
-        // Test update with propNamesToUpdate
-        TestResultSet result2 = executor.update(entity, Arrays.asList("name"));
-        assertNotNull(result2);
-
-        // Test update with props and condition
-        Map<String, Object> props = new HashMap<>();
-        props.put("name", "updated");
-
-        TestResultSet result3 = executor.update(TestEntity.class, props, Filters.eq("id", 1L));
-        assertNotNull(result3);
-
-        // Test update with query
-        TestResultSet result4 = executor.update("UPDATE test SET name = ? WHERE id = ?", "updated", 1L);
-        assertNotNull(result4);
-    }
-
-    @Test
-    public void testUpdate_nullEntity_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null));
-    }
-
-    @Test
-    public void testUpdate_nullEntityWithPropNames_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null, java.util.Arrays.asList("name")));
-    }
-
-    // Queries and results
-
-    @Test
-    public void testAsyncRejectsNullTargetClassOnTheCallingThread() {
-        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = executor.async();
-
-        assertThrows(IllegalArgumentException.class, () -> async.list((Class<Object>) null, "SELECT * FROM t"));
-        assertThrows(IllegalArgumentException.class, () -> async.stream((Class<Object>) null, "SELECT * FROM t"));
-        assertThrows(IllegalArgumentException.class, () -> async.stream((Class<Object>) null, new TestStatement()));
-        assertThrows(IllegalArgumentException.class, () -> async.findFirst((Class<Object>) null, "SELECT * FROM t"));
-    }
-
-    // Every Condition/entity-based async façade must issue exactly the CQL and bound parameters its synchronous
-    // counterpart issues (guards against a wrong overload, dropped argument or wrong limit in the async copy).
-    @Test
-    public void testAsyncFacadesIssueSameCqlAsSyncCounterparts() throws Exception {
-        final RecordingExecutor sync = new RecordingExecutor();
-        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = sync.recordingAsync();
-
-        final TestEntity entity = new TestEntity();
-        entity.setId(5L);
-        entity.setName("n");
-        final TestEntity other = new TestEntity();
-        other.setId(6L);
-        final List<TestEntity> entities = Arrays.asList(entity, other);
-        final Condition cond = Filters.and(Filters.eq("id", 5L), Filters.gt("name", "a"));
-        final Map<String, Object> props = new LinkedHashMap<>();
-        props.put("name", "x");
-
-        final Map<String, java.util.function.Consumer<Boolean>> ops = new LinkedHashMap<>();
-        ops.put("count(cond)", a -> {
-            if (a) {
-                async.count(TestEntity.class, cond);
-            } else {
-                sync.count(TestEntity.class, cond);
-            }
-        });
-        ops.put("count(null cond)", a -> {
-            if (a) {
-                async.count(TestEntity.class, null);
-            } else {
-                sync.count(TestEntity.class, null);
-            }
-        });
-        ops.put("count(query)", a -> {
-            if (a) {
-                async.count("SELECT count(*) FROM t WHERE id = ?", 1L);
-            } else {
-                sync.count("SELECT count(*) FROM t WHERE id = ?", 1L);
-            }
-        });
-        ops.put("exists(ids)", a -> {
-            if (a) {
-                async.exists(TestEntity.class, 5L);
-            } else {
-                sync.exists(TestEntity.class, 5L);
-            }
-        });
-        ops.put("exists(cond)", a -> {
-            if (a) {
-                async.exists(TestEntity.class, cond);
-            } else {
-                sync.exists(TestEntity.class, cond);
-            }
-        });
-        ops.put("exists(null cond)", a -> {
-            if (a) {
-                async.exists(TestEntity.class, (Condition) null);
-            } else {
-                sync.exists(TestEntity.class, (Condition) null);
-            }
-        });
-        ops.put("findFirst(cond)", a -> {
-            if (a) {
-                async.findFirst(TestEntity.class, cond);
-            } else {
-                sync.findFirst(TestEntity.class, cond);
-            }
-        });
-        ops.put("findFirst(props, cond)", a -> {
-            if (a) {
-                async.findFirst(TestEntity.class, Arrays.asList("name"), cond);
-            } else {
-                sync.findFirst(TestEntity.class, Arrays.asList("name"), cond);
-            }
-        });
-        ops.put("list(cond)", a -> {
-            if (a) {
-                async.list(TestEntity.class, cond);
-            } else {
-                sync.list(TestEntity.class, cond);
-            }
-        });
-        ops.put("list(props, cond)", a -> {
-            if (a) {
-                async.list(TestEntity.class, Arrays.asList("name"), cond);
-            } else {
-                sync.list(TestEntity.class, Arrays.asList("name"), cond);
-            }
-        });
-        ops.put("query(cond)", a -> {
-            if (a) {
-                async.query(TestEntity.class, cond);
-            } else {
-                sync.query(TestEntity.class, cond);
-            }
-        });
-        ops.put("query(props, cond)", a -> {
-            if (a) {
-                async.query(TestEntity.class, Arrays.asList("name"), cond);
-            } else {
-                sync.query(TestEntity.class, Arrays.asList("name"), cond);
-            }
-        });
-        ops.put("stream(cond)", a -> {
-            if (a) {
-                async.stream(TestEntity.class, cond);
-            } else {
-                sync.stream(TestEntity.class, cond);
-            }
-        });
-        ops.put("stream(props, cond)", a -> {
-            if (a) {
-                async.stream(TestEntity.class, Arrays.asList("name"), cond);
-            } else {
-                sync.stream(TestEntity.class, Arrays.asList("name"), cond);
-            }
-        });
-        ops.put("queryForBoolean", a -> {
-            if (a) {
-                async.queryForBoolean(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForBoolean(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForChar", a -> {
-            if (a) {
-                async.queryForChar(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForChar(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForByte", a -> {
-            if (a) {
-                async.queryForByte(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForByte(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForShort", a -> {
-            if (a) {
-                async.queryForShort(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForShort(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForInt", a -> {
-            if (a) {
-                async.queryForInt(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForInt(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForLong", a -> {
-            if (a) {
-                async.queryForLong(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForLong(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForFloat", a -> {
-            if (a) {
-                async.queryForFloat(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForFloat(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForDouble", a -> {
-            if (a) {
-                async.queryForDouble(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForDouble(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForString", a -> {
-            if (a) {
-                async.queryForString(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForString(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForDate", a -> {
-            if (a) {
-                async.queryForDate(TestEntity.class, "name", cond);
-            } else {
-                sync.queryForDate(TestEntity.class, "name", cond);
-            }
-        });
-        ops.put("queryForDate(valueClass)", a -> {
-            if (a) {
-                async.queryForDate(TestEntity.class, java.sql.Timestamp.class, "name", cond);
-            } else {
-                sync.queryForDate(TestEntity.class, java.sql.Timestamp.class, "name", cond);
-            }
-        });
-        ops.put("queryForSingleValue", a -> {
-            if (a) {
-                async.queryForSingleValue(TestEntity.class, String.class, "name", cond);
-            } else {
-                sync.queryForSingleValue(TestEntity.class, String.class, "name", cond);
-            }
-        });
-        ops.put("queryForSingleNonNull", a -> {
-            if (a) {
-                async.queryForSingleNonNull(TestEntity.class, String.class, "name", cond);
-            } else {
-                sync.queryForSingleNonNull(TestEntity.class, String.class, "name", cond);
-            }
-        });
-        ops.put("insert(entity)", a -> {
-            if (a) {
-                async.insert(entity);
-            } else {
-                sync.insert(entity);
-            }
-        });
-        ops.put("insert(class, props)", a -> {
-            if (a) {
-                async.insert(TestEntity.class, props);
-            } else {
-                sync.insert(TestEntity.class, props);
-            }
-        });
-        ops.put("update(entity)", a -> {
-            if (a) {
-                async.update(entity);
-            } else {
-                sync.update(entity);
-            }
-        });
-        ops.put("update(entity, props)", a -> {
-            if (a) {
-                async.update(entity, Arrays.asList("name"));
-            } else {
-                sync.update(entity, Arrays.asList("name"));
-            }
-        });
-        ops.put("update(class, props, cond)", a -> {
-            if (a) {
-                async.update(TestEntity.class, props, cond);
-            } else {
-                sync.update(TestEntity.class, props, cond);
-            }
-        });
-        ops.put("update(query)", a -> {
-            if (a) {
-                async.update("UPDATE t SET name = ? WHERE id = ?", "x", 1L);
-            } else {
-                sync.update("UPDATE t SET name = ? WHERE id = ?", "x", 1L);
-            }
-        });
-        ops.put("delete(entity)", a -> {
-            if (a) {
-                async.delete(entity);
-            } else {
-                sync.delete(entity);
-            }
-        });
-        ops.put("delete(entity, props)", a -> {
-            if (a) {
-                async.delete(entity, Arrays.asList("name"));
-            } else {
-                sync.delete(entity, Arrays.asList("name"));
-            }
-        });
-        ops.put("delete(class, ids)", a -> {
-            if (a) {
-                async.delete(TestEntity.class, 5L);
-            } else {
-                sync.delete(TestEntity.class, 5L);
-            }
-        });
-        ops.put("delete(class, props, ids)", a -> {
-            if (a) {
-                async.delete(TestEntity.class, Arrays.asList("name"), 5L);
-            } else {
-                sync.delete(TestEntity.class, Arrays.asList("name"), 5L);
-            }
-        });
-        ops.put("delete(class, cond)", a -> {
-            if (a) {
-                async.delete(TestEntity.class, cond);
-            } else {
-                sync.delete(TestEntity.class, cond);
-            }
-        });
-        ops.put("delete(class, props, cond)", a -> {
-            if (a) {
-                async.delete(TestEntity.class, Arrays.asList("name"), cond);
-            } else {
-                sync.delete(TestEntity.class, Arrays.asList("name"), cond);
-            }
-        });
-        ops.put("batchDelete(entities)", a -> {
-            if (a) {
-                async.batchDelete(entities);
-            } else {
-                sync.batchDelete(entities);
-            }
-        });
-        ops.put("batchDelete(entities, props)", a -> {
-            if (a) {
-                async.batchDelete(entities, Arrays.asList("name"));
-            } else {
-                sync.batchDelete(entities, Arrays.asList("name"));
-            }
-        });
-        ops.put("exists(query)", a -> {
-            if (a) {
-                async.exists("SELECT id FROM t WHERE id = ? LIMIT 1", 1L);
-            } else {
-                sync.exists("SELECT id FROM t WHERE id = ? LIMIT 1", 1L);
-            }
-        });
-        ops.put("list(query)", a -> {
-            if (a) {
-                async.list("SELECT * FROM t WHERE id = ?", 1L);
-            } else {
-                sync.list("SELECT * FROM t WHERE id = ?", 1L);
-            }
-        });
-        ops.put("query(query)", a -> {
-            if (a) {
-                async.query("SELECT * FROM t WHERE id = ?", 1L);
-            } else {
-                sync.query("SELECT * FROM t WHERE id = ?", 1L);
-            }
-        });
-        ops.put("stream(query)", a -> {
-            if (a) {
-                async.stream("SELECT * FROM t WHERE id = ?", 1L);
-            } else {
-                sync.stream("SELECT * FROM t WHERE id = ?", 1L);
-            }
-        });
-        ops.put("findFirst(query)", a -> {
-            if (a) {
-                async.findFirst("SELECT * FROM t WHERE id = ?", 1L);
-            } else {
-                sync.findFirst("SELECT * FROM t WHERE id = ?", 1L);
-            }
-        });
-
-        for (final Map.Entry<String, java.util.function.Consumer<Boolean>> op : ops.entrySet()) {
-            sync.recorded.clear();
-            op.getValue().accept(false);
-            final List<String> fromSync = new ArrayList<>(sync.recorded);
-
-            sync.recorded.clear();
-            op.getValue().accept(true);
-            final List<String> fromAsync = new ArrayList<>(sync.recorded);
-
-            assertEquals(1, fromSync.size(), op.getKey() + " (sync) -> " + fromSync);
-            assertEquals(fromSync, fromAsync, op.getKey());
-        }
-    }
-
-    @Test
-    public void testAsyncFindFirst() {
-        // Test async findFirst
-        ContinuableFuture<Optional<TestEntity>> asyncFind1 = executor.async().findFirst(TestEntity.class, Filters.eq("id", 1L));
-        assertNotNull(asyncFind1);
-
-        ContinuableFuture<Optional<TestEntity>> asyncFind2 = executor.async().findFirst(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L));
-        assertNotNull(asyncFind2);
-
-        ContinuableFuture<Optional<Map<String, Object>>> asyncFind3 = executor.async().findFirst("SELECT * FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncFind3);
-
-        ContinuableFuture<Optional<TestEntity>> asyncFind4 = executor.async().findFirst(TestEntity.class, "SELECT * FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncFind4);
-    }
-
-    @Test
-    public void testAsyncFindFirst_nullMappedRow_throwsExecutionExceptionCausedByNPE() {
-        final TestCassandraExecutor exec = new TestCassandraExecutor() {
-            @SuppressWarnings("unchecked")
-            @Override
-            protected <T> Function<TestRow, T> createRowMapper(Class<T> targetClass) {
-                return row -> (T) null;
-            }
-        };
-
-        // The mapping runs inside ContinuableFuture.get(), which reports the Optional.of(null) failure
-        // as an ExecutionException wrapping the NullPointerException.
-        final ExecutionException ex = assertThrows(ExecutionException.class,
-                () -> exec.async().findFirst(String.class, "SELECT name FROM t WHERE id = ?", 1L).get());
-
-        assertTrue(ex.getCause() instanceof NullPointerException, String.valueOf(ex.getCause()));
-    }
-
-    // get/gett must both fetch with LIMIT 2 so that a second matching row is detected as a duplicate,
-    // and the whole-row lookup must project the same columns as the synchronous prepareQuery.
-    @Test
-    public void testAsyncGetAndGettUseDuplicateDetectingLimit() throws Exception {
-        final RecordingExecutor sync = new RecordingExecutor();
-        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = sync.recordingAsync();
-        final Condition cond = Filters.eq("id", 5L);
-        final SP expected = sync.exposedPrepareQuery(TestEntity.class, Arrays.asList("name"), cond, 2);
-        final String expectedRecord = expected.query() + " " + expected.parameters();
-
-        for (final Runnable op : new Runnable[] { () -> async.get(TestEntity.class, Arrays.asList("name"), cond),
-                () -> async.gett(TestEntity.class, Arrays.asList("name"), cond), () -> async.get(TestEntity.class, Arrays.asList("name"), 5L),
-                () -> async.gett(TestEntity.class, Arrays.asList("name"), 5L) }) {
-            sync.recorded.clear();
-            op.run();
-            assertEquals(Arrays.asList(expectedRecord), sync.recorded);
-        }
-
-        assertTrue(expected.query().endsWith("LIMIT 2"), expected.query());
-
-        // count never carries a LIMIT (it would cap the aggregate itself)
-        sync.recorded.clear();
-        async.count(TestEntity.class, cond);
-        assertTrue(!sync.recorded.get(0).contains("LIMIT"), sync.recorded.get(0));
-        assertTrue(sync.recorded.get(0).startsWith("SELECT count(*) FROM"), sync.recorded.get(0));
-    }
-
-    @Test
-    public void testAsyncGetReportsDuplicateRowsThroughTheFuture() {
-        final TestCassandraExecutor twoRows = new TestCassandraExecutor() {
-            @Override
-            protected <T> T fetchOnlyOne(Class<T> targetClass, TestResultSet resultSet) {
-                throw new DuplicateResultException();
-            }
-        };
-
-        final ExecutionException e1 = assertThrows(ExecutionException.class, () -> twoRows.async().get(TestEntity.class, Filters.eq("id", 1L)).get());
-        assertTrue(e1.getCause() instanceof DuplicateResultException, String.valueOf(e1.getCause()));
-
-        final ExecutionException e2 = assertThrows(ExecutionException.class, () -> twoRows.async().gett(TestEntity.class, 1L).get());
-        assertTrue(e2.getCause() instanceof DuplicateResultException, String.valueOf(e2.getCause()));
-    }
-
-    @Test
-    public void testAsyncQueryForPrimitiveTypes() {
-        Condition condition = Filters.eq("id", 1L);
-
-        // Test async queryForBoolean
-        ContinuableFuture<OptionalBoolean> asyncBool1 = executor.async().queryForBoolean(TestEntity.class, "active", condition);
-        assertNotNull(asyncBool1);
-
-        ContinuableFuture<OptionalBoolean> asyncBool2 = executor.async().queryForBoolean("SELECT active FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncBool2);
-
-        // Test async queryForChar
-        ContinuableFuture<OptionalChar> asyncChar1 = executor.async().queryForChar(TestEntity.class, "grade", condition);
-        assertNotNull(asyncChar1);
-
-        ContinuableFuture<OptionalChar> asyncChar2 = executor.async().queryForChar("SELECT grade FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncChar2);
-
-        // Test async queryForByte
-        ContinuableFuture<OptionalByte> asyncByte1 = executor.async().queryForByte(TestEntity.class, "level", condition);
-        assertNotNull(asyncByte1);
-
-        ContinuableFuture<OptionalByte> asyncByte2 = executor.async().queryForByte("SELECT level FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncByte2);
-
-        // Test async queryForShort
-        ContinuableFuture<OptionalShort> asyncShort1 = executor.async().queryForShort(TestEntity.class, "count", condition);
-        assertNotNull(asyncShort1);
-
-        ContinuableFuture<OptionalShort> asyncShort2 = executor.async().queryForShort("SELECT count FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncShort2);
-
-        // Test async queryForInt
-        ContinuableFuture<OptionalInt> asyncInt1 = executor.async().queryForInt(TestEntity.class, "age", condition);
-        assertNotNull(asyncInt1);
-
-        ContinuableFuture<OptionalInt> asyncInt2 = executor.async().queryForInt("SELECT age FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncInt2);
-
-        // Test async queryForLong
-        ContinuableFuture<OptionalLong> asyncLong1 = executor.async().queryForLong(TestEntity.class, "id", condition);
-        assertNotNull(asyncLong1);
-
-        ContinuableFuture<OptionalLong> asyncLong2 = executor.async().queryForLong("SELECT id FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncLong2);
-
-        // Test async queryForFloat
-        ContinuableFuture<OptionalFloat> asyncFloat1 = executor.async().queryForFloat(TestEntity.class, "score", condition);
-        assertNotNull(asyncFloat1);
-
-        ContinuableFuture<OptionalFloat> asyncFloat2 = executor.async().queryForFloat("SELECT score FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncFloat2);
-
-        // Test async queryForDouble
-        ContinuableFuture<OptionalDouble> asyncDouble1 = executor.async().queryForDouble(TestEntity.class, "price", condition);
-        assertNotNull(asyncDouble1);
-
-        ContinuableFuture<OptionalDouble> asyncDouble2 = executor.async().queryForDouble("SELECT price FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncDouble2);
-
-        // Test async queryForString
-        ContinuableFuture<Nullable<String>> asyncString1 = executor.async().queryForString(TestEntity.class, "name", condition);
-        assertNotNull(asyncString1);
-
-        ContinuableFuture<Nullable<String>> asyncString2 = executor.async().queryForString("SELECT name FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncString2);
-
-        // Test async queryForDate
-        ContinuableFuture<Nullable<Date>> asyncDate1 = executor.async().queryForDate(TestEntity.class, "createdDate", condition);
-        assertNotNull(asyncDate1);
-
-        ContinuableFuture<Nullable<java.sql.Date>> asyncDate2 = executor.async().queryForDate(TestEntity.class, java.sql.Date.class, "createdDate", condition);
-        assertNotNull(asyncDate2);
-
-        ContinuableFuture<Nullable<Date>> asyncDate3 = executor.async().queryForDate("SELECT created_date FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncDate3);
-
-        ContinuableFuture<Nullable<java.sql.Date>> asyncDate4 = executor.async()
-                .queryForDate(java.sql.Date.class, "SELECT created_date FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncDate4);
-    }
-
-    @Test
-    public void testAsyncqueryForSingleValue() {
-        // Test async queryForSingleValue
-        ContinuableFuture<Nullable<String>> asyncResult1 = executor.async().queryForSingleValue(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
-        assertNotNull(asyncResult1);
-
-        ContinuableFuture<Nullable<String>> asyncResult2 = executor.async().queryForSingleValue(String.class, "SELECT name FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncResult2);
-
-        // Test async queryForSingleNonNull
-        ContinuableFuture<Optional<String>> asyncResult3 = executor.async().queryForSingleNonNull(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
-        assertNotNull(asyncResult3);
-
-        ContinuableFuture<Optional<String>> asyncResult4 = executor.async().queryForSingleNonNull(String.class, "SELECT name FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncResult4);
-    }
-
-    @Test
-    public void testAsyncQueryMethods() {
-        // Test async exists
-        ContinuableFuture<Boolean> asyncExists1 = executor.async().exists(TestEntity.class, 1L);
-        assertNotNull(asyncExists1);
-
-        ContinuableFuture<Boolean> asyncExists2 = executor.async().exists(TestEntity.class, Filters.eq("id", 1L));
-        assertNotNull(asyncExists2);
-
-        ContinuableFuture<Boolean> asyncExists3 = executor.async().exists("SELECT * FROM test WHERE id = ? LIMIT 1", 1L);
-        assertNotNull(asyncExists3);
-
-        // Test async count
-        ContinuableFuture<Long> asyncCount1 = executor.async().count(TestEntity.class, Filters.eq("status", "active"));
-        assertNotNull(asyncCount1);
-
-        ContinuableFuture<Long> asyncCount2 = executor.async().count("SELECT COUNT(*) FROM test WHERE status = ?", "active");
-        assertNotNull(asyncCount2);
-
-        // Test async list
-        ContinuableFuture<List<TestEntity>> asyncList1 = executor.async().list(TestEntity.class, Filters.eq("status", "active"));
-        assertNotNull(asyncList1);
-
-        ContinuableFuture<List<TestEntity>> asyncList2 = executor.async().list(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
-        assertNotNull(asyncList2);
-
-        ContinuableFuture<List<Map<String, Object>>> asyncList3 = executor.async().list("SELECT * FROM test WHERE status = ?", "active");
-        assertNotNull(asyncList3);
-
-        ContinuableFuture<List<TestEntity>> asyncList4 = executor.async().list(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
-        assertNotNull(asyncList4);
-
-        // Test async query
-        ContinuableFuture<Dataset> asyncQuery1 = executor.async().query(TestEntity.class, Filters.eq("status", "active"));
-        assertNotNull(asyncQuery1);
-
-        ContinuableFuture<Dataset> asyncQuery2 = executor.async().query(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
-        assertNotNull(asyncQuery2);
-
-        ContinuableFuture<Dataset> asyncQuery3 = executor.async().query("SELECT * FROM test WHERE status = ?", "active");
-        assertNotNull(asyncQuery3);
-
-        ContinuableFuture<Dataset> asyncQuery4 = executor.async().query(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
-        assertNotNull(asyncQuery4);
-    }
-
-    @Test
-    public void testAsyncStream() {
-        // Test async stream
-        ContinuableFuture<Stream<TestEntity>> asyncStream1 = executor.async().stream(TestEntity.class, Filters.eq("status", "active"));
-        assertNotNull(asyncStream1);
-
-        ContinuableFuture<Stream<TestEntity>> asyncStream2 = executor.async()
-                .stream(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
-        assertNotNull(asyncStream2);
-
-        ContinuableFuture<Stream<Object[]>> asyncStream3 = executor.async().stream("SELECT * FROM test WHERE status = ?", "active");
-        assertNotNull(asyncStream3);
-
-        ContinuableFuture<Stream<TestEntity>> asyncStream4 = executor.async().stream(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
-        assertNotNull(asyncStream4);
-
-        TestStatement stmt = new TestStatement();
-        ContinuableFuture<Stream<TestEntity>> asyncStream5 = executor.async().stream(TestEntity.class, stmt);
-        assertNotNull(asyncStream5);
-    }
-
-    @Test
-    public void testCount() {
-        // Test count with condition
-        long result1 = executor.count(TestEntity.class, Filters.eq("status", "active"));
-        assertEquals(0L, result1);
-
-        // Test deprecated count with query
-        long result2 = executor.count("SELECT COUNT(*) FROM test WHERE status = ?", "active");
-        assertEquals(0L, result2);
     }
 
     @Test
@@ -1315,6 +253,25 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testExecute() {
+        // Test execute
+        TestResultSet result1 = executor.execute("SELECT * FROM test");
+        assertNotNull(result1);
+
+        TestResultSet result2 = executor.execute("SELECT * FROM test WHERE id = ?", 1L);
+        assertNotNull(result2);
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", 1L);
+        TestResultSet result3 = executor.execute("SELECT * FROM test WHERE id = :id", params);
+        assertNotNull(result3);
+
+        TestStatement stmt = new TestStatement();
+        TestResultSet result4 = executor.execute(stmt);
+        assertNotNull(result4);
+    }
+
+    @Test
     public void testExists() {
         // Test exists by ids
         boolean result1 = executor.exists(TestEntity.class, 1L);
@@ -1327,17 +284,6 @@ public class CassandraExecutorBaseTest extends TestBase {
         // Test exists with query
         boolean result3 = executor.exists("SELECT * FROM test WHERE id = ? LIMIT 1", 1L);
         assertTrue(result3);
-    }
-
-    @Test
-    public void test_failedQueryReleasesInternalBuilder() throws Exception {
-        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
-            final TestCassandraExecutor current = new TestCassandraExecutor(policy);
-            for (final Collection<String> properties : Arrays.asList(null, List.of("name"))) {
-                assertRejectedWithoutBuilderLeak(IllegalArgumentException.class,
-                        () -> current.exposedPrepareQuery(TestEntity.class, properties, Filters.or(Filters.eq("id", 1), Filters.eq("id", 2)), 1));
-            }
-        }
     }
 
     @Test
@@ -1366,6 +312,21 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertNotNull(first);
         assertNotNull(second);
         assertEquals(first.size(), second.size());
+    }
+
+    @Test
+    public void testGetKeyNameSet_repeatedCallReturnsSameCached() {
+        java.util.Set<String> first = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
+        java.util.Set<String> second = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
+        assertEquals(first.size(), second.size());
+    }
+
+    @Test
+    public void testGetKeyNameSet_returnsSet() {
+        // exercise getKeyNameSet (overlap with getKeyNames, but distinct accessor)
+        java.util.Set<String> set = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
+        assertNotNull(set);
+        assertTrue(set.contains("id"));
     }
 
     @Test
@@ -1420,8 +381,6 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertTrue(cond.toString().toLowerCase().contains("and"));
     }
 
-    // Coverage additions: idsToCondition / getKeyNames cached paths
-
     @Test
     public void testIdsToCondition_compositeKey_mismatch_throwsIAE() {
         assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(CompositeKeyEntity.class, "onlyOne"));
@@ -1454,15 +413,36 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertTrue(ex.getMessage().contains("sessionId"), ex.getMessage());
     }
 
-    //  Coverage gap fillers: idsToCondition / entityToCondition /
-    //  prepareInsert / prepareUpdate / prepareDelete / prepareQuery
-
     @Test
     public void testIdsToCondition_singleKey() {
         // Single key -> simple equality
         Condition cond = TestCassandraExecutor.exposedIdsToCondition(TestEntity.class, 1L);
         assertNotNull(cond);
         assertTrue(cond.toString().contains("id"));
+    }
+
+    @Test
+    public void testInsert() {
+        // Test insert entity
+        TestEntity entity = new TestEntity();
+        entity.setId(1L);
+        entity.setName("test");
+
+        TestResultSet result1 = executor.insert(entity);
+        assertNotNull(result1);
+
+        // Test insert with props
+        Map<String, Object> props = new HashMap<>();
+        props.put("id", 1L);
+        props.put("name", "test");
+
+        TestResultSet result2 = executor.insert(TestEntity.class, props);
+        assertNotNull(result2);
+    }
+
+    @Test
+    public void testInsert_nullEntity_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.insert((Object) null));
     }
 
     @Test
@@ -1484,10 +464,6 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertNotNull(result4);
     }
 
-    //  Null-argument validation: the row-mapping target class is rejected
-    //  eagerly, because it is only dereferenced when the lazy Stream is
-    //  consumed (sync) or on the future's completion thread (async).
-
     @Test
     public void testListAndStreamRejectNullTargetClassEagerly() {
         assertThrows(IllegalArgumentException.class, () -> executor.list((Class<Object>) null, "SELECT * FROM t"));
@@ -1495,72 +471,25 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Object>) null, new TestStatement()));
     }
 
+    /** A null entity class / entity / SP argument is rejected with IllegalArgumentException, not NullPointerException. */
     @Test
-    public void testPrepareQuery_allProps() {
-        SP sp = executor.exposedPrepareQuery(TestEntity.class, null, Filters.eq("id", 1L), 0);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("SELECT"));
-    }
+    @SuppressWarnings("deprecation")
+    public void testNullClassOrEntityArguments_throwIAE() {
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(null, Arrays.asList("id")));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.getKeyNames(null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.getKeyNameSet(null));
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToCondition(null));
 
-    @Test
-    public void testPrepareQuery_camelCase_allProps() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        SP sp = ccExec.exposedPrepareQuery(TestEntity.class, null, Filters.eq("id", 1L), 0);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("SELECT"));
-    }
-
-    @Test
-    public void testPrepareQuery_camelCase_withSelectProps() {
-        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
-        SP sp = ccExec.exposedPrepareQuery(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L), 5);
-        assertNotNull(sp);
-        String q = sp.query().toUpperCase();
-        assertTrue(q.contains("SELECT"));
-        assertTrue(q.contains("LIMIT"));
-    }
-
-    @Test
-    public void testPrepareQuery_nullCondition_noLimit() {
-        SP sp = executor.exposedPrepareQuery(TestEntity.class, null, null, 0);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("SELECT"));
-    }
-
-    @Test
-    public void testPrepareQuery_screamingSnakeCase_allProps() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        SP sp = scExec.exposedPrepareQuery(TestEntity.class, null, Filters.eq("id", 1L), 0);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("SELECT"));
-    }
-
-    @Test
-    public void testPrepareQuery_screamingSnakeCase_withSelectProps() {
-        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
-        SP sp = scExec.exposedPrepareQuery(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L), 5);
-        assertNotNull(sp);
-        String q = sp.query().toUpperCase();
-        assertTrue(q.contains("SELECT"));
-        assertTrue(q.contains("LIMIT"));
-    }
-
-    @Test
-    public void testPrepareQuery_selectProps_withLimit() {
-        SP sp = executor.exposedPrepareQuery(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L), 5);
-        assertNotNull(sp);
-        String q = sp.query().toUpperCase();
-        assertTrue(q.contains("SELECT"));
-        assertTrue(q.contains("LIMIT"));
-    }
-
-    // Coverage additions: prepareQuery(3-args) overload + parseCql with mapper
-
-    @Test
-    public void testPrepareQuery_threeArgsOverload() {
-        SP sp = executor.exposedPrepareQueryThreeArgs(TestEntity.class, null, Filters.eq("id", 1L));
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("SELECT"));
+        assertThrows(IllegalArgumentException.class, () -> executor.get((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.get((Class<Object>) null, (Collection<String>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett((Class<Object>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett((Class<Object>) null, (Collection<String>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Class<?>) null, (Collection<String>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.execute((SP) null));
     }
 
     @Test
@@ -1701,6 +630,58 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull(TestEntity.class, String.class, "", Filters.eq("id", 1L)));
     }
 
+    @Test
+    public void testRegisterKeys() {
+        // Test deprecated registerKeys method
+        CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", "name"));
+
+        // Verify keys are registered
+        ImmutableList<String> keyNames = CassandraExecutorBase.getKeyNames(TestEntity.class);
+        assertTrue(keyNames.contains("id"));
+        assertTrue(keyNames.contains("name"));
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testRegisterKeys_nullOrBlankKeyName_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", null)));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("")));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(String.class, Arrays.asList("length")));
+    }
+
+    // the failure used to surface as the unrelated "'getSetMethod' cannot be null" from Beans.getPropNameByMethod(null).
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testRegisterKeys_unknownPropertyName_throwsIAENamingTheKey() {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> CassandraExecutorBase.registerKeys(TestEntity.class, Arrays.asList("id", "noSuchProp")));
+
+        assertTrue(e.getMessage().contains("noSuchProp"), e.getMessage());
+        assertTrue(e.getMessage().contains(TestEntity.class.getCanonicalName()), e.getMessage());
+        // nothing was registered for the class
+        assertTrue(!CassandraExecutorBase.entityKeyNamesMap.containsKey(TestEntity.class));
+    }
+
+    // async count/queryForXxx façades agree with their synchronous counterparts.
+    @Test
+    public void testSharedMappers_presentNullCollapsesToPrimitiveDefault() {
+        assertEquals(0L, CassandraExecutorBase.long_secondMapper.apply(Nullable.of((Long) null)).longValue());
+        assertEquals(0L, CassandraExecutorBase.long_secondMapper.apply(Nullable.<Long> empty()).longValue());
+        assertEquals(7L, CassandraExecutorBase.long_secondMapper.apply(Nullable.of(7L)).longValue());
+
+        final OptionalBoolean presentNull = CassandraExecutorBase.boolean_mapper.apply(Nullable.of((Boolean) null));
+        assertTrue(presentNull.isPresent());
+        assertEquals(false, presentNull.get());
+        assertTrue(CassandraExecutorBase.boolean_mapper.apply(Nullable.<Boolean> empty()).isEmpty());
+
+        final OptionalLong presentNullLong = CassandraExecutorBase.long_mapper.apply(Nullable.of((Long) null));
+        assertTrue(presentNullLong.isPresent());
+        assertEquals(0L, presentNullLong.get());
+        assertTrue(CassandraExecutorBase.long_mapper.apply(Nullable.<Long> empty()).isEmpty());
+        assertTrue(CassandraExecutorBase.exists_mapper.apply(Arrays.asList(new Object())));
+        assertTrue(!CassandraExecutorBase.exists_mapper.apply(new ArrayList<>()));
+    }
+
     // A keyless class must not be reported as having the key "[id]".
     @Test
     public void testSliceN_idsToCondition_keylessClass_messageDoesNotInventIdKey() {
@@ -1735,685 +716,44 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertNotNull(stream5);
     }
 
-    // Additional contracts
-
-    /** A null entity class / entity / SP argument is rejected with IllegalArgumentException, not NullPointerException. */
     @Test
-    @SuppressWarnings("deprecation")
-    public void testNullClassOrEntityArguments_throwIAE() {
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.registerKeys(null, Arrays.asList("id")));
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.getKeyNames(null));
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.getKeyNameSet(null));
-        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToCondition(null));
-
-        assertThrows(IllegalArgumentException.class, () -> executor.get((Class<Object>) null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> executor.get((Class<Object>) null, (Collection<String>) null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> executor.gett((Class<Object>) null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> executor.gett((Class<Object>) null, (Collection<String>) null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> executor.delete((Class<?>) null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> executor.delete((Class<?>) null, (Collection<String>) null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, 1L));
-        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, Filters.eq("id", 1L)));
-        assertThrows(IllegalArgumentException.class, () -> executor.execute((SP) null));
-    }
-
-    @Test
-    public void testAsyncRejectsNullValueClassOnTheCallingThread() {
-        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = executor.async();
-
-        assertThrows(IllegalArgumentException.class, () -> async.queryForSingleValue((Class<Object>) null, "SELECT v FROM t"));
-        assertThrows(IllegalArgumentException.class, () -> async.queryForSingleNonNull((Class<Object>) null, "SELECT v FROM t"));
-    }
-
-    @Test
-    public void testAsyncCRUDOperations() {
+    public void testUpdate() {
+        // Test update entity
         TestEntity entity = new TestEntity();
         entity.setId(1L);
         entity.setName("test");
 
-        // Test async insert
-        ContinuableFuture<TestResultSet> asyncInsert1 = executor.async().insert(entity);
-        assertNotNull(asyncInsert1);
-
-        Map<String, Object> props = new HashMap<>();
-        props.put("id", 1L);
-        props.put("name", "test");
-
-        ContinuableFuture<TestResultSet> asyncInsert2 = executor.async().insert(TestEntity.class, props);
-        assertNotNull(asyncInsert2);
-
-        // Test async batch insert
-        TestEntity e1 = new TestEntity();
-        e1.setId(1L);
-        TestEntity e2 = new TestEntity();
-        e2.setId(2L);
-        List<TestEntity> entities = Arrays.asList(e1, e2);
-        ContinuableFuture<TestResultSet> asyncBatchInsert1 = executor.async().batchInsert(entities, TestBatchType.LOGGED);
-        assertNotNull(asyncBatchInsert1);
-
-        List<Map<String, Object>> propsList = Arrays.asList(new HashMap<>(), new HashMap<>());
-        ContinuableFuture<TestResultSet> asyncBatchInsert2 = executor.async().batchInsert(TestEntity.class, propsList, TestBatchType.LOGGED);
-        assertNotNull(asyncBatchInsert2);
-
-        // Test async update
-        ContinuableFuture<TestResultSet> asyncUpdate1 = executor.async().update(entity);
-        assertNotNull(asyncUpdate1);
-
-        ContinuableFuture<TestResultSet> asyncUpdate2 = executor.async().update(entity, Arrays.asList("name"));
-        assertNotNull(asyncUpdate2);
-
-        ContinuableFuture<TestResultSet> asyncUpdate3 = executor.async().update(TestEntity.class, Map.of("name", "test"), Filters.eq("id", 1L));
-        assertNotNull(asyncUpdate3);
-
-        ContinuableFuture<TestResultSet> asyncUpdate4 = executor.async().update("UPDATE test SET name = ? WHERE id = ?", "updated", 1L);
-        assertNotNull(asyncUpdate4);
-
-        // Test async batch update
-        ContinuableFuture<TestResultSet> asyncBatchUpdate1 = executor.async().batchUpdate(entities, TestBatchType.LOGGED);
-        assertNotNull(asyncBatchUpdate1);
-
-        ContinuableFuture<TestResultSet> asyncBatchUpdate2 = executor.async().batchUpdate(entities, Arrays.asList("name"), TestBatchType.LOGGED);
-        assertNotNull(asyncBatchUpdate2);
-
-        ContinuableFuture<TestResultSet> asyncBatchUpdate3 = executor.async().batchUpdate(TestEntity.class, propsList, TestBatchType.LOGGED);
-        assertNotNull(asyncBatchUpdate3);
-
-        List<Object[]> parametersList = Arrays.asList(new Object[] { "updated1", 1L }, new Object[] { "updated2", 2L });
-        ContinuableFuture<TestResultSet> asyncBatchUpdate4 = executor.async()
-                .batchUpdate("UPDATE test SET name = ? WHERE id = ?", parametersList, TestBatchType.LOGGED);
-        assertNotNull(asyncBatchUpdate4);
-
-        // Test async delete
-        ContinuableFuture<TestResultSet> asyncDelete1 = executor.async().delete(entity);
-        assertNotNull(asyncDelete1);
-
-        ContinuableFuture<TestResultSet> asyncDelete2 = executor.async().delete(entity, Arrays.asList("name"));
-        assertNotNull(asyncDelete2);
-
-        ContinuableFuture<TestResultSet> asyncDelete3 = executor.async().delete(TestEntity.class, 1L);
-        assertNotNull(asyncDelete3);
-
-        ContinuableFuture<TestResultSet> asyncDelete4 = executor.async().delete(TestEntity.class, Arrays.asList("name"), 1L);
-        assertNotNull(asyncDelete4);
-
-        ContinuableFuture<TestResultSet> asyncDelete5 = executor.async().delete(TestEntity.class, Filters.eq("id", 1L));
-        assertNotNull(asyncDelete5);
-
-        ContinuableFuture<TestResultSet> asyncDelete6 = executor.async().delete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
-        assertNotNull(asyncDelete6);
-
-        // Test async batch delete
-        ContinuableFuture<TestResultSet> asyncBatchDelete1 = executor.async().batchDelete(entities);
-        assertNotNull(asyncBatchDelete1);
-
-        ContinuableFuture<TestResultSet> asyncBatchDelete2 = executor.async().batchDelete(entities, Arrays.asList("name"));
-        assertNotNull(asyncBatchDelete2);
-    }
-
-    @Test
-    public void testAsyncExecute() {
-        // Test async execute
-        ContinuableFuture<TestResultSet> asyncExec1 = executor.async().execute("SELECT * FROM test");
-        assertNotNull(asyncExec1);
-
-        ContinuableFuture<TestResultSet> asyncExec2 = executor.async().execute("SELECT * FROM test WHERE id = ?", 1L);
-        assertNotNull(asyncExec2);
-
-        Map<String, Object> params = new HashMap<>();
-        params.put("id", 1L);
-        ContinuableFuture<TestResultSet> asyncExec3 = executor.async().execute("SELECT * FROM test WHERE id = :id", params);
-        assertNotNull(asyncExec3);
-
-        TestStatement stmt = new TestStatement();
-        ContinuableFuture<TestResultSet> asyncExec4 = executor.async().execute(stmt);
-        assertNotNull(asyncExec4);
-    }
-
-    @Test
-    public void testAsyncMethods() {
-        // Test async get methods
-        ContinuableFuture<Optional<TestEntity>> asyncGet1 = executor.async().get(TestEntity.class, 1L);
-        assertNotNull(asyncGet1);
-
-        ContinuableFuture<Optional<TestEntity>> asyncGet2 = executor.async().get(TestEntity.class, Arrays.asList("id"), 1L);
-        assertNotNull(asyncGet2);
-
-        ContinuableFuture<Optional<TestEntity>> asyncGet3 = executor.async().get(TestEntity.class, Filters.eq("id", 1L));
-        assertNotNull(asyncGet3);
-
-        ContinuableFuture<Optional<TestEntity>> asyncGet4 = executor.async().get(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
-        assertNotNull(asyncGet4);
-
-        // Test async gett methods
-        ContinuableFuture<TestEntity> asyncGett1 = executor.async().gett(TestEntity.class, 1L);
-        assertNotNull(asyncGett1);
-
-        ContinuableFuture<TestEntity> asyncGett2 = executor.async().gett(TestEntity.class, Arrays.asList("id"), 1L);
-        assertNotNull(asyncGett2);
-
-        ContinuableFuture<TestEntity> asyncGett3 = executor.async().gett(TestEntity.class, Filters.eq("id", 1L));
-        assertNotNull(asyncGett3);
-
-        ContinuableFuture<TestEntity> asyncGett4 = executor.async().gett(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
-        assertNotNull(asyncGett4);
-    }
-
-    @Test
-    public void testAsyncSingleValueFacadesEmptyAndPresentNullSemantics() throws Exception {
-        // no row -> empty flavors
-        final TestCassandraExecutor noRows = new TestCassandraExecutor() {
-            @Override
-            public TestResultSet execute(String query, Object... parameters) {
-                return new TestResultSet() {
-                    @Override
-                    public Iterator<TestRow> iterator() {
-                        return new ArrayList<TestRow>().iterator();
-                    }
-                };
-            }
-        };
-        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> asyncNoRows = new AsyncCassandraExecutorBase<>(
-                noRows) {
-            @Override
-            public ContinuableFuture<TestResultSet> execute(String query) {
-                return ContinuableFuture.completed(noRows.execute(query));
-            }
-
-            @Override
-            public ContinuableFuture<TestResultSet> execute(String query, Object... parameters) {
-                return ContinuableFuture.completed(noRows.execute(query, parameters));
-            }
-
-            @Override
-            public ContinuableFuture<TestResultSet> execute(String query, Map<String, Object> parameters) {
-                return ContinuableFuture.completed(noRows.execute(query, parameters));
-            }
-
-            @Override
-            public ContinuableFuture<TestResultSet> execute(TestStatement statement) {
-                return ContinuableFuture.completed(noRows.execute(statement));
-            }
-        };
-
-        assertTrue(asyncNoRows.queryForBoolean("SELECT v FROM t").get().isEmpty());
-        assertTrue(asyncNoRows.queryForLong("SELECT v FROM t").get().isEmpty());
-        assertTrue(asyncNoRows.queryForString("SELECT v FROM t").get().isEmpty());
-        assertTrue(asyncNoRows.queryForSingleValue(String.class, "SELECT v FROM t").get().isEmpty());
-        assertTrue(asyncNoRows.queryForSingleNonNull(String.class, "SELECT v FROM t").get().isEmpty());
-        assertTrue(asyncNoRows.findFirst("SELECT v FROM t").get().isEmpty());
-        assertEquals(0L, asyncNoRows.count("SELECT count(*) FROM t").get().longValue());
-        assertEquals(0L, asyncNoRows.count(TestEntity.class, Filters.eq("id", 1L)).get().longValue());
-        assertEquals(false, asyncNoRows.exists("SELECT v FROM t").get());
-        assertEquals(false, asyncNoRows.exists(TestEntity.class, 1L).get());
-
-        // one row whose first column is NULL (the stub readFirstColumn returns null) -> present flavors
-        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> asyncNullRow = executor.async();
-        final OptionalBoolean b = asyncNullRow.queryForBoolean("SELECT v FROM t").get();
-        assertTrue(b.isPresent());
-        assertEquals(false, b.get());
-        final OptionalLong l = asyncNullRow.queryForLong("SELECT v FROM t").get();
-        assertTrue(l.isPresent());
-        assertEquals(0L, l.get());
-        final Nullable<String> s = asyncNullRow.queryForString("SELECT v FROM t").get();
-        assertTrue(s.isPresent());
-        assertTrue(s.isNull());
-        assertEquals(0L, asyncNullRow.count("SELECT count(*) FROM t").get().longValue());
-        assertEquals(true, asyncNullRow.exists("SELECT v FROM t").get());
-
-        final ExecutionException e = assertThrows(ExecutionException.class, () -> asyncNullRow.queryForSingleNonNull(String.class, "SELECT v FROM t").get());
-        assertTrue(e.getCause() instanceof NullPointerException, String.valueOf(e.getCause()));
-    }
-
-    @Test
-    public void testExecute() {
-        // Test execute
-        TestResultSet result1 = executor.execute("SELECT * FROM test");
+        TestResultSet result1 = executor.update(entity);
         assertNotNull(result1);
 
-        TestResultSet result2 = executor.execute("SELECT * FROM test WHERE id = ?", 1L);
+        // Test update with propNamesToUpdate
+        TestResultSet result2 = executor.update(entity, Arrays.asList("name"));
         assertNotNull(result2);
 
-        Map<String, Object> params = new HashMap<>();
-        params.put("id", 1L);
-        TestResultSet result3 = executor.execute("SELECT * FROM test WHERE id = :id", params);
+        // Test update with props and condition
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "updated");
+
+        TestResultSet result3 = executor.update(TestEntity.class, props, Filters.eq("id", 1L));
         assertNotNull(result3);
 
-        TestStatement stmt = new TestStatement();
-        TestResultSet result4 = executor.execute(stmt);
+        // Test update with query
+        TestResultSet result4 = executor.update("UPDATE test SET name = ? WHERE id = ?", "updated", 1L);
         assertNotNull(result4);
     }
 
-    // The shared single-value mappers collapse a present-but-null payload to the primitive default, so the
-    // async count/queryForXxx façades agree with their synchronous counterparts.
     @Test
-    public void testSharedMappers_presentNullCollapsesToPrimitiveDefault() {
-        assertEquals(0L, CassandraExecutorBase.long_secondMapper.apply(Nullable.of((Long) null)).longValue());
-        assertEquals(0L, CassandraExecutorBase.long_secondMapper.apply(Nullable.<Long> empty()).longValue());
-        assertEquals(7L, CassandraExecutorBase.long_secondMapper.apply(Nullable.of(7L)).longValue());
+    public void testUpdate_nullEntity_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null));
+    }
 
-        final OptionalBoolean presentNull = CassandraExecutorBase.boolean_mapper.apply(Nullable.of((Boolean) null));
-        assertTrue(presentNull.isPresent());
-        assertEquals(false, presentNull.get());
-        assertTrue(CassandraExecutorBase.boolean_mapper.apply(Nullable.<Boolean> empty()).isEmpty());
-
-        final OptionalLong presentNullLong = CassandraExecutorBase.long_mapper.apply(Nullable.of((Long) null));
-        assertTrue(presentNullLong.isPresent());
-        assertEquals(0L, presentNullLong.get());
-        assertTrue(CassandraExecutorBase.long_mapper.apply(Nullable.<Long> empty()).isEmpty());
-        assertTrue(CassandraExecutorBase.exists_mapper.apply(Arrays.asList(new Object())));
-        assertTrue(!CassandraExecutorBase.exists_mapper.apply(new ArrayList<>()));
+    @Test
+    public void testUpdate_nullEntityWithPropNames_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null, java.util.Arrays.asList("name")));
     }
 
     @Test
     public void testUsingTTLRejectsNegativeValue() {
         assertThrows(IllegalArgumentException.class, () -> CqlBuilder.Dsl.PSC.insert("id").into("events").usingTTL(-1));
-    }
-
-    // Composite-key entity for entityToCondition / idsToCondition tests
-    public static class CompositeKeyEntity {
-        @Id
-        private String userId;
-        @Id
-        private String sessionId;
-        private String value;
-
-        public String getUserId() {
-            return userId;
-        }
-
-        public void setUserId(String userId) {
-            this.userId = userId;
-        }
-
-        public String getSessionId() {
-            return sessionId;
-        }
-
-        public void setSessionId(String sessionId) {
-            this.sessionId = sessionId;
-        }
-
-        public String getValue() {
-            return value;
-        }
-
-        public void setValue(String value) {
-            this.value = value;
-        }
-    }
-
-    // Test implementation of CassandraExecutorBase
-    private static class TestCassandraExecutor extends CassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> {
-
-        // Expose protected static helpers for tests
-        public static Condition exposedIdsToCondition(Class<?> targetClass, Object... ids) {
-            return CassandraExecutorBase.idsToCondition(targetClass, ids);
-        }
-
-        public static Condition exposedEntityToCondition(Object entity) {
-            return CassandraExecutorBase.entityToCondition(entity);
-        }
-
-        public static Condition exposedEntityToConditionCollection(Class<?> entityClass, Collection<?> entities) {
-            return CassandraExecutorBase.entityToCondition(entityClass, entities);
-        }
-
-        public SP exposedPrepareInsert(Object entity) {
-            return prepareInsert(entity);
-        }
-
-        public SP exposedPrepareInsert(Class<?> targetClass, Map<String, Object> props) {
-            return prepareInsert(targetClass, props);
-        }
-
-        public SP exposedPrepareUpdate(Object entity, Collection<String> propNamesToUpdate) {
-            return prepareUpdate(entity, propNamesToUpdate);
-        }
-
-        public SP exposedPrepareUpdate(Class<?> targetClass, Map<String, Object> props, Condition whereClause) {
-            return prepareUpdate(targetClass, props, whereClause);
-        }
-
-        public SP exposedPrepareDelete(Class<?> targetClass, Collection<String> propNamesToDelete, Condition whereClause) {
-            return prepareDelete(targetClass, propNamesToDelete, whereClause);
-        }
-
-        public SP exposedPrepareQuery(Class<?> targetClass, Collection<String> selectPropNames, Condition whereClause, int count) {
-            return prepareQuery(targetClass, selectPropNames, whereClause, count);
-        }
-
-        public com.landawn.abacus.da.cassandra.ParsedCql exposedParseCql(String cql) {
-            return parseCql(cql);
-        }
-
-        public TestCassandraExecutor() {
-            super(null, NamingPolicy.SNAKE_CASE);
-        }
-
-        public TestCassandraExecutor(NamingPolicy namingPolicy) {
-            super(null, namingPolicy);
-        }
-
-        public TestCassandraExecutor(CqlMapper cqlMapper, NamingPolicy namingPolicy) {
-            super(cqlMapper, namingPolicy);
-        }
-
-        public SP exposedPrepareQueryThreeArgs(Class<?> targetClass, Collection<String> selectPropNames, Condition whereClause) {
-            return prepareQuery(targetClass, selectPropNames, whereClause);
-        }
-
-        private final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> asyncExecutor = new AsyncCassandraExecutorBase<>(
-                this) {
-            @Override
-            public ContinuableFuture<TestResultSet> execute(String query) {
-                return ContinuableFuture.completed(new TestResultSet());
-            }
-
-            @Override
-            public ContinuableFuture<TestResultSet> execute(String query, Object... parameters) {
-                return ContinuableFuture.completed(new TestResultSet());
-            }
-
-            @Override
-            public ContinuableFuture<TestResultSet> execute(String query, Map<String, Object> parameters) {
-                return ContinuableFuture.completed(new TestResultSet());
-            }
-
-            @Override
-            public ContinuableFuture<TestResultSet> execute(TestStatement statement) {
-                return ContinuableFuture.completed(new TestResultSet());
-            }
-        };
-
-        public AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async() {
-            return asyncExecutor;
-        }
-
-        SP prepareBatchMapUpdateForTest(final Class<?> targetClass, final Map<String, Object> props) {
-            return prepareBatchMapUpdate(targetClass, props);
-        }
-
-        @Override
-        public <T> T gett(Class<T> targetClass, Collection<String> selectPropNames, Condition whereClause) throws DuplicateResultException {
-            try {
-                return targetClass.newInstance();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        @Override
-        public <E> Nullable<E> queryForSingleValue(Class<E> valueClass, String query, Object... parameters) {
-            return Nullable.empty();
-        }
-
-        @Override
-        public <E> Optional<E> queryForSingleNonNull(Class<E> valueClass, String query, Object... parameters) {
-            return Optional.empty();
-        }
-
-        @Override
-        public <T> Optional<T> findFirst(Class<T> targetClass, String query, Object... parameters) {
-            try {
-                return Optional.of(targetClass.newInstance());
-            } catch (Exception e) {
-                return Optional.empty();
-            }
-        }
-
-        @Override
-        public TestResultSet execute(String query) {
-            return new TestResultSet();
-        }
-
-        @Override
-        public TestResultSet execute(String query, Object... parameters) {
-            return new TestResultSet();
-        }
-
-        @Override
-        public TestResultSet execute(String query, Map<String, Object> parameters) {
-            return new TestResultSet();
-        }
-
-        @Override
-        public TestResultSet execute(TestStatement statement) {
-            return new TestResultSet();
-        }
-
-        public void close() {
-            // No-op
-        }
-
-        @Override
-        protected TestStatement prepareBatchStatement(TestBatchType type) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestStatement prepareBatchInsertStatement(Collection<?> entities, TestBatchType type) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestStatement prepareBatchInsertStatement(Class<?> targetClass, Collection<? extends Map<String, Object>> propsList, TestBatchType type) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestStatement prepareBatchUpdateStatement(Collection<?> entities, Collection<String> propNamesToUpdate, TestBatchType type) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestStatement prepareBatchUpdateStatement(Class<?> targetClass, Collection<? extends Map<String, Object>> propsList, TestBatchType type) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestStatement prepareBatchUpdateStatement(String query, Collection<?> parametersList, TestBatchType type) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestStatement prepareStatement(String query) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestStatement prepareStatement(String query, Object... parameters) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected TestPreparedStatement prepare(String query) {
-            return new TestPreparedStatement();
-        }
-
-        @Override
-        protected TestStatement bind(TestPreparedStatement preStmt, Object... parameters) {
-            return new TestStatement();
-        }
-
-        @Override
-        protected <T> T fetchOnlyOne(Class<T> targetClass, TestResultSet resultSet) {
-            try {
-                return targetClass.newInstance();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        @Override
-        protected <T> List<T> toList(Class<T> targetClass, TestResultSet execute) {
-            return new ArrayList<>();
-        }
-
-        @Override
-        protected Dataset extractData(Class<?> targetClass, TestResultSet execute) {
-            return Dataset.empty();
-        }
-
-        @Override
-        protected <T> Function<TestRow, T> createRowMapper(Class<T> targetClass) {
-            return row -> {
-                try {
-                    return targetClass.newInstance();
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            };
-        }
-
-        @Override
-        protected <T> T readFirstColumn(TestRow row, Class<T> targetClass) {
-            return null;
-        }
-    }
-
-    private static void assertRejectedWithoutBuilderLeak(final Class<? extends Throwable> exceptionClass, final Runnable action) {
-        QueryBuilderLeakAssertions.assertRejectedWithoutBuilderLeak(exceptionClass, action::run,
-                "A failed executor preparation must release its unreachable builder");
-    }
-
-    @com.landawn.abacus.annotation.Table(name = "invalid table")
-    public static class BadTableEntity extends TestEntity {
-    }
-
-    public static class ThrowingUpdateEntity {
-        @Id
-        private Long id;
-
-        public Long getId() {
-            return id;
-        }
-
-        public void setId(final Long id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            throw new IllegalStateException("bad update getter");
-        }
-    }
-
-    public static class SliceNKeylessEntity {
-        private String name;
-
-        public String getName() {
-            return name;
-        }
-
-        public void setName(String name) {
-            this.name = name;
-        }
-    }
-
-    /** Records every CQL/parameter pair handed to the driver-level execute, for both the sync and the async façade. */
-    private static class RecordingExecutor extends TestCassandraExecutor {
-        final List<String> recorded = new ArrayList<>();
-
-        private String record(final String query, final Object... parameters) {
-            final String rec = query + " " + Arrays.asList(parameters == null ? new Object[0] : parameters);
-            recorded.add(rec);
-            return rec;
-        }
-
-        @Override
-        public TestResultSet execute(String query, Object... parameters) {
-            record(query, parameters);
-            return new TestResultSet();
-        }
-
-        @Override
-        public <E> Nullable<E> queryForSingleValue(Class<E> valueClass, String query, Object... parameters) {
-            record(query, parameters);
-            return Nullable.empty();
-        }
-
-        @Override
-        public <E> Optional<E> queryForSingleNonNull(Class<E> valueClass, String query, Object... parameters) {
-            record(query, parameters);
-            return Optional.empty();
-        }
-
-        @Override
-        public <T> Optional<T> findFirst(Class<T> targetClass, String query, Object... parameters) {
-            record(query, parameters);
-            return Optional.empty();
-        }
-
-        AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> recordingAsync() {
-            return new AsyncCassandraExecutorBase<>(this) {
-                @Override
-                public ContinuableFuture<TestResultSet> execute(String query) {
-                    record(query);
-                    return ContinuableFuture.completed(new TestResultSet());
-                }
-
-                @Override
-                public ContinuableFuture<TestResultSet> execute(String query, Object... parameters) {
-                    record(query, parameters);
-                    return ContinuableFuture.completed(new TestResultSet());
-                }
-
-                @Override
-                public ContinuableFuture<TestResultSet> execute(String query, Map<String, Object> parameters) {
-                    record(query, parameters);
-                    return ContinuableFuture.completed(new TestResultSet());
-                }
-
-                @Override
-                public ContinuableFuture<TestResultSet> execute(TestStatement statement) {
-                    recorded.add("statement");
-                    return ContinuableFuture.completed(new TestResultSet());
-                }
-            };
-        }
-    }
-
-    // ---- cassbase review regression tests: end ----
-
-    // Test classes
-    public static class TestEntity {
-        private Long id;
-        private String name;
-
-        public Long getId() {
-            return id;
-        }
-
-        public void setId(Long id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        public void setName(String name) {
-            this.name = name;
-        }
-    }
-
-    private static class TestRow {
-    }
-
-    private static class TestResultSet implements Iterable<TestRow> {
-        @Override
-        public Iterator<TestRow> iterator() {
-            return Arrays.asList(new TestRow()).iterator();
-        }
-    }
-
-    private static class TestStatement {
-    }
-
-    private static class TestPreparedStatement {
-    }
-
-    private enum TestBatchType {
-        LOGGED, UNLOGGED, COUNTER
     }
 }

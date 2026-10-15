@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 
 import com.landawn.abacus.da.MockitoTestBase;
+import com.landawn.abacus.da.mongodb.MongoMappingFixtures;
 import com.landawn.abacus.util.Dataset;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.model.BulkWriteOptions;
@@ -54,46 +55,39 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         mapper = new MongoCollectionMapper<>(mockExecutor, TestEntity.class);
     }
 
-    // Row and entity mapping
-
     @Test
-    public void testDecodedValueConversionsOnMapperReadPaths_coverageME() {
+    public void testDecodedValueConversionsOnMapperReadPaths() {
         // The reactive mapper reads through the executor with its entity class as row type, so the MongoDBBase read-side
         // conversions (typed container elements, java.time Local* in UTC, generic bean type arguments, records incl. _id into
         // the record's id component) must hold for mapped entities too. Fixtures are shared with the sync
-        // com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest (*_coverageME); each read path is asserted on its own.
-        final var entityType = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eEntity_coverageME.class;
-        final var entityMapper = mapperReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.entityDoc_coverageME(), entityType);
-        final var recordMapper = mapperReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.recordDoc_coverageME(),
-                com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eRecord_coverageME.class);
-        final var boxMapper = mapperReturning_coverageME(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.longBoxDoc_coverageME(),
-                com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.E2eLongBox_coverageME.class);
+        // com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest (*); each read path is asserted on its own.
+        final var entityType = com.landawn.abacus.da.mongodb.MongoMappingFixtures.MappedEntity.class;
+        final var entityMapper = mapperReturning(com.landawn.abacus.da.mongodb.MongoMappingFixtures.entityDoc(), entityType);
+        final var recordMapper = mapperReturning(com.landawn.abacus.da.mongodb.MongoMappingFixtures.recordDoc(),
+                com.landawn.abacus.da.mongodb.MongoMappingFixtures.MappedRecord.class);
+        final var boxMapper = mapperReturning(com.landawn.abacus.da.mongodb.MongoMappingFixtures.longBoxDoc(),
+                com.landawn.abacus.da.mongodb.MongoMappingFixtures.LongBox.class);
         final Bson filter = new Document();
         final List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
-        final ObjectId oid = new ObjectId(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.OID_HEX_coverageME);
-        final Object expectedRecord = com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.expectedRecord_coverageME();
+        final ObjectId oid = new ObjectId(com.landawn.abacus.da.mongodb.MongoMappingFixtures.OID_HEX);
+        final Object expectedRecord = com.landawn.abacus.da.mongodb.MongoMappingFixtures.expectedRecord();
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list", entityMapper.list(filter).blockFirst()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("list(Collection)",
+                () -> com.landawn.abacus.da.mongodb.MongoMappingFixtures.assertEntity("list", entityMapper.list(filter).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoMappingFixtures.assertEntity("list(Collection)",
                         entityMapper.list(Arrays.asList("nums", "day"), filter).blockFirst()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findFirst", entityMapper.findFirst(filter).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("get(ObjectId)", entityMapper.get(oid).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("aggregate",
-                        entityMapper.aggregate(pipeline).blockFirst()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntity_coverageME("findOneAndDelete",
-                        entityMapper.findOneAndDelete(filter).block()),
-                () -> com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.assertEntityDataset_coverageME("query(Bson)",
-                        entityMapper.query(filter).block()),
-                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest.LOCAL_DAY_coverageME,
+                () -> com.landawn.abacus.da.mongodb.MongoMappingFixtures.assertEntity("findFirst", entityMapper.findFirst(filter).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoMappingFixtures.assertEntity("get(ObjectId)", entityMapper.get(oid).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoMappingFixtures.assertEntity("aggregate", entityMapper.aggregate(pipeline).blockFirst()),
+                () -> com.landawn.abacus.da.mongodb.MongoMappingFixtures.assertEntity("findOneAndDelete", entityMapper.findOneAndDelete(filter).block()),
+                () -> com.landawn.abacus.da.mongodb.MongoMappingFixtures.assertEntityDataset("query(Bson)", entityMapper.query(filter).block()),
+                () -> assertEquals(com.landawn.abacus.da.mongodb.MongoMappingFixtures.LOCAL_DAY,
                         entityMapper.queryForSingleValue("day", filter, java.time.LocalDate.class).block(), "queryForSingleValue LocalDate"),
                 () -> assertEquals(expectedRecord, recordMapper.get(oid).block(), "record get(ObjectId)"),
                 () -> assertEquals(expectedRecord, recordMapper.list(filter).blockFirst(), "record list"),
                 () -> assertEquals((Object) 9L, boxMapper.list(filter).blockFirst().getValue(), "LongBox list"),
                 () -> assertEquals((Object) 9L, boxMapper.findFirst(filter).block().getValue(), "LongBox findFirst"));
     }
-
-    // Factories and insert operations
 
     @Test
     public void testBulkInsert() {
@@ -157,8 +151,6 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
 
         verify(mockExecutor).insertOne(entity, options);
     }
-
-    // Updates and deletes
 
     @Test
     public void testDeleteMany() {
@@ -568,8 +560,6 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
 
         verify(mockExecutor).updateOne(objectId, update);
     }
-
-    // Queries and results
 
     @Test
     public void testAggregate() {
@@ -984,7 +974,7 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
 
     @Test
     @SuppressWarnings("unchecked")
-    public void testQueryDottedSelectNameThroughMapperFillsNestedColumn_verifyME() {
+    public void testQueryDottedSelectNameThroughMapperFillsNestedColumn() {
         // The mapper's Collection-projection Dataset overloads delegate with the entity class as row type, so a dotted
         // select name must come back as the nested value (it was an all-null column) and a path through an array fails.
         final com.mongodb.reactivestreams.client.MongoCollection<Document> collection = mock(com.mongodb.reactivestreams.client.MongoCollection.class);
@@ -1246,8 +1236,6 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         verify(mockExecutor).replaceOne(filter, replacement, options);
     }
 
-    // Additional contracts
-
     @Test
     public void testBulkWrite() {
         List<WriteModel<Document>> requests = Arrays.asList(new InsertOneModel<>(new Document("id", 1)));
@@ -1318,15 +1306,9 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         verify(mockExecutor).replaceOne(objectId, replacement);
     }
 
-    // ---- end 2026-10-02 verifyME ----
-
-    // ---- 2026-10-04 coverageME ----
-
-    private static <E> MongoCollectionMapper<E> mapperReturning_coverageME(final Document row, final Class<E> entityClass) {
-        return new MongoCollectionMapper<>(new MongoCollectionExecutor(MongoCollectionExecutorTest.mockCollectionReturning_coverageME(row)), entityClass);
+    private static <E> MongoCollectionMapper<E> mapperReturning(final Document row, final Class<E> entityClass) {
+        return new MongoCollectionMapper<>(new MongoCollectionExecutor(MongoCollectionExecutorTestSupport.mockCollectionReturning(row)), entityClass);
     }
-
-    // ---- end 2026-10-04 coverageME ----
 
     // Helper class for testing
     static class TestEntity {

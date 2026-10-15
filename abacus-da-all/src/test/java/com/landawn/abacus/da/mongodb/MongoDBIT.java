@@ -1607,10 +1607,8 @@ public class MongoDBIT extends TestBase {
         N.println(collectionExecutor.list(Filters.eq("title", "A blog post"), Map.class));
     }
 
-    // ---- 2026-10-02 verifyME ----
-
     @Test
-    public void test_queryDottedSelectNameAndGroupByAndCountOnCountField_live_verifyME() throws Exception {
+    public void test_queryDottedSelectNameAndGroupByAndCountOnCountField_live() throws Exception {
         // Live server shapes: a dotted projection comes back nested ({address: {city: ..}}), so the Dataset column must be
         // resolved from the nested document; a path through an array fails; groupByAndCount on a field named "count"
         // works only for Document rows (others would lose the key to the count column).
@@ -1647,17 +1645,13 @@ public class MongoDBIT extends TestBase {
         }
     }
 
-    // ---- end 2026-10-02 verifyME ----
-
-    // ---- 2026-10-04 coverageME ----
-
     @Test
-    public void test_decodedValueConversionsOnEveryExecutorKind_live_coverageME() throws Exception {
+    public void test_decodedValueConversionsOnEveryExecutorKind_live() throws Exception {
         // Live driver shapes for the MongoDBBase read-side changes through the sync, async, mapper and reactive read paths:
         // documents written by another client (int32 numbers, String map keys, embedded documents, java.time values that the
         // driver's codecs write in UTC, a record document without an "id" field) and an entity/record written through the
         // executor must read back with their declared types. Beans and per-path assertions are shared with
-        // MongoCollectionExecutorTest (*_coverageME).
+        // MongoCollectionExecutorTest (*).
         final MongoCollectionExecutor entityExec = dbExecutor.collectionExecutor("coverageME_e2e_entity");
         final MongoCollectionExecutor recordExec = dbExecutor.collectionExecutor("coverageME_e2e_record");
         final MongoCollectionExecutor boxExec = dbExecutor.collectionExecutor("coverageME_e2e_box");
@@ -1666,8 +1660,8 @@ public class MongoDBIT extends TestBase {
 
         try (com.mongodb.reactivestreams.client.MongoClient reactiveClient = com.mongodb.reactivestreams.client.MongoClients
                 .create(MongoClientSettings.builder().uuidRepresentation(UuidRepresentation.STANDARD).build())) {
-            final ObjectId oid = new ObjectId(MongoCollectionExecutorTest.OID_HEX_coverageME);
-            final java.time.LocalDate day = MongoCollectionExecutorTest.LOCAL_DAY_coverageME;
+            final ObjectId oid = new ObjectId(MongoMappingFixtures.OID_HEX);
+            final java.time.LocalDate day = MongoMappingFixtures.LOCAL_DAY;
 
             entityExec.coll()
                     .insertOne(new Document("_id", oid).append("nums", N.asList(1, 2))
@@ -1675,8 +1669,8 @@ public class MongoDBIT extends TestBase {
                             .append("addressByName", new Document("home", new Document("city", "Rome")))
                             .append("countByYear", new Document("2024", 5))
                             .append("day", day)
-                            .append("at", MongoCollectionExecutorTest.LOCAL_AT_coverageME)
-                            .append("time", MongoCollectionExecutorTest.LOCAL_TIME_coverageME)
+                            .append("at", MongoMappingFixtures.LOCAL_AT)
+                            .append("time", MongoMappingFixtures.LOCAL_TIME)
                             .append("days", N.asList(day))
                             .append("box", new Document("value", 7))
                             .append("boxes", N.asList(new Document("value", 8))));
@@ -1684,30 +1678,27 @@ public class MongoDBIT extends TestBase {
             boxExec.coll().insertOne(new Document("_id", 1).append("value", 9));
 
             // Written through the executor: nested beans become embedded documents, java.time values go through the driver codecs.
-            final MongoCollectionExecutorTest.E2eAddress_coverageME address = new MongoCollectionExecutorTest.E2eAddress_coverageME();
+            final MongoMappingFixtures.MappedAddress address = new MongoMappingFixtures.MappedAddress();
             address.setCity("Oslo");
-            final MongoCollectionExecutorTest.E2eBox_coverageME<Long> box = new MongoCollectionExecutorTest.E2eBox_coverageME<>();
+            final MongoMappingFixtures.MappedBox<Long> box = new MongoMappingFixtures.MappedBox<>();
             box.setValue(11L);
-            final MongoCollectionExecutorTest.E2eEntity_coverageME written = new MongoCollectionExecutorTest.E2eEntity_coverageME();
+            final MongoMappingFixtures.MappedEntity written = new MongoMappingFixtures.MappedEntity();
             written.setId(new ObjectId().toHexString());
             written.setAddresses(N.asList(address));
             written.setDay(day);
-            written.setTime(MongoCollectionExecutorTest.LOCAL_TIME_coverageME);
+            written.setTime(MongoMappingFixtures.LOCAL_TIME);
             written.setBoxes(N.asList(box));
             entityExec.insertOne(written);
-            final MongoCollectionExecutorTest.E2eRecord_coverageME writtenRecord = new MongoCollectionExecutorTest.E2eRecord_coverageME("written-1", 5L,
-                    N.asList(6L), day);
+            final MongoMappingFixtures.MappedRecord writtenRecord = new MongoMappingFixtures.MappedRecord("written-1", 5L, N.asList(6L), day);
             recordExec.insertOne(writtenRecord);
 
             final Bson byOid = Filters.eq(_ID, oid);
-            final Class<MongoCollectionExecutorTest.E2eEntity_coverageME> type = MongoCollectionExecutorTest.E2eEntity_coverageME.class;
-            final Class<MongoCollectionExecutorTest.E2eRecord_coverageME> recordType = MongoCollectionExecutorTest.E2eRecord_coverageME.class;
-            final Class<MongoCollectionExecutorTest.E2eLongBox_coverageME> boxType = MongoCollectionExecutorTest.E2eLongBox_coverageME.class;
-            final MongoCollectionExecutorTest.E2eRecord_coverageME expectedRecord = MongoCollectionExecutorTest.expectedRecord_coverageME();
-            final MongoCollectionMapper<MongoCollectionExecutorTest.E2eEntity_coverageME> entityMapper = dbExecutor.collectionMapper("coverageME_e2e_entity",
-                    type);
-            final MongoCollectionMapper<MongoCollectionExecutorTest.E2eRecord_coverageME> recordMapper = dbExecutor.collectionMapper("coverageME_e2e_record",
-                    recordType);
+            final Class<MongoMappingFixtures.MappedEntity> type = MongoMappingFixtures.MappedEntity.class;
+            final Class<MongoMappingFixtures.MappedRecord> recordType = MongoMappingFixtures.MappedRecord.class;
+            final Class<MongoMappingFixtures.LongBox> boxType = MongoMappingFixtures.LongBox.class;
+            final MongoMappingFixtures.MappedRecord expectedRecord = MongoMappingFixtures.expectedRecord();
+            final MongoCollectionMapper<MongoMappingFixtures.MappedEntity> entityMapper = dbExecutor.collectionMapper("coverageME_e2e_entity", type);
+            final MongoCollectionMapper<MongoMappingFixtures.MappedRecord> recordMapper = dbExecutor.collectionMapper("coverageME_e2e_record", recordType);
             final com.landawn.abacus.da.mongodb.reactivestreams.MongoDB reactiveDB = new com.landawn.abacus.da.mongodb.reactivestreams.MongoDB(
                     reactiveClient.getDatabase(mongoDB.getName()));
             final com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutor reactiveEntityExec = reactiveDB
@@ -1716,25 +1707,24 @@ public class MongoDBIT extends TestBase {
                     .collectionExecutor("coverageME_e2e_record");
             final com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutor reactiveBoxExec = reactiveDB.collectionExecutor("coverageME_e2e_box");
 
-            org.junit.jupiter.api.Assertions.assertAll(() -> MongoCollectionExecutorTest.assertEntity_coverageME("list", entityExec.list(byOid, type).get(0)),
-                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("findFirst", entityExec.findFirst(byOid, type).get()), () -> {
-                        try (com.landawn.abacus.util.stream.Stream<MongoCollectionExecutorTest.E2eEntity_coverageME> stream = entityExec.stream(byOid, type)) {
-                            MongoCollectionExecutorTest.assertEntity_coverageME("stream", stream.toList().get(0));
+            org.junit.jupiter.api.Assertions.assertAll(() -> MongoMappingFixtures.assertEntity("list", entityExec.list(byOid, type).get(0)),
+                    () -> MongoMappingFixtures.assertEntity("findFirst", entityExec.findFirst(byOid, type).get()), () -> {
+                        try (com.landawn.abacus.util.stream.Stream<MongoMappingFixtures.MappedEntity> stream = entityExec.stream(byOid, type)) {
+                            MongoMappingFixtures.assertEntity("stream", stream.toList().get(0));
                         }
-                    }, () -> MongoCollectionExecutorTest.assertEntityDataset_coverageME("query(Bson, Class)", entityExec.query(byOid, type)),
-                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("async findFirst", entityExec.async().findFirst(byOid, type).get().get()),
-                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("mapper get(ObjectId)", entityMapper.get(oid).get()),
-                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("reactive findFirst", reactiveEntityExec.findFirst(byOid, type).block()),
-                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("reactive list", reactiveEntityExec.list(byOid, type).blockFirst()),
+                    }, () -> MongoMappingFixtures.assertEntityDataset("query(Bson, Class)", entityExec.query(byOid, type)),
+                    () -> MongoMappingFixtures.assertEntity("async findFirst", entityExec.async().findFirst(byOid, type).get().get()),
+                    () -> MongoMappingFixtures.assertEntity("mapper get(ObjectId)", entityMapper.get(oid).get()),
+                    () -> MongoMappingFixtures.assertEntity("reactive findFirst", reactiveEntityExec.findFirst(byOid, type).block()),
+                    () -> MongoMappingFixtures.assertEntity("reactive list", reactiveEntityExec.list(byOid, type).blockFirst()),
                     // A typed collection decodes the entity with the framework codec (GeneralCodec -> readRow -> toEntity).
-                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("typed collection",
-                            dbExecutor.collection("coverageME_e2e_entity", type).find(byOid).first()),
-                    () -> MongoCollectionExecutorTest.assertEntity_coverageME("reactive typed collection",
+                    () -> MongoMappingFixtures.assertEntity("typed collection", dbExecutor.collection("coverageME_e2e_entity", type).find(byOid).first()),
+                    () -> MongoMappingFixtures.assertEntity("reactive typed collection",
                             reactor.core.publisher.Mono.from(reactiveDB.collection("coverageME_e2e_entity", type).find(byOid).first()).block()),
                     () -> assertEquals(day, entityExec.queryForSingleValue("day", byOid, java.time.LocalDate.class).get(), "queryForSingleValue LocalDate"),
-                    () -> assertEquals(MongoCollectionExecutorTest.LOCAL_TIME_coverageME,
-                            entityExec.queryForSingleValue("time", byOid, java.time.LocalTime.class).get(), "queryForSingleValue LocalTime"),
-                    () -> assertEquals(MongoCollectionExecutorTest.LOCAL_AT_coverageME,
+                    () -> assertEquals(MongoMappingFixtures.LOCAL_TIME, entityExec.queryForSingleValue("time", byOid, java.time.LocalTime.class).get(),
+                            "queryForSingleValue LocalTime"),
+                    () -> assertEquals(MongoMappingFixtures.LOCAL_AT,
                             entityExec.async().queryForSingleValue("at", byOid, java.time.LocalDateTime.class).get().get(),
                             "async queryForSingleValue LocalDateTime"),
                     () -> assertEquals(day, reactiveEntityExec.queryForSingleValue("day", byOid, java.time.LocalDate.class).block(),
@@ -1746,12 +1736,11 @@ public class MongoDBIT extends TestBase {
                     () -> assertEquals((Object) 9L, boxExec.list(Filters.eq(_ID, 1), boxType).get(0).getValue(), "LongBox list"),
                     () -> assertEquals((Object) 9L, reactiveBoxExec.findFirst(Filters.eq(_ID, 1), boxType).block().getValue(), "reactive LongBox findFirst"),
                     () -> {
-                        final MongoCollectionExecutorTest.E2eEntity_coverageME back = entityExec.findFirst(Filters.eq(_ID, new ObjectId(written.getId())), type)
-                                .get();
+                        final MongoMappingFixtures.MappedEntity back = entityExec.findFirst(Filters.eq(_ID, new ObjectId(written.getId())), type).get();
                         org.junit.jupiter.api.Assertions.assertAll("entity written by insertOne",
                                 () -> assertEquals("Oslo", back.getAddresses().get(0).getCity(), "List<Address>"),
                                 () -> assertEquals(day, back.getDay(), "LocalDate"),
-                                () -> assertEquals(MongoCollectionExecutorTest.LOCAL_TIME_coverageME, back.getTime(), "LocalTime"),
+                                () -> assertEquals(MongoMappingFixtures.LOCAL_TIME, back.getTime(), "LocalTime"),
                                 () -> assertEquals((Object) 11L, back.getBoxes().get(0).getValue(), "List<Box<Long>>"));
                     });
         } finally {
@@ -1760,7 +1749,7 @@ public class MongoDBIT extends TestBase {
     }
 
     @Test
-    public void test_nestedBeanUuidAndValueTypePropertiesRoundTrip_live_coverageME() throws Exception {
+    public void test_nestedBeanUuidAndValueTypePropertiesRoundTrip_live() throws Exception {
         // Write side of the MongoDBBase codec changes, end to end through insertOne/findFirst on this STANDARD-uuid client:
         // a UUID inside a nested bean is encoded with the collection's uuidRepresentation (HEAD: "The uuidRepresentation has
         // not been specified"), and value types with bean accessors are stored as values, not as documents of their bean
@@ -1777,30 +1766,29 @@ public class MongoDBIT extends TestBase {
             calendar.setTimeInMillis(1_704_164_645_006L);
 
             org.junit.jupiter.api.Assertions.assertAll(() -> {
-                final UuidHolder_coverageME holder = new UuidHolder_coverageME();
+                final UuidHolder holder = new UuidHolder();
                 holder.setId(uuidOid.toHexString());
-                holder.setInner(new UuidBean_coverageME());
+                holder.setInner(new UuidBean());
                 holder.getInner().setUuid(uuid);
                 executor.insertOne(holder);
 
-                assertEquals(uuid, executor.findFirst(Filters.eq(_ID, uuidOid), UuidHolder_coverageME.class).get().getInner().getUuid(), "nested UUID");
+                assertEquals(uuid, executor.findFirst(Filters.eq(_ID, uuidOid), UuidHolder.class).get().getInner().getUuid(), "nested UUID");
             }, () -> {
-                final ValueTypes_coverageME values = new ValueTypes_coverageME();
+                final ValueTypes values = new ValueTypes();
                 values.setId(calendarOid.toHexString());
                 values.setCalendar(calendar);
                 executor.insertOne(values);
 
                 assertEquals(calendar.getTimeInMillis(),
-                        executor.findFirst(Filters.eq(_ID, calendarOid), ValueTypes_coverageME.class).get().getCalendar().getTimeInMillis(),
-                        "GregorianCalendar");
+                        executor.findFirst(Filters.eq(_ID, calendarOid), ValueTypes.class).get().getCalendar().getTimeInMillis(), "GregorianCalendar");
             }, () -> {
-                final ValueTypes_coverageME values = new ValueTypes_coverageME();
+                final ValueTypes values = new ValueTypes();
                 values.setId(bufferOid.toHexString());
                 values.setBuffer(java.nio.ByteBuffer.wrap(new byte[] { 1, 2, 3 }));
                 executor.insertOne(values);
 
                 assertEquals(java.nio.ByteBuffer.wrap(new byte[] { 1, 2, 3 }),
-                        executor.findFirst(Filters.eq(_ID, bufferOid), ValueTypes_coverageME.class).get().getBuffer(), "ByteBuffer");
+                        executor.findFirst(Filters.eq(_ID, bufferOid), ValueTypes.class).get().getBuffer(), "ByteBuffer");
             });
         } finally {
             executor.coll().drop();
@@ -1808,8 +1796,8 @@ public class MongoDBIT extends TestBase {
     }
 
     @Test
-    public void test_reactiveQueryDottedSelectNameAndGroupByAndCountOnCountField_live_coverageME() {
-        // Reactive twin of test_queryDottedSelectNameAndGroupByAndCountOnCountField_live_verifyME against the live server: a
+    public void test_reactiveQueryDottedSelectNameAndGroupByAndCountOnCountField_live() {
+        // Reactive twin of test_queryDottedSelectNameAndGroupByAndCountOnCountField_live against the live server: a
         // dotted projection comes back nested, so the Dataset column is resolved from the nested document (it was all null);
         // a path through an array fails through the publisher; groupByAndCount on a field named "count" is rejected for
         // non-Document rows at call time and keeps working for Document rows.
@@ -1853,7 +1841,7 @@ public class MongoDBIT extends TestBase {
     }
 
     @Test
-    public void test_mapperDistinctCountsDocumentsLackingTheField_live_coverageME() {
+    public void test_mapperDistinctCountsDocumentsLackingTheField_live() {
         // Pins the mapper distinct(...) @return documented this round: unlike the native distinct command, documents that
         // lack the field contribute one more result, an entity whose field is null (or a null element for a single-value T).
         final MongoCollectionExecutor executor = dbExecutor.collectionExecutor("coverageME_e2e_distinct");
@@ -1864,9 +1852,9 @@ public class MongoDBIT extends TestBase {
             executor.coll().insertOne(new Document("city", "Rome").append("zip", 2));
             executor.coll().insertOne(new Document("zip", 3));
 
-            final List<String> cities = dbExecutor.collectionMapper("coverageME_e2e_distinct", MongoCollectionExecutorTest.E2eAddress_coverageME.class)
+            final List<String> cities = dbExecutor.collectionMapper("coverageME_e2e_distinct", MongoMappingFixtures.MappedAddress.class)
                     .distinct("city")
-                    .map(MongoCollectionExecutorTest.E2eAddress_coverageME::getCity)
+                    .map(MongoMappingFixtures.MappedAddress::getCity)
                     .sortedBy(city -> city == null ? "" : city)
                     .toList();
             assertEquals(N.asList(null, "Paris", "Rome"), cities);
@@ -1882,7 +1870,7 @@ public class MongoDBIT extends TestBase {
         }
     }
 
-    public static class UuidBean_coverageME {
+    public static class UuidBean {
         private java.util.UUID uuid;
 
         public java.util.UUID getUuid() {
@@ -1894,9 +1882,9 @@ public class MongoDBIT extends TestBase {
         }
     }
 
-    public static class UuidHolder_coverageME {
+    public static class UuidHolder {
         private String id;
-        private UuidBean_coverageME inner;
+        private UuidBean inner;
 
         public String getId() {
             return id;
@@ -1906,16 +1894,16 @@ public class MongoDBIT extends TestBase {
             this.id = id;
         }
 
-        public UuidBean_coverageME getInner() {
+        public UuidBean getInner() {
             return inner;
         }
 
-        public void setInner(final UuidBean_coverageME inner) {
+        public void setInner(final UuidBean inner) {
             this.inner = inner;
         }
     }
 
-    public static class ValueTypes_coverageME {
+    public static class ValueTypes {
         private String id;
         private java.util.GregorianCalendar calendar;
         private java.nio.ByteBuffer buffer;
@@ -1944,8 +1932,6 @@ public class MongoDBIT extends TestBase {
             this.buffer = buffer;
         }
     }
-
-    // ---- end 2026-10-04 coverageME ----
 
     @org.junit.jupiter.api.AfterAll
     static void closeTestDatabase() {

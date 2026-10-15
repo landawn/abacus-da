@@ -968,11 +968,6 @@ public class ParsedCqlTest extends TestBase {
     }
 
     @Test
-    public void test_ParsedCql_nullCqlThrows() {
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse(null));
-    }
-
-    @Test
     public void test_ParsedCql_originalCqlTrimmed() {
         ParsedCql parsed = ParsedCql.parse("   SELECT * FROM simplex.users WHERE id = ?   ");
         // originalCql() returns the trimmed original

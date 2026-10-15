@@ -179,10 +179,15 @@ public class AnyPutTest extends TestBase {
     }
 
     @Test
-    public void testAddColumn_chaining() {
-        AnyPut put = AnyPut.of("row").addColumn("cf1", "q1", "v1").addColumn("cf1", "q2", "v2").addColumn("cf2", "q3", "v3");
+    public void addColumnPreservesFluentIdentityAndCellContents() {
+        AnyPut put = AnyPut.of("row");
+        assertSame(put, put.addColumn("cf1", "q1", "v1").addColumn("cf1", "q2", "v2").addColumn("cf2", "q3", "v3"));
+
         assertEquals(3, put.size());
         assertEquals(2, put.numFamilies());
+        assertArrayEquals(Bytes.toBytes("v1"), org.apache.hadoop.hbase.CellUtil.cloneValue(put.get("cf1", "q1").get(0)));
+        assertArrayEquals(Bytes.toBytes("v2"), org.apache.hadoop.hbase.CellUtil.cloneValue(put.get("cf1", "q2").get(0)));
+        assertArrayEquals(Bytes.toBytes("v3"), org.apache.hadoop.hbase.CellUtil.cloneValue(put.get("cf2", "q3").get(0)));
     }
 
     @Test
@@ -675,13 +680,6 @@ public class AnyPutTest extends TestBase {
         AnyPut put = AnyPut.of("row-imm-ts", ts, true);
         assertArrayEquals(Bytes.toBytes("row-imm-ts"), put.getRow());
         assertEquals(ts, put.getTimestamp());
-    }
-
-    @Test
-    public void testSize_andNumFamilies() {
-        AnyPut put = AnyPut.of("row").addColumn("cf1", "q1", "v1").addColumn("cf1", "q2", "v2").addColumn("cf2", "q3", "v3");
-        assertEquals(3, put.size());
-        assertEquals(2, put.numFamilies());
     }
 
     // toPut(Collection) static methods

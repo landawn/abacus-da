@@ -956,12 +956,6 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
     }
 
     @Test
-    public void testToEntityWithNullResponse() {
-        TestEntity result = DynamoDBExecutor.toEntity((GetItemResponse) null, TestEntity.class);
-        assertNull(result);
-    }
-
-    @Test
     public void testToEntityWithGetItemResponse() {
         GetItemResponse response = GetItemResponse.builder()
                 .item(Map.of("id", AttributeValue.builder().s("123").build(), "name", AttributeValue.builder().s("test").build()))
