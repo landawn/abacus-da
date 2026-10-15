@@ -1,0 +1,935 @@
+source	line	missed_instructions	covered_instructions	missed_branches	covered_branches	line_status
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/AnyUtil.java	96	2	13	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	671	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	672	9	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	743	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	745	9	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	784	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	786	12	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	823	0	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	824	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1041	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1042	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1112	0	15	2	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1678	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1679	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1680	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1736	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1764	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1772	8	2	5	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1794	1	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1801	0	19	3	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1810	0	25	2	8	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1821	0	12	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1827	0	13	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1836	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1837	0	14	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1838	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1849	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1850	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1910	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1913	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1944	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1948	0	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1949	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1958	0	10	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1961	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	1975	0	21	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2015	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2020	2	15	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2027	2	10	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2042	0	15	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2061	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2169	0	11	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2210	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2212	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2215	0	14	4	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2226	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2250	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2251	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2264	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2265	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2299	0	13	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2316	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2319	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2322	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2323	3	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2366	3	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2435	0	9	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2436	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2487	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2489	3	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2490	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2492	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2495	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2693	1	10	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2698	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2817	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2819	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2850	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2851	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2891	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	2892	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3306	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3307	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3555	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3556	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3676	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3677	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3846	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3956	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3960	4	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3962	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	3972	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4083	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4084	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4085	5	3	3	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4086	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4091	0	9	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4095	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4111	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4112	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4453	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4454	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4455	5	3	3	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4456	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4461	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4481	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4482	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4596	2	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4766	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4795	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4796	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4799	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4825	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4826	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	4829	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5585	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5588	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5603	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5622	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5639	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5642	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5656	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5659	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5673	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5676	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5690	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5691	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5707	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java	5708	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	234	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	235	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2146	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2148	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2158	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2159	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2162	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2182	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2183	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2542	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2544	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2554	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2555	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2578	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2579	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2632	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2917	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2918	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2921	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2957	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2958	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2961	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2993	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2994	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	2997	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	3789	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java	3808	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	738	0	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	739	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	948	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	949	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1024	0	16	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1692	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1693	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1694	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1750	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1778	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1786	8	2	5	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1808	1	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1815	0	19	3	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1824	0	25	2	8	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1835	0	12	2	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1841	0	13	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1850	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1851	0	14	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1852	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1863	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1864	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1940	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1945	2	15	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1952	2	10	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1967	0	15	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	1986	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2094	0	11	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2135	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2137	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2140	0	14	4	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2151	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2175	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2176	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2189	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2192	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2193	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2194	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2213	0	16	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2214	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2226	0	13	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2250	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2251	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2276	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2277	7	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2280	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2283	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2284	3	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2334	3	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2406	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2407	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2455	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2460	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2463	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2491	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2494	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2503	0	13	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2525	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2529	0	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2530	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2539	0	10	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2542	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2556	0	21	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2576	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2687	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2762	0	5	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2763	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2807	1	10	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2812	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2958	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	2960	0	9	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3001	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3002	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3051	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3052	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3592	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3593	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3883	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	3884	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4018	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4019	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4183	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4191	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4268	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4278	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4354	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4356	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4363	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4383	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4384	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4475	2	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4530	2	11	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4594	2	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4641	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4643	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4670	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4671	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4716	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4798	2	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4957	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4988	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4989	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	4992	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	5024	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	5025	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	5028	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	5684	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java	5703	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2181	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2244	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2273	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2287	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2288	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2322	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2335	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2341	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2346	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2352	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2368	0	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2369	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2370	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2371	0	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2372	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2373	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2402	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2412	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2433	0	13	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2435	0	11	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2484	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2518	2	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2525	0	8	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2526	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2529	0	8	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2530	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2533	0	10	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2537	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2541	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2570	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2584	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2608	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2609	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2614	0	7	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2615	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2625	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2637	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2638	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2663	0	6	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2664	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2675	0	15	3	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2676	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java	2677	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutorBase.java	1024	1	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutorBase.java	1101	1	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutorBase.java	1177	1	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutorBase.java	1263	1	9	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	275	4	2	0	0	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	666	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	685	0	13	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	687	0	14	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	688	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	841	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	842	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	843	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	847	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	848	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	876	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	984	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	990	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	992	3	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	993	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1008	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1015	4	26	5	11	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1028	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1029	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1044	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1045	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1052	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1053	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1071	0	20	1	9	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1089	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1090	7	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1105	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1106	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1119	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1120	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1131	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1134	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1141	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1153	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1158	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1160	3	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1326	2	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1384	2	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1446	2	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1777	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1819	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1859	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1901	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	1945	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2077	0	17	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2078	0	26	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2083	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2084	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2097	0	10	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2100	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2103	0	12	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2111	0	18	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2123	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2124	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2129	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2141	5	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2143	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2144	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2150	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2165	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2180	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2188	1	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2190	0	17	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2195	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2197	3	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2198	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2199	14	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2242	0	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2243	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2252	1	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2264	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2275	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2291	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2292	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2327	0	18	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2419	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2463	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2464	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2482	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2634	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2635	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2636	8	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2639	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2700	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2701	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2702	8	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java	2705	2	11	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	390	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	391	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	420	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	421	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	525	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	526	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	533	4	5	3	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	546	0	9	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	554	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	598	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	599	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	615	4	5	4	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	616	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	1395	1	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	1463	1	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	1527	1	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	1600	1	9	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3508	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3522	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3544	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3555	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3615	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3626	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3661	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3672	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3693	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3694	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3707	4	5	4	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3708	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3785	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3808	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3868	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java	3885	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	236	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	237	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	244	0	7	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	245	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	358	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	359	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	369	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	373	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	374	12	0	6	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	375	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	720	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	736	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	758	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	775	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	776	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	871	0	17	1	9	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	915	1	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	947	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	949	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	951	0	30	3	9	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	953	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	968	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	970	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	972	0	30	3	9	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	974	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	986	0	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	990	0	13	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	998	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1004	5	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1009	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1017	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1023	4	11	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1027	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1069	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1070	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1362	0	16	2	8	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1388	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1460	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1607	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1709	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1731	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1732	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1762	0	25	2	12	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1789	4	12	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1790	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1811	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1812	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1815	4	12	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1816	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1840	4	8	3	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1868	0	21	2	12	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1877	3	9	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1879	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1899	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1900	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1904	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1905	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1920	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1928	0	13	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1930	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1932	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1933	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1934	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1936	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1937	0	6	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1938	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1946	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1947	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1970	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	1975	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	2156	2	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	2177	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	2178	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	2534	0	8	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	2535	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	3371	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java	3372	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	339	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	389	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	390	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	415	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	803	0	11	2	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	909	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	910	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	929	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	940	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	941	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java	947	0	24	1	15	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	234	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	358	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	359	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	365	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	378	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	379	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	424	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	436	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	444	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	454	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	457	0	11	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	458	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	468	0	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	472	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	476	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	505	0	13	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	508	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	516	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	519	0	25	2	8	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	577	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	578	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	580	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	586	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	591	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	606	0	10	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	629	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	633	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	638	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	645	0	16	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	647	2	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	650	0	16	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	654	0	13	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	660	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	663	0	16	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	665	2	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	668	0	16	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	714	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	728	0	16	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	739	0	16	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	742	0	13	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	751	0	16	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	753	2	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	791	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	794	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	803	0	15	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	807	0	18	2	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	811	0	22	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	815	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	823	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	915	0	16	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	928	0	10	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	929	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	932	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	934	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	954	0	19	2	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	980	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	1031	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	1035	3	2	3	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java	1039	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ResultSets.java	127	0	14	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ResultSets.java	141	0	13	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ResultSets.java	152	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ResultSets.java	153	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/AsyncCassandraExecutor.java	551	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/AsyncCassandraExecutor.java	552	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	574	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	735	3	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	754	0	13	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	756	0	14	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	918	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	919	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	920	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	924	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	925	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	937	0	10	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	940	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	956	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1049	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1055	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1087	0	10	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1099	0	30	3	13	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1105	0	13	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1135	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1136	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1141	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1142	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1143	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1144	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1179	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1180	7	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1195	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1196	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1209	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1210	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1221	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1224	0	7	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1225	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1231	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1254	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1259	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1261	3	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1427	2	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1482	2	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	1544	2	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2212	0	26	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2217	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2218	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2226	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2231	0	10	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2234	0	12	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2237	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2245	0	18	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2275	5	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2284	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2299	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2314	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2328	0	17	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2335	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2337	3	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2338	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2339	14	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2409	0	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2410	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2419	1	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2469	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2470	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2515	0	18	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2516	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2687	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2690	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2701	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2702	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2703	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2704	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2705	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2706	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2707	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2708	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2709	3	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2710	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2711	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2720	1	12	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2721	1	11	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2736	0	13	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2737	3	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2739	0	13	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2742	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2746	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2766	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2767	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2768	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2945	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2946	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2947	8	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2950	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2988	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2989	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	2990	6	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3018	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3019	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3020	8	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3023	2	11	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3065	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3067	9	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3155	2	15	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3185	2	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java	3344	2	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	232	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	235	3	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	236	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	242	0	7	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	243	0	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	246	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	250	1	10	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	490	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	491	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	492	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	496	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	508	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	537	0	14	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	569	4	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	593	3	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	608	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	609	0	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	630	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	645	0	11	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	675	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	680	5	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	686	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	710	0	15	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	720	1	11	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	749	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	750	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	760	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	769	3	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1065	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1069	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1174	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1175	7	0	2	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1224	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1283	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1307	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1310	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1330	2	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1467	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1655	7	2	3	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1656	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1660	2	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1691	0	17	1	9	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1757	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1768	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1815	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1826	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1978	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	1989	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2054	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2065	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2201	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2212	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2364	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2376	0	9	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2383	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	2384	7	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3164	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3165	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3231	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3232	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3300	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3301	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3338	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3367	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3423	0	12	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3426	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3575	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3576	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3577	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java	3578	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyGet.java	616	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyGet.java	617	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyIncrement.java	591	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyIncrement.java	592	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyMutation.java	639	0	15	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java	1071	2	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java	1073	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java	1074	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java	1075	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java	1113	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java	1134	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java	1142	0	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyScan.java	885	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyScan.java	886	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	308	0	4	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	309	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	422	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	432	10	6	3	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	433	10	4	3	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	465	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	466	9	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	467	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	472	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	473	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	474	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	478	2	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	566	1	15	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	576	1	19	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	769	1	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	770	1	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	771	2	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	772	1	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	784	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	785	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	885	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	886	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	923	2	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	930	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	931	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	969	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	970	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	977	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	978	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1010	0	4	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1026	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1044	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1058	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1059	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1073	0	10	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1089	0	16	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1110	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1114	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1139	0	14	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1142	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1143	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1157	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1158	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1159	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1171	0	8	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1189	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1203	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1204	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1221	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1222	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1237	0	6	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1238	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1262	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1263	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1279	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1280	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1285	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1286	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1287	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1294	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1295	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1354	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1355	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1362	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1369	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1405	0	5	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1406	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1429	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1445	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1446	3	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1447	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1487	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	1488	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	2364	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	2405	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	2406	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	3472	4	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	3531	4	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	3594	4	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	3793	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	3810	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java	3811	5	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	1353	0	13	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	2982	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	2983	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	3013	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	3076	0	16	2	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	3088	1	8	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	3140	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java	3141	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionMapper.java	3831	0	16	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	208	1	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	382	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	483	0	8	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	710	3	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	889	5	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	919	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	920	8	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	946	2	13	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1014	2	13	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1069	5	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1126	2	13	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1184	5	7	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1373	0	13	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1384	0	13	2	8	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1386	0	9	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1422	0	13	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1429	0	13	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1431	1	13	3	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1437	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1444	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1450	0	15	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1476	0	18	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1534	0	6	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1549	0	7	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1589	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1590	1	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1613	0	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1614	6	2	0	0	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1646	1	18	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1648	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1692	0	14	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1696	0	12	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1745	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1750	0	13	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1765	0	15	2	4	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1802	0	15	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1803	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1822	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1860	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1864	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1865	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1868	0	11	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	1885	0	12	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2047	0	11	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2176	0	16	2	6	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2449	0	16	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2475	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2480	6	9	3	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2675	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2695	0	10	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2706	0	10	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2733	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2747	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2750	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java	2980	0	5	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	979	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	983	12	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	1288	0	4	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	1292	11	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2299	0	6	1	3	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2307	0	9	1	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2311	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2312	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2327	0	16	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2331	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2332	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	2339	1	8	2	2	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	3073	1	9	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	3095	0	18	1	7	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	3109	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java	3110	2	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionMapper.java	3604	0	16	3	5	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2477	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2478	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2528	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2529	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2594	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2595	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2650	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2651	4	0	0	0	uncovered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2817	0	2	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2830	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2845	0	3	1	1	partially covered
+abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java	2856	0	3	1	1	partially covered
