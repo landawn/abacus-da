@@ -61,7 +61,6 @@ import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import com.landawn.abacus.annotation.JsonXmlField;
-import com.landawn.abacus.da.aws.AnyUtil;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.logging.Logger;
@@ -1237,7 +1236,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
                 }
             }
         } else if (entity instanceof Object[]) {
-            return toItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
+            return toItem(DynamoDBExecutorBase.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
                     + ". Only entity classes with getter/setter methods, Map<String, Object>, or Object[] name-value pairs are supported");
@@ -1335,7 +1334,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
                 }
             }
         } else if (entity instanceof Object[]) {
-            return toUpdateItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
+            return toUpdateItem(DynamoDBExecutorBase.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
                     + ". Only entity classes with getter/setter methods, Map<String, Object>, or Object[] name-value pairs are supported");

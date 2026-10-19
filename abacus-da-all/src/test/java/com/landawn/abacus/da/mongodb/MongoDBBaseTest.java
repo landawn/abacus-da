@@ -197,12 +197,9 @@ public class MongoDBBaseTest extends MockitoTestBase {
         List<BasicDBObject> rows = Arrays.asList(new BasicDBObject("value", "a").append("extra", "x"), new BasicDBObject("value", "b").append("extra", "y"));
 
         Dataset result = MongoDBBase.extractData(rows, NoIdEntity.class);
-        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
 
         assertEquals(Arrays.asList("value"), result.columnNames());
-        assertEquals(2, converted.size());
-        assertEquals("a", converted.get(0).getValue());
-        assertEquals("b", converted.get(1).getValue());
+        assertEquals(Arrays.asList("a", "b"), result.getColumn("value"));
     }
 
     @Test
@@ -251,28 +248,42 @@ public class MongoDBBaseTest extends MockitoTestBase {
         BasicDBObject row = new BasicDBObject("_id", oid).append("name", "alice");
 
         Dataset result = MongoDBBase.extractData(Arrays.asList(row), TestEntity.class);
-        TestEntity entity = result.toList(TestEntity.class).get(0);
 
         assertEquals(Arrays.asList("id", "name"), result.columnNames());
-        assertEquals(oid.toHexString(), entity.getId());
-        assertEquals("alice", entity.getName());
+        assertEquals(Collections.singletonList(oid.toHexString()), result.getColumn("id"));
+        assertEquals(Collections.singletonList("alice"), result.getColumn("name"));
     }
 
     @Test
-    public void testExtractDataBeanTargetPreservesObjectArrayRows() {
-        Dataset result = MongoDBBase.extractData(Arrays.asList("value"), Collections.singletonList(new Object[] { "a" }), NoIdEntity.class);
+    public void testExtractDataBeanTargetConvertsPropertyTypesBeforeDatasetCreation() {
+        final ObjectId oid = new ObjectId("507f1f77bcf86cd799439011");
+        final ObjectIdEntity bean = new ObjectIdEntity();
+        bean.setId(oid);
+        bean.setName("alice");
+        final TestEntity typedBean = new TestEntity();
+        typedBean.setId(oid.toHexString());
+        typedBean.setName("alice");
+        final BasicDBObject map = new BasicDBObject("_id", oid).append("name", "alice");
+        final Document document = new Document("_id", oid).append("name", "alice");
 
-        assertEquals(Arrays.asList("value"), result.columnNames());
-        assertEquals("a", result.toList(NoIdEntity.class).get(0).getValue());
-    }
+        for (final List<?> rows : Arrays.<List<?>> asList(Collections.singletonList(bean), Arrays.asList(map, bean), Arrays.asList(bean, map),
+                Arrays.asList(document, bean), Arrays.asList(typedBean, bean))) {
+            for (final List<String> selectedProperties : Arrays.<List<String>> asList(null, Collections.emptyList(), Arrays.asList("id", "name"))) {
+                final Dataset result = MongoDBBase.extractData(selectedProperties, rows, TestEntity.class);
+                final String context = "First row: " + rows.get(0).getClass().getSimpleName() + ", selected properties: " + selectedProperties;
 
-    @Test
-    public void testExtractDataBeanTargetPreservesListRows() {
-        Dataset result = MongoDBBase.extractData(Arrays.asList("value"), Collections.singletonList(Arrays.asList("a")), NoIdEntity.class);
+                // Inspect the Dataset itself: toList(TestEntity.class) would convert a retained ObjectId later,
+                // hiding a missing bean-to-bean conversion during extractData.
+                assertEquals(Arrays.asList("id", "name"), result.columnNames(), context);
+                assertEquals(Collections.nCopies(rows.size(), oid.toHexString()), result.getColumn("id"), context);
+                assertEquals(Collections.nCopies(rows.size(), "alice"), result.getColumn("name"), context);
+            }
+        }
 
-        assertEquals(Arrays.asList("value"), result.columnNames());
-        assertEquals("a", result.toList(NoIdEntity.class).get(0).getValue());
-    }
+        assertSame(oid, bean.getId());
+        assertSame(oid, map.get("_id"));
+        assertSame(oid, document.get("_id"));
+    } 
 
     @Test
     public void testExtractDataDocumentFirstKeepsLaterObjectArrayRow() {

@@ -22,7 +22,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import com.landawn.abacus.da.aws.AnyUtil;
+import com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorBase;
 import com.landawn.abacus.util.Clazz;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.NamingPolicy;
@@ -1181,7 +1181,7 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
     @Test
     public void testToMapWithObjectArray() {
         Object[] propNameAndValues = { "id", "123", "name", "test" };
-        Map<String, Object> result = AnyUtil.asProps(propNameAndValues);
+        Map<String, Object> result = DynamoDBExecutorBase.asProps(propNameAndValues);
 
         assertNotNull(result);
         assertEquals("123", result.get("id"));
