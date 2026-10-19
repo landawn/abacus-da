@@ -19,7 +19,6 @@ import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
@@ -36,12 +35,14 @@ import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
 
 /**
- * Utility class for parsing and caching CQL statements with parameter binding support.
+ * Immutable parsed CQL text and parameter metadata, with caching through {@link #parse(String)}.
  *
- * <p>ParsedCql provides comprehensive CQL parsing capabilities that handle different parameter
- * binding styles and optimize query execution through intelligent caching. It serves as a
- * bridge between raw CQL strings and executable prepared statements, offering both parsing
- * and optimization features.</p>
+ * <p>For statements whose first non-comment token is {@code SELECT}, {@code INSERT}, {@code UPDATE},
+ * {@code DELETE}, {@code MERGE}, or {@code BEGIN} (case-insensitive), this class counts positional
+ * placeholders and converts supported named placeholders to {@code ?}. Other statements receive
+ * only surrounding-whitespace and trailing-semicolon normalization in their parameterized form.
+ * Parsing collects binding metadata; it does not bind values, prepare statements, or validate
+ * Cassandra CQL grammar. See {@link #parameterizedCql()} for normalization rules and marker limitations.</p>
  *
  * <p>A {@code ParsedCql} captures only the parsed form of a statement: the original CQL, the
  * parameterized CQL, the named-parameter mapping and the parameter count. Statement-level
@@ -58,11 +59,11 @@ import com.landawn.abacus.util.Strings;
  *     <li>MyBatis-style parameters: {@code SELECT * FROM users WHERE id = #{userId}}</li>
  *     </ul>
  * </li>
- * <li><strong>Intelligent Caching:</strong>
+ * <li><strong>Parsed-statement caching:</strong>
  *     <ul>
- *     <li>Automatic caching of parsed CQL statements</li>
+ *     <li>Reuse of cached results for identical raw CQL text</li>
  *     <li>Built-in cache eviction and TTL policies (see the Caching Strategy section below)</li>
- *     <li>Memory-efficient pooled object management</li>
+ *     <li>Entry-count and input-length limits on cache retention</li>
  *     </ul>
  * </li>
  * <li><strong>Prepared-statement support:</strong>
@@ -87,7 +88,8 @@ import com.landawn.abacus.util.Strings;
  * <pre>{@code
  * String cql = "SELECT name, email FROM users WHERE id = :userId AND status = :status";
  * ParsedCql parsed = ParsedCql.parse(cql);
- * // Parameters: {"userId": 123, "status": "active"}
+ * // Parameterized CQL: SELECT name, email FROM users WHERE id = ? AND status = ?
+ * // Parameter mapping: {0: "userId", 1: "status"}; values are supplied separately
  * }</pre>
  *
  * <h3>3. MyBatis-style Parameters</h3>
@@ -99,15 +101,19 @@ import com.landawn.abacus.util.Strings;
  * }</pre>
  *
  * <h2>Caching Strategy</h2>
- * <p>ParsedCql implements a sophisticated caching mechanism to avoid repeated parsing
- * of identical CQL statements:</p>
+ * <p>The cache is keyed by the complete input string, before trimming. Its retention policy is:</p>
  *
  * <ul>
- * <li><strong>Cache Size:</strong> Up to 10,000 parsed statements</li>
- * <li><strong>Eviction Sweep:</strong> the evictor runs every 60 seconds to remove expired entries</li>
+ * <li><strong>Cache Size:</strong> Up to 1,000 parsed statements</li>
+ * <li><strong>Admission:</strong> inputs whose {@link String#length()} exceeds {@value #MAX_CACHEABLE_CQL_LENGTH}
+ *     UTF-16 code units are parsed without a cache lookup or insertion; surrounding whitespace counts toward this limit</li>
+ * <li><strong>Eviction Sweep:</strong> an expiration sweep is scheduled every 60 seconds</li>
  * <li><strong>Max Live Time:</strong> 24 hours absolute TTL</li>
  * <li><strong>Max Idle Time:</strong> 24 hours since last access</li>
  * </ul>
+ * <p>Capacity-based eviction may remove an entry before it expires. Concurrent misses for the same
+ * text may parse independently and return distinct instances. Reference identity is not guaranteed;
+ * use {@link #equals(Object)} to compare parsed statements by their trimmed original text.</p>
  *
  * <h2>Usage Examples</h2>
  * <pre>{@code
@@ -149,11 +155,17 @@ public final class ParsedCql {
 
     private static final int MAX_IDLE_TIME = 24 * 60 * 60 * 1000;
 
+    // Admission limit on the raw input length, measured before trimming (so surrounding whitespace counts). Longer
+    // statements still parse normally; they only bypass the cache lookup and insertion, which keeps the retained key
+    // text bounded at roughly capacity * MAX_CACHEABLE_CQL_LENGTH characters.
+    private static final int MAX_CACHEABLE_CQL_LENGTH = 4096;
+
     private static final Set<String> opSqlPrefixSet = N.asSet(SK.SELECT, SK.INSERT, SK.UPDATE, SK.DELETE, SK.MERGE, "BEGIN");
 
-    private static final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> pool = PoolFactory.createKeyedObjectPool(10000, EVICT_TIME);
-
-    private static final Object PARSE_LOCK = new Object();
+    // Retention is bounded by entry count and by MAX_CACHEABLE_CQL_LENGTH; no byte-measure budget is installed.
+    // get() and put() are individually thread-safe, but a miss is not published atomically: concurrent misses for the
+    // same key may each parse and return their own instance (see parse(String)).
+    private static final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> pool = PoolFactory.createKeyedObjectPool(1000, EVICT_TIME);
 
     private static final String PREFIX_OF_NAMED_PARAMETER = ":";
 
@@ -161,20 +173,28 @@ public final class ParsedCql {
 
     private static final String LEFT_OF_IBATIS_NAMED_PARAMETER = "#{";
 
-    private static final String RIGHT_OF_IBATIS_NAMED_PARAMETER = "}";
-
     // SqlParser reads '[' as the start of a bracket-quoted identifier or array subscript and keeps the whole group as
     // ONE token, which hides the bind markers inside CQL list literals and subscripts ("l + [?, ?]", "m[:k]") and, for
     // a group that does not start with a marker, may end it at a ']' inside a string literal and swallow the rest of
     // the statement. Outside quoted/dollar-quoted regions and comments, '[' and ']' are therefore replaced by a pair of
-    // Unicode private-use characters, which the mask's tokenizer treats as single-character separators, and restored
-    // on append. The pair must not occur anywhere in the statement (not even inside a literal or comment), or a real
-    // character would be mistaken for a masked bracket; see BracketMask.of(String).
+    // unused non-ASCII characters (private-use characters are tried first; see BracketMask.of), which the mask's
+    // tokenizer treats as single-character separators, and restored on append. The pair must not occur anywhere in the
+    // statement (not even inside a literal or comment), or a real character would be mistaken for a masked bracket.
     private static final char DEFAULT_MASKED_LEFT_BRACKET = (char) 0xE000; // Unicode private-use area
 
     private static final char DEFAULT_MASKED_RIGHT_BRACKET = (char) 0xE001;
 
     private static final char LAST_PRIVATE_USE_CHAR = (char) 0xF8FF;
+
+    private static final SqlParser.Tokenizer CQL_TOKENIZER = SqlParser.tokenizer(SqlParser.TokenizerConfig.builder()
+            .withSeparator("..")
+            .withoutSeparator("?-")
+            .withoutSeparator("?|")
+            .withoutSeparator("?&")
+            .withoutSeparator("?#")
+            .withoutSeparator("?-|")
+            .withoutSeparator("?||")
+            .build());
 
     private static final BracketMask DEFAULT_BRACKET_MASK = new BracketMask(DEFAULT_MASKED_LEFT_BRACKET, DEFAULT_MASKED_RIGHT_BRACKET);
 
@@ -186,7 +206,7 @@ public final class ParsedCql {
 
     private final int parameterCount;
 
-    /** Cached hash code; this instance is effectively immutable, so {@code Objects.hash(cql)} is computed once. */
+    /** Cached hash code, preserving the single-element {@code java.util.Objects.hash(cql)} value without a varargs array. */
     private final int hashCode;
 
     /**
@@ -201,8 +221,8 @@ public final class ParsedCql {
      * <ul>
      * <li><strong>Data operations:</strong> SELECT, INSERT, UPDATE, DELETE, MERGE, and Cassandra
      *     {@code BEGIN ... BATCH} statements (parameter processing applied)</li>
-     * <li><strong>Other statements:</strong> any statement not starting with one of the
-     *     keywords above (for example DDL such as CREATE, ALTER, or DROP) receives only
+     * <li><strong>Other statements:</strong> any statement whose first non-comment token does not match one of the
+     *     keywords above, ignoring case (for example DDL such as CREATE, ALTER, or DROP), receives only
      *     statement-level normalization; placeholder scanning is skipped</li>
      * </ul>
      *
@@ -211,40 +231,45 @@ public final class ParsedCql {
      * <li>Detection of positional parameters ({@code ?})</li>
      * <li>Named parameter conversion ({@code :name} → {@code ?})</li>
      * <li>MyBatis-style parameter conversion ({@code #{name}} → {@code ?})</li>
-     * <li>Parameter count validation and mapping generation</li>
+     * <li>Parameter counting, name mapping, and rejection of mixed placeholder styles</li>
      * </ul>
      *
-     * @param cql the raw CQL statement to parse
-     * @throws IllegalArgumentException if the CQL contains a named parameter with an empty name,
-     *         mixes different parameter styles ({@code ?}, {@code :name}, {@code #{name}}) in the same statement,
-     *         contains a malformed iBatis/MyBatis parameter that is missing its closing brace, or (pathologically)
-     *         contains {@code [}/{@code ]} together with every character usable to mask them during tokenization
+     * @param cql the non-null raw CQL statement to parse
+     * @throws IllegalArgumentException if a recognized data operation contains a named placeholder with an empty name,
+     *         mixes parameter styles ({@code ?}, {@code :name}, {@code #{name}}), or contains a MyBatis placeholder
+     *         missing its closing brace; also if brackets require masking but no unused pair of mask characters is available
      */
     private ParsedCql(final String cql) throws IllegalArgumentException {
         this.cql = cql.trim();
-        Map<Integer, String> localNamedParameters = new HashMap<>();
-        hashCode = Objects.hash(this.cql);
+        Map<Integer, String> localNamedParameters = null;
+        hashCode = 31 + this.cql.hashCode();
 
         // SqlParser does not know CQL dollar-quoted string constants ($$...$$): it would collapse whitespace inside
         // them and treat quote characters, "--", "#" or "/*" inside them as literal/comment starts. Each complete
         // constant is therefore replaced by an opaque placeholder before tokenization and restored when appended.
         // Ordinary quoted CQL literals treat backslashes as data; double them temporarily for the SQL tokenizer.
         // Collection brackets are masked too (see BracketMask), with a private-use pair that the statement does not contain.
-        final BracketMask mask = BracketMask.of(this.cql);
         final boolean hasBrackets = this.cql.indexOf('[') >= 0 || this.cql.indexOf(']') >= 0;
+        final BracketMask bracketMask = hasBrackets ? BracketMask.of(this.cql) : null;
 
-        if (hasBrackets && mask == null) {
+        if (hasBrackets && bracketMask == null) {
             // Without a mask, markers inside [...] would be silently lost; fail loudly rather than mis-bind.
             throw new IllegalArgumentException(
                     "Cannot parse a CQL statement with brackets that contains every candidate bracket-mask character (U+E000-U+F8FF and all other usable non-ASCII characters)");
         }
 
-        // null when there is no bracket to mask: brackets then stay as-is.
-        final BracketMask bracketMask = hasBrackets ? mask : null;
+        // DDL does not use the tokenized body. Keep the mask-exhaustion check above for compatibility,
+        // but avoid masking/copying large function bodies merely to classify their leading keyword.
+        if (hasNonOperationPrefix(this.cql)) {
+            parameterizedCql = stripTrailingSemicolons(Strings.stripToEmpty(this.cql));
+            parameterCount = 0;
+            namedParameters = ImmutableMap.empty();
+            return;
+        }
+
         final List<String> dollarQuotedStrings = new ArrayList<>(0);
         final String maskedCql = maskCqlStrings(removeDoubleSlashComments(this.cql), dollarQuotedStrings, bracketMask);
-        // Copied: the scan below may split a token in place (see splitGluedLiteralIbatisParameter).
-        final List<String> words = new ArrayList<>((mask == null ? DEFAULT_BRACKET_MASK : mask).tokenizer.tokenize(maskedCql));
+        final List<String> words = (bracketMask == null ? CQL_TOKENIZER : bracketMask.tokenizer).tokenize(maskedCql);
         final boolean isOpSqlPrefix = isOpSqlPrefix(words);
 
         int type = 0; // bit mask: 1 - '?', 2 - ':propName', 4 - '#{propName}'
@@ -258,9 +283,10 @@ public final class ParsedCql {
                 final int[] literalState = new int[2];
                 // The open '{' / '[' collection literals and subscripts, innermost last.
                 final StringBuilder openContainers = new StringBuilder();
+                final TokenReader tokens = new TokenReader(words);
 
-                for (int i = 0, size = words.size(); i < size; i++) {
-                    String word = words.get(i);
+                while (tokens.hasNext()) {
+                    String word = tokens.next(literalState);
 
                     if (word.startsWith("/*")) {
                         // A block comment is a token of its own only in SqlParser's "-- Keep comments" mode. Its text is
@@ -268,14 +294,6 @@ public final class ParsedCql {
                         // and a "::name" in it must not be rewritten into a marker.
                         sb.append(word);
                         continue;
-                    }
-
-                    // '#', '{' and ':' are not token separators, so a MyBatis marker glued to a literal's opening brace
-                    // or field separator ("{#{k}:#{v}}", "{street:#{street}}") is part of the same token and would reach the driver
-                    // unconverted. Split it off so it is handled like the spaced form ("{street: #{street}}").
-                    if (splitGluedLiteralIbatisParameter(words, i, literalState)) {
-                        word = words.get(i);
-                        size++;
                     }
 
                     final int prevCurlyDepth = literalState[0];
@@ -294,64 +312,62 @@ public final class ParsedCql {
 
                         type |= 1;
                     } else if (!dollarQuotedToken && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)) {
-                        // A single tokenized word may carry more than one '#{...}' marker (for example "#{a}#{b}"),
-                        // and the closing '}' may even land in a later token, because none of '#', '{', '}' are
-                        // guaranteed token separators. Extract every leading '#{...}' marker in turn, pulling in
-                        // following tokens until the closing '}' is found, and keep any trailing text for
-                        // re-processing. curlyDepth is advanced for every consumed token so the map/UDT literal
-                        // tracking used by the ':' branch below stays accurate; a well-formed '#{...}' marker
-                        // contributes a balanced '{'/'}' pair and therefore leaves the depth unchanged.
-                        final StringBuilder rebuilt = new StringBuilder(word.length() + 4);
-                        final StringBuilder ibatisTokenBuilder = new StringBuilder();
+                        // Consume each marker and token once. Offsets avoid repeatedly copying the tail of
+                        // adjacent markers; a builder is needed only when one marker spans several tokens.
+                        int markerStart = 0;
 
-                        while (word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)) {
-                            ibatisTokenBuilder.setLength(0);
-                            ibatisTokenBuilder.append(word);
+                        while (word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER, markerStart)) {
+                            int rightBracketIndex = word.indexOf('}', markerStart + 2);
+                            final String content;
 
-                            while (ibatisTokenBuilder.indexOf(RIGHT_OF_IBATIS_NAMED_PARAMETER) < 0 && i < size - 1) {
-                                // A pulled token gets the same glued-marker split before it is consumed: for a key marker
-                                // spanning several tokens ("#{k,jdbcType=TEXT}:#{v}", "#{ k }:#{v}") the value marker sits
-                                // in the token holding the key's closing '}' and would otherwise be appended verbatim as
-                                // the key's tail. Splitting before updateLiteralState keeps the brace state exact, and the
-                                // split-off "#{v}" is then scanned as a token of its own.
-                                if (splitGluedLiteralIbatisParameter(words, i + 1, literalState)) {
-                                    size++;
+                            if (rightBracketIndex >= 0) {
+                                content = word.substring(markerStart + 2, rightBracketIndex);
+                            } else {
+                                final StringBuilder markerContent = new StringBuilder();
+                                markerContent.append(word, markerStart + 2, word.length());
+
+                                while (tokens.hasNext()) {
+                                    word = tokens.next(literalState);
+                                    updateLiteralState(literalState, openContainers, word, bracketMask);
+                                    rightBracketIndex = word.indexOf('}');
+
+                                    if (rightBracketIndex >= 0) {
+                                        markerContent.append(word, 0, rightBracketIndex);
+                                        break;
+                                    }
+
+                                    markerContent.append(word);
                                 }
 
-                                final String next = words.get(++i);
-                                updateLiteralState(literalState, openContainers, next, bracketMask);
-                                ibatisTokenBuilder.append(next);
+                                if (rightBracketIndex < 0) {
+                                    throw new IllegalArgumentException(
+                                            "Malformed iBatis/MyBatis parameter: missing closing '}' for token starting with '#{' in CQL: " + cql);
+                                }
+
+                                content = markerContent.toString();
                             }
 
-                            final String ibatisToken = ibatisTokenBuilder.toString();
-                            final int rightBracketIndex = ibatisToken.indexOf(RIGHT_OF_IBATIS_NAMED_PARAMETER);
-
-                            if (rightBracketIndex < 0) {
-                                throw new IllegalArgumentException(
-                                        "Malformed iBatis/MyBatis parameter: missing closing '}' for token starting with '#{' in CQL: " + cql);
-                            }
-
-                            // The marker's content is a property expression, not CQL: a subscript in it ("#{ids[0]}")
-                            // was masked like any other bracket and must be restored in the name itself.
-                            final String namedParameter = unmaskBrackets(extractIbatisNamedParameter(ibatisToken.substring(2, rightBracketIndex)), bracketMask);
+                            // Restore brackets in property expressions such as #{ids[0]} too.
+                            final String namedParameter = unmaskBrackets(extractIbatisNamedParameter(content), bracketMask);
 
                             if (Strings.isEmpty(namedParameter)) {
-                                throw new IllegalArgumentException(
-                                        "Invalid named parameter: " + ibatisToken.substring(0, rightBracketIndex + 1) + ". Parameter name cannot be empty.");
+                                throw new IllegalArgumentException("Invalid named parameter: #{" + content + "}. Parameter name cannot be empty.");
+                            }
+
+                            if (localNamedParameters == null) {
+                                localNamedParameters = new HashMap<>();
                             }
 
                             localNamedParameters.put(countOfParameter++, namedParameter);
-                            rebuilt.append(SK.QUESTION_MARK);
-                            word = rightBracketIndex + 1 < ibatisToken.length() ? ibatisToken.substring(rightBracketIndex + 1) : Strings.EMPTY;
-
+                            sb.append(SK.QUESTION_MARK);
+                            markerStart = rightBracketIndex + 1;
                             type |= 4;
                         }
 
-                        rebuilt.append(word);
-                        word = rebuilt.toString();
+                        word = word.substring(markerStart);
 
-                        // A native named value glued to a MyBatis literal key remains in the rebuilt tail
-                        // ("#{k}::v" -> "?::v"). Mark it so the common check rejects the mixed binding styles.
+                        // A native named value glued to a MyBatis literal key remains in the tail
+                        // ("#{k}::v" -> "::v"). Mark it so the common check rejects the mixed binding styles.
                         if (literalState[1] == 0 && (prevCurlyDepth > 0 || word.indexOf('{') >= 0)
                                 && indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth) >= 0) {
                             type |= 2;
@@ -367,6 +383,10 @@ public final class ParsedCql {
                             throw new IllegalArgumentException("Invalid named parameter in literal token: " + word);
                         }
 
+                        if (localNamedParameters == null) {
+                            localNamedParameters = new HashMap<>();
+                        }
+
                         localNamedParameters.put(countOfParameter++, namedParameter);
                         word = word.substring(0, markerIndex + 1) + SK.QUESTION_MARK + word.substring(parameterNameEnd);
                         type |= 2;
@@ -376,7 +396,7 @@ public final class ParsedCql {
                         // value bind marker (valid for UDT fields). Use prevCurlyDepth so a token such as ":2}" that
                         // closes an unspaced map literal is still treated as literal syntax rather than a parameter.
                         // Directly inside [...] (even one nested in braces) a ':' cannot be a map/UDT separator.
-                        if (prevCurlyDepth == 0 || prevInsideBrackets || followsLiteralValueSeparator(words, i)) {
+                        if (prevCurlyDepth == 0 || prevInsideBrackets || tokens.followsLiteralValueSeparator()) {
                             if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
                             } else {
@@ -385,6 +405,10 @@ public final class ParsedCql {
 
                                 if (Strings.isEmpty(namedParameter)) {
                                     throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
+                                }
+
+                                if (localNamedParameters == null) {
+                                    localNamedParameters = new HashMap<>();
                                 }
 
                                 localNamedParameters.put(countOfParameter++, namedParameter);
@@ -400,10 +424,11 @@ public final class ParsedCql {
                         throw new IllegalArgumentException("Cannot mix parameter styles ('?', ':propName', '#{propName}') in the same CQL statement: " + cql);
                     }
 
-                    sb.append(restoreCqlStrings(word, dollarQuotedStrings, bracketMask));
+                    appendRestoredCqlStrings(sb, word, dollarQuotedStrings, bracketMask);
                 }
 
-                parameterizedCql = stripTrailingSemicolons(Strings.stripToEmpty(sb.toString()));
+                final String normalized = stripTrailingSemicolons(Strings.stripToEmpty(sb.toString()));
+                parameterizedCql = this.cql.equals(normalized) ? this.cql : normalized;
                 parameterCount = countOfParameter;
             } finally {
                 Objectory.recycle(sb);
@@ -413,7 +438,7 @@ public final class ParsedCql {
             parameterCount = 0;
         }
 
-        this.namedParameters = ImmutableMap.wrap(localNamedParameters);
+        this.namedParameters = localNamedParameters == null ? ImmutableMap.empty() : ImmutableMap.wrap(localNamedParameters);
     }
 
     /**
@@ -471,21 +496,8 @@ public final class ParsedCql {
         return dollarQuotedToken;
     }
 
-    /** Returns whether a named marker in braces follows an explicit map/UDT field-value separator. */
-    private static boolean followsLiteralValueSeparator(final List<String> words, final int parameterIndex) {
-        for (int i = parameterIndex - 1; i >= 0; i--) {
-            final String previousWord = words.get(i);
-
-            if (!isCommentOrSpaceToken(previousWord)) {
-                return PREFIX_OF_NAMED_PARAMETER.equals(previousWord) || previousWord.endsWith(PREFIX_OF_NAMED_PARAMETER);
-            }
-        }
-
-        return false;
-    }
-
     /**
-     * Finds the second ':' in an unspaced literal field/value separator plus named marker
+     * Finds the first ':' in an unspaced literal field/value separator plus named marker
      * ({@code field::name}).
      *
      * <p>The brace depth is tracked <i>within</i> the token, starting from {@code startDepth} (the depth
@@ -532,32 +544,53 @@ public final class ParsedCql {
         return -1;
     }
 
-    /**
-     * If {@code words[index]} carries a MyBatis marker glued to a literal's opening brace or map/UDT field separator (see
-     * {@link #indexOfGluedLiteralIbatisParameter(String, int)}), splits the token in place so the marker starts a new
-     * token at {@code index + 1}. A kept block comment, or a token that continues a dollar-quoted string, is never split.
-     *
-     * @param words the mutable token list
-     * @param index the index of the token to examine
-     * @param literalState the literal state in effect before that token (see the constructor); it is not changed
-     * @return {@code true} if a token was inserted (the caller's token count must grow by one)
-     */
-    private static boolean splitGluedLiteralIbatisParameter(final List<String> words, final int index, final int[] literalState) {
-        final String word = words.get(index);
+    /** Reads split token spans without copying the token list or shifting its unconsumed suffix. */
+    private static final class TokenReader {
+        private final List<String> words;
+        private int index;
+        private String pendingWord;
+        private int pendingStart;
+        private boolean previousLiteralValueSeparator;
+        private boolean lastLiteralValueSeparator;
 
-        if (literalState[1] != 0 || word.startsWith("/*")) {
-            return false;
+        TokenReader(final List<String> words) {
+            this.words = words;
         }
 
-        final int splitIndex = indexOfGluedLiteralIbatisParameter(word, literalState[0]);
-
-        if (splitIndex <= 0) {
-            return false;
+        boolean hasNext() {
+            return pendingWord != null || index < words.size();
         }
 
-        words.set(index, word.substring(0, splitIndex));
-        words.add(index + 1, word.substring(splitIndex));
-        return true;
+        String next(final int[] literalState) {
+            final String word = pendingWord == null ? words.get(index++) : pendingWord;
+            final int start = pendingWord == null ? 0 : pendingStart;
+            final int splitIndex = literalState[1] != 0 || word.startsWith("/*", start) ? -1 : indexOfGluedLiteralIbatisParameter(word, start, literalState[0]);
+            final String result;
+
+            if (splitIndex > start) {
+                result = word.substring(start, splitIndex);
+                pendingWord = word;
+                pendingStart = splitIndex;
+            } else {
+                result = start == 0 ? word : word.substring(start);
+                pendingWord = null;
+            }
+
+            previousLiteralValueSeparator = lastLiteralValueSeparator;
+            final boolean endsWithSeparator = result.endsWith(PREFIX_OF_NAMED_PARAMETER);
+
+            // Only a trailing ':' matters to the native-marker branch. Most tokens cannot change
+            // a false state, so avoid classifying every ordinary token as whitespace/comment text.
+            if ((lastLiteralValueSeparator || endsWithSeparator) && !isCommentOrSpaceToken(result)) {
+                lastLiteralValueSeparator = endsWithSeparator;
+            }
+
+            return result;
+        }
+
+        boolean followsLiteralValueSeparator() {
+            return previousLiteralValueSeparator;
+        }
     }
 
     /**
@@ -569,16 +602,21 @@ public final class ParsedCql {
      * token holding its closing brace (<code>TEXT&#125;:#&#123;v&#125;</code>) is scanned from a depth that still
      * counts the marker's own <code>&#123;</code>, so the {@code ':'} after that brace is at the depth of the enclosing
      * literal.
+     *
+     * @param word the token containing the unconsumed span
+     * @param fromIndex the inclusive start of the unconsumed span
+     * @param startDepth the brace depth in effect before that span
+     * @return the marker's index in {@code word}, or {@code -1} if no split is needed
      */
-    private static int indexOfGluedLiteralIbatisParameter(final String word, final int startDepth) {
-        if (word.indexOf(LEFT_OF_IBATIS_NAMED_PARAMETER, 1) < 0) {
+    private static int indexOfGluedLiteralIbatisParameter(final String word, final int fromIndex, final int startDepth) {
+        if (word.indexOf(LEFT_OF_IBATIS_NAMED_PARAMETER, fromIndex + 1) < 0) {
             return -1;
         }
 
         char quoteChar = 0;
         int depth = startDepth;
 
-        for (int i = 0, len = word.length(); i < len; i++) {
+        for (int i = fromIndex, len = word.length(); i < len; i++) {
             final char ch = word.charAt(i);
 
             if (quoteChar != 0) {
@@ -597,7 +635,7 @@ public final class ParsedCql {
                 depth++;
                 // Split a marker key at the opening literal brace as well as a marker value after ':'.
                 // The opening brace of a MyBatis property is not itself a literal boundary.
-                if ((i == 0 || word.charAt(i - 1) != '#') && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER, i + 1)) {
+                if ((i == fromIndex || word.charAt(i - 1) != '#') && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER, i + 1)) {
                     return i + 1;
                 }
             } else if (ch == '}') {
@@ -779,20 +817,22 @@ public final class ParsedCql {
     }
 
     /**
-     * Reverses {@link #maskCqlStrings(String, List, BracketMask)} in one token: restores dollar-quoted constants and
-     * masked brackets, and removes the extra backslash from every encoded pair inside an ordinary quoted region.
+     * Appends a token to {@code result}, reversing {@link #maskCqlStrings(String, List, BracketMask)}: restores
+     * dollar-quoted constants and masked brackets, and removes the extra backslash from every encoded pair
+     * inside an ordinary quoted region.
      * Placeholder-like text inside an ordinary quoted region, and comment tokens (retained only in "-- Keep comments"
      * mode), are left untouched.
      */
-    private static String restoreCqlStrings(final String word, final List<String> dollarQuotedStrings, final BracketMask bracketMask) {
+    private static void appendRestoredCqlStrings(final StringBuilder result, final String word, final List<String> dollarQuotedStrings,
+            final BracketMask bracketMask) {
         final boolean maskBrackets = bracketMask != null;
 
         if (isCommentOrSpaceToken(word) || (word.indexOf("$$") < 0 && word.indexOf('\\') < 0
                 && !(maskBrackets && (word.indexOf(bracketMask.left) >= 0 || word.indexOf(bracketMask.right) >= 0)))) {
-            return word;
+            result.append(word);
+            return;
         }
 
-        final StringBuilder result = new StringBuilder(word.length() + 16);
         char quoteChar = 0;
 
         for (int i = 0, len = word.length(); i < len; i++) {
@@ -822,7 +862,7 @@ public final class ParsedCql {
                 }
 
                 final int index = digitEnd > i + 2 && digitEnd + 1 < len && word.charAt(digitEnd) == '$' && word.charAt(digitEnd + 1) == '$'
-                        ? Integer.parseInt(word.substring(i + 2, digitEnd))
+                        ? Integer.parseInt(word, i + 2, digitEnd, 10)
                         : -1;
 
                 if (index >= 0 && index < dollarQuotedStrings.size()) {
@@ -839,8 +879,6 @@ public final class ParsedCql {
                 result.append(ch);
             }
         }
-
-        return result.toString();
     }
 
     /** Replaces the masked bracket characters in {@code text} with {@code [} / {@code ]}; returns it as-is if {@code bracketMask} is {@code null}. */
@@ -849,8 +887,8 @@ public final class ParsedCql {
     }
 
     /**
-     * A pair of private-use characters standing in for {@code [} / {@code ]} during tokenization, plus the tokenizer
-     * that treats them as single-character separators.
+     * A pair of unused non-ASCII characters standing in for {@code [} / {@code ]} during tokenization,
+     * plus the tokenizer that treats them as single-character separators. Private-use characters are preferred.
      */
     private static final class BracketMask {
         final char left;
@@ -865,17 +903,7 @@ public final class ParsedCql {
             // character, so that "a = ?-1" yields the token "?-" and the marker is not counted.
             // CQL's slice operator ".." (for example "m[:from..:to]") is added as a separator: '.' and ':' are not
             // separators, so ":from..:to" would otherwise be ONE token, read as a single marker named "from..:to".
-            this.tokenizer = SqlParser.tokenizer(SqlParser.TokenizerConfig.builder()
-                    .withSeparator(left)
-                    .withSeparator(right)
-                    .withSeparator("..")
-                    .withoutSeparator("?-")
-                    .withoutSeparator("?|")
-                    .withoutSeparator("?&")
-                    .withoutSeparator("?#")
-                    .withoutSeparator("?-|")
-                    .withoutSeparator("?||")
-                    .build());
+            this.tokenizer = SqlParser.tokenizer(CQL_TOKENIZER.tokenizerConfig().toBuilder().withSeparator(left).withSeparator(right).build());
         }
 
         /**
@@ -883,8 +911,8 @@ public final class ParsedCql {
          * including literals and comments), a mask built from the first two usable characters the statement does not
          * contain, so that a real character is never mistaken for a masked bracket on restore. Private-use characters
          * are tried first, then any other non-ASCII BMP character that SqlParser gives no meaning of its own (not a
-         * surrogate, whitespace or identifier character). Returns {@code null} only if the statement contains every
-         * such character, which takes tens of thousands of distinct characters.
+         * surrogate, whitespace or identifier character). Returns {@code null} if fewer than two usable characters
+         * are absent from the statement.
          */
         static BracketMask of(final String cql) {
             if (cql.indexOf(DEFAULT_MASKED_LEFT_BRACKET) < 0 && cql.indexOf(DEFAULT_MASKED_RIGHT_BRACKET) < 0) {
@@ -927,6 +955,50 @@ public final class ParsedCql {
         private static boolean isUsableMaskChar(final char ch) {
             return !Character.isSurrogate(ch) && !Character.isWhitespace(ch) && !Character.isSpaceChar(ch) && !Character.isUnicodeIdentifierPart(ch);
         }
+    }
+
+    /**
+     * Rules out DML for ordinary leading words such as CREATE/ALTER without tokenizing the body.
+     * Possible DML initials and unusual prefixes are left to the full tokenizer. This deliberately
+     * avoids scanning/comparing the keyword twice on the common DML path.
+     */
+    private static boolean hasNonOperationPrefix(final String cql) {
+        int start = 0;
+        final int len = cql.length();
+
+        while (start < len) {
+            final char ch = cql.charAt(start);
+
+            if (ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z') {
+                // Initials of SELECT, INSERT, UPDATE, DELETE, MERGE and BEGIN. Returning false only means "not ruled
+                // out": the statement is then tokenized and classified by isOpSqlPrefix, which also rejects other
+                // keywords that start with one of these letters (for example DROP and USE).
+                return switch (ch) {
+                    case 'S', 's', 'I', 'i', 'U', 'u', 'D', 'd', 'M', 'm', 'B', 'b' -> false;
+                    default -> true;
+                };
+            } else if (Character.isWhitespace(ch)) {
+                start++;
+            } else if (cql.startsWith("--", start) || cql.startsWith("//", start)) {
+                start += 2;
+
+                while (start < len && cql.charAt(start) != '\r' && cql.charAt(start) != '\n') {
+                    start++;
+                }
+            } else if (cql.startsWith("/*", start)) {
+                final int end = cql.indexOf("*/", start + 2);
+
+                if (end < 0) {
+                    return true;
+                }
+
+                start = end + 2;
+            } else {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -1004,57 +1076,62 @@ public final class ParsedCql {
     }
 
     /**
-     * Parses a CQL statement and returns a cached ParsedCql instance.
+     * Parses a CQL statement, reusing a cached result when available.
      *
-     * <p>This factory method provides the primary entry point for CQL parsing with
-     * built-in caching support. If the exact same CQL string has been parsed before,
-     * the cached instance will be returned instead of creating a new one, significantly
-     * improving performance for frequently used queries.</p>
+     * <p>Inputs of at most {@value #MAX_CACHEABLE_CQL_LENGTH} UTF-16 code units are eligible for the
+     * 1,000-entry cache. The length check and cache lookup use the raw input, including surrounding
+     * whitespace. Longer inputs are parsed directly without a cache lookup or insertion.</p>
      *
-     * <p>The caching mechanism uses the raw CQL string as the key, so identical queries
-     * with the same whitespace and formatting will share the same cached instance.</p>
+     * <p>On a cache hit, this method returns the retained, unexpired instance. On a miss, it parses
+     * the input and attempts to cache the new result. Concurrent misses for identical text may return
+     * distinct but equal instances; eviction and expiration can also cause reparsing. Callers must not
+     * rely on reference identity. See {@link #equals(Object)} for value equality.</p>
+     *
+     * <p>Empty and whitespace-only inputs are accepted and produce empty normalized CQL with zero parameters.
+     * Recognized data operations are processed as described in {@link #parameterizedCql()}; this method
+     * does not validate the full CQL grammar.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Basic parsing (cached): the same CQL text returns the same instance
-     * ParsedCql parsed1 = ParsedCql.parse("SELECT * FROM users WHERE id = ?");
-     * ParsedCql parsed2 = ParsedCql.parse("SELECT * FROM users WHERE id = ?");
-     * boolean cachedHit = parsed1 == parsed2;          // returns true (same cached reference)
-     * int count = parsed1.parameterCount();            // returns 1
+     * ParsedCql parsed = ParsedCql.parse("SELECT * FROM users WHERE id = :userId;");
+     * parsed.parameterizedCql();       // "SELECT * FROM users WHERE id = ?"
+     * parsed.parameterCount();         // 1
+     * parsed.namedParameters().get(0); // "userId"
      *
-     * ParsedCql.parse(null);                                          // throws IllegalArgumentException (cql is null)
-     * ParsedCql.parse("SELECT * FROM u WHERE a = ? AND b = :x");      // throws IllegalArgumentException (mixed '?'/':name' styles)
-     * ParsedCql.parse("SELECT * FROM u WHERE id = #{}");              // throws IllegalArgumentException (empty named parameter)
-     * ParsedCql.parse("SELECT * FROM u WHERE id = #{abc");            // throws IllegalArgumentException (iBatis parameter missing '}')
+     * ParsedCql.parse(null);                                    // throws IllegalArgumentException
+     * ParsedCql.parse("SELECT * FROM u WHERE a = ? AND b = :x"); // throws: mixed parameter styles
+     * ParsedCql.parse("SELECT * FROM u WHERE id = #{}");         // throws: empty parameter name
      * }</pre>
      *
-     * @param cql the CQL statement to parse (used as cache key)
-     * @return a ParsedCql instance, either newly created or retrieved from cache
-     * @throws IllegalArgumentException if {@code cql} is null, the CQL contains a named parameter
-     *         with an empty name, mixes different parameter styles, contains a malformed
-     *         iBatis/MyBatis parameter that is missing its closing brace, or (pathologically) contains
-     *         {@code [}/{@code ]} together with every character usable to mask them during tokenization
+     * @param cql the non-null CQL text; the untrimmed string is used as the cache key when eligible
+     * @return an immutable parsed result, newly created or retrieved from the cache
+     * @throws IllegalArgumentException if {@code cql} is null; if a recognized data operation contains an empty
+     *         named placeholder, mixed parameter styles, or a MyBatis placeholder missing its closing brace;
+     *         or if brackets require masking but no unused pair of mask characters is available
      */
     public static ParsedCql parse(final String cql) throws IllegalArgumentException {
         N.checkArgNotNull(cql, cs.cql);
 
-        ParsedCql result = null;
-        PoolableAdapter<ParsedCql> w = pool.get(cql);
+        // Admission: an oversized input is parsed directly and is neither looked up nor retained.
+        if (cql.length() > MAX_CACHEABLE_CQL_LENGTH) {
+            return new ParsedCql(cql);
+        }
 
-        if ((w == null) || (w.value() == null)) {
-            synchronized (PARSE_LOCK) {
-                // Double-check after acquiring lock to prevent race condition
-                w = pool.get(cql);
-                if ((w == null) || (w.value() == null)) {
-                    result = new ParsedCql(cql);
-                    pool.put(cql, Poolable.wrap(result, LIVE_TIME, MAX_IDLE_TIME));
-                } else {
-                    result = w.value();
-                }
-            }
-        } else {
+        ParsedCql result = null;
+
+        final PoolableAdapter<ParsedCql> w = pool.get(cql);
+
+        if (w != null) {
             result = w.value();
         }
+
+        if (result != null) {
+            return result;
+        }
+
+        result = new ParsedCql(cql);
+
+        pool.put(cql, Poolable.wrap(result, LIVE_TIME, MAX_IDLE_TIME));
 
         return result;
     }
@@ -1063,7 +1140,7 @@ public final class ParsedCql {
      * Returns the original CQL statement (with leading and trailing whitespace trimmed).
      *
      * <p>This method returns the CQL statement as it was provided to the parser, after
-     * applying a {@code trim()} on the leading and trailing whitespace. Internal formatting,
+     * applying {@link String#trim()} to the input. Internal formatting,
      * whitespace, and the original parameter placeholders ({@code ?}, {@code :name},
      * {@code #{name}}) are preserved, as are any trailing semicolons (which are only stripped from
      * the parameterized form). This is useful for logging, debugging, or when you
@@ -1074,7 +1151,6 @@ public final class ParsedCql {
      * ParsedCql.parse("   SELECT * FROM u WHERE id = ?   ").originalCql(); // returns "SELECT * FROM u WHERE id = ?" (trimmed)
      * ParsedCql.parse("SELECT * FROM u WHERE id = :userId").originalCql(); // returns "SELECT * FROM u WHERE id = :userId" (placeholders kept)
      * ParsedCql.parse("SELECT id FROM u WHERE id = ?;").originalCql();     // returns "SELECT id FROM u WHERE id = ?;" (trailing ';' kept)
-     * ParsedCql.parse(null).originalCql();                                 // throws IllegalArgumentException (from parse(), cql is null)
      * }</pre>
      *
      * @return the trimmed original CQL statement string
@@ -1084,15 +1160,15 @@ public final class ParsedCql {
     }
 
     /**
-     * Returns the normalized form of the CQL statement used for execution.
+     * Returns the normalized CQL text with recognized named placeholders replaced by {@code ?}.
      *
      * <p>This method returns the processed version of the CQL statement where:</p>
      * <ul>
      * <li>For recognized data operations, named parameters ({@code :name}) are converted to {@code ?}</li>
      * <li>For recognized data operations, MyBatis-style parameters ({@code #{name}}) are converted to {@code ?}</li>
      * <li>For recognized data operations, comments are removed and each run of whitespace outside quoted
-     *     literals and dollar-quoted ({@code $$...$$}) string constants is collapsed to a single space; the
-     *     contents of quoted literals and dollar-quoted constants are kept verbatim (a statement that starts
+     *     literals, quoted identifiers, and dollar-quoted ({@code $$...$$}) string constants is collapsed to a single space; the
+     *     contents of these quoted regions are kept verbatim (a statement that starts
      *     with the line {@code -- Keep comments} keeps its block comments, verbatim and unscanned)</li>
      * <li>Leading and trailing whitespace is stripped</li>
      * <li>All trailing semicolons (and any whitespace between or around them) are removed</li>
@@ -1103,13 +1179,15 @@ public final class ParsedCql {
      * placeholders; only surrounding whitespace and trailing semicolons are removed.</p>
      *
      * <p>Markers inside list literals and subscripts are handled like any other marker: for example
-     * {@code l + [:a, :b]}, {@code m[:k] = :v}, the slice {@code m[:from..:to]} and {@code l + [#{a}]} are rewritten
-     * to {@code ?}, and every
+     * {@code l + [:a, :b]}, {@code m[:k] = :v}, the slice {@code m[:from..:to]} and {@code l + [#{a}]} become
+     * {@code l + [?, ?]}, {@code m[?] = ?}, {@code m[?..?]} and {@code l + [?]}, respectively. Every
      * {@code ?} inside {@code [...]} is included in {@link #parameterCount()}.</p>
      *
      * <p>MyBatis markers inside braces are recognized after the opening brace, a field separator, whitespace, or
      * {@code ,}, including {@code {street:#{street}}} and {@code {#{k,jdbcType=VARCHAR}:#{v}}}. Markers in quoted text
      * remain unchanged, and mixing MyBatis and native parameter styles is rejected even without separating whitespace.</p>
+     * <p>MyBatis property names are trimmed, and attributes after the first comma are ignored: for example,
+     * {@code #{ userId, jdbcType=BIGINT }} contributes the name {@code userId} to {@link #namedParameters()}.</p>
      *
      * <p><b>Known limitation.</b> Inside braces, a native named marker ({@code :name}) is recognized only when it follows a map/UDT field
      * separator ({@code {street: :street}}, {@code {street::street}}) or sits directly inside a {@code [...]} nested in
@@ -1118,12 +1196,11 @@ public final class ParsedCql {
      * <code>&#123;:a, :b&#125;</code> — is <i>not</i> rewritten and is <i>not</i> counted: <code>&#123;</code>
      * does not start a new token, and a named marker after {@code ,} inside braces is taken for a map key. Such a
      * statement reaches the driver with the native marker still in it and will not bind correctly.
-     * Note that Cassandra itself (verified on 5.0) rejects any bind marker inside a set, list or map literal ("bind
-     * variables are not supported inside collection literals"), so markers in braces are useful in UDT literals
-     * ({@code {street: ?, city: ?}}) and subscripts ({@code m[?] = ?}); bind a whole collection instead
-     * ({@code tags = tags + ?} with a {@code Set} value).</p>
+     * Binding a whole collection, for example {@code tags = tags + ?} with a {@code Set} value, avoids this
+     * parser limitation.</p>
      *
-     * <p>This parameterized version is what gets sent to Cassandra for prepared statement creation.</p>
+     * <p>Marker recognition does not verify whether Cassandra accepts a marker in that location. Callers use
+     * this text for statement preparation; grammar and server-version compatibility are outside this parser's scope.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1132,8 +1209,8 @@ public final class ParsedCql {
      * // returns "SELECT * FROM u WHERE name = ? AND id = ?"
      *
      * // MyBatis-style #{name} also converted to '?'
-     * ParsedCql.parse("INSERT INTO u VALUES (#{id}, #{name}, #{email})").parameterizedCql();
-     * // returns "INSERT INTO u VALUES (?, ?, ?)"
+     * ParsedCql.parse("INSERT INTO u (id, name, email) VALUES (#{id}, #{name}, #{email})").parameterizedCql();
+     * // returns "INSERT INTO u (id, name, email) VALUES (?, ?, ?)"
      *
      * // Positional parameters unchanged; trailing whitespace stripped
      * ParsedCql.parse("INSERT INTO u (id, name) VALUES (?, ?)  ").parameterizedCql();
@@ -1148,7 +1225,7 @@ public final class ParsedCql {
      * // returns "SELECT * FROM u WHERE a = 'x   y' AND b = $$p   q$$"
      * }</pre>
      *
-     * @return the normalized CQL statement ready for prepared statement creation
+     * @return the normalized CQL text; empty if the input normalizes to an empty statement
      */
     public String parameterizedCql() {
         return parameterizedCql;
@@ -1162,7 +1239,12 @@ public final class ParsedCql {
      * for binding named or MyBatis-style parameters to their correct positions in the
      * prepared statement.</p>
      *
-     * <p>The map will be empty for CQL statements that use only positional parameters ({@code ?}).</p>
+     * <p>Indexes are zero-based and follow placeholder occurrence order. Repeated names have a separate
+     * entry at each position; map iteration order is not specified. For example, two occurrences of
+     * {@code :id} produce entries {@code 0 -> "id"} and {@code 1 -> "id"}.</p>
+     *
+     * <p>The map is empty for positional-only statements, statements without recognized placeholders,
+     * and statement types whose placeholders are not scanned.</p>
      *
      * <p>The returned map is unmodifiable; attempts to modify it throw
      * {@link UnsupportedOperationException}. It reflects the mapping computed at construction time.</p>
@@ -1173,7 +1255,7 @@ public final class ParsedCql {
      * m1.get(0);   // returns "userName"
      * m1.get(1);   // returns "status"
      *
-     * Map<Integer, String> m2 = ParsedCql.parse("INSERT INTO u VALUES (#{id}, #{name}, #{email})").namedParameters();
+     * Map<Integer, String> m2 = ParsedCql.parse("INSERT INTO u (id, name, email) VALUES (#{id}, #{name}, #{email})").namedParameters();
      * m2.get(0);   // returns "id"
      * m2.get(2);   // returns "email"
      *
@@ -1184,18 +1266,21 @@ public final class ParsedCql {
      * ParsedCql.parse("SELECT * FROM u").namedParameters().isEmpty();                             // returns true
      * }</pre>
      *
-     * @return a map from parameter index (0-based) to parameter name, empty if no named parameters
+     * @return an immutable map from zero-based parameter position to name, without {@code :} or {@code #{...}} delimiters;
+     *         empty if no named placeholders were recognized
      */
     public ImmutableMap<Integer, String> namedParameters() {
         return namedParameters;
     }
 
     /**
-     * Returns the total number of parameters in the CQL statement.
+     * Returns the number of recognized parameter occurrences in the CQL statement.
      *
      * <p>For recognized data operations, this count represents the number of parameter placeholders
      * that need to be bound when executing the statement. It includes all supported types:
      * positional ({@code ?}), named ({@code :name}), and MyBatis-style ({@code #{name}}).</p>
+     * <p>Each occurrence counts separately, including repeated occurrences of the same name. Marker-like
+     * text inside quoted regions and comments is excluded. See {@link #parameterizedCql()} for marker limitations.</p>
      * <p>Other statement types are not scanned and therefore report zero.</p>
      *
      * <p>This count is essential for:</p>
@@ -1213,7 +1298,7 @@ public final class ParsedCql {
      * ParsedCql.parse("CREATE TABLE t (id INT PRIMARY KEY)").parameterCount();                 // returns 0 (DDL: no parameter scanning)
      * }</pre>
      *
-     * @return the number of parameters in the statement (0 or positive integer)
+     * @return the number of recognized placeholders, always non-negative
      */
     public int parameterCount() {
         return parameterCount;

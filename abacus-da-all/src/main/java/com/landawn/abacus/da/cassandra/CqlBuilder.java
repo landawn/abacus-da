@@ -56,6 +56,7 @@ import com.landawn.abacus.util.Array;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
+import com.landawn.abacus.util.Objectory;
 import com.landawn.abacus.util.OperationType;
 import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
@@ -705,36 +706,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // other statement uses init(true), which also rejects an UPDATE that has no SET columns at all.
         init(_op != OperationType.UPDATE || _setListStarted || N.isEmpty(_propOrColumnNames));
 
-        final String cql = _sb.toString();
         final String option = optionName + _SPACE + optionValue;
 
-        if (isBatchInsert(cql)) {
-            final List<Integer> insertionIndexes = findBatchStatementEnds(cql);
-            final List<String> prefixes = new ArrayList<>();
-            int statementStart = "BEGIN BATCH".length();
-            for (final int statementEnd : insertionIndexes) {
-                final int usingIndex = indexOfOutsideQuotes(cql, SPACE_USING, statementStart, statementEnd);
-                prefixes.add(usingIndex >= 0 && usingIndex < statementEnd ? " AND " : SPACE_USING);
-                statementStart = statementEnd + 1;
-            }
-
-            for (int i = insertionIndexes.size() - 1; i >= 0; i--) {
-                _sb.insert(insertionIndexes.get(i), prefixes.get(i) + option);
-            }
-
-            markUsingOptionSpecified(optionName);
-
-            return;
-        }
-
-        final int insertionIndex = findUsingInsertionIndex(cql);
-        final int usingIndex = indexOfOutsideQuotes(cql, SPACE_USING, 0, cql.length());
-
-        if (usingIndex >= 0 && usingIndex < insertionIndex) {
-            _sb.insert(insertionIndex, _SPACE_AND_SPACE);
-            _sb.insert(insertionIndex + _SPACE_AND_SPACE.length, option);
+        if (isBatchInsert()) {
+            appendBatchClause(option, true);
         } else {
-            _sb.insert(insertionIndex, SPACE_USING + option);
+            final int insertionIndex = findUsingInsertionIndex(_sb);
+            final int usingIndex = indexOfOutsideQuotes(_sb, SPACE_USING, 0, _sb.length());
+            _sb.insert(insertionIndex, (usingIndex >= 0 && usingIndex < insertionIndex ? " AND " : SPACE_USING) + option);
         }
 
         markUsingOptionSpecified(optionName);
@@ -748,7 +727,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
-    private int findUsingInsertionIndex(final String cql) {
+    private int findUsingInsertionIndex(final CharSequence cql) {
         if (_op == OperationType.UPDATE) {
             final int setIndex = indexOfOutsideQuotes(cql, SPACE_SET, 0, cql.length());
 
@@ -794,9 +773,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalStateException if the current CQL has no WHERE clause
      */
     private void checkWhereSpecifiedForIfClause() throws IllegalStateException {
-        final String cql = _sb.toString();
-
-        if (indexOfOutsideQuotes(cql, SPACE_WHERE, 0, cql.length()) < 0) {
+        if (indexOfOutsideQuotes(_sb, SPACE_WHERE, 0, _sb.length()) < 0) {
             throw new IllegalStateException("where() must be called before appending an IF clause to the " + opCqlKeyword() + " statement");
         }
     }
@@ -901,32 +878,18 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     private void appendIfClause(final char[] ifClause) {
-        final String cql = _sb.toString();
-
-        if (isBatchInsert(cql)) {
-            final List<Integer> insertionIndexes = findBatchStatementEnds(cql);
-            int statementStart = "BEGIN BATCH".length();
-            for (int i = 0; i < insertionIndexes.size(); i++) {
-                final int statementEnd = insertionIndexes.get(i);
-                final int usingIndex = indexOfOutsideQuotes(cql, SPACE_USING, statementStart, statementEnd);
-                insertionIndexes.set(i, usingIndex >= 0 ? usingIndex : statementEnd);
-                statementStart = statementEnd + 1;
-            }
-
-            for (int i = insertionIndexes.size() - 1; i >= 0; i--) {
-                _sb.insert(insertionIndexes.get(i), ifClause);
-            }
-
+        if (isBatchInsert()) {
+            appendBatchClause(new String(ifClause), false);
             return;
         }
 
         // For INSERT the CQL grammar is "... VALUES (...) [IF NOT EXISTS] [USING ...]": the IF clause
         // must precede any USING clause already emitted.
         if (_op == OperationType.ADD) {
-            final int usingIndex = indexOfOutsideQuotes(cql, SPACE_USING, 0, cql.length());
+            final int usingIndex = indexOfOutsideQuotes(_sb, SPACE_USING, 0, _sb.length());
 
             if (usingIndex >= 0) {
-                _sb.insert(usingIndex, new String(ifClause));
+                _sb.insert(usingIndex, ifClause);
                 return;
             }
         }
@@ -934,31 +897,57 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         _sb.append(ifClause);
     }
 
-    /** Returns semicolon indexes that terminate batch statements, ignoring quoted literals, identifiers, and comments. */
-    private static List<Integer> findBatchStatementEnds(final String cql) {
-        final List<Integer> result = new ArrayList<>();
+    /** Rewrites a batch in one forward pass, so adding a clause does not shift the remaining rows once per row. */
+    private void appendBatchClause(final String clause, final boolean usingOption) {
+        final int len = _sb.length();
+        final long estimatedLength = len + _propsList.size() * ((long) clause.length() + (usingOption ? SPACE_USING.length() : 0));
+        final StringBuilder result = Objectory.createStringBuilder(estimatedLength <= Integer.MAX_VALUE ? (int) estimatedLength : len);
 
-        for (int i = "BEGIN BATCH".length(), len = cql.length(); i < len; i++) {
-            final char ch = cql.charAt(i);
+        try {
+            int copiedThrough = 0;
+            int usingIndex = -1;
 
-            if (ch == '\'' || ch == '"') {
-                i = skipQuoted(cql, i, ch);
-            } else if (ch == '$' && i + 1 < len && cql.charAt(i + 1) == '$') {
-                i = skipDollarQuoted(cql, i);
-            } else if ((ch == '-' && i + 1 < len && cql.charAt(i + 1) == '-') || (ch == '/' && i + 1 < len && cql.charAt(i + 1) == '/')) {
-                i = skipLineComment(cql, i, len);
-            } else if (ch == '/' && i + 1 < len && cql.charAt(i + 1) == '*') {
-                i = skipBlockComment(cql, i, len);
-            } else if (ch == ';') {
-                result.add(i);
+            for (int i = "BEGIN BATCH".length(); i < len; i++) {
+                final char ch = _sb.charAt(i);
+
+                if (ch == '\'' || ch == '"') {
+                    i = skipQuoted(_sb, i, ch);
+                } else if (ch == '$' && i + 1 < len && _sb.charAt(i + 1) == '$') {
+                    i = skipDollarQuoted(_sb, i);
+                } else if ((ch == '-' && i + 1 < len && _sb.charAt(i + 1) == '-') || (ch == '/' && i + 1 < len && _sb.charAt(i + 1) == '/')) {
+                    i = skipLineComment(_sb, i, len);
+                } else if (ch == '/' && i + 1 < len && _sb.charAt(i + 1) == '*') {
+                    i = skipBlockComment(_sb, i, len);
+                } else if (ch == ';') {
+                    final int insertionIndex = !usingOption && usingIndex >= 0 ? usingIndex : i;
+                    result.append(_sb, copiedThrough, insertionIndex);
+
+                    if (usingOption) {
+                        result.append(usingIndex >= 0 ? " AND " : SPACE_USING);
+                    }
+
+                    result.append(clause);
+                    copiedThrough = insertionIndex;
+                    usingIndex = -1;
+                } else if (usingIndex < 0 && matchesAt(_sb, SPACE_USING, i, len)) {
+                    usingIndex = i;
+                }
             }
-        }
 
-        return result;
+            if (copiedThrough > 0) {
+                result.append(_sb, copiedThrough, len);
+                // Finish the replacement before changing the live buffer.
+                _sb.ensureCapacity(result.length());
+                _sb.setLength(0);
+                _sb.append(result);
+            }
+        } finally {
+            Objectory.recycle(result);
+        }
     }
 
     /** Finds a clause token outside quoted literals, quoted identifiers, and comments in the specified range. */
-    private static int indexOfOutsideQuotes(final String cql, final String token, final int fromIndex, final int toIndex) {
+    private static int indexOfOutsideQuotes(final CharSequence cql, final String token, final int fromIndex, final int toIndex) {
         for (int i = fromIndex; i + token.length() <= toIndex; i++) {
             final char ch = cql.charAt(i);
 
@@ -970,7 +959,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 i = skipLineComment(cql, i, toIndex);
             } else if (ch == '/' && i + 1 < toIndex && cql.charAt(i + 1) == '*') {
                 i = skipBlockComment(cql, i, toIndex);
-            } else if (cql.startsWith(token, i)) {
+            } else if (matchesAt(cql, token, i, toIndex)) {
                 return i;
             }
         }
@@ -979,7 +968,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /** Skips a CQL string/quoted identifier, including doubled quotes; a backslash is an ordinary CQL character. */
-    private static int skipQuoted(final String cql, int index, final char quoteChar) {
+    private static int skipQuoted(final CharSequence cql, int index, final char quoteChar) {
         for (index++; index < cql.length(); index++) {
             final char ch = cql.charAt(index);
 
@@ -996,13 +985,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /** Skips a CQL dollar-quoted string ({@code $$...$$}). */
-    private static int skipDollarQuoted(final String cql, final int index) {
-        final int closingIndex = cql.indexOf("$$", index + 2);
+    private static int skipDollarQuoted(final CharSequence cql, final int index) {
+        final int closingIndex = indexOf(cql, "$$", index + 2, cql.length());
         return closingIndex < 0 ? cql.length() - 1 : closingIndex + 1;
     }
 
     /** Skips a CQL {@code --} or {@code //} line comment within the specified range. */
-    private static int skipLineComment(final String cql, int index, final int toIndex) {
+    private static int skipLineComment(final CharSequence cql, int index, final int toIndex) {
         for (index += 2; index < toIndex; index++) {
             final char ch = cql.charAt(index);
 
@@ -1015,13 +1004,42 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /** Skips a CQL block comment within the specified range. */
-    private static int skipBlockComment(final String cql, final int index, final int toIndex) {
-        final int closingIndex = cql.indexOf("*/", index + 2);
+    private static int skipBlockComment(final CharSequence cql, final int index, final int toIndex) {
+        final int closingIndex = indexOf(cql, "*/", index + 2, toIndex);
         return closingIndex < 0 || closingIndex + 1 >= toIndex ? toIndex - 1 : closingIndex + 1;
     }
 
-    private boolean isBatchInsert(final String cql) {
-        return N.notEmpty(_propsList) && cql.startsWith("BEGIN BATCH");
+    private static int indexOf(final CharSequence cql, final String token, final int fromIndex, final int toIndex) {
+        for (int i = fromIndex; i + token.length() <= toIndex; i++) {
+            if (matchesAt(cql, token, i, toIndex)) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static boolean matchesAt(final CharSequence cql, final String token, final int index, final int toIndex) {
+        if (index + token.length() > toIndex) {
+            return false;
+        }
+
+        for (int i = 0; i < token.length(); i++) {
+            if (cql.charAt(index + i) != token.charAt(i)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns whether this builder is a {@code batchInsert(...)} builder whose {@code BEGIN BATCH} header has already
+     * been rendered. The header check selects how a TTL, TIMESTAMP, or IF clause is applied: once per row for a batch,
+     * but once at the end (before any trailing clause) for a single statement.
+     */
+    private boolean isBatchInsert() {
+        return N.notEmpty(_propsList) && matchesAt(_sb, "BEGIN BATCH", 0, _sb.length());
     }
 
     /**
