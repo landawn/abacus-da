@@ -128,6 +128,103 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c.group", spec.getQueryText());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = { "SELECT []", "SELECT [ ]", "SELECT [  ]" })
+    void emptyArrayFromLessSubqueryIsUnambiguousForEveryNamingPolicy(final String subquery) {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.SCREAMING_SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final Condition condition = Filters.and(Filters.expr("IS_DEFINED((" + subquery + "))"), Filters.eq("id", "root"));
+            final SqlQuerySpec spec = capture(policy, condition);
+            final String table = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "ITEM" : "item";
+            final String outerId = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "ID" : "id";
+
+            assertEquals("SELECT * FROM " + table + " c WHERE (IS_DEFINED((" + subquery + "))) AND (c." + outerId + " = @p0)", spec.getQueryText());
+            assertEquals("root", spec.getParameters().getFirst().getValue(String.class));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "SELECT -1", "SELECT +1", "SELECT -0.5", "SELECT +1.25", "SELECT -1e3" })
+    void unaryFromLessSubqueriesUseKeywordCasingToAvoidPropertyAmbiguity(final String subquery) {
+        for (final NamingPolicy policy : List.of(NamingPolicy.SNAKE_CASE, NamingPolicy.CAMEL_CASE)) {
+            final Condition condition = Filters.and(Filters.expr("IS_DEFINED((" + subquery + "))"), Filters.eq("id", "root"));
+            final SqlQuerySpec spec = capture(policy, condition);
+            final String outerId = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "ID" : "id";
+
+            assertEquals("SELECT * FROM item c WHERE (IS_DEFINED((" + subquery + "))) AND (c." + outerId + " = @p0)", spec.getQueryText());
+            assertEquals("root", spec.getParameters().getFirst().getValue(String.class));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "SELECT [c.id]", "SELECT [c.id] AS ids", "SELECT [c.id] WHERE c.id = 'x'", "SELECT [c.id] AS ids WHERE c.id = 'x'",
+            "SELECT -1 AS value" })
+    void nonExistsFromLessProjectionsRetainLocalAliasesAndClauses(final String subquery) {
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
+
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + subquery + ")) AND NOT c.group", spec.getQueryText());
+    }
+
+    @Test
+    void nonExistsUnarySubqueryCanBeUsedAsScalarOperand() {
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("(SELECT -1) = -1 AND NOT group"));
+
+        assertEquals("SELECT * FROM item c WHERE (SELECT -1) = -1 AND NOT c.group", spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "(select -1) > 0 | (c.select -1) > 0", "(select [0]) = 1 | (c.select [0]) = 1" })
+    void ambiguousFromLessPropertyFormsRemainQualified(final String condition, final String expected) {
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(condition + " AND NOT group"));
+
+        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c.group", spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "(SELECT -1) > 0 | (c.SELECT -1) > 0", "(SELECT [0]) = 1 | (c.SELECT [0]) = 1" })
+    void ambiguousUppercaseFormsRemainPropertiesUnderScreamingSnake(final String condition, final String expected) {
+        final SqlQuerySpec spec = capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr(condition + " AND NOT group"));
+
+        assertEquals("SELECT * FROM ITEM c WHERE " + expected + " AND NOT c.GROUP", spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "+", "-", "*", "/" })
+    void fromPropertyFollowedByArithmeticDoesNotStartSubqueryScope(final String operator) {
+        final String expression = "(select * from " + operator + " 1) > 0 AND NOT group";
+        final String expected = "(c.select * c.from " + operator + " 1) > 0 AND NOT c.group";
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(expression));
+
+        assertEquals("SELECT * FROM item c WHERE " + expected, spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "(select * from IN (1, 2)) | (c.select * c.from IN (1, 2))",
+            "(select * from LIKE 'x%') | (c.select * c.from LIKE 'x%')" })
+    void fromPropertyFollowedByPredicateDoesNotStartSubqueryScope(final String condition, final String expected) {
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(condition + " AND NOT group"));
+
+        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c.group", spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "[0]", "[ 0 ]", "['x']" })
+    void fromPropertySubscriptDoesNotStartSubqueryScope(final String subscript) {
+        final String expression = "(select * from " + subscript + ") > 0 AND NOT group";
+        final String expected = "(c.select * c.from " + subscript + ") > 0 AND NOT c.group";
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(expression));
+
+        assertEquals("SELECT * FROM item c WHERE " + expected, spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "SELECT * FROM c | SELECT * FROM c",
+            "SELECT * FROM (SELECT VALUE 1) AS nested | SELECT * FROM (SELECT value 1) AS nested" })
+    void validFromSourcesStillEnableNonExistsSubqueryScope(final String subquery, final String expectedSubquery) {
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
+
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
+    }
+
     private SqlQuerySpec capture(final NamingPolicy policy, final Condition condition) {
         new CosmosContainerExecutor(container, policy).streamItems(condition, Item.class).toList();
         return query.getValue();

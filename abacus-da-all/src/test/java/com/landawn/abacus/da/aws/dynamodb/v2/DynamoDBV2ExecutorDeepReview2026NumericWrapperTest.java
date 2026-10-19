@@ -322,8 +322,8 @@ public class DynamoDBV2ExecutorDeepReview2026NumericWrapperTest {
     @ParameterizedTest
     @ValueSource(booleans = { false, true })
     public void recursiveGenericFormatsFollowChangingTypeArguments(final boolean jsonBacked) {
-        final Map<String, Object> node = Map.of("child", Map.of("child", Map.of("amount", "9,007,199,254,740,993.50",
-                "child", Map.of("child", Map.of("amount", "2,345.50")))));
+        final Map<String, Object> node = Map.of("child",
+                Map.of("child", Map.of("amount", "9,007,199,254,740,993.50", "child", Map.of("child", Map.of("amount", "2,345.50")))));
         final JsonShiftingCycleRoot root = DynamoDBExecutor.toEntity(Map.of("leaves", recursiveLeaves(node, jsonBacked)), JsonShiftingCycleRoot.class);
 
         // The formatted property becomes Optional<Long> only on the second recurrence, then Optional<Optional<Long>>.
@@ -345,8 +345,7 @@ public class DynamoDBV2ExecutorDeepReview2026NumericWrapperTest {
         final String growing = "[{\"value\":9007199254740993.0100,\"child\":{\"value\":[9007199254740993.0100],"
                 + "\"child\":{\"value\":[[9007199254740993.0100]]}}}]";
         final JsonUnformattedCycleRoot root = DynamoDBExecutor.toEntity(
-                DynamoDBExecutor.toItem(Map.of("growing", growing, "stable", "[{\"value\":7,\"child\":{\"value\":8}}]")),
-                JsonUnformattedCycleRoot.class);
+                DynamoDBExecutor.toItem(Map.of("growing", growing, "stable", "[{\"value\":7,\"child\":{\"value\":8}}]")), JsonUnformattedCycleRoot.class);
         final BigDecimal exact = new BigDecimal("9007199254740993.0100");
 
         assertEquals(exact, root.growing.get(0).value);
@@ -408,8 +407,8 @@ public class DynamoDBV2ExecutorDeepReview2026NumericWrapperTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "fastjsonLong", "fastjsonNested", "fastjsonOverridesJackson", "emptyFastjsonFallsThrough",
-            "unicodeFastjsonDate", "fieldDateOverridesFastjson" })
+    @ValueSource(strings = { "fastjsonLong", "fastjsonNested", "fastjsonOverridesJackson", "emptyFastjsonFallsThrough", "unicodeFastjsonDate",
+            "fieldDateOverridesFastjson" })
     public void fastjsonDateFormatsRetainAnnotationPrecedence(final String property) {
         for (final String value : List.of(FORMATTED_NUMBER, "not a number")) {
             final UnsupportedOperationException expected = assertThrows(UnsupportedOperationException.class,
@@ -424,13 +423,12 @@ public class DynamoDBV2ExecutorDeepReview2026NumericWrapperTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "blankFastjsonDate", "controlFastjsonDate", "blankFieldOverridesFastjson", "controlFieldOverridesFastjson",
-            "emptyFastjsonDate" })
+    @ValueSource(strings = { "blankFastjsonDate", "controlFastjsonDate", "blankFieldOverridesFastjson", "controlFieldOverridesFastjson", "emptyFastjsonDate" })
     public void fastjsonEmptyAndTrimEmptyDatePatternsAllowWrapperNumberFormats(final String property) {
         // A raw empty pattern falls through; a nonempty trim-empty pattern overrides Jackson's effective date format.
         for (final boolean jsonBacked : List.of(false, true)) {
-            final FormatPrecedenceRoot root = DynamoDBExecutor.toEntity(
-                    Map.of("leaves", nestedLeaf(Map.of(property, FORMATTED_NUMBER), jsonBacked)), FormatPrecedenceRoot.class);
+            final FormatPrecedenceRoot root = DynamoDBExecutor.toEntity(Map.of("leaves", nestedLeaf(Map.of(property, FORMATTED_NUMBER), jsonBacked)),
+                    FormatPrecedenceRoot.class);
             assertEquals(Optional.of(1234L),
                     com.landawn.abacus.parser.ParserUtil.getBeanInfo(FormatPrecedenceLeaf.class).getPropValue(root.leaves.get(0), property));
         }
@@ -507,8 +505,8 @@ public class DynamoDBV2ExecutorDeepReview2026NumericWrapperTest {
     @SuppressWarnings("unchecked")
     private static AttributeValue nativeRecursiveNode(final Map<String, Object> node) {
         final Map<String, AttributeValue> attributes = new java.util.LinkedHashMap<>();
-        node.forEach((name, value) -> attributes.put(name, value instanceof Map ? nativeRecursiveNode((Map<String, Object>) value)
-                : DynamoDBExecutor.toItem(Map.of(name, value)).get(name)));
+        node.forEach((name, value) -> attributes.put(name,
+                value instanceof Map ? nativeRecursiveNode((Map<String, Object>) value) : DynamoDBExecutor.toItem(Map.of(name, value)).get(name)));
         return AttributeValue.builder().m(attributes).build();
     }
 

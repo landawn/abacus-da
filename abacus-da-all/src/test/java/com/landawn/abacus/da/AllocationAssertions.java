@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.lang.management.ManagementFactory;
 import java.util.function.Supplier;
 
-/** Allocation checks for conversions whose output must grow linearly with the input. */
+/** Allocation checks for conversion regressions. */
 public final class AllocationAssertions {
     private static volatile Object sink;
 
@@ -38,6 +38,32 @@ public final class AllocationAssertions {
             assertTrue(smallBytes > 0 && largeBytes > 0, "Allocation counters must return positive measurements");
             assertTrue(largeBytes <= smallBytes * 6, () -> description + " allocates " + largeBytes + " bytes for 4x the input, versus " + smallBytes
                     + " bytes for the smaller input; repeated copying should not cause quadratic allocation");
+        } finally {
+            sink = null;
+        }
+    }
+
+    /**
+     * Limits a conversion's extra allocation relative to a baseline that performs the same underlying work.
+     * Both suppliers must use prebuilt inputs. A fixed overhead bound detects redundant processing even when
+     * shared parser or metadata-cache costs depend on input size and class initialization order.
+     */
+    public static void assertAllocationOverhead(final String description, final Supplier<?> baseline, final Supplier<?> operation,
+            final long maxOverheadBytes) {
+        final com.sun.management.ThreadMXBean counter = allocationCounter();
+
+        try {
+            for (int i = 0; i < 12; i++) {
+                sink = baseline.get();
+                sink = operation.get();
+            }
+
+            final long baselineBytes = minimumAllocation(counter, baseline);
+            final long operationBytes = minimumAllocation(counter, operation);
+            System.out.printf("%s: baseline = %d bytes; conversion = %d bytes%n", description, baselineBytes, operationBytes);
+            assertTrue(baselineBytes > 0 && operationBytes > 0, "Allocation counters must return positive measurements");
+            assertTrue(operationBytes - baselineBytes <= maxOverheadBytes, () -> description + " allocates " + operationBytes + " bytes, versus "
+                    + baselineBytes + " bytes for the baseline; extra allocation must not exceed " + maxOverheadBytes + " bytes");
         } finally {
             sink = null;
         }

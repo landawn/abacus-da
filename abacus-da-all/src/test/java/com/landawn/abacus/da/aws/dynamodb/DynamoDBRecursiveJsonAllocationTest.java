@@ -1,6 +1,6 @@
 package com.landawn.abacus.da.aws.dynamodb;
 
-import static com.landawn.abacus.da.AllocationAssertions.assertLinearAllocation;
+import static com.landawn.abacus.da.AllocationAssertions.assertAllocationOverhead;
 import static com.landawn.abacus.da.AllocationAssertions.assumeAllocationCountersAvailable;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -11,27 +11,38 @@ import java.util.function.Supplier;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import com.landawn.abacus.util.N;
+
 public class DynamoDBRecursiveJsonAllocationTest {
     @ParameterizedTest
     @ValueSource(booleans = { false, true })
-    void unformattedGrowingGenericCyclesAllocateLinearly(final boolean sdkV2) {
+    void unformattedGrowingGenericCyclesDoNotReparseSubtrees(final boolean sdkV2) {
         assumeAllocationCountersAvailable();
-        final Supplier<Root> small = reader(12, sdkV2);
-        final Supplier<Root> large = reader(48, sdkV2);
-        assertDepth(small.get(), 12);
-        assertDepth(large.get(), 48);
+        for (final int depth : new int[] { 12, 48 }) {
+            final String json = recursiveJson(depth);
+            final String rootJson = "{\"leaves\":" + json + "}";
+            final Supplier<Root> baseline = () -> N.fromJson(rootJson, Root.class);
+            final Supplier<Root> mapped = reader(json, sdkV2);
+            assertDepth(baseline.get(), depth);
+            assertDepth(mapped.get(), depth);
 
-        // Repeatedly parsing every remaining subtree makes allocations grow quadratically with depth.
-        // Prebuild the payloads and warm the type caches so this measures the conversion itself.
-        assertLinearAllocation("DynamoDB " + (sdkV2 ? "v2" : "v1") + " unformatted recursive JSON", small, large);
+            // Class initialization order can make these growing generic types collide in the shared JSON
+            // metadata cache. Type comparisons then allocate even without repeated subtree parsing, so an
+            // absolute linear-growth assertion is unreliable in a full suite. Compare the same typed payload
+            // with direct JSON parsing; allow only a fixed 1 KiB for the outer DynamoDB item mapping.
+            assertAllocationOverhead("DynamoDB " + (sdkV2 ? "v2" : "v1") + " unformatted recursive JSON at depth " + depth, baseline, mapped, 1024);
+        }
     }
 
-    private static Supplier<Root> reader(final int depth, final boolean sdkV2) {
+    private static String recursiveJson(final int depth) {
         String node = "null";
         for (int i = depth - 1; i >= 0; i--) {
             node = "{\"index\":" + i + ",\"child\":" + node + "}";
         }
-        final String json = "[" + node + "]";
+        return "[" + node + "]";
+    }
+
+    private static Supplier<Root> reader(final String json, final boolean sdkV2) {
         if (sdkV2) {
             final var item = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem(Map.of("leaves", json));
             return () -> com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntity(item, Root.class);

@@ -30,18 +30,17 @@ public class DynamoDBGenericFormatCacheTest {
     @BeforeEach
     void startWithColdFormatCaches() throws Exception {
         // Each ordering must start cold: an earlier parameterized invocation must not decide its cache history.
-        for (final Class<?> executor : List.of(DynamoDBExecutor.class, com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.class)) {
-            for (final String name : List.of("jsonScalarFormatPool", "jsonDateFormatPool")) {
-                final Field field = executor.getDeclaredField(name);
-                field.setAccessible(true);
-                ((Map<?, ?>) field.get(null)).clear();
-            }
+        // The format caches are declared by the shared abstract parent, so one clear covers both executors.
+        for (final String name : List.of("jsonScalarFormatPool", "jsonDateFormatPool")) {
+            final Field field = DynamoDBExecutorBase.class.getDeclaredField(name);
+            field.setAccessible(true);
+            ((Map<?, ?>) field.get(null)).clear();
         }
     }
 
     @ParameterizedTest
-    @CsvSource({ "false, false, false", "false, false, true", "false, true, false", "false, true, true",
-            "true, false, false", "true, false, true", "true, true, false", "true, true, true" })
+    @CsvSource({ "false, false, false", "false, false, true", "false, true, false", "false, true, true", "true, false, false", "true, false, true",
+            "true, true, false", "true, true, true" })
     void classDateFormatsAreIndependentOfGenericReadOrder(final boolean sdkV2, final boolean wrapperFirst, final boolean nativeWarmup) {
         if (wrapperFirst) {
             assertDateWrapper(sdkV2, nativeWarmup);
@@ -60,8 +59,8 @@ public class DynamoDBGenericFormatCacheTest {
     }
 
     @ParameterizedTest
-    @CsvSource({ "false, false, false", "false, false, true", "false, true, false", "false, true, true",
-            "true, false, false", "true, false, true", "true, true, false", "true, true, true" })
+    @CsvSource({ "false, false, false", "false, false, true", "false, true, false", "false, true, true", "true, false, false", "true, false, true",
+            "true, true, false", "true, true, true" })
     void classNumberFormatsAreIndependentOfGenericReadOrder(final boolean sdkV2, final boolean wrapperFirst, final boolean nativeWarmup) {
         if (wrapperFirst) {
             assertNumberWrapper(sdkV2, nativeWarmup);
@@ -156,17 +155,20 @@ public class DynamoDBGenericFormatCacheTest {
     private static <T> T read(final boolean sdkV2, final Class<T> target, final String property, final Object value, final boolean nativeContainers) {
         final Map<String, Object> leaf = Map.of("value", value);
         if (sdkV2) {
-            final var item = nativeContainers
-                    ? Map.of(property, software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder()
+            final var item = nativeContainers ? Map.of(property,
+                    software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder()
                             .l(software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder()
-                                    .m(com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem(leaf)).build()).build())
+                                    .m(com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem(leaf))
+                                    .build())
+                            .build())
                     : com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem(Map.of(property, List.of(leaf)));
             return com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntity(item, target);
         }
 
         final var item = nativeContainers
-                ? Map.of(property, new com.amazonaws.services.dynamodbv2.model.AttributeValue()
-                        .withL(new com.amazonaws.services.dynamodbv2.model.AttributeValue().withM(DynamoDBExecutor.toItem(leaf))))
+                ? Map.of(property,
+                        new com.amazonaws.services.dynamodbv2.model.AttributeValue()
+                                .withL(new com.amazonaws.services.dynamodbv2.model.AttributeValue().withM(DynamoDBExecutor.toItem(leaf))))
                 : DynamoDBExecutor.toItem(Map.of(property, List.of(leaf)));
         return DynamoDBExecutor.toEntity(item, target);
     }

@@ -2459,7 +2459,7 @@ public class CosmosContainerExecutor {
 
                 if (subqueryParenthesisDepth == 0 && "SELECT".equals(normalizedIdentifier) && previousChar == '('
                         && (isCosmosExistsSubquery(query, previous, conditionStart) || keywordToken && !functionOrObjectKey
-                                || hasCosmosSubqueryFromClause(query, i))) {
+                                || hasCosmosSubqueryFromClause(query, i) || isCosmosFromLessScalarSubquery(query, i, identifier, namingPolicy))) {
                     // SELECT VALUE and scalar projections can omit FROM. Preserve their scope too; the FROM look-ahead
                     // distinguishes SELECT * FROM ... from a property expression such as (select * 2).
                     // EXISTS (also in NOT EXISTS) requires a subquery, so its projection may start with [, +/- or (
@@ -2503,6 +2503,164 @@ public class CosmosContainerExecutor {
                 && (keywordStart == conditionStart || !Character.isJavaIdentifierPart(query.charAt(keywordStart - 1)) && query.charAt(keywordStart - 1) != '.');
     }
 
+    /**
+     * Recognizes a FROM-less projection without confusing direct array access or binary arithmetic on a property named
+     * {@code select} with a subquery. Empty arrays are unambiguous. Other array and unary projections require whitespace after
+     * SELECT, and syntax alone cannot distinguish them from every property expression. In those cases, ordinary property casing
+     * for the configured naming policy wins; the opposite casing selects the subquery interpretation. The projection must be
+     * complete before its enclosing parenthesis, an AS alias, or a WHERE clause.
+     */
+    private static boolean isCosmosFromLessScalarSubquery(final String query, final int selectEnd, final String identifier, final NamingPolicy namingPolicy) {
+        int projectionStart = selectEnd;
+        while (projectionStart < query.length() && Character.isWhitespace(query.charAt(projectionStart))) {
+            projectionStart++;
+        }
+
+        if (projectionStart >= query.length()) {
+            return false;
+        }
+
+        final char projectionType = query.charAt(projectionStart);
+        final boolean separatedFromSelect = projectionStart > selectEnd;
+
+        if (projectionType == '[' && isCosmosEmptyArrayProjection(query, projectionStart)) {
+            return hasCosmosArrayProjection(query, projectionStart);
+        }
+
+        final boolean hasPropertyCasing = namingPolicy == NamingPolicy.SCREAMING_SNAKE_CASE ? "SELECT".equals(identifier) : "select".equals(identifier);
+        if (hasPropertyCasing) {
+            return false;
+        }
+
+        if (projectionType == '[' && separatedFromSelect) {
+            return hasCosmosArrayProjection(query, projectionStart);
+        } else if (separatedFromSelect && (projectionType == '-' || projectionType == '+')) {
+            return hasCosmosUnaryNumericProjection(query, projectionStart);
+        }
+
+        return false;
+    }
+
+    private static boolean isCosmosEmptyArrayProjection(final String query, final int projectionStart) {
+        int i = projectionStart + 1;
+        while (i < query.length() && Character.isWhitespace(query.charAt(i))) {
+            i++;
+        }
+
+        return i < query.length() && query.charAt(i) == ']';
+    }
+
+    private static boolean hasCosmosArrayProjection(final String query, final int projectionStart) {
+        int bracketDepth = 0;
+        char quote = 0;
+
+        for (int i = projectionStart; i < query.length(); i++) {
+            final char ch = query.charAt(i);
+
+            if (quote != 0) {
+                if (ch == '\\' && i + 1 < query.length()) {
+                    i++;
+                } else if (ch == quote && i + 1 < query.length() && query.charAt(i + 1) == quote) {
+                    i++;
+                } else if (ch == quote) {
+                    quote = 0;
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+            } else if (ch == '[') {
+                bracketDepth++;
+            } else if (ch == ']' && --bracketDepth == 0) {
+                return isCosmosFromLessProjectionEnd(query, i + 1);
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean hasCosmosUnaryNumericProjection(final String query, final int projectionStart) {
+        int i = projectionStart + 1;
+        if (i >= query.length() || Character.isWhitespace(query.charAt(i))) {
+            return false;
+        }
+
+        int digitCount = 0;
+        while (i < query.length() && Character.isDigit(query.charAt(i))) {
+            i++;
+            digitCount++;
+        }
+
+        if (i < query.length() && query.charAt(i) == '.') {
+            i++;
+            while (i < query.length() && Character.isDigit(query.charAt(i))) {
+                i++;
+                digitCount++;
+            }
+        }
+
+        if (digitCount == 0) {
+            return false;
+        }
+
+        if (i < query.length() && (query.charAt(i) == 'e' || query.charAt(i) == 'E')) {
+            i++;
+            if (i < query.length() && (query.charAt(i) == '-' || query.charAt(i) == '+')) {
+                i++;
+            }
+
+            final int exponentStart = i;
+            while (i < query.length() && Character.isDigit(query.charAt(i))) {
+                i++;
+            }
+
+            if (i == exponentStart) {
+                return false;
+            }
+        }
+
+        return isCosmosFromLessProjectionEnd(query, i);
+    }
+
+    private static boolean isCosmosFromLessProjectionEnd(final String query, final int projectionEnd) {
+        int i = projectionEnd;
+        while (i < query.length() && Character.isWhitespace(query.charAt(i))) {
+            i++;
+        }
+
+        if (i < query.length() && query.charAt(i) == ')') {
+            return true;
+        } else if (i == projectionEnd || i >= query.length()) {
+            return false;
+        }
+
+        if (i + "WHERE".length() < query.length() && query.regionMatches(true, i, "WHERE", 0, "WHERE".length())
+                && Character.isWhitespace(query.charAt(i + "WHERE".length()))) {
+            return true;
+        } else if (i + "AS".length() >= query.length() || !query.regionMatches(true, i, "AS", 0, "AS".length())
+                || !Character.isWhitespace(query.charAt(i + "AS".length()))) {
+            return false;
+        }
+
+        i += "AS".length();
+        while (i < query.length() && Character.isWhitespace(query.charAt(i))) {
+            i++;
+        }
+
+        if (i >= query.length() || !Character.isJavaIdentifierStart(query.charAt(i))) {
+            return false;
+        }
+
+        while (++i < query.length() && Character.isJavaIdentifierPart(query.charAt(i))) {
+            // scan the alias
+        }
+
+        while (i < query.length() && Character.isWhitespace(query.charAt(i))) {
+            i++;
+        }
+
+        return i < query.length() && (query.charAt(i) == ')' || i + "WHERE".length() < query.length()
+                && query.regionMatches(true, i, "WHERE", 0, "WHERE".length()) && Character.isWhitespace(query.charAt(i + "WHERE".length())));
+    }
+
     private static boolean hasCosmosSubqueryFromClause(final String query, final int selectEnd) {
         int parenthesisDepth = 0;
         char quote = 0;
@@ -2533,7 +2691,48 @@ public class CosmosContainerExecutor {
                 final int fromEnd = i + "FROM".length();
 
                 if (fromEnd < query.length() && Character.isWhitespace(query.charAt(fromEnd))) {
-                    return true;
+                    int sourceStart = fromEnd;
+                    while (sourceStart < query.length() && Character.isWhitespace(query.charAt(sourceStart))) {
+                        sourceStart++;
+                    }
+
+                    if (sourceStart >= query.length()) {
+                        return false;
+                    }
+
+                    // Without an input source, FROM is a property in expressions such as (select * from + 1), not a clause.
+                    final char firstSourceChar = query.charAt(sourceStart);
+                    if (Character.isJavaIdentifierStart(firstSourceChar)) {
+                        int sourceEnd = sourceStart + 1;
+                        while (sourceEnd < query.length() && Character.isJavaIdentifierPart(query.charAt(sourceEnd))) {
+                            sourceEnd++;
+                        }
+
+                        final String sourceKeyword = query.substring(sourceStart, sourceEnd).toUpperCase(Locale.ROOT);
+                        return switch (sourceKeyword) {
+                            case "IN", "IS", "BETWEEN", "LIKE", "WITHIN", "NOT", "AND", "OR", "WHERE", "GROUP", "ORDER", "HAVING", "OFFSET", "LIMIT", "JOIN", "ON", "AS", "SELECT", "FROM" -> false;
+                            default -> true;
+                        };
+                    }
+
+                    if (firstSourceChar == '[') {
+                        int elementStart = sourceStart + 1;
+                        while (elementStart < query.length() && Character.isWhitespace(query.charAt(elementStart))) {
+                            elementStart++;
+                        }
+
+                        if (elementStart < query.length()) {
+                            final char firstElementChar = query.charAt(elementStart);
+                            // A scalar literal subscript on a from property is not evidence of a FROM source.
+                            if (Character.isDigit(firstElementChar) || firstElementChar == '\'' || firstElementChar == '"'
+                                    || (firstElementChar == '-' || firstElementChar == '+') && elementStart + 1 < query.length()
+                                            && Character.isDigit(query.charAt(elementStart + 1))) {
+                                return false;
+                            }
+                        }
+                    }
+
+                    return firstSourceChar == '(' || firstSourceChar == '[' || firstSourceChar == '\'' || firstSourceChar == '"' || firstSourceChar == '@';
                 }
             }
         }
