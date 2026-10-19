@@ -1,6 +1,7 @@
 package com.landawn.abacus.da.azure;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -169,6 +170,27 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("(SELECT -1) = -1 AND NOT group"));
 
         assertEquals("SELECT * FROM item c WHERE (SELECT -1) = -1 AND NOT c.group", spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "SELECT (id) | SELECT (c.id)", "SELECT (id) AS id | SELECT (c.id) AS id" })
+    void parenthesizedFromLessProjectionKeepsAliasBare(final String subquery, final String expectedSubquery) {
+        // abacus-query qualifies the raw projection with the outer alias before this pass. A projection qualification
+        // is a valid correlated reference, but the same rewrite must never reach the AS alias: "AS c.id" is invalid.
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
+
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
+        assertFalse(spec.getQueryText().contains("AS c."), spec.getQueryText());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "SELECT (category) AS label | SELECT (c.category) AS label", "SELECT (id + bonus) | SELECT (c.id + c.bonus)" })
+    void parenthesizedFromLessProjectionQualifiesNamesLeftBareByAbacusQuery(final String subquery, final String expectedSubquery) {
+        // abacus-query qualifies mapped properties (id) but leaves other names (category, bonus) bare. A from-less
+        // subquery still refers to the outer item, so the Cosmos pass must qualify those names as well.
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
+
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
     }
 
     @ParameterizedTest

@@ -2382,7 +2382,54 @@ public class CosmosContainerExecutor {
         }
 
         final String cosmosQuery = sb.toString();
-        return cosmosQuery.equals(query) ? qualifiedSp : new SP(cosmosQuery, qualifiedSp.parameters());
+        // abacus-query qualifies identifiers inside raw expressions, including an alias after AS. An alias is a
+        // name, not a property path: "AS id" must not become "AS c.id", which Cosmos DB rejects as a syntax error.
+        final String normalizedQuery = removeQualifiedAliases(cosmosQuery);
+        return normalizedQuery.equals(query) ? qualifiedSp : new SP(normalizedQuery, qualifiedSp.parameters());
+    }
+
+    private static String removeQualifiedAliases(final String query) {
+        final String tableAliasPrefix = COSMOS_ALIAS + ".";
+        final StringBuilder sb = new StringBuilder(query.length());
+        char quote = 0;
+
+        for (int i = 0; i < query.length(); i++) {
+            final char ch = query.charAt(i);
+
+            if (quote != 0) {
+                sb.append(ch);
+
+                if (ch == '\\' && i + 1 < query.length()) {
+                    sb.append(query.charAt(++i));
+                } else if (ch == quote && i + 1 < query.length() && query.charAt(i + 1) == quote) {
+                    sb.append(query.charAt(++i));
+                } else if (ch == quote) {
+                    quote = 0;
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+                sb.append(ch);
+            } else if ((ch == 'A' || ch == 'a') && i + 1 < query.length() && (query.charAt(i + 1) == 'S' || query.charAt(i + 1) == 's')
+                    && (i == 0 || !Character.isJavaIdentifierPart(query.charAt(i - 1)) && query.charAt(i - 1) != '.') && i + 2 < query.length()
+                    && Character.isWhitespace(query.charAt(i + 2))) {
+                int aliasStart = i + 2;
+
+                while (aliasStart < query.length() && Character.isWhitespace(query.charAt(aliasStart))) {
+                    aliasStart++;
+                }
+
+                if (query.startsWith(tableAliasPrefix, aliasStart)) {
+                    sb.append("AS ");
+                    i = aliasStart + tableAliasPrefix.length() - 1;
+                } else {
+                    sb.append(ch);
+                }
+            } else {
+                sb.append(ch);
+            }
+        }
+
+        return sb.toString();
     }
 
     private static SP qualifyCosmosConditionIdentifiers(final SP sp, final NamingPolicy namingPolicy) {

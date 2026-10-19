@@ -995,10 +995,13 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * {@code NS}, {@code BS}, {@code L}, or {@code M} (set / list / map) AttributeValues — instead
      * collections and maps are serialised to their string form via {@code S}. If you need typed
      * list/map AttributeValues, build them manually using {@code new AttributeValue().withL(...)} or
-     * {@code .withM(...)}. In that string form a nested {@link ByteBuffer} (a collection element, map value,
-     * or bean property) is written as an empty string, so its bytes are lost; build a {@code BS}/{@code L}
-     * value instead. A {@code byte[]} is likewise not binary here: it is written as {@code S} text such as
-     * {@code "[1, 2, 3]"}.</p>
+     * {@code .withM(...)}. In that string form a nested {@link ByteBuffer} is rendered from the bytes before its
+     * position: a read-mode buffer (position {@code 0}) becomes an empty string, so its bytes are lost, while a
+     * write-mode buffer contributes the Base64 text of its content; build a {@code BS}/{@code L} value instead. A
+     * {@code byte[]} is likewise not binary here: it is written as {@code S} text such as {@code "[1, 2, 3]"}.
+     * Nested beans and collections (or a bean/collection passed directly to this helper) are serialized as JSON text;
+     * a numeric format annotation ({@code @JsonXmlField(numberFormat = ...)}) on a wrapper-typed property
+     * ({@code Optional}, {@code Nullable}, or {@link Holder}) is not supported in that form and fails while writing.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

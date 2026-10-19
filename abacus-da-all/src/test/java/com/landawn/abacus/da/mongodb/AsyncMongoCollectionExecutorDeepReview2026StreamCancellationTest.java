@@ -159,6 +159,53 @@ public class AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest {
                 .toList();
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    @SuppressWarnings("unchecked")
+    public void testFailingCloseDoesNotTurnSuccessfulCancellationIntoAnException(final boolean mayInterrupt) throws Exception {
+        final Stream<Document> expected = mock(Stream.class);
+        org.mockito.Mockito.doThrow(new IllegalStateException("close failed")).when(expected).close();
+        final Class<?> futureClass = Class.forName(AsyncMongoCollectionExecutor.class.getName() + "$CloseOnCancelFuture");
+        final var constructor = futureClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        final Future<Stream<Document>> future = (Future<Stream<Document>>) constructor.newInstance();
+        final Method setDelegate = futureClass.getDeclaredMethod("setDelegate", Future.class);
+        final Method onResult = futureClass.getDeclaredMethod("onResult", Stream.class);
+        setDelegate.setAccessible(true);
+        onResult.setAccessible(true);
+
+        final FutureTask<Stream<Document>> delegate = new FutureTask<>(() -> expected);
+        setDelegate.invoke(future, delegate);
+        onResult.invoke(future, expected);
+
+        // A cleanup failure must not mask a cancellation that already succeeded.
+        Assertions.assertTrue(future.cancel(mayInterrupt));
+        Assertions.assertTrue(future.isCancelled());
+        verify(expected).close();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testFailingCloseOfLateStreamDoesNotEscapeTheCancelledTask() throws Exception {
+        final Stream<Document> expected = mock(Stream.class);
+        org.mockito.Mockito.doThrow(new IllegalStateException("close failed")).when(expected).close();
+        final Class<?> futureClass = Class.forName(AsyncMongoCollectionExecutor.class.getName() + "$CloseOnCancelFuture");
+        final var constructor = futureClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        final Future<Stream<Document>> future = (Future<Stream<Document>>) constructor.newInstance();
+        final Method setDelegate = futureClass.getDeclaredMethod("setDelegate", Future.class);
+        final Method onResult = futureClass.getDeclaredMethod("onResult", Stream.class);
+        setDelegate.setAccessible(true);
+        onResult.setAccessible(true);
+
+        final FutureTask<Stream<Document>> delegate = new FutureTask<>(() -> expected);
+        setDelegate.invoke(future, delegate);
+        Assertions.assertTrue(future.cancel(false));
+
+        Assertions.assertDoesNotThrow(() -> onResult.invoke(future, expected));
+        verify(expected).close();
+    }
+
     private static Object[] argumentsFor(final Method method) {
         return Arrays.stream(method.getParameterTypes()).map(AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest::argumentFor).toArray();
     }

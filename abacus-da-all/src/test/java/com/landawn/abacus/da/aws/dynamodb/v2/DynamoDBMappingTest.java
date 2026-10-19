@@ -566,6 +566,29 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
         assertEquals(3, ((List<?>) result.get("ss")).size());
     }
 
+    @Test
+    public void testToValue_SetResultsAreMutableCopies() {
+        // SS/NS must behave like L/M/BS: a mutable Java collection detached from the immutable SDK attribute.
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("ss", AttributeValue.builder().ss("a", "b").build());
+        item.put("ns", AttributeValue.builder().ns("1", "2").build());
+
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+
+        @SuppressWarnings("unchecked")
+        final List<String> ss = (List<String>) result.get("ss");
+        @SuppressWarnings("unchecked")
+        final List<String> ns = (List<String>) result.get("ns");
+
+        ss.add("c");
+        ns.add("3");
+
+        assertEquals(List.of("a", "b", "c"), ss);
+        assertEquals(List.of("1", "2", "3"), ns);
+        assertEquals(2, item.get("ss").ss().size());
+        assertEquals(2, item.get("ns").ns().size());
+    }
+
     // TODO: testToValue_NestedMapBranch - AttributeValue.builder().m() wraps as UnmodifiableMap which N.newMap
     // cannot instantiate. This branch is reached via the public API path but not testable in isolation.
 

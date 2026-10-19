@@ -191,6 +191,19 @@ public class MongoDBBaseTest extends MockitoTestBase {
     }
 
     @Test
+    public void testExtractDataFromBasicDBObjectListConvertsToBean() {
+        // A Map row that is not a Document (BasicDBObject) must not bypass the requested bean conversion.
+        List<BasicDBObject> rows = Arrays.asList(new BasicDBObject("value", "a"), new BasicDBObject("value", "b"));
+
+        Dataset result = MongoDBBase.extractData(rows, NoIdEntity.class);
+        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
+
+        assertEquals(2, converted.size());
+        assertEquals("a", converted.get(0).getValue());
+        assertEquals("b", converted.get(1).getValue());
+    }
+
+    @Test
     public void testExtractDataFromListWithDocumentsAndEntityType() {
         // Document rows being converted to an entity row type
         List<Document> docs = Arrays.asList(new Document("value", "a"), new Document("value", "b"));

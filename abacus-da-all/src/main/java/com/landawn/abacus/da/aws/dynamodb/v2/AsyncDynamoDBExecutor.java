@@ -2661,7 +2661,7 @@ public final class AsyncDynamoDBExecutor {
      * across multiple threads.</p>
      *
      * <p><b>SDK version:</b> this is the AWS SDK v2 variant; it is separate from the v1 mapper in
-     * {@code com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutor.Mapper}.</p>
+     * {@code com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor.Mapper}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

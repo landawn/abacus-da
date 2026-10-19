@@ -5050,7 +5050,20 @@ public final class AsyncMongoCollectionExecutor {
             }
 
             if (closeOnCancel && stream != null) {
+                closeQuietly(stream);
+            }
+        }
+
+        /**
+         * Releases a stream whose cancellation already succeeded. Stream.close() runs close handlers and may throw;
+         * propagating that failure would make Future.cancel() throw instead of returning its documented boolean and
+         * would mask the successful cancellation, so cleanup failures are intentionally swallowed here.
+         */
+        private static void closeQuietly(final Stream<?> stream) {
+            try {
                 stream.close();
+            } catch (final RuntimeException e) {
+                // No consumer for a cleanup failure after a successful cancellation.
             }
         }
 
@@ -5069,7 +5082,7 @@ public final class AsyncMongoCollectionExecutor {
             }
 
             if (streamToClose != null) {
-                streamToClose.close();
+                closeQuietly(streamToClose);
             }
 
             return true;

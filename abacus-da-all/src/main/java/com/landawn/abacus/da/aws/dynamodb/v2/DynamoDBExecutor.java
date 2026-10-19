@@ -915,8 +915,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * {@code byte[]}), and beans are serialised to their JSON string form and stored as {@code S}.
      * If you need typed set/list/map AttributeValues, build them with the AWS SDK v2 factories
      * ({@code AttributeValue.fromL(...)}, {@code AttributeValue.fromM(...)}, {@code AttributeValue.fromSs(...)}, ...) directly.
-     * In that JSON form a nested {@code ByteBuffer} (a collection or array element, a map value, or a property of a bean value) is
-     * written as an empty string, so its bytes are lost; use {@code byte[]} there, or build a {@code BS}/{@code L} value instead.</p>
+     * In that JSON form a nested {@code ByteBuffer} is rendered from the bytes before its position: a read-mode buffer
+     * (position {@code 0}) becomes an empty string, so its bytes are lost, while a write-mode buffer contributes the
+     * Base64 text of its content. Use {@code byte[]} there, or build a {@code BS}/{@code L} value instead. A numeric
+     * format annotation ({@code @JsonXmlField(numberFormat = ...)}) on a wrapper-typed property inside a bean or
+     * collection passed to this helper is not supported and fails while writing.</p>
      *
      * @param value the Java object to convert, can be null
      * @return an AttributeValue representing the input value with appropriate type mapping, never null
@@ -1824,9 +1827,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
         } else if (x.b() != null) {
             ret = x.b().asByteArray();
         } else if (x.hasSs()) {
-            ret = x.ss();
+            // The SDK exposes SS/NS as unmodifiable auto-construct lists; copy them like the L/M/BS branches
+            // so a converted item is a plain Java value and matches the v1 executor's mutable set lists.
+            ret = new ArrayList<>(x.ss());
         } else if (x.hasNs()) {
-            ret = x.ns();
+            ret = new ArrayList<>(x.ns());
         } else if (x.hasBs()) {
             final List<SdkBytes> bs = x.bs();
             final List<byte[]> val = new ArrayList<>(bs.size());

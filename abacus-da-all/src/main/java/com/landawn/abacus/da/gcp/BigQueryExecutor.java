@@ -421,7 +421,10 @@ public class BigQueryExecutor {
      * date/time and {@code java.sql.Time} properties as described under <i>Result Value Conversion</i> in the class documentation.
      * A property declared with a type variable that {@code targetClass} binds (e.g. {@code T value} inherited by
      * {@code class LongBox extends Box<Long>}) is converted to the bound type.
-     * A column that matches a read-only (getter-only) property is ignored.
+     * A direct column that matches a read-only (getter-only) property is ignored when its exposure is
+     * {@code SERIALIZE_ONLY} (the default for a getter-only property); a dotted column is ignored when its
+     * terminal property is read-only. A getter-only property explicitly exposed as {@code DESERIALIZE_ONLY}
+     * is not ignored by the direct path and fails assignment.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

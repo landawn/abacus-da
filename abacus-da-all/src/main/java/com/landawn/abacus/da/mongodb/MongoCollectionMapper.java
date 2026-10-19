@@ -76,10 +76,11 @@ import com.mongodb.client.result.UpdateResult;
  *       writes and back to the same property on reads. An id property of any other type (e.g.
  *       {@code long}) is stored as an ordinary field under its own name, and MongoDB assigns a
  *       separate {@code _id}.</li>
- *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId} during insert; the
- *       generated value is <strong>not</strong> written back into the entity — the entity's id property
+ *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId} during insert. For a
+ *       bean entity the generated value is <strong>not</strong> written back: the entity's id property
  *       remains {@code null} after the insert returns, and the generated {@code _id} exists only in the
- *       database.</li>
+ *       database. A {@link Document} entity is passed to the driver unchanged, so the driver populates
+ *       the generated {@code _id} on that same document instance.</li>
  *   <li>The {@code get/gett} and id-keyed {@code updateOne/replaceOne/deleteOne} overloads accept
  *       either an {@link ObjectId} or its 24-hex-character {@link String} form; the string overloads
  *       throw {@link IllegalArgumentException} if the string is not a valid hex ObjectId.</li>
@@ -2411,9 +2412,10 @@ public final class MongoCollectionMapper<T> {
     /**
      * Inserts a single entity into the collection (blocking operation).
      *
-     * <p>This method inserts a single entity of the mapped type into the collection. The entity
-     * is converted via {@link MongoDBBase#toDocument(Object)} (null bean properties dropped;
-     * generated {@code _id} is not written back into the entity).</p>
+     * <p>This method inserts a single entity of the mapped type into the collection. A bean entity
+     * is converted via {@link MongoDBBase#toDocument(Object)} (null bean properties dropped; a generated
+     * {@code _id} is not written back into the bean). A {@link Document} entity is passed through unchanged,
+     * so the driver writes the generated {@code _id} into that same document.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
      * the underlying executor's async methods via {@link #collectionExecutor()}.{@code async()}.</p>
@@ -2423,7 +2425,7 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      *
      * User newUser = new User("John Doe", "john@example.com", 30);
-     * InsertOneResult result = mapper.insertOne(newUser); // the server-assigned _id is NOT written back into the entity, but result.getInsertedId() exposes it
+     * InsertOneResult result = mapper.insertOne(newUser); // for a bean, the server-assigned _id is NOT written back; result.getInsertedId() exposes it
      * String assignedId = newUser.getId();  // post-state: still null — the generated _id exists only in the database
      *
      * mapper.insertOne((User) null);        // throws IllegalArgumentException
@@ -2452,7 +2454,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method inserts a single entity with fine-grained control over the insert operation
      * through InsertOneOptions, including bypassing document validation and attaching a command
-     * comment. Write concern is configured on the underlying collection, not on InsertOneOptions.</p>
+     * comment. Write concern is configured on the underlying collection, not on InsertOneOptions.
+     * A bean entity is converted via {@link MongoDBBase#toDocument(Object)} and does not receive the
+     * generated {@code _id}; a {@link Document} entity is passed through and receives it in place.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2461,7 +2465,7 @@ public final class MongoCollectionMapper<T> {
      *
      * InsertOneOptions options = new InsertOneOptions()
      *     .bypassDocumentValidation(false);
-     * InsertOneResult result = mapper.insertOne(newUser, options); // the server-assigned _id is NOT written back into the entity, but result.getInsertedId() exposes it
+     * InsertOneResult result = mapper.insertOne(newUser, options); // for a bean, the server-assigned _id is NOT written back; result.getInsertedId() exposes it
      * String assignedId = newUser.getId(); // post-state: still null — the generated _id exists only in the database
      * }</pre>
      *
@@ -2487,9 +2491,9 @@ public final class MongoCollectionMapper<T> {
      * Inserts multiple entities into the collection in a single batch operation.
      *
      * <p>This method inserts multiple entities of the mapped type into the collection efficiently
-     * in a single batch operation. Each entity is automatically converted to a BSON document.
-     * Batch operations are more efficient than individual inserts for multiple entities and
-     * provide better performance for bulk data loading.</p>
+     * in a single batch operation. Each bean entity is automatically converted to a BSON document;
+     * {@link Document} entities are passed through unchanged. Batch operations are more efficient
+     * than individual inserts for multiple entities and provide better performance for bulk data loading.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2501,7 +2505,7 @@ public final class MongoCollectionMapper<T> {
      *     new User("Bob", "bob@example.com", 35)
      * );
      *
-     * InsertManyResult result = mapper.insertMany(users);                  // server-assigned _ids are NOT written back into the entities, but result.getInsertedIds() exposes them
+     * InsertManyResult result = mapper.insertMany(users);                  // for beans, assigned _ids are NOT written back; result.getInsertedIds() exposes them
      * boolean anyHasId = users.stream().anyMatch(u -> u.getId() != null);   // post-state: anyHasId == false — generated _ids exist only in the database
      *
      * mapper.insertMany(Collections.emptyList()); // throws IllegalArgumentException: empty list

@@ -2399,13 +2399,16 @@ public abstract class MongoDBBase {
      *
      * <p>The method handles different input types intelligently:</p>
      * <ul>
-     * <li><strong>Map objects:</strong> Extracts specified keys and preserves Map structure if target type is Map</li>
+     * <li><strong>Map objects:</strong> Extracts the selected keys as a Dataset row; a Map target preserves Map structure,
+     * while a bean target converts each Map row (a {@code Document} or any other {@code Map}) to the bean</li>
      * <li><strong>Document objects:</strong> Converts to target type using the framework's type conversion system</li>
-     * <li><strong>Other objects:</strong> Extracts the selected properties directly (no per-row conversion to the target type)</li>
+     * <li><strong>Other objects:</strong> Copies the row to a bean target when the target is a bean; otherwise extracts the
+     * selected properties directly without per-row conversion to the target type</li>
      * </ul>
      *
      * <p>Rows may mix these shapes. With a Map target and a Map first row, bean rows are converted to maps; with a Document
-     * first row, each row is converted individually, other maps like documents.</p>
+     * first row, each row is converted individually, other maps like documents; with a bean target and another Map first
+     * row, Map rows are converted to the bean and non-Map rows are copied or left as-is when already assignable.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2492,6 +2495,22 @@ public abstract class MongoDBBase {
                 } else {
                     return N.newDataset(selectPropNames, newRowList);
                 }
+            } else if (Beans.isBeanClass(rowType)) {
+                // A non-Document Map row (for example BasicDBObject) must still become the requested bean; the
+                // first-row dispatch above only recognized Document instances as documents. Null rows stay null.
+                final List<Object> newRowList = new ArrayList<>(rowList.size());
+
+                for (final Object row : rowList) {
+                    if (row == null) {
+                        newRowList.add(null);
+                    } else if (row instanceof Map) {
+                        newRowList.add(readRow(new Document((Map<String, Object>) row), rowType));
+                    } else {
+                        newRowList.add(rowType.isInstance(row) ? row : Beans.copyAs(row, rowType));
+                    }
+                }
+
+                return N.isEmpty(selectPropNames) ? N.newDataset(newRowList) : N.newDataset(selectPropNames, newRowList);
             } else {
                 // Mirror the branches above: null/empty selectPropNames means "include all"
                 // (N.newDataset(columnNames, rows) rejects an empty columnNames with IAE).
