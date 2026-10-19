@@ -1,3 +1,6 @@
+## 2.8.10
+* Improvements and bug fixes
+
 ## 2.8.9
 * Improvements and bug fixes
   * CqlBuilder: `ALLOW FILTERING` is rendered last regardless of call order; `UUID` values are inlined as bare literals by the raw builders; primary-key properties are excluded from the implicit `SET` list of `update(Class)`/`set(entity)`.
