@@ -2051,7 +2051,13 @@ public abstract class MongoDBBase {
                     // Scalar rows (e.g. from a typed distinct/aggregate iterable) whose Java type differs from the requested
                     // one: convert each row on its own, as MongoDB freely mixes BSON types (int32/int64) for the same field.
                     for (final Object row : rowList) {
-                        resultList.add(row == null ? null : convertBsonValue(row, rowType));
+                        if (row == null) {
+                            resultList.add(null);
+                        } else if (!isScalarRow(row)) {
+                            throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                        } else {
+                            resultList.add(convertBsonValue(row, rowType));
+                        }
                     }
                 }
 
@@ -2731,7 +2737,7 @@ public abstract class MongoDBBase {
         }
 
         if (idPropertyName != null && doc.containsKey(idPropertyName)) {
-            Object id = doc.remove(idPropertyName);
+            Object id = doc.get(idPropertyName);
 
             // Convert to ObjectId only when the value unambiguously is one: a 24-hex-char String or a
             // 12-byte array. Any other legal _id value (an arbitrary String, a Date, other byte arrays)
@@ -2745,8 +2751,13 @@ public abstract class MongoDBBase {
             }
 
             if (id != null) {
+                if (!_ID.equals(idPropertyName)) {
+                    doc.remove(idPropertyName);
+                }
+
                 doc.put(_ID, id);
             } else {
+                doc.remove(idPropertyName);
                 doc.remove(_ID);
             }
         }

@@ -1569,6 +1569,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * Asynchronously executes the supplied CQL query and maps each row to an instance of
      * {@code targetClass}.
      *
+     * <p>For a single-value target, a {@code NULL} column becomes the primitive default if {@code targetClass}
+     * is primitive (for example, {@code 0} for {@code int.class}). Wrapper and other reference targets preserve
+     * {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -1871,6 +1875,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * Asynchronously executes the supplied CQL query and maps each row to an instance of
      * {@code targetClass}, returning a lazy {@link Stream}.
      *
+     * <p>For a single-value target, a {@code NULL} column becomes the primitive default if {@code targetClass}
+     * is primitive (for example, {@code 0} for {@code int.class}). Wrapper and other reference targets preserve
+     * {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -1911,6 +1919,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     /**
      * Asynchronously executes a pre-built CQL {@code statement} and maps each row to an instance
      * of {@code targetClass}, returning a lazy {@link Stream}.
+     *
+     * <p>For a single-value target, a {@code NULL} column becomes the primitive default if {@code targetClass}
+     * is primitive (for example, {@code 0} for {@code int.class}). Wrapper and other reference targets preserve
+     * {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2558,6 +2570,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * {@code valueClass}, from the first row matching {@code whereClause}; the underlying SELECT
      * is limited to {@code 1} row.
      *
+     * <p>A {@code NULL} column remains {@code null} for wrapper and other reference targets. For a primitive
+     * {@code valueClass}, conversion supplies the primitive default (for example, {@code 0} for {@code int.class}).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -2583,7 +2598,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if no row
-     *         matches; the value is {@code null} when the column is SQL NULL
+     *         matches; a {@code NULL} column yields the primitive default for a primitive target, or {@code null}
+     *         for a wrapper or other reference target
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
      *         {@code null}, {@code propName} is {@code null} or empty, or the supplied condition contains a
      *         relation unsupported by CQL
@@ -2604,6 +2620,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     /**
      * Asynchronously selects a single non-null column value of the named property, coerced to
      * {@code valueClass}, from the first row matching {@code whereClause}.
+     *
+     * <p>For a {@code NULL} column and a primitive {@code valueClass}, conversion supplies the primitive default
+     * (for example, {@code int.class} yields {@code Optional.of(0)}). Wrapper and other reference targets
+     * preserve {@code null}, causing the future to fail with a {@link NullPointerException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2634,7 +2654,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is an {@link Optional} holding the value, or empty if no row
-     *         matches; if a row was returned but the column value is {@code null}, {@code get()}
+     *         matches; if a row was returned but the converted column value is {@code null}, {@code get()}
      *         throws an {@code ExecutionException} whose cause is a {@link NullPointerException},
      *         since {@link Optional} cannot hold {@code null}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
@@ -3078,6 +3098,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * Asynchronously executes the supplied CQL query and returns the first column of the first
      * row coerced to {@code valueClass}.
      *
+     * <p>A {@code NULL} column remains {@code null} for wrapper and other reference targets. For a primitive
+     * {@code valueClass}, conversion supplies the primitive default (for example, {@code 0} for {@code int.class}).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -3102,7 +3125,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if the
-     *         query returned no row; the value is {@code null} when the column is SQL NULL
+     *         query returned no row; a {@code NULL} column yields the primitive default for a primitive target,
+     *         or {@code null} for a wrapper or other reference target
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -3122,6 +3146,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     /**
      * Asynchronously executes the supplied CQL query and returns the first column of the first
      * row coerced to {@code valueClass}, requiring a non-null value when a row is present.
+     *
+     * <p>For a {@code NULL} column and a primitive {@code valueClass}, conversion supplies the primitive default
+     * (for example, {@code int.class} yields {@code Optional.of(0)}). Wrapper and other reference targets
+     * preserve {@code null}, causing the future to fail with a {@link NullPointerException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3151,7 +3179,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is an {@link Optional} holding the value, or empty if the
-     *         query returned no row; if a row was returned but the column value is {@code null},
+     *         query returned no row; if a row was returned but the converted column value is {@code null},
      *         {@code get()} throws an {@code ExecutionException} whose cause is a
      *         {@link NullPointerException}, since {@link Optional} cannot hold {@code null}
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed

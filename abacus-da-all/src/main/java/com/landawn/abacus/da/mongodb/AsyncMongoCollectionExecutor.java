@@ -18,7 +18,12 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -2382,6 +2387,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Stream of Document objects
      * @throws IllegalArgumentException if {@code filter} is null
@@ -2394,7 +2403,7 @@ public final class AsyncMongoCollectionExecutor {
     public ContinuableFuture<Stream<Document>> stream(final Bson filter) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(filter, cs.filter);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(filter));
+        return executeStream(() -> collectionExecutor.stream(filter));
     }
 
     /**
@@ -2414,6 +2423,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type to map each document to
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
@@ -2429,7 +2442,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(filter, rowType));
+        return executeStream(() -> collectionExecutor.stream(filter, rowType));
     }
 
     /**
@@ -2448,6 +2461,10 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
      * consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type to map each document to
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
@@ -2465,7 +2482,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(filter, offset, count, rowType));
+        return executeStream(() -> collectionExecutor.stream(filter, offset, count, rowType));
     }
 
     /**
@@ -2483,6 +2500,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
@@ -2499,7 +2520,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, rowType));
+        return executeStream(() -> collectionExecutor.stream(selectPropNames, filter, rowType));
     }
 
     /**
@@ -2519,6 +2540,10 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
      * consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match documents (must not be null)
@@ -2537,7 +2562,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, offset, count, rowType));
+        return executeStream(() -> collectionExecutor.stream(selectPropNames, filter, offset, count, rowType));
     }
 
     /**
@@ -2555,6 +2580,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
+     *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
@@ -2574,7 +2603,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, sort, rowType));
+        return executeStream(() -> collectionExecutor.stream(selectPropNames, filter, sort, rowType));
     }
 
     /**
@@ -2593,6 +2622,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
      * consuming the returned stream are raised during consumption.</p>
+     *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
@@ -2613,7 +2646,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, sort, offset, count, rowType));
+        return executeStream(() -> collectionExecutor.stream(selectPropNames, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -2633,6 +2666,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
      * MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification (null for all fields)
      * @param filter the query filter to match documents (must not be null)
@@ -2651,7 +2688,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(projection, filter, sort, rowType));
+        return executeStream(() -> collectionExecutor.stream(projection, filter, sort, rowType));
     }
 
     /**
@@ -2675,6 +2712,10 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
      * consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification (null for all fields)
      * @param filter the query filter to match documents (must not be null)
@@ -2695,7 +2736,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.stream(projection, filter, sort, offset, count, rowType));
+        return executeStream(() -> collectionExecutor.stream(projection, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -4557,6 +4598,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for
      * @param rowType the class to deserialize the distinct values into
@@ -4572,7 +4617,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.distinct(fieldName, rowType));
+        return executeStream(() -> collectionExecutor.distinct(fieldName, rowType));
     }
 
     /**
@@ -4591,6 +4636,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for
      * @param filter the query filter to apply before getting distinct values (must not be null)
@@ -4608,7 +4657,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.distinct(fieldName, filter, rowType));
+        return executeStream(() -> collectionExecutor.distinct(fieldName, filter, rowType));
     }
 
     /**
@@ -4631,6 +4680,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param pipeline the aggregation pipeline to execute
      * @return a ContinuableFuture that completes with a Stream of result Documents
      * @throws IllegalArgumentException if {@code pipeline} is null
@@ -4644,7 +4697,7 @@ public final class AsyncMongoCollectionExecutor {
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(pipeline, cs.pipeline);
 
-        return asyncExecutor.execute(() -> collectionExecutor.aggregate(pipeline));
+        return executeStream(() -> collectionExecutor.aggregate(pipeline));
     }
 
     /**
@@ -4667,6 +4720,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param <T> the type of the result documents
      * @param pipeline the aggregation pipeline to execute
      * @param rowType the class to deserialize the result documents into
@@ -4683,7 +4740,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.aggregate(pipeline, rowType));
+        return executeStream(() -> collectionExecutor.aggregate(pipeline, rowType));
     }
 
     /**
@@ -4703,6 +4760,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param fieldName the field name to group by. A path with an empty segment (such as {@code "a..b"}) is rejected
      *        by the delegated {@code groupBy} operation and completes the returned future exceptionally
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
@@ -4718,7 +4779,7 @@ public final class AsyncMongoCollectionExecutor {
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
 
-        return asyncExecutor.execute(() -> collectionExecutor.groupBy(fieldName));
+        return executeStream(() -> collectionExecutor.groupBy(fieldName));
     }
 
     /**
@@ -4739,6 +4800,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param fieldNames the collection of field names to group by.
      *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      *        Invalid or overlapping member paths complete the returned future exceptionally.
@@ -4755,7 +4820,7 @@ public final class AsyncMongoCollectionExecutor {
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
-        return asyncExecutor.execute(() -> collectionExecutor.groupBy(fieldNames));
+        return executeStream(() -> collectionExecutor.groupBy(fieldNames));
     }
 
     /**
@@ -4787,6 +4852,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
      * executing the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param fieldName the field name to group by and count. A path with an empty segment (such as {@code "a..b"}) is rejected
      *        by the delegated {@code groupByAndCount} operation and completes the returned future exceptionally
      * @return a ContinuableFuture that completes with a Stream of Documents containing group keys and counts
@@ -4803,7 +4872,7 @@ public final class AsyncMongoCollectionExecutor {
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
 
-        return asyncExecutor.execute(() -> collectionExecutor.groupByAndCount(fieldName));
+        return executeStream(() -> collectionExecutor.groupByAndCount(fieldName));
     }
 
     /**
@@ -4838,6 +4907,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
      * executing the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param fieldNames the collection of field names to group by and count.
      *        Dotted paths produce nested key fields; paths must have nonempty segments, and no path may be an ancestor of another.
      *        Invalid or overlapping member paths complete the returned future exceptionally.
@@ -4855,7 +4928,7 @@ public final class AsyncMongoCollectionExecutor {
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
 
-        return asyncExecutor.execute(() -> collectionExecutor.groupByAndCount(fieldNames));
+        return executeStream(() -> collectionExecutor.groupByAndCount(fieldNames));
     }
 
     /**
@@ -4876,6 +4949,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The returned future completes exceptionally if the delegated {@code mapReduce} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
      *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
+     *
      * @param mapFunction the JavaScript map function
      * @param reduceFunction the JavaScript reduce function
      * @return a ContinuableFuture that completes with a Stream of result Documents
@@ -4892,7 +4969,7 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotEmpty(mapFunction, cs.mapFunction);
         N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
 
-        return asyncExecutor.execute(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction));
+        return executeStream(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction));
     }
 
     /**
@@ -4910,6 +4987,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code mapReduce} operation fails while converting documents or executing
      * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
+     *
+     * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
+     * including a stream created after cancellation. Cancellation after successful completion returns
+     * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
      *
      * @param <T> the type of the result documents
      * @param mapFunction the JavaScript map function
@@ -4931,6 +5012,87 @@ public final class AsyncMongoCollectionExecutor {
         N.checkArgNotEmpty(reduceFunction, cs.reduceFunction);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return asyncExecutor.execute(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction, rowType));
+        return executeStream(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction, rowType));
+    }
+
+    private <T> ContinuableFuture<Stream<T>> executeStream(final Callable<Stream<T>> command) {
+        final Executor executor = asyncExecutor.getExecutor();
+        final CloseOnCancelFuture<T> future = new CloseOnCancelFuture<>();
+        future.setDelegate(asyncExecutor.execute(() -> {
+            final Stream<T> stream = command.call();
+            future.onResult(stream);
+            return stream;
+        }));
+
+        return ContinuableFuture.wrap(future).thenUse(executor);
+    }
+
+    private static final class CloseOnCancelFuture<T> implements Future<Stream<T>> {
+        private volatile Future<Stream<T>> delegate;
+        private Stream<T> stream;
+        private boolean cancelled;
+
+        void setDelegate(final Future<Stream<T>> delegate) {
+            this.delegate = delegate;
+        }
+
+        void onResult(final Stream<T> stream) {
+            final boolean closeOnCancel;
+
+            // FutureTask discards a result that arrives after cancellation. Coordinate result
+            // publication with cancel() so a late stream's cursor is closed instead of leaked.
+            synchronized (this) {
+                closeOnCancel = cancelled;
+
+                if (!closeOnCancel) {
+                    this.stream = stream;
+                }
+            }
+
+            if (closeOnCancel && stream != null) {
+                stream.close();
+            }
+        }
+
+        @Override
+        public boolean cancel(final boolean mayInterruptIfRunning) {
+            if (!delegate.cancel(mayInterruptIfRunning)) {
+                return false;
+            }
+
+            final Stream<T> streamToClose;
+
+            synchronized (this) {
+                cancelled = true;
+                streamToClose = stream;
+                stream = null;
+            }
+
+            if (streamToClose != null) {
+                streamToClose.close();
+            }
+
+            return true;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return delegate.isCancelled();
+        }
+
+        @Override
+        public boolean isDone() {
+            return delegate.isDone();
+        }
+
+        @Override
+        public Stream<T> get() throws InterruptedException, ExecutionException {
+            return delegate.get();
+        }
+
+        @Override
+        public Stream<T> get(final long timeout, final TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            return delegate.get(timeout, unit);
+        }
     }
 }

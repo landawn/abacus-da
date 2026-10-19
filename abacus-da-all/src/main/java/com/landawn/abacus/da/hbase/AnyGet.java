@@ -1156,10 +1156,6 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     public static List<Get> toGet(final Collection<AnyGet> anyGets) throws IllegalArgumentException {
         N.checkArgNotNull(anyGets, cs.anyGets);
 
-        for (final AnyGet anyGet : anyGets) {
-            N.checkArgNotNull(anyGet, cs.anyGet);
-        }
-
         if (N.isEmpty(anyGets)) {
             return new ArrayList<>();
         }
@@ -1167,6 +1163,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
         final List<Get> gets = new ArrayList<>(anyGets.size());
 
         for (final AnyGet anyGet : anyGets) {
+            N.checkArgNotNull(anyGet, cs.anyGet);
             gets.add(anyGet.val());
         }
 

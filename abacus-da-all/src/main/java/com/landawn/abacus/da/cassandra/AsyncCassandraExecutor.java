@@ -268,6 +268,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * single value from the first column of the first row converted to {@code valueClass}, or
      * an empty {@link Nullable} if no row is returned. The value may be {@code null}.
      *
+     * <p>A {@code NULL} column becomes the primitive default for a primitive {@code valueClass}
+     * (for example, {@code int.class} yields {@code Nullable.of(0)}). Wrapper and other reference targets
+     * preserve {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -313,8 +317,12 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Asynchronously executes the given CQL query and returns a future that completes with a
      * non-{@code null} value from the first column of the first row converted to
      * {@code valueClass}, or an empty {@link Optional} if no row is returned. If a row is returned
-     * but the value is {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a
+     * but the converted value is {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a
      * {@link NullPointerException} (an {@link Optional} cannot hold {@code null}).
+     *
+     * <p>For a {@code NULL} column and a primitive {@code valueClass}, conversion supplies the primitive default
+     * (for example, {@code int.class} yields {@code Optional.of(0)}). Wrapper and other reference targets
+     * preserve {@code null}, causing the future to fail.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -343,8 +351,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param valueClass the class to convert the single value to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
-     * @return a future that completes with an {@code Optional} of the non-null value, or empty
-     *         if no row exists; if a row exists but the value is {@code null}, {@code get()} throws
+     * @return a future that completes with an {@code Optional} of the converted non-null value, or empty
+     *         if no row exists; if a row exists but the converted value is {@code null}, {@code get()} throws
      *         an {@code ExecutionException} whose cause is a {@link NullPointerException}
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
@@ -362,6 +370,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * {@link com.datastax.oss.driver.api.core.cql.AsyncResultSet AsyncResultSet} is wrapped via
      * {@link ResultSets#wrap(com.datastax.oss.driver.api.core.cql.AsyncResultSet)} so that callers
      * receive a familiar synchronous {@link ResultSet} interface.
+     *
+     * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
+     * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
+     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -402,6 +414,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Asynchronously executes a CQL query with positional parameters. The driver's
      * {@link com.datastax.oss.driver.api.core.cql.AsyncResultSet AsyncResultSet} is wrapped via
      * {@link ResultSets#wrap(com.datastax.oss.driver.api.core.cql.AsyncResultSet)}.
+     *
+     * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
+     * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
+     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -444,6 +460,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * {@link com.datastax.oss.driver.api.core.cql.AsyncResultSet AsyncResultSet} is wrapped via
      * {@link ResultSets#wrap(com.datastax.oss.driver.api.core.cql.AsyncResultSet)}.
      *
+     * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
+     * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
+     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -482,6 +502,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Asynchronously executes a pre-built {@link Statement}. The driver's
      * {@link com.datastax.oss.driver.api.core.cql.AsyncResultSet AsyncResultSet} is wrapped via
      * {@link ResultSets#wrap(com.datastax.oss.driver.api.core.cql.AsyncResultSet)}.
+     *
+     * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
+     * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
+     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

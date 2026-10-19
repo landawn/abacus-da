@@ -20,6 +20,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
+import org.bson.BsonDocument;
 import org.bson.Document;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
@@ -3049,7 +3050,7 @@ public final class MongoCollectionExecutor {
      * @param update the update to normalize
      * @return the normalized BSON update
      * @throws IllegalArgumentException if {@code update} is null, cannot be converted from a Map, bean, or name/value array, or produces a
-     *         Document or BasicDBObject with null field names, mixed operator and ordinary fields, or no fields after removing {@code _id}
+     *         Document, BasicDBObject, or BsonDocument with null field names, mixed operator and ordinary fields, or no fields after removing {@code _id}
      * @throws RuntimeException if a bean property getter cannot be accessed or throws while constructing a document
      */
     private static Bson toBson(final Object update) throws IllegalArgumentException, RuntimeException {
@@ -3082,17 +3083,26 @@ public final class MongoCollectionExecutor {
             final BasicDBObject dbObjectToUse = new BasicDBObject(dbObject);
             dbObjectToUse.remove(MongoDBBase._ID);
             bsonToUse = dbObjectToUse;
+        } else if (bson instanceof final BsonDocument bsonDocument) {
+            if (isOperatorUpdate(bsonDocument.keySet())) {
+                return bsonDocument;
+            }
+
+            // Copy into a mutable BsonDocument: subclasses such as RawBsonDocument are immutable, so clone()/remove() throws.
+            final BsonDocument bsonDocumentToUse = new BsonDocument(bsonDocument.size());
+            bsonDocumentToUse.putAll(bsonDocument);
+            bsonDocumentToUse.remove(MongoDBBase._ID);
+            bsonToUse = bsonDocumentToUse;
         } else {
-            // A driver-built Bson (e.g. Updates.set(...)/Updates.combine(...)) is already a
-            // complete update expression. It is neither Document nor BasicDBObject, so it must
-            // be returned as-is rather than (incorrectly) re-wrapped in a {$set: ...} document.
+            // Other driver-built Bson values (e.g. Updates.set(...)/Updates.combine(...)) are already complete update expressions.
             return bson;
         }
 
         // _id was stripped above: it is immutable server-side, and {$set: {_id: ...}} fails for every
         // matched document whose _id differs — breaking the common "fetch entity, modify a field,
         // update by filter" pattern. This executor requires at least one remaining updatable field.
-        if (bsonToUse instanceof final Document doc && doc.isEmpty() || bsonToUse instanceof final BasicDBObject dbObject && dbObject.isEmpty()) {
+        if (bsonToUse instanceof final Document doc && doc.isEmpty() || bsonToUse instanceof final BasicDBObject dbObject && dbObject.isEmpty()
+                || bsonToUse instanceof final BsonDocument bsonDocument && bsonDocument.isEmpty()) {
             throw new IllegalArgumentException(
                     "The update payload is empty (no non-null updatable properties besides the immutable _id). This executor requires at least one updatable field");
         }
@@ -4808,10 +4818,9 @@ public final class MongoCollectionExecutor {
      * {@code Object} results receive {@code {<fieldName>: <key>}} rows; a single-value {@code rowType}
      * (such as {@code String.class}) emits each group key converted to that type. For a dotted
      * {@code fieldName} such as {@code "address.city"}, the Map/bean/{@code Object} row is nested:
-     * {@code {address: {city: <key>}}}. For a single-value {@code rowType}, the group of documents that
-     * lack the field (key {@code null}) is not emitted, because Reactive Streams forbids {@code null}
-     * elements; a primitive {@code rowType} (such as {@code int.class}) emits its default value for it
-     * instead.</p>
+     * {@code {address: {city: <key>}}}. For every single-value {@code rowType}, including a primitive
+     * type such as {@code int.class}, the group of documents that lack the field (key {@code null}) is
+     * not emitted rather than being converted to {@code null} or a primitive default.</p>
      *
      * <p>Paths inside an embedded {@code _id} are supported: grouping {@code "_id.part"} with {@code Map.class} or
      * {@code Object.class} yields {@code {_id: {part: <key>}}} rows.</p>
@@ -4873,6 +4882,10 @@ public final class MongoCollectionExecutor {
      *
      * <p>Groups documents by multiple fields and maps results to the specified type.
      * Enables multi-dimensional grouping with type-safe results.</p>
+     *
+     * <p>If {@code fieldNames} contains only one distinct field and {@code rowType} is a single-value type,
+     * each group key is converted to that type. The null-key group is omitted for every single-value type,
+     * including primitive class tokens such as {@code int.class}, without emitting a primitive default.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -5045,7 +5058,14 @@ public final class MongoCollectionExecutor {
         // Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName ("a.b" -> {a: {b: key}}), and the
         // scalar conversion would then receive the embedded document instead of the key.
         if (Document.class.equals(rowType) || (!count && !rowType.isAssignableFrom(Document.class) && isSingleValueType(rowType))) {
-            return N.asList(new Document(_$GROUP, group));
+            final Document groupStage = new Document(_$GROUP, group);
+
+            if (rowType.isPrimitive()) {
+                // Remove the null group before readRow can convert its key to a primitive default.
+                return N.asList(groupStage, new Document("$match", new Document(MongoDBBase._ID, new Document("$ne", null))));
+            }
+
+            return N.asList(groupStage);
         }
 
         final Document project = new Document(MongoDBBase._ID, 0).append(fieldName, "$" + MongoDBBase._ID);
@@ -5095,6 +5115,34 @@ public final class MongoCollectionExecutor {
             return N.asList(new Document(_$GROUP, group));
         }
 
+        String firstFieldName = null;
+        boolean singleField = false;
+
+        if (!count && !rowType.isAssignableFrom(Document.class) && isSingleValueType(rowType)) {
+            firstFieldName = fieldNames.iterator().next();
+            singleField = true;
+
+            for (final String fieldName : fieldNames) {
+                if (!firstFieldName.equals(fieldName)) {
+                    singleField = false;
+                    break;
+                }
+            }
+
+            if (singleField && firstFieldName.indexOf('.') >= 0) {
+                // Projecting a dotted output name would nest the key again and hide it from scalar readRow conversion.
+                final Document groupStage = new Document(_$GROUP, group);
+                final Document projectStage = new Document("$project", new Document(MongoDBBase._ID, "$" + MongoDBBase._ID + "." + firstFieldName));
+
+                if (rowType.isPrimitive()) {
+                    return N.asList(groupStage, new Document("$match", new Document(MongoDBBase._ID + "." + firstFieldName, new Document("$ne", null))),
+                            projectStage);
+                }
+
+                return N.asList(groupStage, projectStage);
+            }
+        }
+
         final Document project = new Document(MongoDBBase._ID, 0);
 
         for (final String fieldName : fieldNames) {
@@ -5105,7 +5153,15 @@ public final class MongoCollectionExecutor {
             project.append(_COUNT, 1);
         }
 
-        return N.asList(new Document(_$GROUP, group), new Document("$project", MongoDBBase.rebuildEmbeddedIdProjection(project)));
+        final Document groupStage = new Document(_$GROUP, group);
+        final Document projectStage = new Document("$project", MongoDBBase.rebuildEmbeddedIdProjection(project));
+
+        if (!count && rowType.isPrimitive() && singleField) {
+            // Match the nested key, not the always-non-null composite _id document.
+            return N.asList(groupStage, new Document("$match", new Document(MongoDBBase._ID + "." + firstFieldName, new Document("$ne", null))), projectStage);
+        }
+
+        return N.asList(groupStage, projectStage);
     }
 
     /**

@@ -212,8 +212,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *
      * @param tableName one table name, optionally keyspace-qualified
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalStateException if the builder is closed, the operation is neither INSERT nor SELECT (a batch
-     *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted (for example
+     * @throws IllegalStateException if the builder is closed, the operation is not INSERT, no columns or values have
+     *         been staged, or CQL was already emitted (for example
      *         by a previous {@code into(...)} call)
      * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference, a staged column
      *         name is blank or contains a CQL comment token, or a batch INSERT row is empty or does not expose the
@@ -290,8 +290,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *
      * @param entityClass the entity class representing the target table
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalStateException if the builder is closed, the operation is neither INSERT nor SELECT (a batch
-     *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted (for example
+     * @throws IllegalStateException if the builder is closed, the operation is not INSERT, no columns or values have
+     *         been staged, or CQL was already emitted (for example
      *         by a previous {@code into(...)} call)
      * @throws IllegalArgumentException if {@code entityClass} is {@code null}, the derived table name is not exactly
      *         one CQL table reference, a staged column name is blank or contains a CQL comment token, or a batch
@@ -319,8 +319,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param entityClass the entity class for property mapping (may be {@code null}, in which case no entity-class
      *        association is performed)
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalStateException if the builder is closed, the operation is neither INSERT nor SELECT (a batch
-     *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted (for example
+     * @throws IllegalStateException if the builder is closed, the operation is not INSERT, no columns or values have
+     *         been staged, or CQL was already emitted (for example
      *         by a previous {@code into(...)} call)
      * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference, a staged column
      *         name is blank or contains a CQL comment token, or a batch INSERT row is empty or does not expose the
@@ -348,8 +348,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * {@link #into(String)} delegates.
      *
      * @return {@code true} if this builder holds batch-INSERT rows (staged by {@code batchInsert(...)})
-     * @throws IllegalStateException if this builder is closed, the operation is neither INSERT nor SELECT (a batch
-     *         INSERT requires INSERT), no columns or values have been staged, or CQL was already emitted
+     * @throws IllegalStateException if this builder is closed, the operation is not INSERT, no columns or values have
+     *         been staged, or CQL was already emitted
      */
     private boolean checkCanAppendCqlInto() throws IllegalStateException {
         assertNotClosed();
@@ -366,15 +366,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             return true;
         }
 
-        if (_op != OperationType.ADD && _op != OperationType.QUERY) {
-            throw new IllegalStateException("Invalid operation for into(): " + opCqlKeyword() + ". Expected INSERT or SELECT");
+        if (_op != OperationType.ADD) {
+            throw new IllegalStateException(
+                    "Invalid operation for into(): " + opCqlKeyword() + ". Expected INSERT; Cassandra CQL does not support INSERT ... SELECT");
         }
 
-        if (_op == OperationType.QUERY) {
-            if (N.isEmpty(_propOrColumnNames) && N.isEmpty(_propOrColumnNameAliases) && N.isEmpty(_multiSelects)) {
-                throw new IllegalStateException("Column names must be set by select() before calling into()");
-            }
-        } else if (N.isEmpty(_propOrColumnNames) && N.isEmpty(_props)) {
+        if (N.isEmpty(_propOrColumnNames) && N.isEmpty(_props)) {
             throw new IllegalStateException("Column names must be set by insert() before calling into()");
         }
 
@@ -1749,13 +1746,21 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             return -1;
         }
 
-        int index = startIndex;
+        if (!isCqlUnquotedNameStart(tableReference.charAt(startIndex))) {
+            return -1;
+        }
+
+        int index = startIndex + 1;
 
         while (index < tableReference.length() && isCqlUnquotedNameChar(tableReference.charAt(index))) {
             index++;
         }
 
-        return index == startIndex ? -1 : index;
+        return index;
+    }
+
+    private static boolean isCqlUnquotedNameStart(final char ch) {
+        return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z';
     }
 
     private static boolean isCqlUnquotedNameChar(final char ch) {

@@ -270,8 +270,8 @@ public final class ParsedCql {
                         continue;
                     }
 
-                    // '#', '{' and ':' are not token separators, so a MyBatis marker glued to a map/UDT field separator
-                    // ("{street:#{street}}", "city:#{city}}") is part of the same token and would reach the driver
+                    // '#', '{' and ':' are not token separators, so a MyBatis marker glued to a literal's opening brace
+                    // or field separator ("{#{k}:#{v}}", "{street:#{street}}") is part of the same token and would reach the driver
                     // unconverted. Split it off so it is handled like the spaced form ("{street: #{street}}").
                     if (splitGluedLiteralIbatisParameter(words, i, literalState)) {
                         word = words.get(i);
@@ -283,8 +283,9 @@ public final class ParsedCql {
                     final boolean dollarQuotedToken = updateLiteralState(literalState, openContainers, word, bracketMask);
                     // A '{' opened by this very token counts, so a self-contained single-field literal such as
                     // "{street::street}" (balanced braces => prevCurlyDepth and the post-token depth are both 0)
-                    // is still recognized. The cheap pre-check keeps the scan off tokens that cannot match.
-                    final int embeddedMarkerIndex = !dollarQuotedToken && (prevCurlyDepth > 0 || word.indexOf('{') >= 0)
+                    // is still recognized. A complete dollar-quoted constant is opaque numeric placeholder text here, so a
+                    // marker after it remains visible; only an unterminated dollar quote (state[1] != 0) suppresses the scan.
+                    final int embeddedMarkerIndex = literalState[1] == 0 && (prevCurlyDepth > 0 || word.indexOf('{') >= 0)
                             ? indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth)
                             : -1;
 
@@ -348,6 +349,13 @@ public final class ParsedCql {
 
                         rebuilt.append(word);
                         word = rebuilt.toString();
+
+                        // A native named value glued to a MyBatis literal key remains in the rebuilt tail
+                        // ("#{k}::v" -> "?::v"). Mark it so the common check rejects the mixed binding styles.
+                        if (literalState[1] == 0 && (prevCurlyDepth > 0 || word.indexOf('{') >= 0)
+                                && indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth) >= 0) {
+                            type |= 2;
+                        }
                     } else if (embeddedMarkerIndex >= 0) {
                         // Without whitespace, a UDT field separator and its named marker are tokenized together,
                         // for example "{street::street". Preserve the first ':' and replace only the marker.
@@ -525,7 +533,7 @@ public final class ParsedCql {
     }
 
     /**
-     * If {@code words[index]} carries a MyBatis marker glued to a map/UDT field separator (see
+     * If {@code words[index]} carries a MyBatis marker glued to a literal's opening brace or map/UDT field separator (see
      * {@link #indexOfGluedLiteralIbatisParameter(String, int)}), splits the token in place so the marker starts a new
      * token at {@code index + 1}. A kept block comment, or a token that continues a dollar-quoted string, is never split.
      *
@@ -553,8 +561,8 @@ public final class ParsedCql {
     }
 
     /**
-     * Finds a MyBatis marker glued to a map/UDT field separator inside braces ({@code {street:#{street}}}): returns the
-     * index of the {@code '#'} that directly follows a {@code ':'} at brace depth &gt; 0, or -1. As in
+     * Finds a MyBatis marker glued to a literal's opening brace or map/UDT field separator ({@code {street:#{street}}}): returns
+     * the index of the {@code '#'} that directly follows a literal <code>&#123;</code> or a {@code ':'} at brace depth &gt; 0, or -1. As in
      * {@link #indexOfEmbeddedLiteralNamedParameter(String, int)}, the depth is tracked within the token from
      * {@code startDepth}, and quoted literals are skipped. A token that itself starts with a marker is scanned too, so
      * the value of a marker key ({@code #{k}:#{v}}) is split off as well; for a key marker spanning several tokens, the
@@ -587,6 +595,11 @@ public final class ParsedCql {
                 quoteChar = ch;
             } else if (ch == '{') {
                 depth++;
+                // Split a marker key at the opening literal brace as well as a marker value after ':'.
+                // The opening brace of a MyBatis property is not itself a literal boundary.
+                if ((i == 0 || word.charAt(i - 1) != '#') && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER, i + 1)) {
+                    return i + 1;
+                }
             } else if (ch == '}') {
                 if (depth > 0) {
                     depth--;
@@ -1094,13 +1107,14 @@ public final class ParsedCql {
      * to {@code ?}, and every
      * {@code ?} inside {@code [...]} is included in {@link #parameterCount()}.</p>
      *
-     * <p><b>Known limitation.</b> Inside braces, a named marker is recognized only when it follows a map/UDT field
+     * <p>MyBatis markers inside braces are recognized after the opening brace, a field separator, whitespace, or
+     * {@code ,}, including {@code {street:#{street}}} and {@code {#{k,jdbcType=VARCHAR}:#{v}}}. Markers in quoted text
+     * remain unchanged, and mixing MyBatis and native parameter styles is rejected even without separating whitespace.</p>
+     *
+     * <p><b>Known limitation.</b> Inside braces, a native named marker ({@code :name}) is recognized only when it follows a map/UDT field
      * separator ({@code {street: :street}}, {@code {street::street}}) or sits directly inside a {@code [...]} nested in
-     * the braces; a MyBatis marker is recognized after a field separator too, whatever the key ({@code {street:#{street}}},
-     * {@code { #{k, jdbcType=VARCHAR}:#{v} }}), and wherever it starts a token of its own (after whitespace or
-     * {@code ,}). A marker written directly after
-     * <code>&#123;</code>, or a named marker after {@code ,} inside braces — for example
-     * <code>tags + &#123;:tag&#125;</code>, <code>tags + &#123;#&#123;tag&#125;&#125;</code> or
+     * the braces. A native named marker written directly after <code>&#123;</code> or after {@code ,} inside braces — for example
+     * <code>tags + &#123;:tag&#125;</code> or
      * <code>&#123;:a, :b&#125;</code> — is <i>not</i> rewritten and is <i>not</i> counted: <code>&#123;</code>
      * does not start a new token, and a named marker after {@code ,} inside braces is taken for a map key. Such a
      * statement reaches the driver with the native marker still in it and will not bind correctly.

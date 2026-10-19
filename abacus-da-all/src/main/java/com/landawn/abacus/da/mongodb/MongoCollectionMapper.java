@@ -3778,9 +3778,9 @@ public final class MongoCollectionMapper<T> {
      * stream.</p>
      *
      * @param fieldName the name of the field to get distinct values from
-     * @return a Stream of entities containing only the distinct field values (unlike the native {@code distinct} command,
-     *         documents that lack the field contribute one more entity whose field value is {@code null}, or a {@code null}
-     *         element for a single-value {@code T})
+     * @return a Stream of entities containing only the distinct field values. Documents that lack the field contribute a
+     *         null-valued entity for a non-primitive {@code T}, including a {@code null} element for a single-value reference
+     *         {@code T}; a primitive {@code T} skips that null group instead of converting it to the primitive default
      * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"})
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3812,7 +3812,12 @@ public final class MongoCollectionMapper<T> {
         // A single-value rowType (e.g. String) reads the value straight from the {_id: value} group rows (readRow
         // uses an _id-only row's id). Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName
         // ("a.b" -> {a: {b: value}}), and the scalar conversion would then receive the embedded document.
-        if (!isSingleValueRowType(rowType)) {
+        if (isSingleValueRowType(rowType)) {
+            if (rowType.isPrimitive()) {
+                // Primitive conversion would turn a null key into a real-looking default value.
+                pipeline.add(new Document("$match", new Document("_id", new Document("$ne", null))));
+            }
+        } else {
             final Document project = new Document("_id", 0).append(fieldName, "$_id");
 
             pipeline.add(new Document("$project", MongoDBBase.rebuildEmbeddedIdProjection(project)));
@@ -3859,8 +3864,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param fieldName the name of the field to get distinct values from
      * @param filter the query filter to match entities before extracting distinct values
-     * @return a Stream of entities containing only the distinct field values from matching entities (matching documents that
-     *         lack the field contribute one more entity whose field value is {@code null}, as in {@link #distinct(String)})
+     * @return a Stream of entities containing only the distinct field values from matching entities. Matching documents that
+     *         lack the field follow the same primitive/reference null-group behavior as {@link #distinct(String)}
      * @throws IllegalArgumentException if {@code fieldName} is null, empty, or contains an empty path segment (such as {@code "a..b"}),
      *         or if {@code filter} is null
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
@@ -3929,6 +3934,9 @@ public final class MongoCollectionMapper<T> {
      * {@code $project} stage and receives each group key directly, converted to {@code T}; a {@link Document}
      * {@code T} likewise receives the raw {@code {_id: <key>}} group documents.</p>
      *
+     * <p>For a single-value row type, the null-key group is omitted if the mapper was created with a primitive
+     * class token (such as {@code int.class}); a wrapper or reference single-value type receives a {@code null} element.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // One entity per distinct "department" value:
@@ -3963,6 +3971,10 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method groups entities by multiple field values, enabling compound grouping
      * for more complex analysis. Each group represents a unique combination of the specified fields.</p>
+     *
+     * <p>If {@code fieldNames} contains only one distinct field and the mapper has a single-value row type,
+     * each group key is converted to that type. A primitive class token (such as {@code int.class}) omits the
+     * null-key group; a wrapper or reference single-value type receives a {@code null} element.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -1907,6 +1907,11 @@ public class CosmosContainerExecutor {
      * absent property: {@code Filters.isNull("x")} does not match items that lack {@code x}, while
      * {@code Filters.isNotNull("x")} does.</p>
      *
+     * <p>{@code EXISTS} and {@code NOT EXISTS} subqueries supplied through {@code Filters.subQuery(...)} retain their own
+     * identifiers, including array, unary, and parenthesized projections that omit {@code FROM}. Qualification with {@code c}
+     * resumes for properties in the surrounding condition after the subquery closes. Use {@code Filters.subQuery(...)} for
+     * literal subquery SQL; {@code Filters.expr(...)} still applies the SQL builder's property mapping and naming policy.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * import static com.landawn.abacus.query.Filters.*;
@@ -2301,13 +2306,13 @@ public class CosmosContainerExecutor {
             throw e;
         }
 
-        final SP sp = toCosmosConditionSyntax(built);
+        final SP sp = toCosmosConditionSyntax(built, namingPolicy);
 
         return N.isEmpty(selectPropNames) ? sp : toCosmosProjection(sp);
     }
 
-    private static SP toCosmosConditionSyntax(final SP sp) {
-        final SP qualifiedSp = qualifyCosmosConditionIdentifiers(sp);
+    private static SP toCosmosConditionSyntax(final SP sp, final NamingPolicy namingPolicy) {
+        final SP qualifiedSp = qualifyCosmosConditionIdentifiers(sp, namingPolicy);
         final String query = qualifiedSp.query();
         final StringBuilder sb = new StringBuilder(query.length() + 16);
         final int len = query.length();
@@ -2380,7 +2385,7 @@ public class CosmosContainerExecutor {
         return cosmosQuery.equals(query) ? qualifiedSp : new SP(cosmosQuery, qualifiedSp.parameters());
     }
 
-    private static SP qualifyCosmosConditionIdentifiers(final SP sp) {
+    private static SP qualifyCosmosConditionIdentifiers(final SP sp, final NamingPolicy namingPolicy) {
         final String query = sp.query();
         final int whereIndex = query.indexOf(" WHERE ");
 
@@ -2392,6 +2397,7 @@ public class CosmosContainerExecutor {
         final int len = query.length();
         final StringBuilder sb = new StringBuilder(query.length() + 16).append(query, 0, conditionStart);
         char quote = 0;
+        int subqueryParenthesisDepth = 0;
 
         for (int i = conditionStart; i < len; i++) {
             final char ch = query.charAt(i);
@@ -2408,6 +2414,12 @@ public class CosmosContainerExecutor {
                 }
             } else if (ch == '\'' || ch == '"') {
                 quote = ch;
+                sb.append(ch);
+            } else if (ch == '(' && subqueryParenthesisDepth > 0) {
+                subqueryParenthesisDepth++;
+                sb.append(ch);
+            } else if (ch == ')' && subqueryParenthesisDepth > 0) {
+                subqueryParenthesisDepth--;
                 sb.append(ch);
             } else if (Character.isJavaIdentifierStart(ch) && ch != '$') {
                 final int identifierStart = i;
@@ -2437,16 +2449,30 @@ public class CosmosContainerExecutor {
                 final String normalizedIdentifier = identifier.toUpperCase(Locale.ROOT);
                 // ESCAPE is a keyword only in Cosmos DB's "x LIKE 'a!%' ESCAPE '!'" form, where a string literal follows it; elsewhere
                 // (e.g. "active AND escape") it is an ordinary property name and stays alias-qualified.
+                final boolean escapeKeyword = "ESCAPE".equals(normalizedIdentifier) && (nextChar == '\'' || nextChar == '"');
                 final boolean keywordToken = COSMOS_CONDITION_KEYWORDS.contains(normalizedIdentifier)
-                        && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previous, next, conditionStart)
-                        || "ESCAPE".equals(normalizedIdentifier) && (nextChar == '\'' || nextChar == '"');
+                        && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previous, next, conditionStart) || escapeKeyword;
                 final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[') || keywordToken;
                 final boolean attachedToPreviousIdentifier = identifierStart > conditionStart
                         && Character.isJavaIdentifierPart(query.charAt(identifierStart - 1));
                 final boolean standalone = !alreadyQualified && !functionOrObjectKey && !attachedToPreviousIdentifier;
 
-                if (standalone && !keywordOrAlias) {
+                if (subqueryParenthesisDepth == 0 && "SELECT".equals(normalizedIdentifier) && previousChar == '('
+                        && (isCosmosExistsSubquery(query, previous, conditionStart) || keywordToken && !functionOrObjectKey
+                                || hasCosmosSubqueryFromClause(query, i))) {
+                    // SELECT VALUE and scalar projections can omit FROM. Preserve their scope too; the FROM look-ahead
+                    // distinguishes SELECT * FROM ... from a property expression such as (select * 2).
+                    // EXISTS (also in NOT EXISTS) requires a subquery, so its projection may start with [, +/- or (
+                    // without making SELECT an array property, arithmetic operand or function name.
+                    // Outer-alias qualification must resume only after the subquery's closing parenthesis.
+                    subqueryParenthesisDepth = 1;
+                }
+
+                if (standalone && !keywordOrAlias && subqueryParenthesisDepth == 0) {
                     sb.append(COSMOS_ALIAS).append('.').append(identifier);
+                } else if (standalone && escapeKeyword) {
+                    // ESCAPE glued to its literal can bypass the builder's naming-policy normalization.
+                    sb.append(namingPolicy == NamingPolicy.SCREAMING_SNAKE_CASE ? "ESCAPE" : "escape");
                 } else if (standalone && keywordToken && isCosmosLiteralKeyword(normalizedIdentifier)) {
                     // Cosmos DB literals (true, false, null, undefined) are case-sensitive and must be lower case,
                     // but a naming policy such as SCREAMING_SNAKE_CASE upper-cases every token of a raw expression.
@@ -2463,6 +2489,56 @@ public class CosmosContainerExecutor {
 
         final String qualifiedQuery = sb.toString();
         return qualifiedQuery.equals(query) ? sp : new SP(qualifiedQuery, sp.parameters());
+    }
+
+    private static boolean isCosmosExistsSubquery(final String query, final int openingParenthesis, final int conditionStart) {
+        int keywordEnd = openingParenthesis;
+
+        while (keywordEnd > conditionStart && Character.isWhitespace(query.charAt(keywordEnd - 1))) {
+            keywordEnd--;
+        }
+
+        final int keywordStart = keywordEnd - "EXISTS".length();
+        return keywordStart >= conditionStart && query.regionMatches(true, keywordStart, "EXISTS", 0, "EXISTS".length())
+                && (keywordStart == conditionStart || !Character.isJavaIdentifierPart(query.charAt(keywordStart - 1)) && query.charAt(keywordStart - 1) != '.');
+    }
+
+    private static boolean hasCosmosSubqueryFromClause(final String query, final int selectEnd) {
+        int parenthesisDepth = 0;
+        char quote = 0;
+
+        for (int i = selectEnd; i < query.length(); i++) {
+            final char ch = query.charAt(i);
+
+            if (quote != 0) {
+                if (ch == '\\' && i + 1 < query.length()) {
+                    i++;
+                } else if (ch == quote && i + 1 < query.length() && query.charAt(i + 1) == quote) {
+                    i++;
+                } else if (ch == quote) {
+                    quote = 0;
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+            } else if (ch == '(') {
+                parenthesisDepth++;
+            } else if (ch == ')') {
+                if (parenthesisDepth == 0) {
+                    return false;
+                }
+
+                parenthesisDepth--;
+            } else if (parenthesisDepth == 0 && i > 0 && Character.isWhitespace(query.charAt(i - 1))
+                    && query.regionMatches(true, i, "FROM", 0, "FROM".length())) {
+                final int fromEnd = i + "FROM".length();
+
+                if (fromEnd < query.length() && Character.isWhitespace(query.charAt(fromEnd))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

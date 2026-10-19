@@ -24,6 +24,7 @@ import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
 import com.datastax.oss.driver.api.core.cql.ExecutionInfo;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.internal.core.util.concurrent.BlockingOperation;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.UncheckedInterruptedException;
 import com.landawn.abacus.util.ExceptionUtil;
@@ -80,6 +81,8 @@ final class ResultSets {
      * {@link java.util.concurrent.ExecutionException} or {@link InterruptedException}) are
      * converted into runtime exceptions via {@link com.landawn.abacus.util.ExceptionUtil}.
      * If the wait is interrupted, the current thread's interrupt status is restored first.</li>
+     * <li>Consuming the result on a driver thread throws {@link IllegalStateException} when another page
+     * is required. Rows already available in the current page can be consumed without triggering this check.</li>
      * </ul>
      *
      * <h4>Usage Example</h4>
@@ -119,6 +122,7 @@ final class ResultSets {
         private final Iterator<Row> rowIterator = new Iterator<>() {
             /**
              * @return whether a row remains, fetching subsequent pages as necessary
+             * @throws IllegalStateException if another page is required while running on a driver thread
              * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
              * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
              */
@@ -126,6 +130,7 @@ final class ResultSets {
             public boolean hasNext() throws RuntimeException, UncheckedInterruptedException {
                 while ((currentRows == null || !currentRows.hasNext()) && currentResultSet.hasMorePages()) {
                     try {
+                        BlockingOperation.checkNotDriverThread();
                         currentResultSet = currentResultSet.fetchNextPage().toCompletableFuture().get();
                         executionInfos.add(currentResultSet.getExecutionInfo());
                     } catch (final InterruptedException e) {
@@ -143,6 +148,7 @@ final class ResultSets {
 
             /**
              * @return the next row, fetching another page if necessary
+             * @throws IllegalStateException if another page is required while running on a driver thread
              * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
              * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
              * @throws NoSuchElementException if all rows in all pages have been consumed
@@ -196,6 +202,7 @@ final class ResultSets {
 
         /**
          * @return all remaining rows
+         * @throws IllegalStateException if another page is required while running on a driver thread
          * @throws RuntimeException if fetching a subsequent page fails or its future is cancelled
          * @throws UncheckedInterruptedException if waiting for a subsequent page is interrupted
          */

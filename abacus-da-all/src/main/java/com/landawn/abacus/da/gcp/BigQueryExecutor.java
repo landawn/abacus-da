@@ -485,6 +485,7 @@ public class BigQueryExecutor {
             propName = fields.get(i).getName();
             propValue = cell.getValue();
 
+            boolean nestedProperty = false;
             propInfo = entityInfo.getPropInfo(propName);
 
             if (propInfo == null && (fieldName = column2FieldNameMap.get(propName)) != null) {
@@ -494,18 +495,22 @@ public class BigQueryExecutor {
 
             if (propInfo == null) {
                 if (propName.indexOf(SK._PERIOD) > 0) { //NOSONAR
-                    entityInfo.setPropValue(entity, propName, propValue, true);
+                    final List<PropInfo> propInfoChain = entityInfo.getPropInfoChain(propName);
+
+                    if (!propInfoChain.isEmpty()) {
+                        propInfo = propInfoChain.get(propInfoChain.size() - 1);
+                        nestedProperty = true;
+                    }
                 }
 
-                continue;
+                if (propInfo == null) {
+                    continue;
+                }
             }
 
-            // A getter-only (computed) property, e.g. one inherited from an @Entity superclass, is in propInfoList, so
-            // insert/update write it and the generated SELECT projects it; but PropInfo.setPropValue throws
-            // UnsupportedOperationException for it, which failed the whole row on read. Skip it, as the JSON parser does.
-            // PropInfo's isReadOnlyProperty flag is package-private; a property without a field is SERIALIZE_ONLY exactly
-            // when it is read-only.
-            if (propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
+            // Generated SELECTs can project computed properties that cannot be assigned. Nested-path assignment ignores
+            // every read-only terminal property; a direct property ignores its implicitly serialize-only form.
+            if (nestedProperty ? propInfo.isReadOnlyProperty : propInfo.isReadOnlyProperty && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
                 continue;
             }
 
@@ -520,6 +525,11 @@ public class BigQueryExecutor {
                         : convertRepeatedValue(fields.get(i), (List<?>) propValue, propInfo.jsonXmlType);
             } else {
                 value = decodePropertyValue(fields.get(i), cell, propInfo);
+            }
+
+            if (nestedProperty) {
+                entityInfo.setPropValue(entity, propName, value, true);
+                continue;
             }
 
             // PropInfo.setPropValue converts a value only when storing it FAILS, so a value it can store as is skips the

@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -463,11 +462,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
             return Filters.eq(keyNames.get(0), ids[0]);
         } else if (ids.length == keyNames.size()) {
-            final Iterator<String> iter = keyNames.iterator();
-            final List<Condition> conds = new ArrayList<>();
+            final List<Condition> conds = new ArrayList<>(ids.length);
 
-            for (final Object id : ids) {
-                final String keyName = iter.next();
+            for (int i = 0; i < ids.length; i++) {
+                final Object id = ids[i];
+                final String keyName = keyNames.get(i);
                 checkIdValue(keyName, id);
                 conds.add(Filters.eq(keyName, id));
             }
@@ -609,7 +608,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
                         it.getClass().getName());
             }
 
-            final List<Object> keys = Stream.of(entities).map(it -> Beans.getPropValue(it, keyName)).toList();
+            final List<Object> keys = new ArrayList<>(entities.size());
+
+            for (final Object entity : entities) {
+                keys.add(Beans.getPropValue(entity, keyName));
+            }
 
             for (final Object key : keys) {
                 if (key == null || (key instanceof CharSequence && Strings.isEmpty((CharSequence) key))) {
@@ -2312,11 +2315,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>Only the first row of the {@code ResultSet} is read; remaining rows are ignored.</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
-     * query produces no rows. If a row exists but the column is {@code NULL}, the returned
-     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction
-     * between "no row matched" and "row matched but value is null". Unlike the primitive
-     * {@code queryForXxx} variants (which collapse {@code NULL} into a primitive default), this overload
-     * always conveys {@code NULL} precisely as Java {@code null} inside the {@code Nullable}.</p>
+     * query produces no rows. If a row exists but the column is {@code NULL}, a wrapper or other reference
+     * {@code valueClass} yields a <i>present-but-null</i> {@code Nullable} ({@code Nullable.of(null)}).
+     * Primitive class tokens yield the primitive default (for example, {@code int.class} yields
+     * {@code Nullable.of(0)}). Use a wrapper class such as {@code Integer.class} to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2361,11 +2363,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
      * query returns no rows. When a row is returned, the column value is wrapped in the
-     * {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload — so if
-     * the column value is {@code NULL} (or the conversion to {@code valueClass} yields {@code null}),
+     * {@code Optional} via {@link Optional#of(Object)} after conversion. If the converted value is {@code null},
      * this method throws {@link NullPointerException} rather than returning {@code Optional.empty()}.
+     * For a {@code NULL} column and a primitive {@code valueClass}, conversion supplies the primitive default
+     * (for example, {@code int.class} yields {@code Optional.of(0)}). Wrapper and other reference targets
+     * preserve {@code null}, causing the exception.
      * Use {@link #queryForSingleValue(Class, Class, String, Condition)} (which returns
-     * {@link Nullable}) when the column may legitimately be {@code NULL}.</p>
+     * {@link Nullable}) with a wrapper or other reference target to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2379,15 +2383,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param valueClass the Java class the column value is converted to
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
-     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
-     *         one row is returned with a non-null value; {@code Optional.empty()} when the query
-     *         returns no rows
+     * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a row is returned;
+     *         {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
      *         {@code null}, {@code propName} is {@code null} or empty, or {@code whereClause} contains a
      *         relation unsupported by CQL
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
-     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
+     * @throws NullPointerException if a row is returned but the converted column value is
      *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForSingleNonNull(Class, String, Object...)
@@ -2921,9 +2924,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * only the first column of the first row of the {@code ResultSet} is consumed.</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
-     * query produces no rows. If a row exists but the column is {@code NULL}, the returned
-     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction
-     * between "no row matched" and "row matched but value is null".</p>
+     * query produces no rows. If a row exists but the column is {@code NULL}, a wrapper or other reference
+     * {@code valueClass} yields a <i>present-but-null</i> {@code Nullable} ({@code Nullable.of(null)}).
+     * Primitive class tokens yield the primitive default (for example, {@code int.class} yields
+     * {@code Nullable.of(0)}). Use a wrapper class such as {@code Integer.class} to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2962,11 +2966,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
      * query produces no rows. When a row is returned, the column value is wrapped in the
-     * {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload — so if
-     * the column value is {@code NULL} (or the conversion to {@code valueClass} yields {@code null}),
+     * {@code Optional} via {@link Optional#of(Object)} after conversion. If the converted value is {@code null},
      * this method throws {@link NullPointerException} rather than returning {@code Optional.empty()}.
+     * For a {@code NULL} column and a primitive {@code valueClass}, conversion supplies the primitive default
+     * (for example, {@code int.class} yields {@code Optional.of(0)}). Wrapper and other reference targets
+     * preserve {@code null}, causing the exception.
      * Use {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable})
-     * when the column may legitimately be {@code NULL}.</p>
+     * with a wrapper or other reference target to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2981,14 +2987,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param valueClass the Java class the column value is converted to (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
-     *         one row is returned with a non-null value; {@code Optional.empty()} when the query
-     *         returns no rows
+     * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a row is returned;
+     *         {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
-     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
+     * @throws NullPointerException if a row is returned but the converted column value is
      *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, String, Object...)
      */
@@ -3108,6 +3113,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>Parameters are bound positionally to {@code ?} placeholders. The returned list is mutable
      * and never {@code null}; an empty list signals "no rows".</p>
      *
+     * <p>For a single-value target, a {@code NULL} column becomes the primitive default if {@code targetClass}
+     * is primitive (for example, {@code 0} for {@code int.class}). Wrapper and other reference targets preserve
+     * {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> activeUsers = executor.list(User.class,
@@ -3218,6 +3227,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>Rows are mapped on demand by the row mapper returned from
      * {@link #createRowMapper(Class)}. Parameters are bound positionally to {@code ?} placeholders.</p>
      *
+     * <p>For a single-value target, a {@code NULL} column becomes the primitive default if {@code targetClass}
+     * is primitive (for example, {@code 0} for {@code int.class}). Wrapper and other reference targets preserve
+     * {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.stream(User.class, "SELECT * FROM users") // returns a lazy Stream<User>
@@ -3227,7 +3240,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the target type
      * @param targetClass an entity class with getter/setter methods matching column names,
-     *        or {@code Map.class} (must not be {@code null})
+     *        {@code Map.class}, or a basic single-value type (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a stream of result rows mapped to {@code targetClass}
@@ -3250,6 +3263,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>Rows are mapped on demand by the row mapper returned from
      * {@link #createRowMapper(Class)}. The statement is run via {@link #execute(Object)}.</p>
      *
+     * <p>For a single-value target, a {@code NULL} column becomes the primitive default if {@code targetClass}
+     * is primitive (for example, {@code 0} for {@code int.class}). Wrapper and other reference targets preserve
+     * {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // 'boundStatement' is a driver statement (e.g. a BoundStatement) of type ST
@@ -3258,7 +3275,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the target type
      * @param targetClass an entity class with getter/setter methods matching column names,
-     *        or {@code Map.class} (must not be {@code null})
+     *        {@code Map.class}, or a basic single-value type (must not be {@code null})
      * @param statement the driver statement to execute (for example a bound or batch statement)
      * @return a stream of result rows mapped to {@code targetClass}
      * @throws IllegalArgumentException if {@code targetClass} or {@code statement} is {@code null}; the shipped executors reject a null

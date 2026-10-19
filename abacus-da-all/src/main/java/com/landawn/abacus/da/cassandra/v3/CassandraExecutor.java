@@ -773,13 +773,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <ul>
      *   <li>{@link Row}, {@link Object}, or another supertype of {@code Row} — rows are returned unchanged (the existing list from
      *       {@link ResultSet#all()} is returned)</li>
-     *   <li>An array class — each row becomes an array of column values, each converted to the
-     *       array's component type (e.g. {@code String[]}), recursively flattening nested {@link Row}s</li>
+     *   <li>An array class — each row becomes an array of column values, each converted to the array's component type.
+     *       For {@code Object[]} targets, nested {@link Row}s are recursively flattened to {@code Object[]}.
+     *       Other array targets preserve nested rows assignable to the component type (such as {@code Row[]} or
+     *       {@code GettableData[]}); otherwise nested rows are mapped to the component type, including beans and arrays.</li>
      *   <li>A {@link Collection} class — each row becomes a new collection of column values</li>
      *   <li>A {@link Map} class — each row becomes a new map keyed by column name</li>
      *   <li>A JavaBean class — each row is mapped via {@link #toEntity(Row, Class)}</li>
      *   <li>Any single-value type — used only when the result set has exactly one column;
-     *       the column value is converted to {@code T}</li>
+     *       the column value is converted to {@code T}. A {@code NULL} column becomes the primitive default
+     *       for a primitive target (for example, {@code 0} for {@code int.class}); wrapper and other reference
+     *       targets retain {@code null}.</li>
      * </ul>
      *
      * <p>For mapped targets, remaining rows are converted as pages are consumed, without first collecting
@@ -1150,6 +1154,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         return N.convert(dateTime, targetClass);
     }
 
+    private static Object readNestedRow(final Row row, final Class<?> componentType) {
+        if (componentType != Object.class && componentType.isInstance(row)) {
+            return row;
+        }
+
+        if (componentType == Object.class) {
+            return readRow(row, Object[].class);
+        }
+
+        return readRow(row, componentType);
+    }
+
     /**
      * Reads a single {@link Row} and converts it to {@code rowClass}.
      *
@@ -1157,7 +1173,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * {@code rowClass}:</p>
      * <ul>
      *   <li>{@code null} or an object-array class: each column becomes an array element, converted to
-     *       the array's component type; nested {@link Row}s are recursively flattened to {@code Object[]}</li>
+     *       the array's component type; nested {@link Row}s are recursively mapped to that component type,
+     *       or flattened to {@code Object[]} for an untyped array</li>
      *   <li>{@link Collection} class: a fresh collection of column values</li>
      *   <li>{@link Map} class: a fresh map keyed by column name</li>
      *   <li>Bean class: delegates to {@link #toEntity(Row, Class)}</li>
@@ -1193,7 +1210,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 value = row.getObject(i);
 
                 if (value instanceof Row) {
-                    a[i] = readRow((Row) value, Object[].class);
+                    // Keep Object[] as the untyped nested shape; typed arrays require their declared component type.
+                    final Class<?> componentType = a.getClass().getComponentType();
+                    a[i] = readNestedRow((Row) value, componentType);
                 } else {
                     a[i] = toArrayElement(value, a.getClass().getComponentType(), columnDefinitions, i);
                 }
@@ -1265,7 +1284,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     value = row.getObject(i);
 
                     if (value instanceof Row) {
-                        a[i] = readRow((Row) value, Object[].class);
+                        // Keep Object[] as the untyped nested shape; typed arrays require their declared component type.
+                        final Class<?> componentType = a.getClass().getComponentType();
+                        a[i] = readNestedRow((Row) value, componentType);
                     } else {
                         a[i] = toArrayElement(value, a.getClass().getComponentType(), columnDefinitions, i);
                     }
@@ -1314,6 +1335,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                     final Object value = row.getObject(0);
 
+                    // Let conversion supply primitive defaults for NULL; wrapper targets retain null.
                     if (valueClass == null && value != null) {
                         valueClass = value.getClass();
                         isAssignable = rowClass.isAssignableFrom(valueClass);
@@ -1382,9 +1404,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * only the first column of the first row of the {@code ResultSet} is consumed.</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
-     * query produces no rows. If a row exists but the column is {@code NULL}, the returned
-     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction
-     * between "no row matched" and "row matched but value is null".</p>
+     * query produces no rows. If a row exists but the column is {@code NULL}, a wrapper or other reference
+     * {@code valueClass} yields a <i>present-but-null</i> {@code Nullable} ({@code Nullable.of(null)}).
+     * A primitive {@code valueClass} receives its default value instead: {@code int.class}, for example,
+     * yields {@code Nullable.of(0)}. Use {@code Integer.class} to preserve a {@code NULL} integer value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1401,15 +1424,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * // Row matched but column is NULL -> present-but-null (NOT empty)
      * Nullable<String> nick = executor.queryForSingleValue(
      *     String.class, "SELECT nickname FROM users WHERE id = ?", userId); // Nullable.of(null) when the row exists but column is NULL
+     *
+     * // For a matched row whose age is NULL, primitive and wrapper targets differ:
+     * executor.queryForSingleValue(int.class, "SELECT age FROM users WHERE id = ?", userId);     // Nullable.of(0)
+     * executor.queryForSingleValue(Integer.class, "SELECT age FROM users WHERE id = ?", userId); // Nullable.of(null)
      * }</pre>
      *
      * @param <V> the type of the single result value to be returned
      * @param valueClass the Java class the column value is converted to (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
-     *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
-     *         returns no rows
+     * @return a <i>present</i> {@code Nullable<V>} holding the converted column value when a row is returned;
+     *         a {@code NULL} column yields {@code null} for reference targets or the default value for primitive
+     *         targets; {@code Nullable.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
@@ -1436,11 +1463,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
      * query produces no rows. When a row is returned, the column value is wrapped in the
-     * {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload — so if
-     * the column value is {@code NULL} (or the conversion to {@code valueClass} yields {@code null}),
-     * this method throws {@link NullPointerException} rather than returning {@code Optional.empty()}.
+     * {@code Optional} via {@link Optional#of(Object)} after conversion. A primitive {@code valueClass}
+     * converts {@code NULL} to its default value (for example, {@code int.class} yields {@code Optional.of(0)}).
+     * A wrapper or other reference target retains {@code null}, which causes {@link NullPointerException}.
      * Use {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable})
-     * when the column may legitimately be {@code NULL}.</p>
+     * with a wrapper or other reference target to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1460,15 +1487,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param valueClass the Java class the column value is converted to (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
-     *         one row is returned with a non-null value; {@code Optional.empty()} when the query
-     *         returns no rows
+     * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value, including the primitive
+     *         default for a {@code NULL} column and primitive target; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
-     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
-     *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
+     * @throws NullPointerException if a row is returned but the converted column value is {@code null},
+     *         as for a {@code NULL} column and a wrapper or other reference target
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Override
@@ -2645,6 +2671,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
+     * @return the converted first-column value; a {@code NULL} column yields the default value for a primitive
+     *         target or {@code null} for a wrapper or other reference target
      * @throws IllegalArgumentException if {@code row} or {@code targetClass} is null
      * @throws RuntimeException if the first column cannot be read or converted to {@code targetClass}
      */
@@ -2655,6 +2683,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         final Object value = row.getObject(0);
 
+        // Conversion deliberately supplies primitive defaults for NULL; reference targets retain null.
         return convertValue(timeOfDayValue(value, targetClass, row.getColumnDefinitions(), 0), targetClass);
     }
 

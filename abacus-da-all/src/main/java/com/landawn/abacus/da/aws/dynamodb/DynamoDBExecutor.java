@@ -16,6 +16,9 @@
 package com.landawn.abacus.da.aws.dynamodb;
 
 import java.nio.ByteBuffer;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.text.ParsePosition;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
@@ -194,6 +197,12 @@ public final class DynamoDBExecutor {
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) Clazz.PROPS_MAP;
+
+    // Annotation patterns are shared, but exact and floating-point parsing require different formatter settings.
+    private static final Map<String, ThreadLocal<DecimalFormat>> exactNumberFormatPool = new ConcurrentHashMap<>();
+    private static final Map<String, ThreadLocal<DecimalFormat>> numberFormatPool = new ConcurrentHashMap<>();
+    private static final Map<Type<?>, Boolean> formattedJsonTypePool = new ConcurrentHashMap<>();
+    private static final Map<PropInfo, Boolean> jsonScalarFormatPool = new ConcurrentHashMap<>();
 
     static {
         final BiFunction<AttributeValue, Class<?>, Object> converter = DynamoDBExecutor::toValue;
@@ -1606,7 +1615,13 @@ public final class DynamoDBExecutor {
      * Beans read through item collections, maps, or generic wrappers use JSON read semantics throughout their nested objects and arrays:
      * supported property formats (for {@code BOOL} values as for text), enum representations, and property exposure are honored,
      * unsupported format/type combinations are rejected, values of another shape are converted or rejected as described above, and
-     * unmatched dotted names are ignored. Unformatted {@code Number} values use JSON numeric inference.</p>
+     * unmatched dotted names are ignored. Unformatted {@code Number} values use JSON numeric inference. As in the JSON reader,
+     * class-level number formats apply to numeric properties, while generic numeric wrappers require an explicit field format;
+     * surrounding whitespace in format patterns is ignored. An explicit {@link JsonXmlField#dateFormat()} takes precedence
+     * over its number format, so an unsupported date format on a numeric wrapper is rejected even when a number format is present.
+     * Explicit numeric-wrapper formats use the same conversion for JSON text and native containers read with JSON semantics:
+     * integral targets truncate fractional parts toward zero, BigDecimal targets retain precision and scale, and floating-point
+     * targets retain negative zero. The complete formatted value must match; trailing content is rejected.</p>
      *
      * <p>Direct native bean and bean-array properties instead retain map-to-bean rules: field-backed SERIALIZE_ONLY properties and
      * dotted paths are assigned, property types (including generics and enum representations) are retained, and scalar conversion
@@ -1669,7 +1684,10 @@ public final class DynamoDBExecutor {
         V propValue = null;
         String fieldName = null;
 
-        for (final Map.Entry<String, V> entry : item.entrySet()) {
+        // A JSON bean must see duplicate names in source order, including aliases for the same property.
+        final Iterable<Map.Entry<String, V>> entries = item instanceof final JsonObject json ? (List<Map.Entry<String, V>>) (List<?>) json.entries
+                : item.entrySet();
+        for (final Map.Entry<String, V> entry : entries) {
             propName = entry.getKey();
             propValue = entry.getValue();
 
@@ -1699,7 +1717,14 @@ public final class DynamoDBExecutor {
             // Direct Map-to-bean conversion used PropInfo's full Type, unlike the outer item mapper.
             // Erasing it here silently puts Strings in Optional<Long>/Pair<Long, Long> and loses enum codes.
             // Traverse native structures without a per-property JSON round trip, preserving binary leaves.
-            if (jsonRead && rawValue instanceof String) {
+            if (jsonRead && rawValue instanceof final JsonValue json) {
+                final Object value = json.value();
+                final boolean scalar = !(value instanceof Map || value instanceof Collection);
+                propInfo.setPropValue(entity,
+                        scalar && (value instanceof String || hasJsonScalarFormat(entityInfo, propInfo))
+                                ? readNestedPropValue(entityInfo, propInfo, json.text())
+                                : json.read(propType));
+            } else if (jsonRead && rawValue instanceof String) {
                 // readPropValue honors field/class date and number formats, enum codes, and explicit
                 // property types. Raw-class conversion would lose these when bypassing the JSON codec.
                 propInfo.setPropValue(entity, readNestedPropValue(entityInfo, propInfo, (String) rawValue));
@@ -1728,7 +1753,7 @@ public final class DynamoDBExecutor {
             } else if (rawValue instanceof String && !propInfo.clazz.isInstance(rawValue) && isParameterizedValueType(propType)) {
                 // Text for a parameterized type, or for an array of one, is read with the complete type. Raw-class conversion
                 // parsed "[1, 2]" into a Pair<Long, Long> or an Optional<Long>[] with Integer contents.
-                propInfo.setPropValue(entity, propType.valueOf((String) rawValue));
+                propInfo.setPropValue(entity, readJsonText((String) rawValue, propType));
             } else if (rawValue != null && !(rawValue instanceof String) && isItemShapeMismatch(rawValue, propType)) {
                 // A native value of another shape for a typed container, an object array, or another parameterized type (an M
                 // attribute for a List<Long>, a BOOL or B attribute for a Long[]): raw-class conversion would store it unconverted.
@@ -1755,6 +1780,14 @@ public final class DynamoDBExecutor {
      * inference instead of the abstract number type's String factory.
      */
     private static Object readNestedPropValue(final BeanInfo beanInfo, final PropInfo propInfo, final String value) {
+        if (value == null) {
+            return propInfo.readPropValue(null);
+        }
+
+        if (needsFormattedJsonRead(propInfo.jsonXmlType) && !hasJsonScalarFormat(beanInfo, propInfo)) {
+            return readJsonText(value, propInfo.jsonXmlType);
+        }
+
         if (Number.class.equals(propInfo.jsonXmlType.javaType())) {
             final JsonXmlField fieldConfig = propInfo.getAnnotation(JsonXmlField.class);
             final JsonXmlConfig beanConfig = beanInfo.getAnnotation(JsonXmlConfig.class);
@@ -1766,15 +1799,245 @@ public final class DynamoDBExecutor {
                 // inference, as before, unless PropInfo has an explicit format to apply or reject.
                 return N.fromJson(value, Number.class);
             }
-        } else if (needsNumberInference(propInfo.jsonXmlType)) {
+        } else if (isNumericWrapper(propInfo.jsonXmlType)) {
             final JsonXmlField fieldConfig = propInfo.getAnnotation(JsonXmlField.class);
 
-            if (fieldConfig == null || Strings.isBlank(fieldConfig.dateFormat()) && Strings.isBlank(fieldConfig.numberFormat())) {
+            if (fieldConfig != null && !Strings.isBlank(fieldConfig.dateFormat())) {
+                // Date formats take precedence in PropInfo, including rejection of unsupported wrapper types.
+                return propInfo.readPropValue(value);
+            }
+
+            // PropInfo applies class-level formats only to number types, not generic wrappers. Mirror that rule
+            // and its pattern trimming so native containers read the same values as serialized JSON containers.
+            final String numberFormat = fieldConfig == null ? null : Strings.trim(fieldConfig.numberFormat());
+
+            if (!Strings.isBlank(numberFormat)) {
+                return parseFormattedNumber(value, numberFormat, propInfo.jsonXmlType);
+            } else if (needsNumberInference(propInfo.jsonXmlType)) {
                 return readJsonScalar(value, propInfo.jsonXmlType);
             }
         }
 
         return propInfo.readPropValue(value);
+    }
+
+    /** Caches schema inspection; ordinary JSON values keep their declared codecs. */
+    private static boolean needsFormattedJsonRead(final Type<?> type) {
+        return formattedJsonTypePool.computeIfAbsent(type, key -> needsFormattedJsonRead(key, new java.util.HashSet<>()));
+    }
+
+    private static boolean needsFormattedJsonRead(final Type<?> type, final Set<Class<?>> visiting) {
+        if (type.isCollection() || type.isMap() || type.isObjectArray() || isGenericWrapper(type)) {
+            final Type<?> elementType = type.isObjectArray() ? type.elementType()
+                    : type.isParameterizedType() ? type.parameterTypes().get(type.isMap() ? 1 : 0) : N.typeOf(Object.class);
+            return needsFormattedJsonRead(elementType, visiting);
+        } else if (!type.isBean()) {
+            return false;
+        }
+
+        final BeanInfo beanInfo = ParserUtil.getBeanInfo(type.reflectType());
+        // Inspect resolved properties before stopping a class cycle: a recursive generic bean may
+        // acquire a numeric wrapper in its next instantiation (for example Node<Optional<T>>).
+        for (final PropInfo property : beanInfo.propInfoList) {
+            final JsonXmlField config = property.getAnnotation(JsonXmlField.class);
+            if (property.jsonXmlExpose != JsonXmlField.Direction.SERIALIZE_ONLY && isNumericWrapper(property.jsonXmlType) && config != null
+                    && !Strings.isBlank(config.numberFormat())) {
+                return true;
+            }
+        }
+
+        if (!visiting.add(type.javaType())) {
+            return false;
+        }
+
+        try {
+            for (final PropInfo property : beanInfo.propInfoList) {
+                if (property.jsonXmlExpose != JsonXmlField.Direction.SERIALIZE_ONLY && needsFormattedJsonRead(property.jsonXmlType, visiting)) {
+                    return true;
+                }
+            }
+
+            return false;
+        } finally {
+            visiting.remove(type.javaType());
+        }
+    }
+
+    /**
+     * Reads JSON containers through the same property conversion as native L/M values when their schema
+     * contains formatted numeric wrappers. Keep each child's JSON text until its declared type is known:
+     * an untyped intermediate Double would lose precision/scale even in unrelated BigDecimal properties.
+     */
+    @SuppressWarnings({ "unchecked" })
+    private static Object readJsonText(final String value, final Type<?> targetType) {
+        final String text = value.strip();
+        if (text.isEmpty() || text.charAt(0) != '[' && text.charAt(0) != '{' || !needsFormattedJsonRead(targetType)) {
+            return targetType.valueOf(value);
+        }
+
+        final Object decoded;
+        if (text.charAt(0) == '{') {
+            final JsonObject values = N.fromJson(text, JsonObject.class);
+            final JsonObject fragments = N.fromJson(text, JsonDeserConfig.create().setMapValueType(String.class), JsonObject.class);
+            final JsonObject result = new JsonObject();
+            for (int i = 0; i < values.entries.size(); i++) {
+                final Map.Entry<String, Object> entry = values.entries.get(i);
+                result.put(entry.getKey(), new JsonValue((String) fragments.entries.get(i).getValue(), entry.getValue()));
+            }
+            decoded = result;
+        } else {
+            final List<?> values = N.fromJson(text, List.class);
+            final List<String> fragments = N.fromJson(text, JsonDeserConfig.create().setElementType(String.class), List.class);
+            final List<Object> result = new ArrayList<>(values.size());
+            for (int i = 0; i < values.size(); i++) {
+                result.add(new JsonValue(fragments.get(i), values.get(i)));
+            }
+            decoded = result;
+        }
+
+        return convertContainerElement(decoded, targetType, MappingContext.JSON);
+    }
+
+    /** Maps keep their usual last-value-wins behavior; beans additionally need every name in source order. */
+    private static final class JsonObject extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        private final List<Map.Entry<String, Object>> entries = new ArrayList<>();
+
+        @Override
+        public Object put(final String key, final Object value) {
+            entries.add(new java.util.AbstractMap.SimpleImmutableEntry<>(key, value));
+            return super.put(key, value);
+        }
+    }
+
+    /** A child token retains both its JSON kind and its exact text until the target type is available. */
+    private record JsonValue(String text, Object value) {
+        String source() {
+            return value instanceof String ? N.toJson(value) : value == null ? "null" : text;
+        }
+
+        Object read(final Type<?> type) {
+            if (value != null && needsFormattedJsonRead(type)) {
+                return readJsonText(source(), type);
+            }
+
+            // A scalar root uses Type.valueOf; an array slot retains JSON token semantics (e.g.
+            // numeric Date/Character values mean epoch milliseconds/code points, not text).
+            final List<?> result = N.fromJson("[" + source() + "]", JsonDeserConfig.create().setElementType(type), List.class);
+            return result.get(0);
+        }
+    }
+
+    /** Scalar formats consume token text; unformatted numeric tokens retain JSON's typed conversion. */
+    private static boolean hasJsonScalarFormat(final BeanInfo beanInfo, final PropInfo property) {
+        return jsonScalarFormatPool.computeIfAbsent(property, key -> findJsonScalarFormat(beanInfo, key));
+    }
+
+    private static boolean findJsonScalarFormat(final BeanInfo beanInfo, final PropInfo property) {
+        final JsonXmlField field = property.getAnnotation(JsonXmlField.class);
+        final JsonXmlConfig bean = beanInfo.getAnnotation(JsonXmlConfig.class);
+        final String numberFormat = field != null && Strings.isNotEmpty(field.numberFormat()) ? field.numberFormat()
+                : bean != null && property.type.isNumber() ? bean.numberFormat() : null;
+        if (!Strings.isBlank(numberFormat)) {
+            return true;
+        }
+
+        if (field != null && Strings.isNotEmpty(field.dateFormat())) {
+            return !Strings.isBlank(field.dateFormat());
+        }
+
+        // PropInfo also recognizes these optional annotation APIs. Inspect their pattern without
+        // making either JSON library a required runtime dependency of the DynamoDB executors.
+        if (property.field != null) {
+            for (final String name : List.of("com.alibaba.fastjson2.annotation.JSONField", "com.fasterxml.jackson.annotation.JsonFormat")) {
+                for (final java.lang.annotation.Annotation annotation : property.field.getAnnotations()) {
+                    if (!annotation.annotationType().getName().equals(name)) {
+                        continue;
+                    }
+                    final String method = name.endsWith(".JSONField") ? "format" : "pattern";
+                    try {
+                        final String pattern = (String) annotation.annotationType().getMethod(method).invoke(annotation);
+                        if (!pattern.isEmpty()) {
+                            return !Strings.isBlank(pattern);
+                        }
+                    } catch (final ReflectiveOperationException e) {
+                        throw new IllegalStateException("Cannot read property format: " + property.field, e);
+                    }
+                }
+            }
+        }
+
+        final Class<?> cls = property.clazz;
+        return bean != null && !Strings.isBlank(bean.dateFormat())
+                && (cls == java.util.Date.class || cls == java.util.Calendar.class || cls == java.sql.Date.class || cls == java.sql.Time.class
+                        || cls == java.sql.Timestamp.class || cls == java.time.LocalDate.class || cls == java.time.LocalTime.class
+                        || cls == java.time.LocalDateTime.class || cls == java.time.ZonedDateTime.class || cls.getName().equals("org.joda.time.DateTime")
+                        || cls.getName().equals("org.joda.time.MutableDateTime"));
+    }
+
+    /** Returns whether a supported generic wrapper chain ends in a {@link Number} subtype. */
+    private static boolean isNumericWrapper(Type<?> type) {
+        if (!isGenericWrapper(type)) {
+            return false;
+        }
+
+        do {
+            type = type.parameterTypes().get(0);
+        } while (isGenericWrapper(type));
+
+        return Number.class.isAssignableFrom(type.javaType());
+    }
+
+    /**
+     * Parses formatted text without invoking the wrapper chain's string codec. Exact parsing is required before
+     * conversion to integral targets; floating-point and abstract Number targets retain DecimalFormat's default types.
+     */
+    private static Object parseFormattedNumber(final String value, final String numberFormat, final Type<?> targetType) {
+        Type<?> elementType = targetType;
+        while (isGenericWrapper(elementType)) {
+            elementType = elementType.parameterTypes().get(0);
+        }
+
+        final Class<?> numberClass = elementType.javaType();
+        final boolean parseBigDecimal = numberClass == java.math.BigDecimal.class || numberClass == java.math.BigInteger.class || numberClass == int.class
+                || numberClass == Integer.class || numberClass == long.class || numberClass == Long.class || numberClass == short.class
+                || numberClass == Short.class || numberClass == byte.class || numberClass == Byte.class;
+        final Map<String, ThreadLocal<DecimalFormat>> formatPool = parseBigDecimal ? exactNumberFormatPool : numberFormatPool;
+        final DecimalFormat decimalFormat = formatPool.computeIfAbsent(numberFormat, pattern -> {
+            final DecimalFormat prototype = new DecimalFormat(pattern, DecimalFormatSymbols.getInstance(java.util.Locale.ROOT));
+            prototype.setParseBigDecimal(parseBigDecimal);
+            return ThreadLocal.withInitial(() -> (DecimalFormat) prototype.clone());
+        }).get();
+
+        final ParsePosition position = new ParsePosition(0);
+        final Number number = decimalFormat.parse(value, position);
+
+        if (number == null || position.getIndex() != value.length()) {
+            throw new ParsingException(
+                    "Failed to parse complete number value: " + value + " with format: " + numberFormat + " at index: " + position.getIndex());
+        }
+
+        return readFormattedNumber(number, targetType);
+    }
+
+    /** Reconstructs a numeric wrapper after converting only its innermost numeric value. */
+    private static Object readFormattedNumber(final Number number, final Type<?> targetType) {
+        if (!isGenericWrapper(targetType)) {
+            return targetType.javaType().isInstance(number) ? number : convertValue(number, targetType.javaType());
+        }
+
+        final Object converted = readFormattedNumber(number, targetType.parameterTypes().get(0));
+        final Class<?> wrapperClass = targetType.javaType();
+
+        if (wrapperClass == java.util.Optional.class) {
+            return java.util.Optional.ofNullable(converted);
+        } else if (wrapperClass == com.landawn.abacus.util.u.Optional.class) {
+            return com.landawn.abacus.util.u.Optional.ofNullable(converted);
+        } else if (wrapperClass == com.landawn.abacus.util.u.Nullable.class) {
+            return com.landawn.abacus.util.u.Nullable.of(converted);
+        } else {
+            return Holder.of(converted);
+        }
     }
 
     /**
@@ -1896,6 +2159,10 @@ public final class DynamoDBExecutor {
      *         populated
      */
     private static Object convertValue(final Object value, final Class<?> targetClass) throws RuntimeException {
+        if (value instanceof String && needsFormattedJsonRead(N.typeOf(targetClass))) {
+            return readJsonText((String) value, N.typeOf(targetClass));
+        }
+
         if (value instanceof ByteBuffer && targetClass == byte[].class) {
             final ByteBuffer buf = ((ByteBuffer) value).duplicate();
             final byte[] bytes = new byte[buf.remaining()];
@@ -2125,6 +2392,12 @@ public final class DynamoDBExecutor {
      * wrapper empty; all other null values remain null. Bean property defaults are applied separately by the property setter.</p>
      */
     private static Object convertContainerElement(final Object value, final Type<?> targetType, final MappingContext context) {
+        if (value instanceof final JsonValue json) {
+            return json.read(targetType);
+        } else if (value instanceof String && needsFormattedJsonRead(targetType)) {
+            return readJsonText((String) value, targetType);
+        }
+
         if (value == null) {
             // JSON slots keep null Holders; direct native arrays previously used N.convert, which supplies
             // Holder(null). Optional/Nullable slots use empty wrappers in both contexts.

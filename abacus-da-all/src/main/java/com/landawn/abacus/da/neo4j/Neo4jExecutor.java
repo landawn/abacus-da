@@ -2840,6 +2840,26 @@ public final class Neo4jExecutor {
 
                 try {
                     tx.rollback();
+                } catch (final RuntimeException e) {
+                    try {
+                        // OGM close() commits COMMIT_PENDING; cleanup must never turn a failed rollback into a commit.
+                        if (tx.status() != Transaction.Status.COMMIT_PENDING) {
+                            tx.close();
+                        }
+                    } catch (final RuntimeException closeFailure) {
+                        if (closeFailure != e) {
+                            e.addSuppressed(closeFailure);
+                        }
+                    }
+
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("Failed to roll back a transaction left open on a returned session; discarding the session", e);
+                    }
+
+                    return;
+                }
+
+                try {
                     tx.close();
                 } catch (final RuntimeException e) {
                     if (logger.isWarnEnabled()) {

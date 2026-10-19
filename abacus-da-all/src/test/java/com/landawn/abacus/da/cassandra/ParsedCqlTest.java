@@ -339,9 +339,12 @@ public class ParsedCqlTest extends TestBase {
         assertIbatisParsed("SELECT * FROM t WHERE x = '{a:#{b}}' AND y = #{y}", "SELECT * FROM t WHERE x = '{a:#{b}}' AND y = ?", "y");
         assertIbatisParsed("SELECT * FROM t WHERE x = $${a:#{b}}$$ AND y = #{y}", "SELECT * FROM t WHERE x = $${a:#{b}}$$ AND y = ?", "y");
         assertIbatisParsed("-- Keep comments\nSELECT * FROM t /* {a:#{b}} */ WHERE y = #{y}", "SELECT * FROM t /* {a:#{b}} */ WHERE y = ?", "y");
+    }
 
-        // Documented limitation (see parameterizedCql()): a marker directly after '{' is not rewritten; with a space it is.
-        assertIbatisParsed("UPDATE t SET tags = tags + {#{tag}} WHERE id = #{id}", "UPDATE t SET tags = tags + {#{tag}} WHERE id = ?", "id");
+    @Test
+    public void testParse_IbatisMarkersAfterOpeningBrace_areRewritten() {
+        // Whitespace after the opening literal brace must not change which markers are bound.
+        assertIbatisParsed("UPDATE t SET tags = tags + {#{tag}} WHERE id = #{id}", "UPDATE t SET tags = tags + {?} WHERE id = ?", "tag", "id");
         assertIbatisParsed("UPDATE t SET tags = tags + { #{tag} } WHERE id = #{id}", "UPDATE t SET tags = tags + { ? } WHERE id = ?", "tag", "id");
     }
 

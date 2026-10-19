@@ -268,6 +268,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * single value from the first column of the first row converted to {@code valueClass}, or
      * an empty {@link Nullable} if no row is returned. The value may be {@code null}.
      *
+     * <p>A {@code NULL} column yields a present {@code Nullable} containing the primitive default for a primitive
+     * {@code valueClass} (for example, {@code 0} for {@code int.class}), or {@code null} for a wrapper or other
+     * reference target. Use {@code Integer.class} to preserve a {@code NULL} integer value.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -296,8 +300,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param valueClass the class to convert the single value to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
-     * @return a future that completes with a {@code Nullable} holding the value (possibly
-     *         {@code null}), or empty if no row exists
+     * @return a future that completes with a {@code Nullable} holding the converted value (the primitive default
+     *         or {@code null} for a {@code NULL} column, depending on {@code valueClass}), or empty if no row exists
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -313,8 +317,12 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Asynchronously executes the given CQL query and returns a future that completes with a
      * non-{@code null} value from the first column of the first row converted to
      * {@code valueClass}, or an empty {@link Optional} if no row is returned. If a row is returned
-     * but the value is {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a
+     * but the converted value is {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a
      * {@link NullPointerException} (an {@link Optional} cannot hold {@code null}).
+     *
+     * <p>A primitive {@code valueClass} converts {@code NULL} to its default value before wrapping it in the
+     * {@code Optional}: {@code int.class}, for example, yields {@code Optional.of(0)}. A wrapper or other
+     * reference target retains {@code null}, causing the failure described above.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -344,8 +352,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the non-null value, or empty
-     *         if no row exists; if a row exists but the value is {@code null}, {@code get()} throws
-     *         an {@code ExecutionException} whose cause is a {@link NullPointerException}
+     *         if no row exists; primitive targets receive their default for {@code NULL}; if the converted value is
+     *         {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a {@link NullPointerException}
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request

@@ -3585,7 +3585,12 @@ public final class MongoCollectionMapper<T> {
         // A single-value rowType (e.g. String) reads the value straight from the {_id: value} group rows (readRow
         // uses an _id-only row's id). Re-projecting it as {fieldName: "$_id"} would nest a dotted fieldName
         // ("a.b" -> {a: {b: value}}), and the scalar conversion would then receive the embedded document.
-        if (!isSingleValueRowType(rowType)) {
+        if (isSingleValueRowType(rowType)) {
+            if (rowType.isPrimitive()) {
+                // Primitive conversion would turn a null key into a default before mapNotNull can discard it.
+                pipeline.add(new Document("$match", new Document("_id", new Document("$ne", null))));
+            }
+        } else {
             final Document project = new Document("_id", 0).append(fieldName, "$_id");
 
             pipeline.add(new Document("$project", MongoDBBase.rebuildEmbeddedIdProjection(project)));
@@ -3708,6 +3713,9 @@ public final class MongoCollectionMapper<T> {
      * directly, converted to {@code T}; for such a {@code T} the group of documents that lack the field
      * (key {@code null}) is not emitted, because Reactive Streams forbids {@code null} elements.</p>
      *
+     * <p>This omission also applies when the mapper was created with a primitive class token such as
+     * {@code int.class}; the null-key group does not produce a primitive default.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: one emission per distinct department value.
@@ -3748,6 +3756,10 @@ public final class MongoCollectionMapper<T> {
      * field names; each unique combination forms a distinct output document, decoded to the
      * mapper's row type {@code T}. Unless {@code T} is {@link Document}, a {@code $project} stage
      * follows that drops {@code _id} and surfaces each key component under its own field name.</p>
+     *
+     * <p>If {@code fieldNames} contains only one distinct field and the mapper has a single-value row type,
+     * each group key is converted to that type. The null-key group is omitted, including for a primitive
+     * class token such as {@code int.class}, without emitting a primitive default.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

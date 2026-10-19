@@ -589,7 +589,14 @@ public final class HBaseExecutor {
                     }
 
                     for (final String columnName : columnNames) {
-                        columnFieldMap.put(columnName, Tuple.of(propInfo.name, hasColumnAnnotation));
+                        final Tuple2<String, Boolean> columnFieldTP = Tuple.of(propInfo.name, hasColumnAnnotation);
+
+                        if (columnName.isEmpty() && propInfo.type.isBean() && !hasColumnAnnotation) {
+                            // A nested bean's empty qualifier is only a fallback; it must not displace the real owner.
+                            columnFieldMap.putIfAbsent(columnName, columnFieldTP);
+                        } else {
+                            columnFieldMap.put(columnName, columnFieldTP);
+                        }
                     }
                 }
 
@@ -1064,10 +1071,10 @@ public final class HBaseExecutor {
                 if (familyTP == null) {
                     familyTP = familyTPMap.get(EMPTY_QUALIFIER);
 
-                    // The family map keeps a single EMPTY_QUALIFIER fallback entry which the last-registered
-                    // bean-typed property sharing this family overwrites. When the fallback's bean class doesn't
-                    // own this qualifier, resolve it against each candidate bean property of the family so cells
-                    // of the other nested beans are not dropped or misrouted.
+                    // The family map keeps a single EMPTY_QUALIFIER entry: a real owner takes precedence over
+                    // nested-bean fallbacks, and the first fallback is retained when no real owner exists.
+                    // When that entry doesn't own this qualifier, resolve it against each candidate bean property
+                    // of the family so cells of the other nested beans are not dropped or misrouted.
                     if (familyTP != null) {
                         final PropInfo fallbackPropInfo = entityInfo.getPropInfo(familyTP._1);
                         final boolean isBeanFallback = fallbackPropInfo != null && fallbackPropInfo.jsonXmlType.isBean();
@@ -1108,6 +1115,11 @@ public final class HBaseExecutor {
 
                 // ignore the unknown field/property, and a read-only one (see isReadOnlyProperty):
                 if (familyPropInfo == null || isReadOnlyProperty(familyPropInfo)) {
+                    continue;
+                }
+
+                // The row key decoded from the cell's row is authoritative; a mapped cell must not change the entity's identity.
+                if (rowKeySetMethod != null && rowKeySetMethod.equals(familyPropInfo.setMethod)) {
                     continue;
                 }
 
