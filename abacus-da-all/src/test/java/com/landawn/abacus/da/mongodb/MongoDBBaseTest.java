@@ -193,14 +193,125 @@ public class MongoDBBaseTest extends MockitoTestBase {
     @Test
     public void testExtractDataFromBasicDBObjectListConvertsToBean() {
         // A Map row that is not a Document (BasicDBObject) must not bypass the requested bean conversion.
-        List<BasicDBObject> rows = Arrays.asList(new BasicDBObject("value", "a"), new BasicDBObject("value", "b"));
+        // The extra key is only visible through the old raw-map path; the bean path must derive just "value".
+        List<BasicDBObject> rows = Arrays.asList(new BasicDBObject("value", "a").append("extra", "x"), new BasicDBObject("value", "b").append("extra", "y"));
+
+        Dataset result = MongoDBBase.extractData(rows, NoIdEntity.class);
+        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
+
+        assertEquals(Arrays.asList("value"), result.columnNames());
+        assertEquals(2, converted.size());
+        assertEquals("a", converted.get(0).getValue());
+        assertEquals("b", converted.get(1).getValue());
+    }
+
+    @Test
+    public void testExtractDataBeanTargetWithSelectedPropertiesAndMapRows() {
+        List<BasicDBObject> rows = Arrays.asList(new BasicDBObject("value", "a").append("extra", "x"), new BasicDBObject("value", "b").append("extra", "y"));
+
+        Dataset result = MongoDBBase.extractData(Arrays.asList("value"), rows, NoIdEntity.class);
+        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
+
+        assertEquals(Arrays.asList("value"), result.columnNames());
+        assertEquals(2, converted.size());
+        assertEquals("a", converted.get(0).getValue());
+        assertEquals("b", converted.get(1).getValue());
+    }
+
+    @Test
+    public void testExtractDataBeanTargetPreservesNullAndAlreadyTypedRows() {
+        NoIdEntity bean = new NoIdEntity();
+        bean.setValue("a");
+
+        Dataset result = MongoDBBase.extractData(Arrays.asList(bean, new BasicDBObject("value", "b"), null), NoIdEntity.class);
+        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
+
+        assertEquals(3, converted.size());
+        assertEquals("a", converted.get(0).getValue());
+        assertEquals("b", converted.get(1).getValue());
+        assertNull(converted.get(2).getValue());
+    }
+
+    @Test
+    public void testExtractDataBeanTargetCopiesAnotherBeanShape() {
+        OtherNoIdEntity other = new OtherNoIdEntity();
+        other.setValue("c");
+
+        Dataset result = MongoDBBase.extractData(Arrays.asList(other), NoIdEntity.class);
+        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
+
+        assertEquals(1, converted.size());
+        assertEquals("c", converted.get(0).getValue());
+    }
+
+    @Test
+    public void testExtractDataBeanTargetMapsObjectIdToIdProperty() {
+        // _id -> id is MongoDB-specific mapping performed by readRow, not by Dataset's later bean conversion.
+        ObjectId oid = new ObjectId("507f1f77bcf86cd799439011");
+        BasicDBObject row = new BasicDBObject("_id", oid).append("name", "alice");
+
+        Dataset result = MongoDBBase.extractData(Arrays.asList(row), TestEntity.class);
+        TestEntity entity = result.toList(TestEntity.class).get(0);
+
+        assertEquals(Arrays.asList("id", "name"), result.columnNames());
+        assertEquals(oid.toHexString(), entity.getId());
+        assertEquals("alice", entity.getName());
+    }
+
+    @Test
+    public void testExtractDataBeanTargetPreservesObjectArrayRows() {
+        Dataset result = MongoDBBase.extractData(Arrays.asList("value"), Collections.singletonList(new Object[] { "a" }), NoIdEntity.class);
+
+        assertEquals(Arrays.asList("value"), result.columnNames());
+        assertEquals("a", result.toList(NoIdEntity.class).get(0).getValue());
+    }
+
+    @Test
+    public void testExtractDataBeanTargetPreservesListRows() {
+        Dataset result = MongoDBBase.extractData(Arrays.asList("value"), Collections.singletonList(Arrays.asList("a")), NoIdEntity.class);
+
+        assertEquals(Arrays.asList("value"), result.columnNames());
+        assertEquals("a", result.toList(NoIdEntity.class).get(0).getValue());
+    }
+
+    @Test
+    public void testExtractDataDocumentFirstKeepsLaterObjectArrayRow() {
+        List<Object> rows = Arrays.asList(new Document("value", "a"), new Object[] { "b" });
+
+        Dataset result = MongoDBBase.extractData(rows, NoIdEntity.class);
+        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
+
+        assertEquals(Arrays.asList("value"), result.columnNames());
+        assertEquals(2, converted.size());
+        assertEquals("a", converted.get(0).getValue());
+        assertEquals("b", converted.get(1).getValue());
+    }
+
+    @Test
+    public void testExtractDataDocumentFirstKeepsLaterListRow() {
+        List<Object> rows = Arrays.asList(new Document("value", "a"), Arrays.asList("b"));
+
+        Dataset result = MongoDBBase.extractData(rows, NoIdEntity.class);
+        List<NoIdEntity> converted = result.toList(NoIdEntity.class);
+
+        assertEquals(Arrays.asList("value"), result.columnNames());
+        assertEquals(2, converted.size());
+        assertEquals("a", converted.get(0).getValue());
+        assertEquals("b", converted.get(1).getValue());
+    }
+
+    @Test
+    public void testExtractDataDocumentFirstCopiesLaterBeanRow() {
+        OtherNoIdEntity other = new OtherNoIdEntity();
+        other.setValue("c");
+        List<Object> rows = Arrays.asList(new Document("value", "a"), other);
 
         Dataset result = MongoDBBase.extractData(rows, NoIdEntity.class);
         List<NoIdEntity> converted = result.toList(NoIdEntity.class);
 
         assertEquals(2, converted.size());
         assertEquals("a", converted.get(0).getValue());
-        assertEquals("b", converted.get(1).getValue());
+        assertEquals("c", converted.get(1).getValue());
     }
 
     @Test
@@ -3304,6 +3415,18 @@ public class MongoDBBaseTest extends MockitoTestBase {
     }
 
     public static class NoIdEntity {
+        private String value;
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String value) {
+            this.value = value;
+        }
+    }
+
+    public static class OtherNoIdEntity {
         private String value;
 
         public String getValue() {

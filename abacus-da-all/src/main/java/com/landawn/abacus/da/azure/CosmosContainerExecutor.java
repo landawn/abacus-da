@@ -2410,7 +2410,7 @@ public class CosmosContainerExecutor {
                 quote = ch;
                 sb.append(ch);
             } else if ((ch == 'A' || ch == 'a') && i + 1 < query.length() && (query.charAt(i + 1) == 'S' || query.charAt(i + 1) == 's')
-                    && (i == 0 || !Character.isJavaIdentifierPart(query.charAt(i - 1)) && query.charAt(i - 1) != '.') && i + 2 < query.length()
+                    && (i == 0 || (!Character.isJavaIdentifierPart(query.charAt(i - 1)) && query.charAt(i - 1) != '.')) && i + 2 < query.length()
                     && Character.isWhitespace(query.charAt(i + 2))) {
                 int aliasStart = i + 2;
 

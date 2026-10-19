@@ -16,7 +16,7 @@ Baseline on a clean HEAD: **4,507 tests, 0 failures, 0 errors, 0 skipped** using
 
 - Added a post-render normalization that removes the table alias from an `AS` alias anywhere in the rendered condition. An alias is a name, not a property path; `AS c.id` is never valid, and the projection `(c.id)` remains a valid correlated reference.
 - A first attempt also treated a parenthesized projection as a subquery scope. Review showed that this suppressed qualification of names that `abacus-query` leaves bare (`category`, `bonus`), producing SQL Cosmos DB rejects. That recognition was removed; the normal qualification pass now prefixes those names with `c.`, and only the alias is normalized afterwards.
-- Regression coverage: `CosmosContainerExecutorDeepReview2026SubqueryScopeTest#parenthesizedFromLessProjectionKeepsAliasBare` (mapped `id`, both aliased and unaliased) and `#parenthesizedFromLessProjectionQualifiesNamesLeftBareByAbacusQuery` (`category`, and `id + bonus`). The full class passes 68/68.
+- Regression coverage: `CosmosContainerExecutorDeepReview2026SubqueryScopeTest#parenthesizedFromLessProjectionKeepsAliasBare` (mapped `id`, both aliased and unaliased) and `#parenthesizedFromLessProjectionQualifiesNamesLeftBareByAbacusQuery` (`category`, and `id + bonus`). Two further tests cover quoted text that looks like a qualified alias (`note = 'AS c.x'`) and a lowercase `as` alias. The full class passes 70/70.
 
 ### DynamoDB v2 — SS/NS returned as immutable SDK collections (P3)
 
@@ -29,15 +29,15 @@ Baseline on a clean HEAD: **4,507 tests, 0 failures, 0 errors, 0 skipped** using
 
 `MongoDBBase.extractData(List, Class)` dispatched to a converter only when the first row was a `Document` (or a `Map` target with a `Map` first row). A list of `BasicDBObject` rows requested as a bean fell through to the final branch and was returned as raw maps, contradicting the method's "each object is converted to the target row type" contract.
 
-- Added a bean-target branch that maps each `Map` row through `readRow(new Document(...), rowType)`, copies already-typed rows, and preserves nulls.
-- Regression coverage: `MongoDBBaseTest#testExtractDataFromBasicDBObjectListConvertsToBean` converts two `BasicDBObject` rows to `NoIdEntity` and checks their values. The full class passes 114/114.
+- Added a bean-target branch that maps each `Map` row through `readRow(new Document(...), rowType)`. Non-Map rows are passed through unchanged: they may be positional `Object[]`/typed-array/collection rows that `Dataset` interprets later, and `Beans.copyAs` rejected those shapes. The existing Document-first branch had the same latent gap for a later positional row and now copies only when the row is actually a bean. Nulls and already-typed rows are preserved.
+- Regression coverage: `MongoDBBaseTest#testExtractDataFromBasicDBObjectListConvertsToBean` adds an extra non-bean key and asserts `columnNames()` is only `[value]` (the old raw-map path gives `[value, extra]`); `#testExtractDataBeanTargetMapsObjectIdToIdProperty` verifies MongoDB-specific `_id` → `id` mapping and asserts the Dataset columns directly. Additional methods cover non-empty `selectPropNames`, a null row, already-typed rows mixed with Map rows, the bean-to-bean copy shape, positional `Object[]` and `List` rows in both the bean-first and Document-first dispatches, and a later bean row in the Document-first dispatch. The full class passes 123/123.
 
 ### Async MongoDB — a failing close could throw from `Future.cancel` (P3)
 
 `CloseOnCancelFuture.cancel()` and `onResult()` called `Stream.close()` directly. `Stream.close()` runs close handlers and may throw; that exception escaped `Future.cancel()` after the cancellation had already succeeded (and escaped the task for a late stream), violating the boolean `cancel` contract.
 
 - Both cleanup sites now use a private `closeQuietly` helper that intentionally swallows a close-handler failure: cancellation has already succeeded and there is no consumer for the cleanup error.
-- Regression coverage: two new methods in `AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest` use a mock `Stream` whose `close()` throws and assert that `cancel` returns true, `isCancelled` is true, and a late publication does not escape. The class passes 44/44.
+- Regression coverage: two new methods in `AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest` use a mock `Stream` whose `close()` throws and assert that `cancel` returns true, `isCancelled` is true, and a late publication does not escape. The redundant `mayInterrupt` parameterization was removed because the delegate never runs. The class passes 43/43.
 
 ### DynamoDB — nested formatted numeric wrappers are not writable
 
@@ -48,7 +48,7 @@ A bean containing a nested bean or collection whose numeric property uses `@Json
 - `DynamoDBExecutor` / `v2.DynamoDBExecutor` (`toAttributeValue`): a nested `ByteBuffer` is rendered from bytes before its position; a read-mode buffer becomes `""`, while a write-mode buffer contributes Base64 text. The previous text claimed every nested buffer became an empty string. The same paragraph now records the formatted-wrapper limitation above.
 - `MongoCollectionMapper`: the generated `_id` is not written back for bean entities, but a `Document` entity is passed to the driver unchanged, so the driver does populate the generated `_id` on that same instance. The class summary and the `insertOne`/`insertOne(options)`/`insertMany` method documentation now say this consistently.
 - `MongoDBBase.extractData(List, Class)`: the dispatch bullets now state that Map rows (not only `Document` rows) are converted when the target is a bean, and that other objects are copied to a bean target rather than always bypassing conversion.
-- `aws.dynamodb.AsyncDynamoDBExecutor`: "non-blocking analogues of every public operation" was false (v1 mapper operations are synchronous); the claim is now limited to direct DynamoDB operations.
+- `aws.dynamodb.AsyncDynamoDBExecutor`: "non-blocking analogues of every public operation" was false (the class has no Mapper operations); the claim is now limited to direct DynamoDB operations and explicitly says no entity `Mapper` operations are exposed by this class.
 - `v2.AsyncDynamoDBExecutor.Mapper`: the v1 mapper reference pointed at a type that does not exist (`aws.dynamodb.AsyncDynamoDBExecutor.Mapper`); it now points to `aws.dynamodb.DynamoDBExecutor.Mapper`.
 - `BigQueryExecutor`: a direct read-only (getter-only) column is skipped only when its exposure is `SERIALIZE_ONLY` (the default); a dotted column skips every read-only terminal property. The previous sentence claimed all read-only matches were ignored, which is false for a getter-only property explicitly exposed as `DESERIALIZE_ONLY`.
 
@@ -67,8 +67,8 @@ Coverage caveats: the reviews were timeboxed. Every slice received a targeted pa
 ## Verification
 
 - Baseline (clean HEAD): 4,507 tests, 0 failures, 0 errors.
-- Focused suites after the corrections: 429 tests, 0 failures (Cosmos subquery scope 68, DynamoDB v2 mapping 96, async Mongo cancellation 44, `MongoDBBaseTest` 114, `MongoCollectionMapperTest` 107).
-- Full suite from a clean build: **4,516 tests, 0 failures, 0 errors, 0 skipped**; the `abacus-da-all` artifact compiled and tested successfully.
+- Focused suites after the corrections: 332 tests, 0 failures (Cosmos subquery scope 70, DynamoDB v2 mapping 96, async Mongo cancellation 43, `MongoDBBaseTest` 123).
+- Full suite from a clean build: **4,526 tests, 0 failures, 0 errors, 0 skipped**; the `abacus-da-all` artifact compiled and tested successfully.
 - `git diff --check` passes.
 - Javadoc doclint passes on every changed source file (`javac -Xdoclint:all,-missing`, exit 0). Full public-Javadoc generation was blocked because the workspace ACL carries the sandbox's expected `DeleteSubdirectoriesAndFiles` deny, and the Javadoc tool refuses any destination under it; the diagnostic skill confirms that deny is expected and is not removed by repair.
 

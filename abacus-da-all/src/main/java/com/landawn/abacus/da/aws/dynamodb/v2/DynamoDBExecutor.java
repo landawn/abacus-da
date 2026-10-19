@@ -1827,7 +1827,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
         } else if (x.b() != null) {
             ret = x.b().asByteArray();
         } else if (x.hasSs()) {
-            // The SDK exposes SS/NS as unmodifiable auto-construct lists; copy them like the L/M/BS branches
+            // The SDK returns unmodifiable lists for SS/NS; copy them like the L/M/BS branches
             // so a converted item is a plain Java value and matches the v1 executor's mutable set lists.
             ret = new ArrayList<>(x.ss());
         } else if (x.hasNs()) {

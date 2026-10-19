@@ -72,8 +72,8 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <p><strong>Key Features:</strong></p>
  * <ul>
- *   <li>Non-blocking analogues of the direct DynamoDB operations on {@link DynamoDBExecutor}; entity
- *       {@code Mapper} operations remain synchronous in this SDK v1 executor.</li>
+ *   <li>Non-blocking analogues of the direct DynamoDB operations on {@link DynamoDBExecutor}. This class
+ *       exposes no entity {@code Mapper} operations; those remain on the synchronous executor.</li>
  *   <li>Automatic type conversion between DynamoDB {@link AttributeValue}s and Java objects.</li>
  *   <li>Support for batch operations, queries, and scans.</li>
  *   <li>Memory-efficient streaming for large result sets (automatic pagination).</li>

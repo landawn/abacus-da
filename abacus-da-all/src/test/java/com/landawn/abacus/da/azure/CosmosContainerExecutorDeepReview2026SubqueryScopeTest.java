@@ -193,6 +193,20 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
     }
 
+    @Test
+    void quotedTextThatLooksLikeAQualifiedAliasIsPreserved() {
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((SELECT (id) AS id)) AND note = 'AS c.x'"));
+
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((SELECT (c.id) AS id)) AND c.note = 'AS c.x'", spec.getQueryText());
+    }
+
+    @Test
+    void lowercaseAsAliasIsNormalizedToBareAlias() {
+        final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((SELECT (id) as id))"));
+
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((SELECT (c.id) AS id))", spec.getQueryText());
+    }
+
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = { "(select -1) > 0 | (c.select -1) > 0", "(select [0]) = 1 | (c.select [0]) = 1" })
     void ambiguousFromLessPropertyFormsRemainQualified(final String condition, final String expected) {

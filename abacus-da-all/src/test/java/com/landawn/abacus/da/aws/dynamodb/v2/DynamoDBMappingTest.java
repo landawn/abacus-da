@@ -589,9 +589,6 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
         assertEquals(2, item.get("ns").ns().size());
     }
 
-    // TODO: testToValue_NestedMapBranch - AttributeValue.builder().m() wraps as UnmodifiableMap which N.newMap
-    // cannot instantiate. This branch is reached via the public API path but not testable in isolation.
-
     @Test
     public void testToValue_TargetClassConversion() {
         Map<String, AttributeValue> item = new LinkedHashMap<>();

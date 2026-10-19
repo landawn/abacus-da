@@ -159,10 +159,9 @@ public class AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest {
                 .toList();
     }
 
-    @ParameterizedTest
-    @ValueSource(booleans = { false, true })
+    @Test
     @SuppressWarnings("unchecked")
-    public void testFailingCloseDoesNotTurnSuccessfulCancellationIntoAnException(final boolean mayInterrupt) throws Exception {
+    public void testFailingCloseDoesNotTurnSuccessfulCancellationIntoAnException() throws Exception {
         final Stream<Document> expected = mock(Stream.class);
         org.mockito.Mockito.doThrow(new IllegalStateException("close failed")).when(expected).close();
         final Class<?> futureClass = Class.forName(AsyncMongoCollectionExecutor.class.getName() + "$CloseOnCancelFuture");
@@ -178,8 +177,9 @@ public class AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest {
         setDelegate.invoke(future, delegate);
         onResult.invoke(future, expected);
 
-        // A cleanup failure must not mask a cancellation that already succeeded.
-        Assertions.assertTrue(future.cancel(mayInterrupt));
+        // A cleanup failure must not mask a cancellation that already succeeded. The delegate never ran,
+        // so there is no runner to interrupt and cancel(false) exercises the same cleanup path as cancel(true).
+        Assertions.assertTrue(future.cancel(false));
         Assertions.assertTrue(future.isCancelled());
         verify(expected).close();
     }

@@ -2486,7 +2486,10 @@ public abstract class MongoDBBase {
                     } else if (row instanceof Map) {
                         newRowList.add(readRow(new Document((Map<String, Object>) row), rowType));
                     } else {
-                        newRowList.add(rowType.isInstance(row) || !Beans.isBeanClass(rowType) ? row : Beans.copyAs(row, rowType));
+                        // Only bean-to-bean rows are copied. Positional rows (Object[], typed arrays, collections)
+                        // and scalars are interpreted by Dataset later and must not be forced through copyAs.
+                        newRowList.add(rowType.isInstance(row) || !Beans.isBeanClass(rowType) || !Beans.isBeanClass(row.getClass()) ? row
+                                : Beans.copyAs(row, rowType));
                     }
                 }
 
@@ -2497,7 +2500,8 @@ public abstract class MongoDBBase {
                 }
             } else if (Beans.isBeanClass(rowType)) {
                 // A non-Document Map row (for example BasicDBObject) must still become the requested bean; the
-                // first-row dispatch above only recognized Document instances as documents. Null rows stay null.
+                // first-row dispatch above only recognized Document instances as documents. A null row is preserved
+                // in the list; as in the Document branch, Dataset column inference still requires a non-null first row.
                 final List<Object> newRowList = new ArrayList<>(rowList.size());
 
                 for (final Object row : rowList) {
@@ -2506,7 +2510,9 @@ public abstract class MongoDBBase {
                     } else if (row instanceof Map) {
                         newRowList.add(readRow(new Document((Map<String, Object>) row), rowType));
                     } else {
-                        newRowList.add(rowType.isInstance(row) ? row : Beans.copyAs(row, rowType));
+                        // Positional rows (Object[], typed arrays, collections) and already-typed rows are
+                        // interpreted by Dataset later; copying them as beans rejected arrays and collections.
+                        newRowList.add(row);
                     }
                 }
 
