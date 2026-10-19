@@ -318,6 +318,199 @@ public class LegacyDynamoDBExecutorDeepReview2026NumericWrapperTest {
                 () -> DynamoDBExecutor.toEntity(DynamoDBExecutor.toItem(Map.of("leaves", List.of(child))), JsonContainerFormatRoot.class));
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    public void recursiveGenericFormatsFollowChangingTypeArguments(final boolean jsonBacked) {
+        final Map<String, Object> node = Map.of("child", Map.of("child", Map.of("amount", "9,007,199,254,740,993.50",
+                "child", Map.of("child", Map.of("amount", "2,345.50")))));
+        final JsonShiftingCycleRoot root = DynamoDBExecutor.toEntity(Map.of("leaves", recursiveLeaves(node, jsonBacked)), JsonShiftingCycleRoot.class);
+
+        // The formatted property becomes Optional<Long> only on the second recurrence, then Optional<Optional<Long>>.
+        assertEquals(Optional.of(9007199254740993L), root.leaves.get(0).child.child.amount);
+        assertEquals(Optional.of(Optional.of(2345L)), root.leaves.get(0).child.child.child.child.amount);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    public void recursiveGenericFormatsMayAppearAfterSeveralRecurrences(final boolean jsonBacked) {
+        final Map<String, Object> node = Map.of("child", Map.of("child", Map.of("child", Map.of("amount", FORMATTED_NUMBER))));
+        final JsonRotatingCycleRoot root = DynamoDBExecutor.toEntity(Map.of("leaves", recursiveLeaves(node, jsonBacked)), JsonRotatingCycleRoot.class);
+
+        assertEquals(Optional.of(1234L), root.leaves.get(0).child.child.child.amount);
+    }
+
+    @Test
+    public void recursiveSchemasWithoutWrapperFormatsTerminateAndRetainTypedJsonValues() {
+        final String growing = "[{\"value\":9007199254740993.0100,\"child\":{\"value\":[9007199254740993.0100],"
+                + "\"child\":{\"value\":[[9007199254740993.0100]]}}}]";
+        final JsonUnformattedCycleRoot root = DynamoDBExecutor.toEntity(
+                DynamoDBExecutor.toItem(Map.of("growing", growing, "stable", "[{\"value\":7,\"child\":{\"value\":8}}]")),
+                JsonUnformattedCycleRoot.class);
+        final BigDecimal exact = new BigDecimal("9007199254740993.0100");
+
+        assertEquals(exact, root.growing.get(0).value);
+        assertEquals(List.of(exact), root.growing.get(0).child.value);
+        assertEquals(List.of(List.of(exact)), root.growing.get(0).child.child.value);
+        assertEquals(7L, root.stable.get(0).value);
+        assertEquals(8L, root.stable.get(0).child.value);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "jacksonLong", "jacksonNested", "jacksonNumber", "jacksonDateOnly" })
+    public void jacksonDateFormatsRetainPrecedenceOverNumericWrapperFormats(final String property) {
+        for (final String value : List.of(FORMATTED_NUMBER, "not a number")) {
+            final UnsupportedOperationException expected = assertThrows(UnsupportedOperationException.class,
+                    () -> com.landawn.abacus.parser.ParserUtil.getBeanInfo(FormatPrecedenceLeaf.class).getPropInfo(property).readPropValue(value));
+
+            for (final boolean jsonBacked : List.of(false, true)) {
+                final UnsupportedOperationException actual = assertThrows(UnsupportedOperationException.class,
+                        () -> DynamoDBExecutor.toEntity(Map.of("leaves", nestedLeaf(Map.of(property, value), jsonBacked)), FormatPrecedenceRoot.class));
+                assertEquals(expected.getMessage(), actual.getMessage());
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    public void blankDateOverridesStillAllowNumericWrapperFormats(final boolean jsonBacked) {
+        final Map<String, Object> values = Map.of("blankJacksonDate", FORMATTED_NUMBER, "blankDateOverridesJackson", FORMATTED_NUMBER);
+        final FormatPrecedenceRoot root = DynamoDBExecutor.toEntity(Map.of("leaves", nestedLeaf(values, jsonBacked)), FormatPrecedenceRoot.class);
+
+        assertEquals(Optional.of(1234L), root.leaves.get(0).blankJacksonDate);
+        assertEquals(Optional.of(1234L), root.leaves.get(0).blankDateOverridesJackson);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    public void controlOnlyDatePatternsDisableDateFormatsAfterAnnotationSelection(final boolean jsonBacked) {
+        // String.trim removes U+0001, even though String.isBlank does not. A nonempty field override
+        // must still suppress the lower-priority Jackson format before the selected pattern is trimmed.
+        final Map<String, Object> values = Map.of("controlJacksonDate", FORMATTED_NUMBER, "controlDateOverridesJackson", FORMATTED_NUMBER);
+        final FormatPrecedenceRoot root = DynamoDBExecutor.toEntity(Map.of("leaves", nestedLeaf(values, jsonBacked)), FormatPrecedenceRoot.class);
+
+        assertEquals(Optional.of(1234L), root.leaves.get(0).controlJacksonDate);
+        assertEquals(Optional.of(1234L), root.leaves.get(0).controlDateOverridesJackson);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "unicodeJacksonDate", "unicodeFieldDate" })
+    public void unicodeWhitespaceDatePatternsRetainDateFormatValidation(final String property) {
+        // U+2000 is whitespace to String.isBlank, but String.trim preserves it as an effective date pattern.
+        final UnsupportedOperationException expected = assertThrows(UnsupportedOperationException.class,
+                () -> com.landawn.abacus.parser.ParserUtil.getBeanInfo(FormatPrecedenceLeaf.class).getPropInfo(property).readPropValue(FORMATTED_NUMBER));
+
+        for (final boolean jsonBacked : List.of(false, true)) {
+            final UnsupportedOperationException actual = assertThrows(UnsupportedOperationException.class,
+                    () -> DynamoDBExecutor.toEntity(Map.of("leaves", nestedLeaf(Map.of(property, FORMATTED_NUMBER), jsonBacked)), FormatPrecedenceRoot.class));
+            assertEquals(expected.getMessage(), actual.getMessage());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "fastjsonLong", "fastjsonNested", "fastjsonOverridesJackson", "emptyFastjsonFallsThrough",
+            "unicodeFastjsonDate", "fieldDateOverridesFastjson" })
+    public void fastjsonDateFormatsRetainAnnotationPrecedence(final String property) {
+        for (final String value : List.of(FORMATTED_NUMBER, "not a number")) {
+            final UnsupportedOperationException expected = assertThrows(UnsupportedOperationException.class,
+                    () -> com.landawn.abacus.parser.ParserUtil.getBeanInfo(FormatPrecedenceLeaf.class).getPropInfo(property).readPropValue(value));
+
+            for (final boolean jsonBacked : List.of(false, true)) {
+                final UnsupportedOperationException actual = assertThrows(UnsupportedOperationException.class,
+                        () -> DynamoDBExecutor.toEntity(Map.of("leaves", nestedLeaf(Map.of(property, value), jsonBacked)), FormatPrecedenceRoot.class));
+                assertEquals(expected.getMessage(), actual.getMessage());
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "blankFastjsonDate", "controlFastjsonDate", "blankFieldOverridesFastjson", "controlFieldOverridesFastjson",
+            "emptyFastjsonDate" })
+    public void fastjsonEmptyAndTrimEmptyDatePatternsAllowWrapperNumberFormats(final String property) {
+        // A raw empty pattern falls through; a nonempty trim-empty pattern overrides Jackson's effective date format.
+        for (final boolean jsonBacked : List.of(false, true)) {
+            final FormatPrecedenceRoot root = DynamoDBExecutor.toEntity(
+                    Map.of("leaves", nestedLeaf(Map.of(property, FORMATTED_NUMBER), jsonBacked)), FormatPrecedenceRoot.class);
+            assertEquals(Optional.of(1234L),
+                    com.landawn.abacus.parser.ParserUtil.getBeanInfo(FormatPrecedenceLeaf.class).getPropValue(root.leaves.get(0), property));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    public void recursiveGenericArgumentsRetainFormatsFromReachableBeans(final boolean jsonBacked) {
+        // The cycle itself has no number-format annotation. The formatted bean is first read after two rotations.
+        final Map<String, Object> rotated = Map.of("child", Map.of("child", Map.of("value", Map.of("amount", FORMATTED_NUMBER))));
+        // This bean type is introduced by the recursive declaration, rather than supplied in the root's type arguments.
+        final Map<String, Object> introduced = Map.of("child", Map.of("value", Map.of("amount", FORMATTED_NUMBER)));
+        final JsonArgumentCycleRoot root = DynamoDBExecutor.toEntity(
+                Map.of("rotated", recursiveLeaves(rotated, jsonBacked), "introduced", recursiveLeaves(introduced, jsonBacked)), JsonArgumentCycleRoot.class);
+
+        assertEquals(Optional.of(1234L), root.rotated.get(0).child.child.value.amount);
+        assertEquals(Optional.of(1234L), root.introduced.get(0).child.value.amount);
+    }
+
+    public static class JsonArgumentCycleRoot {
+        public List<JsonArgumentCycle<String, Long, JsonRecursiveLeaf>> rotated;
+        public List<JsonIntroducedCycle<String>> introduced;
+    }
+
+    public static class JsonArgumentCycle<A, B, C> {
+        public A value;
+        public JsonArgumentCycle<B, C, List<A>> child;
+    }
+
+    public static class JsonIntroducedCycle<T> {
+        public T value;
+        public JsonIntroducedCycle<JsonRecursiveLeaf> child;
+    }
+
+    public static class JsonShiftingCycleRoot {
+        public List<JsonShiftingCycle<Long, String>> leaves;
+    }
+
+    public static class JsonShiftingCycle<A, B> {
+        @JsonXmlField(numberFormat = "#,##0.00")
+        public A amount;
+        public JsonShiftingCycle<B, Optional<A>> child;
+    }
+
+    public static class JsonRotatingCycleRoot {
+        public List<JsonRotatingCycle<Long, String, BigDecimal>> leaves;
+    }
+
+    public static class JsonRotatingCycle<A, B, C> {
+        @JsonXmlField(numberFormat = "#,##0.00")
+        public A amount;
+        public JsonRotatingCycle<B, C, Optional<A>> child;
+    }
+
+    public static class JsonUnformattedCycleRoot {
+        public List<JsonGrowingCycle<BigDecimal>> growing;
+        public List<JsonStableCycle<Long>> stable;
+    }
+
+    public static class JsonGrowingCycle<T> {
+        public T value;
+        public JsonGrowingCycle<List<T>> child;
+    }
+
+    public static class JsonStableCycle<T> {
+        public T value;
+        public JsonStableCycle<T> child;
+    }
+
+    private static AttributeValue recursiveLeaves(final Map<String, Object> node, final boolean jsonBacked) {
+        return jsonBacked ? nestedLeaf(node, true) : new AttributeValue().withL(nativeRecursiveNode(node));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static AttributeValue nativeRecursiveNode(final Map<String, Object> node) {
+        final Map<String, AttributeValue> attributes = new java.util.LinkedHashMap<>();
+        node.forEach((name, value) -> attributes.put(name, value instanceof Map ? nativeRecursiveNode((Map<String, Object>) value)
+                : DynamoDBExecutor.toItem(Map.of(name, value)).get(name)));
+        return new AttributeValue().withM(attributes);
+    }
+
     public static class JsonGenericCycleRoot {
         public List<JsonGenericCycle<Long>> leaves;
     }
@@ -408,6 +601,71 @@ public class LegacyDynamoDBExecutorDeepReview2026NumericWrapperTest {
     }
 
     public static class FormatPrecedenceLeaf {
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "long")
+        public Optional<Long> fastjsonLong;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = " \tlong\n ")
+        public Holder<Optional<Number>> fastjsonNested;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "long")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = " \t\n ")
+        public Optional<Long> fastjsonOverridesJackson;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Long> emptyFastjsonFallsThrough;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "\u2000")
+        public Optional<Long> unicodeFastjsonDate;
+        @JsonXmlField(numberFormat = "#,##0.00", dateFormat = "long")
+        @com.alibaba.fastjson2.annotation.JSONField(format = " \t\n ")
+        public Optional<Long> fieldDateOverridesFastjson;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = " \t\n ")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Long> blankFastjsonDate;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "\u0001")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Long> controlFastjsonDate;
+        @JsonXmlField(numberFormat = "#,##0.00", dateFormat = " \t\n ")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "long")
+        public Optional<Long> blankFieldOverridesFastjson;
+        @JsonXmlField(numberFormat = "#,##0.00", dateFormat = "\u0001")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "long")
+        public Optional<Long> controlFieldOverridesFastjson;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.alibaba.fastjson2.annotation.JSONField(format = "")
+        public Optional<Long> emptyFastjsonDate;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Long> jacksonLong;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = " \tlong\n ")
+        public Holder<Optional<Number>> jacksonNested;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Number> jacksonNumber;
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Number> jacksonDateOnly;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = " \t\n ")
+        public Optional<Long> blankJacksonDate;
+        @JsonXmlField(numberFormat = "#,##0.00", dateFormat = " \t\n ")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Long> blankDateOverridesJackson;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "\u0001")
+        public Optional<Long> controlJacksonDate;
+        @JsonXmlField(numberFormat = "#,##0.00", dateFormat = "\u0001")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "long")
+        public Optional<Long> controlDateOverridesJackson;
+        @JsonXmlField(numberFormat = "#,##0.00")
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "\u2000")
+        public Optional<Long> unicodeJacksonDate;
+        @JsonXmlField(numberFormat = "#,##0.00", dateFormat = "\u2000")
+        public Optional<Long> unicodeFieldDate;
         @JsonXmlField(numberFormat = "#,##0.00", dateFormat = "long")
         public Optional<Long> optionalLong;
         @JsonXmlField(numberFormat = "#,##0.00", dateFormat = "long")

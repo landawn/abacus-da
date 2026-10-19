@@ -202,7 +202,10 @@ public final class DynamoDBExecutor {
     private static final Map<String, ThreadLocal<DecimalFormat>> exactNumberFormatPool = new ConcurrentHashMap<>();
     private static final Map<String, ThreadLocal<DecimalFormat>> numberFormatPool = new ConcurrentHashMap<>();
     private static final Map<Type<?>, Boolean> formattedJsonTypePool = new ConcurrentHashMap<>();
-    private static final Map<PropInfo, Boolean> jsonScalarFormatPool = new ConcurrentHashMap<>();
+    // PropInfo equality ignores resolved generic types; BeanInfo equality also ignores type arguments.
+    // Scope property flags by the complete owning bean type, which also distinguishes inherited class formats.
+    private static final Map<java.lang.reflect.Type, Map<PropInfo, Boolean>> jsonScalarFormatPool = new ConcurrentHashMap<>();
+    private static final Map<java.lang.reflect.Type, Map<PropInfo, Boolean>> jsonDateFormatPool = new ConcurrentHashMap<>();
 
     static {
         final BiFunction<AttributeValue, Class<?>, Object> converter = DynamoDBExecutor::toValue;
@@ -1616,12 +1619,20 @@ public final class DynamoDBExecutor {
      * supported property formats (for {@code BOOL} values as for text), enum representations, and property exposure are honored,
      * unsupported format/type combinations are rejected, values of another shape are converted or rejected as described above, and
      * unmatched dotted names are ignored. Unformatted {@code Number} values use JSON numeric inference. As in the JSON reader,
-     * class-level number formats apply to numeric properties, while generic numeric wrappers require an explicit field format;
-     * surrounding whitespace in format patterns is ignored. An explicit {@link JsonXmlField#dateFormat()} takes precedence
-     * over its number format, so an unsupported date format on a numeric wrapper is rejected even when a number format is present.
+     * class-level number formats apply to numeric properties, while generic numeric wrappers require an explicit field format.
+     * Class-level formats use the resolved property types of each generic bean instantiation.
+     * Format patterns are normalized with {@link String#trim()}. Field date formats follow the JSON reader's precedence:
+     * {@link JsonXmlField#dateFormat()}, then Fastjson 2 {@code JSONField.format}, then Jackson {@code JsonFormat.pattern}.
+     * An empty pattern falls through to the next annotation; a nonempty pattern that trims to empty disables the date format,
+     * suppressing lower-priority formats. Trimming removes leading and trailing characters at or below U+0020;
+     * other Unicode whitespace remains part of the pattern.
+     * An effective date format takes precedence over the number format, so an unsupported date format on a numeric
+     * wrapper is rejected even when a number format is present.
      * Explicit numeric-wrapper formats use the same conversion for JSON text and native containers read with JSON semantics:
      * integral targets truncate fractional parts toward zero, BigDecimal targets retain precision and scale, and floating-point
-     * targets retain negative zero. The complete formatted value must match; trailing content is rejected.</p>
+     * targets retain negative zero. Recursive generic beans retain these rules even when a property becomes a numeric
+     * wrapper only after several recurrences. Recursive schemas with no reachable field number format use the ordinary
+     * typed JSON reader. The complete formatted value must match; trailing content is rejected.</p>
      *
      * <p>Direct native bean and bean-array properties instead retain map-to-bean rules: field-backed SERIALIZE_ONLY properties and
      * dotted paths are assigned, property types (including generics and enum representations) are retained, and scalar conversion
@@ -1802,8 +1813,9 @@ public final class DynamoDBExecutor {
         } else if (isNumericWrapper(propInfo.jsonXmlType)) {
             final JsonXmlField fieldConfig = propInfo.getAnnotation(JsonXmlField.class);
 
-            if (fieldConfig != null && !Strings.isBlank(fieldConfig.dateFormat())) {
-                // Date formats take precedence in PropInfo, including rejection of unsupported wrapper types.
+            if (hasJsonDateFormat(beanInfo, propInfo)) {
+                // Honor every date-format annotation recognized by PropInfo before specializing numeric wrappers.
+                // This also preserves its rejection of unsupported wrapper types and overrides that trim to empty.
                 return propInfo.readPropValue(value);
             }
 
@@ -1821,12 +1833,12 @@ public final class DynamoDBExecutor {
         return propInfo.readPropValue(value);
     }
 
-    /** Caches schema inspection; ordinary JSON values keep their declared codecs. */
+    /** Caches schema inspection; changing generic cycles are resolved while reading the finite JSON value. */
     private static boolean needsFormattedJsonRead(final Type<?> type) {
-        return formattedJsonTypePool.computeIfAbsent(type, key -> needsFormattedJsonRead(key, new java.util.HashSet<>()));
+        return formattedJsonTypePool.computeIfAbsent(type, key -> needsFormattedJsonRead(key, new HashMap<>()));
     }
 
-    private static boolean needsFormattedJsonRead(final Type<?> type, final Set<Class<?>> visiting) {
+    private static boolean needsFormattedJsonRead(final Type<?> type, final Map<Class<?>, Type<?>> visiting) {
         if (type.isCollection() || type.isMap() || type.isObjectArray() || isGenericWrapper(type)) {
             final Type<?> elementType = type.isObjectArray() ? type.elementType()
                     : type.isParameterizedType() ? type.parameterTypes().get(type.isMap() ? 1 : 0) : N.typeOf(Object.class);
@@ -1836,8 +1848,7 @@ public final class DynamoDBExecutor {
         }
 
         final BeanInfo beanInfo = ParserUtil.getBeanInfo(type.reflectType());
-        // Inspect resolved properties before stopping a class cycle: a recursive generic bean may
-        // acquire a numeric wrapper in its next instantiation (for example Node<Optional<T>>).
+        // Check the current instantiation first; its resolved properties may already contain a numeric wrapper.
         for (final PropInfo property : beanInfo.propInfoList) {
             final JsonXmlField config = property.getAnnotation(JsonXmlField.class);
             if (property.jsonXmlExpose != JsonXmlField.Direction.SERIALIZE_ONLY && isNumericWrapper(property.jsonXmlType) && config != null
@@ -1846,8 +1857,12 @@ public final class DynamoDBExecutor {
             }
         }
 
-        if (!visiting.add(type.javaType())) {
-            return false;
+        final Type<?> previous = visiting.putIfAbsent(type.javaType(), type);
+        if (previous != null) {
+            // A repeated class with different type arguments may gain a formatted wrapper several recurrences later.
+            // Keep that fallback unless a finite scan of declarations and type arguments proves no field number
+            // format is reachable. Eagerly expanding resolved types can be infinite (e.g. Node<List<T>>).
+            return !previous.equals(type) && hasReachableJsonNumberFormat(type, new java.util.HashSet<>());
         }
 
         try {
@@ -1861,6 +1876,53 @@ public final class DynamoDBExecutor {
         } finally {
             visiting.remove(type.javaType());
         }
+    }
+
+    /**
+     * Conservatively finds field number formats that a changing generic cycle could make relevant. Inspect raw bean
+     * declarations only once to keep the graph finite, but always inspect type arguments: a formatted bean may be
+     * introduced by a recursive declaration or become a property only after several rotations. Any field format
+     * keeps the fallback, even when its current raw property type is not a numeric wrapper.
+     */
+    private static boolean hasReachableJsonNumberFormat(final Type<?> type, final Set<Class<?>> visited) {
+        if (type.isObjectArray()) {
+            return hasReachableJsonNumberFormat(type.elementType(), visited);
+        }
+
+        for (final Type<?> argument : type.parameterTypes()) {
+            if (hasReachableJsonNumberFormat(argument, visited)) {
+                return true;
+            }
+        }
+
+        // Non-static member beans can also read type variables declared by their parameterized owner.
+        java.lang.reflect.Type owner = type.reflectType() instanceof final java.lang.reflect.ParameterizedType parameterized
+                ? parameterized.getOwnerType() : null;
+        while (owner instanceof final java.lang.reflect.ParameterizedType parameterizedOwner) {
+            for (final java.lang.reflect.Type argument : parameterizedOwner.getActualTypeArguments()) {
+                if (hasReachableJsonNumberFormat(Type.of(argument), visited)) {
+                    return true;
+                }
+            }
+            owner = parameterizedOwner.getOwnerType();
+        }
+
+        if (!type.isBean() || !visited.add(type.javaType())) {
+            return false;
+        }
+
+        for (final PropInfo property : ParserUtil.getBeanInfo(type.javaType()).propInfoList) {
+            if (property.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
+                continue;
+            }
+            final JsonXmlField config = property.getAnnotation(JsonXmlField.class);
+            if (config != null && !Strings.isBlank(config.numberFormat())
+                    || hasReachableJsonNumberFormat(property.jsonXmlType, visited)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1930,7 +1992,8 @@ public final class DynamoDBExecutor {
 
     /** Scalar formats consume token text; unformatted numeric tokens retain JSON's typed conversion. */
     private static boolean hasJsonScalarFormat(final BeanInfo beanInfo, final PropInfo property) {
-        return jsonScalarFormatPool.computeIfAbsent(property, key -> findJsonScalarFormat(beanInfo, key));
+        return jsonScalarFormatPool.computeIfAbsent(beanInfo.javaType, key -> new ConcurrentHashMap<>())
+                .computeIfAbsent(property, key -> findJsonScalarFormat(beanInfo, key));
     }
 
     private static boolean findJsonScalarFormat(final BeanInfo beanInfo, final PropInfo property) {
@@ -1938,12 +2001,22 @@ public final class DynamoDBExecutor {
         final JsonXmlConfig bean = beanInfo.getAnnotation(JsonXmlConfig.class);
         final String numberFormat = field != null && Strings.isNotEmpty(field.numberFormat()) ? field.numberFormat()
                 : bean != null && property.type.isNumber() ? bean.numberFormat() : null;
-        if (!Strings.isBlank(numberFormat)) {
-            return true;
-        }
+        return !Strings.isBlank(numberFormat) || hasJsonDateFormat(beanInfo, property);
+    }
 
+    private static boolean hasJsonDateFormat(final BeanInfo beanInfo, final PropInfo property) {
+        return jsonDateFormatPool.computeIfAbsent(beanInfo.javaType, key -> new ConcurrentHashMap<>())
+                .computeIfAbsent(property, key -> findJsonDateFormat(beanInfo, key));
+    }
+
+    /**
+     * Mirrors PropInfo: select the first nonempty annotation before trimming, so overrides that trim to empty
+     * suppress lower-priority formats. Use trim rather than isBlank: control characters and Unicode spaces differ.
+     */
+    private static boolean findJsonDateFormat(final BeanInfo beanInfo, final PropInfo property) {
+        final JsonXmlField field = property.getAnnotation(JsonXmlField.class);
         if (field != null && Strings.isNotEmpty(field.dateFormat())) {
-            return !Strings.isBlank(field.dateFormat());
+            return Strings.isNotEmpty(Strings.trim(field.dateFormat()));
         }
 
         // PropInfo also recognizes these optional annotation APIs. Inspect their pattern without
@@ -1958,7 +2031,7 @@ public final class DynamoDBExecutor {
                     try {
                         final String pattern = (String) annotation.annotationType().getMethod(method).invoke(annotation);
                         if (!pattern.isEmpty()) {
-                            return !Strings.isBlank(pattern);
+                            return Strings.isNotEmpty(Strings.trim(pattern));
                         }
                     } catch (final ReflectiveOperationException e) {
                         throw new IllegalStateException("Cannot read property format: " + property.field, e);
@@ -1967,8 +2040,9 @@ public final class DynamoDBExecutor {
             }
         }
 
+        final JsonXmlConfig bean = beanInfo.getAnnotation(JsonXmlConfig.class);
         final Class<?> cls = property.clazz;
-        return bean != null && !Strings.isBlank(bean.dateFormat())
+        return bean != null && Strings.isNotEmpty(Strings.trim(bean.dateFormat()))
                 && (cls == java.util.Date.class || cls == java.util.Calendar.class || cls == java.sql.Date.class || cls == java.sql.Time.class
                         || cls == java.sql.Timestamp.class || cls == java.time.LocalDate.class || cls == java.time.LocalTime.class
                         || cls == java.time.LocalDateTime.class || cls == java.time.ZonedDateTime.class || cls.getName().equals("org.joda.time.DateTime")
