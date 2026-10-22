@@ -380,4 +380,19 @@ public class AnyIncrementTest extends TestBase {
         AnyIncrement inc = AnyIncrement.of("row");
         assertSame(inc.val(), inc.val());
     }
+
+    // ---- 2026-10-20 sliceF ----
+
+    /** Pins the of(byte[]) doc: getRow() is a copy of keyBytes, not keyBytes itself. */
+    @Test
+    public void testOf_byteArrayRowKey_rowIsACopyOfTheArray_sliceF() {
+        final byte[] keyBytes = Bytes.toBytes("counter_row_123");
+        final AnyIncrement increment = AnyIncrement.of(keyBytes).addColumn("metrics", "hits", 1L);
+
+        keyBytes[0] = 'X';
+
+        assertNotSame(keyBytes, increment.getRow());
+        assertArrayEquals(Bytes.toBytes("counter_row_123"), increment.getRow());
+        assertArrayEquals(Bytes.toBytes("counter_row_123"), increment.val().getRow());
+    }
 }

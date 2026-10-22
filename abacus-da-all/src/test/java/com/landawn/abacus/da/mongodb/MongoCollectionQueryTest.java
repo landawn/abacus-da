@@ -314,7 +314,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testList() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(filter);
         Assertions.assertEquals(2, result.size());
@@ -338,7 +338,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         // top-level address document as the scalar produced a JSON-like String instead of "Berlin".
         Document filter = new Document("active", true);
         Document row = new Document("_id", new ObjectId()).append("address", new Document("city", "Berlin"));
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+        stubFindRows(Arrays.asList(row));
 
         List<String> result = executor.list(Arrays.asList("address.city"), filter, String.class);
 
@@ -349,7 +349,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testListSingleMissingProjectionDoesNotReturnImplicitId() {
         Document filter = new Document("active", true);
         Document row = new Document("_id", new ObjectId());
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+        stubFindRows(Arrays.asList(row));
 
         List<String> result = executor.list(Arrays.asList("nickname"), filter, String.class);
 
@@ -360,7 +360,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testListSingleProjectionPreservesRawDocumentForDocumentSupertypes() {
         Document filter = new Document("active", true);
         Document row = new Document("name", "alice");
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+        stubFindRows(Arrays.asList(row));
 
         List<Object> objects = executor.list(Arrays.asList("name"), filter, Object.class);
         List<Bson> bsons = executor.list(Arrays.asList("name"), filter, Bson.class);
@@ -375,7 +375,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         Document filter = new Document("status", "active");
         Document sort = new Document("name", 1);
         List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(projection, filter, sort, Document.class);
         Assertions.assertEquals(1, result.size());
@@ -387,7 +387,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         Document filter = new Document("status", "active");
         Document sort = new Document("name", 1);
         List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(projection, filter, sort, 0, 10, Document.class);
         Assertions.assertEquals(1, result.size());
@@ -396,7 +396,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     @Test
     public void testListWithMaxCountDoesNotCallLimitWithMaxValue() {
         Document filter = new Document("status", "active");
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+        stubFindRows(Arrays.asList());
         executor.list(filter, 0, Integer.MAX_VALUE, Document.class);
         verify(mockFindIterable, org.mockito.Mockito.never()).limit(Integer.MAX_VALUE);
     }
@@ -412,7 +412,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     @Test
     public void testListWithPositiveOffsetCallsSkip() {
         Document filter = new Document("status", "active");
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+        stubFindRows(Arrays.asList());
         executor.list(filter, 5, 10, Document.class);
         verify(mockFindIterable).skip(5);
         verify(mockFindIterable).limit(10);
@@ -422,7 +422,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testListWithRowType() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(filter, Document.class);
         Assertions.assertEquals(2, result.size());
@@ -432,7 +432,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testListWithSelectPropNamesAndFilter() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("name", "a"), new Document("name", "b"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(Arrays.asList("name"), filter, Document.class);
         Assertions.assertEquals(2, result.size());
@@ -443,7 +443,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         Document filter = new Document("status", "active");
         Document sort = new Document("name", 1);
         List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(Arrays.asList("name"), filter, sort, Document.class);
         Assertions.assertEquals(1, result.size());
@@ -453,7 +453,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testListWithSelectPropNamesFilterOffsetCount() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(Arrays.asList("name"), filter, 0, 10, Document.class);
         Assertions.assertEquals(1, result.size());
@@ -464,7 +464,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         Document filter = new Document("status", "active");
         Document sort = new Document("name", 1);
         List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         List<Document> result = executor.list(Arrays.asList("name"), filter, sort, 0, 10, Document.class);
         Assertions.assertEquals(1, result.size());
@@ -477,7 +477,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         // A user-supplied count of 0 must yield zero results, not the whole collection.
         Document filter = new Document("status", "active");
         org.mockito.ArgumentCaptor<Bson> findCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+        stubFindRows(Arrays.asList());
 
         List<Document> result = executor.list(filter, 0, 0, Document.class);
 
@@ -492,7 +492,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testQuery() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         Dataset result = executor.query(filter);
         Assertions.assertNotNull(result);
@@ -550,7 +550,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         Document filter = new Document("status", "active");
         Document sort = new Document("name", 1);
         List<Document> docs = Arrays.asList(new Document("name", "a"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         Dataset result = executor.query(projection, filter, sort, Document.class);
         Assertions.assertNotNull(result);
@@ -591,7 +591,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testQueryWithFilterAndRowType() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         Dataset result = executor.query(filter, Document.class);
         Assertions.assertNotNull(result);
@@ -601,7 +601,7 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testQueryWithFilterOffsetCountAndRowType() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         Dataset result = executor.query(filter, 0, 10, Document.class);
         Assertions.assertNotNull(result);
@@ -611,9 +611,85 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
     public void testQueryWithSelectPropNamesAndFilter() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        stubFindRows(docs);
 
         Dataset result = executor.query(Arrays.asList("id"), filter, Document.class);
         Assertions.assertNotNull(result);
     }
+
+    // ---- 2026-10-19 sliceQ ----
+
+    @Test
+    public void testQueryDottedSelectNamesResultStaysMutableAndKeepsDeepPathsAndPlainColumns() {
+        // Dotted columns are now overwritten in place on the extracted Dataset instead of rebuilding (copying) every column:
+        // the result must keep its values, column order, and mutability, and multi-level paths must still resolve.
+        stubFindRows(Arrays.asList(
+                new Document("_id", 1).append("name", "n1")
+                        .append("a", new Document("b", new Document("c", 7)))
+                        .append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("name", "n2").append("a", new Document("b", new Document()))));
+
+        final Dataset ds = executor.query(Arrays.asList("a.b.c", "name", "address.city"), new Document(), java.util.Map.class);
+
+        Assertions.assertAll(() -> Assertions.assertEquals(Arrays.asList("a.b.c", "name", "address.city"), ds.columnNames()),
+                () -> Assertions.assertEquals(2, ds.size()), () -> Assertions.assertEquals(Arrays.asList(7, null), ds.getColumn("a.b.c")),
+                () -> Assertions.assertEquals(Arrays.asList("n1", "n2"), ds.getColumn("name")),
+                () -> Assertions.assertEquals(Arrays.asList("Paris", null), ds.getColumn("address.city")), () -> Assertions.assertFalse(ds.isFrozen()));
+
+        // "a.b" is the scalar 8 here, so traversing to "c" is not a Document path.
+        stubFindRows(Arrays.asList(new Document("_id", 1).append("a", new Document("b", 8))));
+        Assertions.assertThrows(ClassCastException.class, () -> executor.query(Arrays.asList("a.b.c"), new Document(), java.util.Map.class).getColumn("a.b.c"));
+
+        stubFindRows(Arrays.asList(new Document("_id", 1).append("name", "n1").append("a", new Document("b", new Document("c", 7)))));
+        final Dataset single = executor.query(Arrays.asList("a.b.c", "name"), new Document(), java.util.Map.class);
+        Assertions.assertEquals(Arrays.asList(7), single.getColumn("a.b.c"));
+
+        single.set(0, single.getColumnIndex("a.b.c"), 9);
+        single.set(0, single.getColumnIndex("name"), "renamed");
+        Assertions.assertAll(() -> Assertions.assertEquals(Arrays.asList(9), single.getColumn("a.b.c")),
+                () -> Assertions.assertEquals(Arrays.asList("renamed"), single.getColumn("name")));
+    }
+
+    // ---- 2026-10-19 mongomem ----
+
+    @Test
+    public void testListSingleScalarProjectionStreamsRowsInOrderWithNullsAndClosesCursor() {
+        // list(Collection, ...) with one selected field and a scalar type converts each document as the cursor yields it
+        // (it used to fetch all of them with into(...) first): order, missing/null values and dotted paths are unchanged.
+        final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(mockFindIterable,
+                Arrays.asList(new Document("a", 1), new Document("_id", 9), new Document("a", null), new Document("a", 2L)));
+
+        final List<Long> values = executor.list(Arrays.asList("a"), new Document(), Long.class);
+
+        Assertions.assertAll(() -> Assertions.assertEquals(Arrays.asList(1L, null, null, 2L), values),
+                () -> Assertions.assertEquals(Long.class, values.get(0).getClass()), () -> Assertions.assertTrue(cursors.get(0).isClosed()),
+                () -> verify(mockFindIterable, never()).into(any()), () -> {
+                    values.add(3L); // still a mutable list
+                }, () -> {
+                    MongoIterableStubs.stubRows(mockFindIterable,
+                            Arrays.asList(new Document("address", new Document("city", "Berlin")), new Document("_id", 1), new Document("address", null)));
+                    Assertions.assertEquals(Arrays.asList("Berlin", null, null), executor.list(Arrays.asList("address.city"), new Document(), String.class));
+                }, () -> {
+                    MongoIterableStubs.stubRows(mockFindIterable, Arrays.asList());
+                    Assertions.assertEquals(Arrays.asList(), executor.list(Arrays.asList("a"), new Document(), Long.class));
+                });
+    }
+
+    @Test
+    public void testListSingleScalarProjectionConversionFailureDrainsAndClosesCursor() {
+        final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(mockFindIterable,
+                Arrays.asList(new Document("a", "x"), new Document("a", 1), new Document("a", 2)));
+
+        Assertions.assertThrows(NumberFormatException.class, () -> executor.list(Arrays.asList("a"), new Document(), Integer.class));
+        Assertions.assertAll(() -> Assertions.assertTrue(cursors.get(0).isClosed()), () -> Assertions.assertEquals(3, cursors.get(0).rowsRead()));
+
+        // A later cursor failure still wins over the earlier conversion failure, as when every row was fetched first.
+        final List<MongoIterableStubs.ListCursor<?>> failing = MongoIterableStubs.stubRows(mockFindIterable,
+                Arrays.asList(new Document("a", "x"), MongoIterableStubs.CURSOR_FAILURE));
+
+        Assertions.assertThrows(com.mongodb.MongoException.class, () -> executor.list(Arrays.asList("a"), new Document(), Integer.class));
+        Assertions.assertTrue(failing.get(0).isClosed());
+    }
+
+    // ---- end 2026-10-19 mongomem ----
 }

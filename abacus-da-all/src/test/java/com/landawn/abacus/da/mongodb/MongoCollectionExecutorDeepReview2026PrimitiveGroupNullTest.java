@@ -63,9 +63,10 @@ public class MongoCollectionExecutorDeepReview2026PrimitiveGroupNullTest extends
 
         final Document ageGroup = new Document("$group", new Document("_id", "$age"));
         final Document activeGroup = new Document("$group", new Document("_id", "$active"));
-        final Document collectionGroup = new Document("$group", new Document("_id", new Document("n", "$n")));
+        // Multi-field/dotted group keys wrap each leaf in $ifNull (2026-10-19 sliceT) so a missing field joins the null-key group.
+        final Document collectionGroup = new Document("$group", new Document("_id", new Document("n", ifNull("$n"))));
         final Document collectionProjection = new Document("$project", new Document("_id", 0).append("n", "$_id.n"));
-        final Document dottedGroup = new Document("$group", new Document("_id", new Document("n", new Document("m", "$n.m"))));
+        final Document dottedGroup = new Document("$group", new Document("_id", new Document("n", new Document("m", ifNull("$n.m")))));
         final Document dottedProjection = new Document("$project", new Document("_id", "$_id.n.m"));
         final Document idMatch = nonNullMatch("_id");
         final Document collectionMatch = nonNullMatch("_id.n");
@@ -100,10 +101,17 @@ public class MongoCollectionExecutorDeepReview2026PrimitiveGroupNullTest extends
         final Document result = new Document();
 
         for (final Map.Entry<String, Object> entry : shape.entrySet()) {
-            result.append(entry.getKey(), entry.getValue() instanceof Document ? keyDocument((Document) entry.getValue(), key) : key);
+            result.append(entry.getKey(),
+                    entry.getValue() instanceof Document && !((Document) entry.getValue()).containsKey("$ifNull")
+                            ? keyDocument((Document) entry.getValue(), key)
+                            : key);
         }
 
         return result;
+    }
+
+    private static Document ifNull(final String fieldPath) {
+        return new Document("$ifNull", Arrays.asList(fieldPath, null));
     }
 
     private static boolean matches(final Document groupRow, final List<? extends Bson> pipeline) {

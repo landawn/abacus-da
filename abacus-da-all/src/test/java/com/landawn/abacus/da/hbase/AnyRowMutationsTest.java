@@ -248,4 +248,16 @@ public class AnyRowMutationsTest extends TestBase {
         AnyRowMutations rm = AnyRowMutations.of("row");
         assertSame(rm.val(), rm.val());
     }
+
+    // ---- 2026-10-19 sliceP ----
+
+    /** Pins the add(List) doc: a mismatched row key anywhere in the list rejects the whole list (no partial add). */
+    @Test
+    public void testAddList_mismatchedRowKey_addsNothing_sliceP() {
+        AnyRowMutations rm = AnyRowMutations.of("row-a");
+        Put ok = new Put(Bytes.toBytes("row-a")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        Put bad = new Put(Bytes.toBytes("row-b")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        assertThrows(IOException.class, () -> rm.add(Arrays.asList(ok, bad)));
+        assertEquals(0, rm.val().getMutations().size());
+    }
 }

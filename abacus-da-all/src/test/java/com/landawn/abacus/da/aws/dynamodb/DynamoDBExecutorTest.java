@@ -1045,4 +1045,277 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
         assertEquals("value", props.get("only"));
     }
 
+    // ---- 2026-10-19 sliceA ----
+
+    @Test
+    public void testList_ConvertsEveryPageInOrderIncludingItemlessPages() {
+        // list(QueryRequest, Class) converts pages straight into one result list; a page without an Items member
+        // (null, as for Select=COUNT) contributes nothing and the client's first response is not modified.
+        final QueryResult page1 = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))))
+                .withLastEvaluatedKey(Map.of("id", new AttributeValue().withS("1")));
+        final QueryResult page2 = new QueryResult().withLastEvaluatedKey(Map.of("id", new AttributeValue().withS("1b")));
+        final QueryResult page3 = new QueryResult()
+                .withItems(List.of(Map.of("id", new AttributeValue().withS("2")), Map.of("id", new AttributeValue().withS("3"))));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(page1, page2, page3);
+
+        final List<TestEntity> result = executor.list(new QueryRequest().withTableName("TestTable"), TestEntity.class);
+
+        assertEquals(List.of("1", "2", "3"), result.stream().map(TestEntity::getId).toList());
+        assertEquals(1, page1.getItems().size());
+        result.add(new TestEntity()); // the aggregated result stays mutable
+        verify(mockDynamoDBClient, times(3)).query(any(QueryRequest.class));
+    }
+
+    @Test
+    public void testList_SinglePageWithoutItemsIsEmptyAndMutable() {
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(new QueryResult());
+
+        final List<Map<String, Object>> result = executor.list(new QueryRequest().withTableName("TestTable"));
+
+        assertTrue(result.isEmpty());
+        result.add(new HashMap<>());
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testToItemAndToUpdateItem_MapInputKeepsOrderBeyondDefaultCapacity() {
+        final Map<String, Object> source = new LinkedHashMap<>();
+
+        for (int i = 20; i > 0; i--) {
+            source.put("attr" + i, i);
+        }
+
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(source);
+        final Map<String, AttributeValueUpdate> updates = DynamoDBExecutor.toUpdateItem(source, NamingPolicy.SCREAMING_SNAKE_CASE);
+
+        assertEquals(new ArrayList<>(source.keySet()), new ArrayList<>(item.keySet()));
+        assertEquals("20", item.get("attr20").getN());
+        assertEquals(20, updates.size());
+        assertEquals("ATTR1", new ArrayList<>(updates.keySet()).get(19));
+        item.put("extra", new AttributeValue().withS("x")); // results stay mutable
+        assertEquals(21, item.size());
+    }
+
+    @Test
+    public void testToItem_BeanSkipsNullPropertiesAndAppliesNamingPolicy() {
+        final TestEntity entity = new TestEntity();
+        entity.setId("1");
+        entity.setFirstName("Ann");
+
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(entity, NamingPolicy.SNAKE_CASE);
+
+        assertEquals(List.of("id", "first_name"), new ArrayList<>(item.keySet()));
+        assertEquals("Ann", item.get("first_name").getS());
+    }
+
+    @Test
+    public void testToMap_NestedMapKeepsEntryOrderAndIsMutable() {
+        final Map<String, AttributeValue> nested = new LinkedHashMap<>();
+
+        for (int i = 15; i > 0; i--) {
+            nested.put("k" + i, new AttributeValue().withN(String.valueOf(i)));
+        }
+
+        final Map<String, Object> map = DynamoDBExecutor.toMap(Map.of("nested", new AttributeValue().withM(nested)));
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> converted = (Map<String, Object>) map.get("nested");
+
+        assertEquals(new ArrayList<>(nested.keySet()), new ArrayList<>(converted.keySet()));
+        assertEquals("15", converted.get("k15"));
+        converted.put("added", 1);
+        assertEquals(15, nested.size());
+    }
+
+    @Test
+    public void testToAttributeValue_RejectsNonFiniteValuesOfEveryNumericType() {
+        final java.util.concurrent.atomic.DoubleAdder adder = new java.util.concurrent.atomic.DoubleAdder();
+        adder.add(Double.NEGATIVE_INFINITY);
+        final List<Object> nonFinite = List.of(Double.NaN, Float.POSITIVE_INFINITY, com.landawn.abacus.util.MutableDouble.of(Double.NaN),
+                com.landawn.abacus.util.MutableFloat.of(Float.POSITIVE_INFINITY), adder);
+
+        // HEAD only checked Double/Float, so the mutable and adder types were written as N=NaN / N=Infinity.
+        org.junit.jupiter.api.Assertions.assertAll(nonFinite.stream().<org.junit.jupiter.api.function.Executable> map(value -> () -> {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(value));
+            assertTrue(e.getMessage().startsWith("DynamoDB numbers must be finite"), e.getMessage());
+            assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("k", value));
+            assertThrows(IllegalArgumentException.class, () -> Filters.eq("k", value));
+        }).toList());
+
+        assertEquals("1.5", DynamoDBExecutor.toAttributeValue(com.landawn.abacus.util.MutableDouble.of(1.5)).getN());
+        assertEquals("-2.5", DynamoDBExecutor.toAttributeValue(-2.5d).getN());
+    }
+
+    @Test
+    public void testExtractData_ColumnsAreUnionOfSelectedRowsWithNullCells() {
+        // Map.of iteration order is unspecified, so the multi-key row uses a LinkedHashMap to make the column order deterministic.
+        final Map<String, AttributeValue> lastItem = new java.util.LinkedHashMap<>();
+        lastItem.put("a", new AttributeValue().withS("3"));
+        lastItem.put("c", new AttributeValue().withBOOL(true));
+        final List<Map<String, AttributeValue>> items = List.of(Map.of("a", new AttributeValue().withS("1")), Map.of("b", new AttributeValue().withN("2")),
+                lastItem);
+
+        final Dataset ds = DynamoDBExecutor.extractData(new QueryResult().withItems(items), 1, 2);
+
+        assertEquals(List.of("b", "a", "c"), ds.columnNames());
+        assertEquals(2, ds.size());
+        assertEquals(java.util.Arrays.asList("2", null), ds.getColumn("b"));
+        assertEquals(java.util.Arrays.asList(null, "3"), ds.getColumn("a"));
+        assertEquals(java.util.Arrays.asList(null, true), ds.getColumn("c"));
+        ds.addColumn("d", java.util.Arrays.asList(1, 2)); // the Dataset owns mutable storage
+        assertEquals(4, ds.columnCount());
+    }
+
+    // ---- 2026-10-19 ddbcopy ----
+
+    public static class DdbCopyBean {
+        private List<Object> objs;
+        @SuppressWarnings("rawtypes")
+        private java.util.Collection raw;
+        private Map<String, Object> props;
+
+        public List<Object> getObjs() {
+            return objs;
+        }
+
+        public void setObjs(final List<Object> objs) {
+            this.objs = objs;
+        }
+
+        @SuppressWarnings("rawtypes")
+        public java.util.Collection getRaw() {
+            return raw;
+        }
+
+        @SuppressWarnings("rawtypes")
+        public void setRaw(final java.util.Collection raw) {
+            this.raw = raw;
+        }
+
+        public Map<String, Object> getProps() {
+            return props;
+        }
+
+        public void setProps(final Map<String, Object> props) {
+            this.props = props;
+        }
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testToValue_SetListAndEmptyContainerValuesAreFreshMutableCopies() {
+        // HEAD returned the AttributeValue's own SS/NS/BS list and its own empty L/M, so mutating a converted value
+        // mutated the source item (and every other entity/map converted from it).
+        final AttributeValue ss = new AttributeValue().withSS("a", "b");
+        final AttributeValue ns = new AttributeValue().withNS("1", "2.5");
+        final AttributeValue bs = new AttributeValue().withBS(ByteBuffer.wrap(new byte[] { 1 }));
+        final AttributeValue emptyL = new AttributeValue().withL(new ArrayList<>());
+        final AttributeValue emptyM = new AttributeValue().withM(new HashMap<>());
+        final AttributeValue emptySS = new AttributeValue().withSS(new ArrayList<String>());
+        final AttributeValue nestedL = new AttributeValue().withL(new AttributeValue().withSS("n"));
+        final AttributeValue nestedM = new AttributeValue().withM(Map.of("k", new AttributeValue().withNS("7")));
+
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("ss", ss);
+        item.put("ns", ns);
+        item.put("bs", bs);
+        item.put("emptyL", emptyL);
+        item.put("emptyM", emptyM);
+        item.put("emptySS", emptySS);
+        item.put("nestedL", nestedL);
+        item.put("nestedM", nestedM);
+
+        final Map<String, Object> map = DynamoDBExecutor.toMap(item);
+        ((List) map.get("ss")).add("x");
+        ((List) map.get("ns")).add("9");
+        ((List) map.get("bs")).add(ByteBuffer.wrap(new byte[] { 2 }));
+        ((List) map.get("emptyL")).add("x");
+        ((Map) map.get("emptyM")).put("x", 1);
+        ((List) map.get("emptySS")).add("x");
+        ((List) ((List) map.get("nestedL")).get(0)).add("x");
+        ((List) ((Map) map.get("nestedM")).get("k")).add("8");
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals(List.of("a", "b"), ss.getSS()), //
+                () -> assertEquals(List.of("1", "2.5"), ns.getNS()), // NS elements stay number text
+                () -> assertEquals(List.of("1", "2.5", "9"), map.get("ns")), //
+                () -> assertEquals(1, bs.getBS().size()), //
+                () -> assertEquals(ByteBuffer.wrap(new byte[] { 1 }), ((List) map.get("bs")).get(0)), //
+                () -> assertTrue(emptyL.getL().isEmpty()), //
+                () -> assertTrue(emptyM.getM().isEmpty()), //
+                () -> assertTrue(emptySS.getSS().isEmpty()), //
+                () -> assertEquals(List.of("n"), nestedL.getL().get(0).getSS()), //
+                () -> assertEquals(List.of("7"), nestedM.getM().get("k").getNS()));
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testToEntity_EntitiesMappedFromSameItemDoNotShareCollections() {
+        final AttributeValue ss = new AttributeValue().withSS("a", "b");
+        final AttributeValue ns = new AttributeValue().withNS("1");
+        final AttributeValue emptyM = new AttributeValue().withM(new HashMap<>());
+        final Map<String, AttributeValue> item = new HashMap<>();
+        item.put("objs", ss);
+        item.put("raw", ns);
+        item.put("props", emptyM);
+
+        final DdbCopyBean first = DynamoDBExecutor.toEntity(item, DdbCopyBean.class);
+        final DdbCopyBean second = DynamoDBExecutor.toEntity(item, DdbCopyBean.class);
+        first.getObjs().add("x");
+        first.getRaw().add("2");
+        first.getProps().put("x", 1);
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals(List.of("a", "b", "x"), first.getObjs()), //
+                () -> assertEquals(List.of("a", "b"), second.getObjs()), //
+                () -> assertEquals(List.of("a", "b"), ss.getSS()), //
+                () -> assertEquals(List.of("1"), new ArrayList<>(second.getRaw())), //
+                () -> assertEquals(List.of("1"), ns.getNS()), //
+                () -> assertTrue(second.getProps().isEmpty()), //
+                () -> assertTrue(emptyM.getM().isEmpty()));
+    }
+
+    // ---- 2026-10-20 fixC ----
+
+    /**
+     * list(QueryRequest, Class) converts each response page directly instead of through toList(QueryResult, Class). A null
+     * response, which only an un-stubbed client produces, must keep the former toList behaviour: an empty (mutable) list, and
+     * no further page is requested.
+     */
+    @Test
+    public void testListWithClass_NullResponseIsEmptyAndRequestsNoFurtherPage_fixC() {
+        QueryRequest req = new QueryRequest().withTableName("TestTable");
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(null);
+
+        List<TestEntity> result = executor.list(req, TestEntity.class);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        result.add(new TestEntity());
+        assertEquals(1, result.size());
+        verify(mockDynamoDBClient, times(1)).query(any(QueryRequest.class));
+    }
+
+    // ---- 2026-10-21 fixP ----
+
+    /**
+     * A null LATER page (page 1 has rows and a LastEvaluatedKey, page 2 is null) must end the pagination the same way a null
+     * first page does: the result holds page 1's rows, exactly two requests are made and nothing is thrown (the loop used to
+     * dereference the null page and fail with a NullPointerException).
+     */
+    @Test
+    public void testListWithClass_NullLaterPageEndsPaginationWithRowsSoFar_fixP() {
+        QueryRequest req = new QueryRequest().withTableName("TestTable");
+        QueryResult page1 = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1")), Map.of("id", new AttributeValue().withS("2"))))
+                .withLastEvaluatedKey(Map.of("id", new AttributeValue().withS("2")));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(page1, (QueryResult) null);
+
+        List<TestEntity> result = executor.list(req, TestEntity.class);
+
+        assertEquals(List.of("1", "2"), result.stream().map(TestEntity::getId).toList());
+        ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDBClient, times(2)).query(captor.capture());
+        assertNull(captor.getAllValues().get(0).getExclusiveStartKey());
+        assertEquals("2", captor.getAllValues().get(1).getExclusiveStartKey().get("id").getS());
+    }
+
 }

@@ -59,8 +59,9 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *       (subject to the column family's {@code VERSIONS} setting, which controls how many
  *       historical versions HBase retains).</li>
  *   <li>{@code addColumn(family, qualifier, value)} variants without an explicit timestamp use the
- *       Put's default timestamp — the timestamp supplied at construction, or the server's current
- *       time when none was supplied. Do not queue the same cell coordinate more than once and rely
+ *       Put's default timestamp at the time of the call — the timestamp supplied at construction or
+ *       last set via {@link #setTimestamp(long)}, or the server's current time when none was
+ *       supplied. Do not queue the same cell coordinate more than once and rely
  *       on duplicate-resolution order; use distinct timestamps when multiple versions are intended.</li>
  * </ul>
  * <p>In short, repeated {@code addColumn} calls do <i>not</i> concatenate or merge values; for
@@ -313,7 +314,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param putToCopy the existing HBase Put to copy
      * @throws IllegalArgumentException if {@code putToCopy} is {@code null}
-     * @throws NullPointerException if {@code putToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code putToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      */
     AnyPut(final Put putToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Put(N.checkArgNotNull(putToCopy, cs.putToCopy)));
@@ -652,7 +654,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @return a new AnyPut instance with independent collection structure; contained
      *         {@link Cell} instances are shared with the specified put
      * @throws IllegalArgumentException if {@code putToCopy} is {@code null}
-     * @throws NullPointerException if {@code putToCopy}'s mutable family-cell map contains a null cell list
+     * @throws NullPointerException if {@code putToCopy}'s mutable family-cell map contains a null cell list, or it carries an
+     *         attribute with a {@code null} name
      * @see Put
      * @see #val()
      */
@@ -1210,7 +1213,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * {@link HBaseExecutor}'s standard conversion mechanisms. The value can be any supported Java
      * type — {@link String}, {@link Integer}, {@link Long}, {@link java.util.Date}, byte arrays, etc.</p>
      *
-     * <p>This variant uses the timestamp the {@link Put} was constructed with (or
+     * <p>This variant uses the Put's default timestamp at the time of the call — the one it was
+     * constructed with or last set via {@link #setTimestamp(long)} (or
      * {@code HConstants.LATEST_TIMESTAMP} when none was supplied, in which case the region server
      * stamps the cell when the mutation is applied). Every call appends a cell to this client-side
      * Put, even when the family and qualifier repeat. To create intentional multiple versions of
@@ -1233,7 +1237,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param family the column family name; must not be null or empty (not validated
      *               client-side; an invalid family causes the put to fail when it is executed
-     *               against the table)
+     *               against the table — in a single put, a {@code null} family already fails while
+     *               HBase builds the request, with a {@code NullPointerException}; a batch put, whose
+     *               cells travel in the RPC cell block, sends it as an empty family with the client's
+     *               default {@code KeyValueCodec} — a custom {@code hbase.client.rpc.codec} may differ)
      * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param value the value to store; automatically converted to bytes ({@code null} is permitted
      *              and stored as an empty value)
@@ -1274,7 +1281,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param family the column family name; must not be null or empty (not validated
      *               client-side; an invalid family causes the put to fail when it is executed
-     *               against the table)
+     *               against the table — in a single put, a {@code null} family already fails while
+     *               HBase builds the request, with a {@code NullPointerException}; a batch put, whose
+     *               cells travel in the RPC cell block, sends it as an empty family with the client's
+     *               default {@code KeyValueCodec} — a custom {@code hbase.client.rpc.codec} may differ)
      * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
      * @param value the value to store; automatically converted to bytes ({@code null} is permitted)
@@ -1299,7 +1309,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Useful in performance-critical paths or when working with pre-encoded column identifiers and
      * values.</p>
      *
-     * <p>This variant uses the timestamp the Put was constructed with (or
+     * <p>This variant uses the Put's default timestamp at the time of the call — the one it was
+     * constructed with or last set via {@link #setTimestamp(long)} (or
      * {@code HConstants.LATEST_TIMESTAMP} if none was supplied). Successive calls with the same
      * {@code (family, qualifier)} still queue separate cells in the Put; use
      * {@link #addColumn(byte[], byte[], long, byte[])} with distinct timestamps to write
@@ -1320,7 +1331,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param family the column family name as a byte array; must not be null or empty (not validated
      *               client-side; an invalid family causes the put to fail when it is executed
-     *               against the table)
+     *               against the table — in a single put, a {@code null} family already fails while
+     *               HBase builds the request, with a {@code NullPointerException}; a batch put, whose
+     *               cells travel in the RPC cell block, sends it as an empty family with the client's
+     *               default {@code KeyValueCodec} — a custom {@code hbase.client.rpc.codec} may differ)
      * @param qualifier the column qualifier as a byte array; may be {@code null} to denote an
      *                  empty qualifier
      * @param value the value as a byte array; may be {@code null}
@@ -1359,7 +1373,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param family the column family name as a byte array; must not be null or empty (not validated
      *               client-side; an invalid family causes the put to fail when it is executed
-     *               against the table)
+     *               against the table — in a single put, a {@code null} family already fails while
+     *               HBase builds the request, with a {@code NullPointerException}; a batch put, whose
+     *               cells travel in the RPC cell block, sends it as an empty family with the client's
+     *               default {@code KeyValueCodec} — a custom {@code hbase.client.rpc.codec} may differ)
      * @param qualifier the column qualifier as a byte array; may be {@code null}
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
      * @param value the value as a byte array; may be {@code null}
@@ -1401,7 +1418,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param family the column family name as a byte array; must not be null or empty (not validated
      *               client-side; an invalid family causes the put to fail when it is executed
-     *               against the table)
+     *               against the table — in a single put, a {@code null} family already fails while
+     *               HBase builds the request, with a {@code NullPointerException}; a batch put, whose
+     *               cells travel in the RPC cell block, sends it as an empty family with the client's
+     *               default {@code KeyValueCodec} — a custom {@code hbase.client.rpc.codec} may differ)
      * @param qualifier the column qualifier as a ByteBuffer; may be null for an empty qualifier;
      *                  a non-null buffer is consumed
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative

@@ -120,5 +120,5 @@ class ParsedCqlPerformanceRegressionTest {
         assertNotSame(first, ParsedCql.parse(query));
         assertEquals(8_001, first.parameterCount());
         assertEquals("last", first.namedParameters().get(8_000));
-    } 
+    }
 }

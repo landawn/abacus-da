@@ -261,6 +261,93 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
     }
 
+    // ---- 2026-10-19 sliceE ----
+
+    /**
+     * Regression: SCREAMING_SNAKE_CASE upper-cases the item alias of a bracket property accessor ({@code c['x']} renders as
+     * {@code C['x']}), and the qualification pass then turned it into the property path {@code c.C['x']}, which silently matches
+     * nothing. abacus-query 4.9.5 does this for single- and double-quoted subscripts alike.
+     */
+    @Test
+    void screamingSnakeBracketAccessorKeepsTheItemAlias() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT * FROM ITEM c WHERE c['bonusPoints'] = 1",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr("c['bonusPoints'] = 1")).getQueryText()),
+                () -> assertEquals("SELECT * FROM ITEM c WHERE IS_NULL(c[\"first name\"])",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr("c[\"first name\"] IS NULL")).getQueryText()),
+                () -> assertEquals("SELECT * FROM ITEM c WHERE IS_DEFINED(c['x']) AND c ['y'] = 1 AND IS_NULL(c[0])",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr("IS_DEFINED(c['x']) AND c ['y'] = 1 AND c[0] IS NULL")).getQueryText()),
+                () -> assertEquals("SELECT * FROM ITEM c WHERE c['a']['b'] = 1 OR c.A['b'] = 2",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr("c['a']['b'] = 1 OR c.a['b'] = 2")).getQueryText()),
+                () -> assertEquals("SELECT * FROM ITEM c WHERE c.ID > c['bonusPoints'] * 2",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.gt("id", Filters.expr("c['bonusPoints'] * 2"))).getQueryText()));
+    }
+
+    /** The alias restoration is limited to an outer-scope bracket accessor under SCREAMING_SNAKE_CASE. */
+    @Test
+    void bracketAliasRestorationLeavesSubqueryAliasesPropertiesAndOtherPoliciesAlone() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                // C is the subquery's own alias here, not the outer item.
+                () -> assertEquals("SELECT * FROM ITEM c WHERE EXISTS (SELECT VALUE C FROM C IN c.children WHERE C['x'] = 1)",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.exists(Filters.subQuery("SELECT VALUE C FROM C IN c.children WHERE C['x'] = 1")))
+                                .getQueryText()),
+                // A property named c that is not followed by a subscript is still a property.
+                () -> assertEquals("SELECT * FROM ITEM c WHERE c.C = @p0", capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.eq("c", 1)).getQueryText()),
+                () -> assertEquals("SELECT * FROM item c WHERE c['bonusPoints'] = 1",
+                        capture(NamingPolicy.SNAKE_CASE, Filters.expr("c['bonusPoints'] = 1")).getQueryText()),
+                () -> assertEquals("SELECT * FROM item c WHERE c['bonusPoints'] = 1",
+                        capture(NamingPolicy.CAMEL_CASE, Filters.expr("c['bonusPoints'] = 1")).getQueryText()));
+    }
+
+    /**
+     * Pins the abacus-query 4.9.5 limitation documented on {@code streamItems(Condition, Class)}: names after a backslash-escaped
+     * quote in the same raw expression keep their Java spelling, while a separate expression is converted normally. Update the
+     * Javadoc note if this starts failing because the builder reads Cosmos backslash escapes.
+     */
+    @Test
+    void namesAfterBackslashEscapedQuoteInOneExpressionAreNotConverted() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT * FROM item c WHERE c.name = 'O\\'Brien' AND c.bonusPoints > 1",
+                        capture(NamingPolicy.SNAKE_CASE, Filters.expr("name = 'O\\'Brien' AND bonusPoints > 1")).getQueryText()),
+                () -> assertEquals("SELECT * FROM item c WHERE (c.name = 'O\\'Brien') AND (c.bonus_points > 1)",
+                        capture(NamingPolicy.SNAKE_CASE, Filters.and(Filters.expr("name = 'O\\'Brien'"), Filters.expr("bonusPoints > 1"))).getQueryText()));
+    }
+
+    // ---- 2026-10-20 fixC ----
+
+    /** A bracket accessor in function-argument position is an outer-scope accessor too: the alias is restored there as well. */
+    @Test
+    void screamingSnakeBracketAccessorInFunctionArgumentKeepsTheItemAlias() {
+        assertEquals("SELECT * FROM ITEM c WHERE ARRAY_CONTAINS(c['tags'], 'x')",
+                capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr("ARRAY_CONTAINS(c['tags'], 'x')")).getQueryText());
+        assertEquals("SELECT * FROM ITEM c WHERE (ARRAY_CONTAINS(c['tags'], 'x')) AND (c.ID = @p0)",
+                capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.and(Filters.expr("ARRAY_CONTAINS(c['tags'], 'x')"), Filters.eq("id", "root")))
+                        .getQueryText());
+    }
+
+    /**
+     * Pins the limitation documented on {@code streamItems(Condition, Class)}: under SCREAMING_SNAKE_CASE the SQL builder
+     * upper-cases every identifier of a {@code Filters.expr(...)}-built subquery (its own alias and paths included), and the
+     * alias restoration is off inside a subquery (where {@code C} may be the subquery's own alias), so an outer-item bracket
+     * accessor there still renders as {@code C['y']}. {@code Filters.subQuery(...)} keeps the literal SQL and is the supported
+     * form; the surrounding condition's own accessors are still restored. Update the Javadoc note if the first assertion starts
+     * failing.
+     */
+    @Test
+    void screamingSnakeBracketAccessorInsideExprSubqueryIsNotRestored() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT * FROM ITEM c WHERE EXISTS(SELECT VALUE T FROM T IN c.CHILDREN WHERE T.X = C['y'])",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr("EXISTS(SELECT VALUE t FROM t IN c.children WHERE t.x = c['y'])"))
+                                .getQueryText()),
+                () -> assertEquals("SELECT * FROM ITEM c WHERE EXISTS (SELECT VALUE t FROM t IN c.children WHERE t.x = c['y'])",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.exists(Filters.subQuery("SELECT VALUE t FROM t IN c.children WHERE t.x = c['y']")))
+                                .getQueryText()),
+                () -> assertEquals("SELECT * FROM ITEM c WHERE (EXISTS (SELECT VALUE t FROM t IN c.children WHERE t.x = c['y'])) AND (c['z'] = 1)",
+                        capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters
+                                .and(Filters.exists(Filters.subQuery("SELECT VALUE t FROM t IN c.children WHERE t.x = c['y']")), Filters.expr("c['z'] = 1")))
+                                        .getQueryText()));
+    }
+
     private SqlQuerySpec capture(final NamingPolicy policy, final Condition condition) {
         new CosmosContainerExecutor(container, policy).streamItems(condition, Item.class).toList();
         return query.getValue();

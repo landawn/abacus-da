@@ -493,9 +493,10 @@ public class Neo4jExecutorTest extends TestBase {
 
         executor.run(s -> s.beginTransaction());
 
-        // A session whose transaction could not be rolled back must not be pooled (or even
-        // cleared); the next borrower gets a fresh session instead.
-        verify(mockSession, never()).clear();
+        // A session whose transaction could not be rolled back must not be pooled; it is still
+        // cleared before being discarded (releases its mapping context), and the next borrower
+        // gets a fresh session instead.
+        verify(mockSession).clear();
         executor.run(s -> {
         });
         verify(mockSessionFactory, times(2)).openSession();

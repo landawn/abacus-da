@@ -206,6 +206,96 @@ public class AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest {
         verify(expected).close();
     }
 
+    // ---- 2026-10-19 sliceR ----
+
+    @Test
+    public void testCancelWithInterruptClosesLateStreamWithInterruptClearedAndThenRestoresIt() throws Exception {
+        final CountDownLatch syncCallStarted = new CountDownLatch(1);
+        final CountDownLatch allowSyncCallToReturn = new CountDownLatch(1);
+        final AtomicReference<Boolean> interruptedDuringClose = new AtomicReference<>();
+        final AtomicReference<Boolean> interruptedAfterTask = new AtomicReference<>();
+        final Stream<Document> late = Stream.of(List.of(new Document())).onClose(() -> interruptedDuringClose.set(Thread.currentThread().isInterrupted()));
+        final MongoCollectionExecutor sync = mock(MongoCollectionExecutor.class, invocation -> {
+            syncCallStarted.countDown();
+            boolean interrupted = false;
+
+            while (true) {
+                try {
+                    if (!allowSyncCallToReturn.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("Timed out waiting to release the synchronous stream call");
+                    }
+
+                    break;
+                } catch (final InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+
+            // Like a driver call whose cursor was already open when cancel(true) arrived: the result is
+            // still produced and the worker's interrupt flag is still set.
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+
+            return late;
+        });
+        final AtomicReference<Runnable> submitted = new AtomicReference<>();
+        final AsyncMongoCollectionExecutor async = new AsyncMongoCollectionExecutor(sync, new AsyncExecutor(submitted::set));
+        final ContinuableFuture<Stream<Document>> future = async.stream(new Document());
+        final Thread worker = new Thread(() -> {
+            submitted.get().run();
+            interruptedAfterTask.set(Thread.currentThread().isInterrupted());
+        }, "async-mongo-stream-interrupt-test");
+        worker.setDaemon(true);
+        final boolean cancelled;
+
+        try {
+            worker.start();
+            Assertions.assertTrue(syncCallStarted.await(5, TimeUnit.SECONDS), "Synchronous stream call did not start");
+            cancelled = future.cancel(true);
+        } finally {
+            allowSyncCallToReturn.countDown();
+        }
+
+        worker.join(5000);
+        Assertions.assertFalse(worker.isAlive(), "Submitted stream task did not finish");
+        Assertions.assertAll(() -> Assertions.assertTrue(cancelled), () -> Assertions.assertThrows(CancellationException.class, future::get),
+                // An interrupted MongoDB cursor close returns normally without sending killCursors (server cursor leaks).
+                () -> Assertions.assertEquals(Boolean.FALSE, interruptedDuringClose.get(), "late stream must be closed with the interrupt cleared"),
+                () -> Assertions.assertEquals(Boolean.TRUE, interruptedAfterTask.get(), "the cancellation interrupt must be restored after close"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testCancelFromInterruptedThreadClosesPublishedStreamWithInterruptClearedAndThenRestoresIt() throws Exception {
+        final AtomicReference<Boolean> interruptedDuringClose = new AtomicReference<>();
+        final Stream<Document> published = Stream.of(List.of(new Document())).onClose(() -> interruptedDuringClose.set(Thread.currentThread().isInterrupted()));
+        final Class<?> futureClass = Class.forName(AsyncMongoCollectionExecutor.class.getName() + "$CloseOnCancelFuture");
+        final var constructor = futureClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        final Future<Stream<Document>> future = (Future<Stream<Document>>) constructor.newInstance();
+        final Method setDelegate = futureClass.getDeclaredMethod("setDelegate", Future.class);
+        final Method onResult = futureClass.getDeclaredMethod("onResult", Stream.class);
+        setDelegate.setAccessible(true);
+        onResult.setAccessible(true);
+        setDelegate.invoke(future, new FutureTask<>(() -> published));
+        onResult.invoke(future, published);
+
+        final boolean cancelled;
+        final boolean interruptedAfterCancel;
+
+        Thread.currentThread().interrupt();
+
+        try {
+            cancelled = future.cancel(false);
+        } finally {
+            interruptedAfterCancel = Thread.interrupted();
+        }
+
+        Assertions.assertAll(() -> Assertions.assertTrue(cancelled), () -> Assertions.assertEquals(Boolean.FALSE, interruptedDuringClose.get()),
+                () -> Assertions.assertTrue(interruptedAfterCancel, "the caller's interrupt status must be preserved"));
+    }
+
     private static Object[] argumentsFor(final Method method) {
         return Arrays.stream(method.getParameterTypes()).map(AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest::argumentFor).toArray();
     }

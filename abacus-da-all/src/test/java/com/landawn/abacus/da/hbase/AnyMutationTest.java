@@ -418,6 +418,16 @@ public class AnyMutationTest extends TestBase {
         assertFalse(nonEmpty.isEmpty());
     }
 
+    // ---- 2026-10-19 sliceP ----
+
+    /** Pins the setCellVisibility doc: a CellVisibility with a null label expression fails with NPE during serialization. */
+    @Test
+    public void testSetCellVisibility_nullExpressionText_throwsNpe_sliceP() {
+        AnyPut put = AnyPut.of("row");
+        assertThrows(NullPointerException.class, () -> put.setCellVisibility(new CellVisibility(null)));
+        assertNull(put.getAttribute(org.apache.hadoop.hbase.security.visibility.VisibilityConstants.VISIBILITY_LABELS_ATTR_KEY));
+    }
+
     private static final class TestMutation extends AnyMutation<TestMutation> {
         protected TestMutation(final org.apache.hadoop.hbase.client.Mutation mutation) {
             super(mutation);

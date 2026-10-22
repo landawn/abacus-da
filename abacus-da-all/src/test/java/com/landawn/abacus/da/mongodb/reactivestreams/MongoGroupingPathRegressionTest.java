@@ -29,7 +29,9 @@ public class MongoGroupingPathRegressionTest extends TestBase {
 
         executor.groupBy(List.of("address.city", "address.zip", "status", "address.city", "status"));
 
-        final Document key = new Document("address", new Document("city", "$address.city").append("zip", "$address.zip")).append("status", "$status");
+        // Each leaf is wrapped in $ifNull (2026-10-19 sliceT): a missing field then joins the null-key group.
+        final Document key = new Document("address", new Document("city", ifNull("$address.city")).append("zip", ifNull("$address.zip"))).append("status",
+                ifNull("$status"));
         assertEquals(List.of(new Document("$group", new Document("_id", key))), pipeline.get());
 
         executor.groupByAndCount(List.of("address.city", "address.zip", "status"), Map.class);
@@ -95,7 +97,7 @@ public class MongoGroupingPathRegressionTest extends TestBase {
         assertEquals(List.of(new Document("$group", new Document("_id", "$count.value").append("count", new Document("$sum", 1)))), pipeline.get());
         // The multi-field overload is exempt with Document rows too: the composite key stays under _id (no $project stage).
         executor.groupByAndCount(List.of("count"), Document.class);
-        assertEquals(List.of(new Document("$group", new Document("_id", new Document("count", "$count")).append("count", new Document("$sum", 1)))),
+        assertEquals(List.of(new Document("$group", new Document("_id", new Document("count", ifNull("$count"))).append("count", new Document("$sum", 1)))),
                 pipeline.get());
         executor.groupByAndCount("counter.value", Map.class);
         assertEquals("$_id", ((Document) pipeline.get().get(1)).get("$project", Document.class).get("counter.value"));
@@ -151,6 +153,10 @@ public class MongoGroupingPathRegressionTest extends TestBase {
         final Document id = new Document("nested", new Document("part", "$_id._id.nested.part").append("other", "$_id._id.nested.other"));
         assertEquals(new Document("_id", new Document("$mergeObjects", List.of(id))).append("status", "$_id.status").append("count", 1),
                 ((Document) pipeline.get().get(1)).get("$project"));
+    }
+
+    private static Document ifNull(final String fieldPath) {
+        return new Document("$ifNull", Arrays.asList(fieldPath, null));
     }
 
     private static MongoCollectionExecutor executor(final AtomicReference<List<? extends Bson>> pipeline) {

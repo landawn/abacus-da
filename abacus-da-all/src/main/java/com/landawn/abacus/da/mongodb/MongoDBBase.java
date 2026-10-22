@@ -49,6 +49,7 @@ import org.bson.BsonDocumentReader;
 import org.bson.BsonInvalidOperationException;
 import org.bson.BsonReader;
 import org.bson.BsonType;
+import org.bson.BsonValue;
 import org.bson.BsonWriter;
 import org.bson.Document;
 import org.bson.UuidRepresentation;
@@ -64,10 +65,11 @@ import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.configuration.CodecRegistry;
 import org.bson.conversions.Bson;
 import org.bson.types.Binary;
+import org.bson.types.Code;
 import org.bson.types.ObjectId;
+import org.bson.types.Symbol;
 
 import com.landawn.abacus.annotation.Internal;
-import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.exception.UncheckedIOException;
@@ -147,6 +149,18 @@ import com.mongodb.client.MongoIterable;
  *   <li>Java collections &rarr; BSON arrays</li>
  *   <li>Java Maps/POJOs &rarr; BSON documents</li>
  * </ul>
+ *
+ * <h3>Boolean Conversion:</h3>
+ * <p>A stored value read into a {@code Boolean}/{@code boolean} entity property or queried as a {@code Boolean} value
+ * converts only from a BSON boolean, an {@code Integer} (int32) {@code 1} (true), {@code 0} or {@code -1} (false) &mdash;
+ * BSON has no int16/int8 type, but a {@code Short} or {@code Byte} in an in-memory Map or bean row behaves the same &mdash;,
+ * or the text {@code 1}/{@code 0}/{@code -1}/{@code y}/{@code n}/{@code true}/{@code false} (any case).
+ * Leading and trailing whitespace around such text is ignored ({@code " Y "} is {@code true}), and an empty or
+ * whitespace-only string converts to {@code false} &mdash; for a {@code Boolean} target as well as a primitive one, so it
+ * is neither {@code null} nor an error. Any other numeric type or value (an int64, a double &mdash; mongosh stores
+ * {@code {active: 1}} as a double &mdash;, a {@code Decimal128}, an int32 {@code 2}) and any other text (such as
+ * {@code "yes"}, {@code "2"} or {@code "1.0"}) throws {@link IllegalArgumentException}; when mapping an entity, the whole
+ * document fails.</p>
  *
  * @see Document
  * @see ObjectId
@@ -270,7 +284,11 @@ public abstract class MongoDBBase {
      * be removed without notice.</p>
      *
      * <p>MongoDB rejects a literal dotted key in a {@code $group} expression object, so
-     * {@code "address.city"} must be expressed as {@code {address: {city: "$address.city"}}}.
+     * {@code "address.city"} must be expressed as {@code {address: {city: ...}}}. Each leaf is
+     * {@code {$ifNull: ["$address.city", null]}} rather than a bare {@code "$address.city"}: in an expression object the
+     * server omits a field missing from the document but keeps an explicit {@code null}, which would split documents
+     * without the field and documents holding {@code null} into two groups; with {@code $ifNull} both form the single
+     * {@code null}-key group, as with a single-field {@code _id: "$field"}.
      * Ancestor/descendant paths cannot share this shape and are rejected, but repeated identical
      * paths are harmless. This helper is shared by the multi-field grouping overloads of the sync
      * and reactive streams executors.</p>
@@ -278,7 +296,7 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Document groupFields = new Document();
-     * MongoDBBase.appendGroupField(groupFields, "address.city"); // {address: {city: "$address.city"}}
+     * MongoDBBase.appendGroupField(groupFields, "address.city"); // {address: {city: {$ifNull: ["$address.city", null]}}}
      * MongoDBBase.appendGroupField(groupFields, "address");      // throws IllegalArgumentException (overlapping paths)
      * }</pre>
      *
@@ -299,21 +317,35 @@ public abstract class MongoDBBase {
             final Object existing = parent.get(path[i]);
 
             if (i == path.length - 1) {
-                if (existing instanceof Document) {
+                if (existing instanceof Document && !isGroupFieldLeaf(existing)) {
                     throw new IllegalArgumentException("Overlapping group field paths: " + fieldName);
                 }
 
-                parent.put(path[i], "$" + fieldName);
+                // In a $group _id expression object the server omits a field that is missing from the document, but keeps an
+                // explicit null: a bare "$a" put {b: "z"} (a missing) and {a: null, b: "z"} into different groups, whereas a
+                // single-field _id: "$a" merges them into the one null-key group. $ifNull turns "missing" into null, so every
+                // grouping overload yields that single null-key group.
+                parent.put(path[i], new Document(_$IF_NULL, Arrays.asList("$" + fieldName, null)));
             } else if (existing == null) {
                 final Document child = new Document();
                 parent.put(path[i], child);
                 parent = child;
-            } else if (existing instanceof final Document child) {
+            } else if (existing instanceof final Document child && !isGroupFieldLeaf(child)) {
                 parent = child;
             } else {
                 throw new IllegalArgumentException("Overlapping group field paths: " + fieldName);
             }
         }
+    }
+
+    private static final String _$IF_NULL = "$ifNull";
+
+    /**
+     * Tells whether a {@code $group} key node is a field expression written by {@link #appendGroupField(Document, String)}
+     * rather than an intermediate path document (a field path segment never starts with {@code $}).
+     */
+    private static boolean isGroupFieldLeaf(final Object node) {
+        return node instanceof final Document doc && doc.size() == 1 && doc.containsKey(_$IF_NULL);
     }
 
     /**
@@ -1584,9 +1616,11 @@ public abstract class MongoDBBase {
 
             final PropInfo propInfo = binaryPropertyInfo(beanType, entry.getKey());
 
-            // Beans.mapToBean skips a read-only (getter-only) property, so its stored value need not convert. PropInfo's
-            // isReadOnlyProperty flag is package-private; a property without a field is SERIALIZE_ONLY exactly when it is read-only.
-            if (propInfo == null || (propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY)) {
+            // Beans.mapToBean skips a read-only property (one without a supported write path), so its stored value need not convert.
+            // Use the library's own (public since abacus-common 8.2) flag: it also covers a field-backed getter-only property of
+            // an @AccessFieldByMethod bean, which the former field/expose heuristic missed, so an unconvertible value stored for
+            // such a property failed the whole row.
+            if (propInfo == null || propInfo.isReadOnlyProperty) {
                 continue;
             }
 
@@ -1959,113 +1993,259 @@ public abstract class MongoDBBase {
      * @see com.mongodb.client.MongoIterable
      * @see #toEntity(Document, Class)
      */
-    @SuppressWarnings("rawtypes")
     public static <T> List<T> toList(final MongoIterable<?> findIterable, final Class<T> rowType)
             throws IllegalArgumentException, IllegalStateException, MongoException, ClassCastException, RuntimeException {
         N.checkArgNotNull(findIterable, cs.findIterable);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        final Type<T> targetType = N.typeOf(rowType);
-        final List<Object> rowList = findIterable.into(new ArrayList<>());
-        final Optional<Object> firstNonNull = N.firstNonNull(rowList);
+        // Convert rows as the cursor yields them: fetching everything with into(...) first held every fetched
+        // Document and its converted row at the same time, about twice the result's memory.
+        final RowListCollector collector = new RowListCollector(rowType);
 
-        if (firstNonNull.isPresent()) {
-            // Return the rows as-is only when every one already has the requested type: a single sample is not
-            // enough, since scalar rows (e.g. from distinct(field, Object.class)) freely mix int32/int64 values,
-            // and a later Integer would otherwise leak into a List<Long>.
-            if (rowType.isAssignableFrom(firstNonNull.get().getClass()) && isEveryRowInstanceOf(rowList, rowType)) {
-                return (List<T>) rowList;
+        try (MongoCursor<?> cursor = findIterable.iterator()) {
+            while (cursor.hasNext()) {
+                collector.accept(cursor.next());
+            }
+        }
+
+        return (List<T>) collector.finish();
+    }
+
+    /**
+     * The conversion of {@link #toList(MongoIterable, Class)}, fed one fetched row at a time, with exactly the result of
+     * fetching every row first and converting afterwards.
+     *
+     * <p>Rows are kept as fetched while every non-null row is already a {@code rowType} instance; then the fetched list
+     * itself is the result (also when it is empty or all-null). A single sample is not enough to return rows as-is,
+     * since scalar rows (e.g. from {@code distinct(field, Object.class)}) freely mix int32/int64 values. The first
+     * other row picks the conversion from the first non-null row, as before, and converts the kept rows in place.</p>
+     *
+     * <p>To keep the exceptions of the fetch-then-convert order, a failure does not stop the iteration: the rest of the
+     * cursor is still read (without retaining rows), so a later cursor failure still wins, and {@link #finish()}
+     * throws the first failure in row order. For a single-value target read from Map rows, every row is validated
+     * before any value is used, so a validation failure wins over a conversion failure; the value field is the
+     * first one found in any row, so earlier {@code _id}-only rows stay pending until it is found (or {@code _id} is
+     * used when no row has one).</p>
+     */
+    private static final class RowListCollector {
+        private static final int AS_IS = 0;
+        private static final int BEAN_OR_MAP = 1;
+        private static final int SCALAR_FROM_MAP = 2;
+        private static final int SCALAR = 3;
+        private static final int NOT_CONVERTIBLE = 4;
+
+        private final Class<Object> rowType;
+        private final Type<Object> targetType;
+        private final List<Object> rows = new ArrayList<>();
+        private int mode = AS_IS;
+        private Object firstNonNull;
+        private PropConversions conversions;
+        private IntFunction<? extends Map<String, Object>> mapFactory;
+        // SCALAR_FROM_MAP: the projected value field, once a row has one.
+        private String propName;
+        // SCALAR_FROM_MAP: the first non-Map row, multi-field row or inconsistent value field.
+        private RuntimeException validationFailure;
+        // The first failure choosing or applying the conversion.
+        private RuntimeException failure;
+
+        @SuppressWarnings("unchecked")
+        RowListCollector(final Class<?> rowType) {
+            this.rowType = (Class<Object>) rowType;
+            this.targetType = N.typeOf(this.rowType);
+        }
+
+        void accept(final Object row) {
+            if (mode == AS_IS) {
+                if (firstNonNull == null) {
+                    firstNonNull = row;
+                }
+
+                rows.add(row);
+
+                if (row != null && !rowType.isInstance(row)) {
+                    startConversion();
+                }
+            } else if (hasFailed()) {
+                if (mode == SCALAR_FROM_MAP) {
+                    validate(row);
+                }
             } else {
-                final List<Object> resultList = new ArrayList<>(rowList.size());
+                rows.add(row);
+                convert(rows.size() - 1);
 
+                if (hasFailed()) {
+                    rows.clear();
+                }
+            }
+        }
+
+        List<Object> finish() {
+            if (validationFailure != null) {
+                throw validationFailure;
+            }
+
+            if (mode == SCALAR_FROM_MAP && failure == null && propName == null) {
+                // No row has a value field: every row (all pending) is read by its _id.
+                propName = _ID;
+
+                for (int i = 0, size = rows.size(); i < size && failure == null; i++) {
+                    convertFromMap(i);
+                }
+            }
+
+            if (failure != null) {
+                throw failure;
+            }
+
+            return rows;
+        }
+
+        private boolean hasFailed() {
+            return failure != null || validationFailure != null;
+        }
+
+        @SuppressWarnings({ "rawtypes", "unchecked" })
+        private void startConversion() {
+            try {
                 if (targetType.isBean() || targetType.isMap()) {
-                    final PropConversions conversions = targetType.isBean() ? propConversions(targetType) : null;
-                    // One map factory per result, chosen as before by the first row: a Document result keeps its size-aware
+                    conversions = targetType.isBean() ? propConversions(targetType) : null;
+                    // One map factory per result, chosen by the first non-null row: a Document result keeps its size-aware
                     // creators for every row, and other results their supplier, so a mixed result is not built two ways.
-                    final IntFunction<? extends Map<String, Object>> mapFactory = !targetType.isMap() ? null
-                            : firstNonNull.get() instanceof Document ? IntFunctions.ofMap((Class<Map>) rowType) : size -> N.newMap((Class<Map>) rowType);
-
-                    // A MongoIterable may contain different Map implementations. Dispatch each row independently;
-                    // choosing the Document branch from the first row made later maps fail a cast.
-                    for (final Object row : rowList) {
-                        if (row == null) {
-                            resultList.add(null);
-                        } else if (targetType.isMap() && row instanceof final Map<?, ?> map) {
-                            final Map<String, Object> rowMap = mapFactory.apply(map.size());
-                            rowMap.putAll((Map<String, Object>) map);
-                            resultList.add(rowMap);
-                        } else if (targetType.isMap()) {
-                            resultList.add(Beans.beanToMap(row, mapFactory));
-                        } else if (row instanceof Map) {
-                            // Normalize map keys before resolving _id: identity or comparator-based maps otherwise
-                            // change field lookup semantics and may lose or overwrite the entity's identifier.
-                            final Document document = row instanceof final Document doc ? doc : new Document((Map<String, Object>) row);
-                            resultList.add(toEntity(document, rowType, conversions, false));
-                        } else {
-                            resultList.add(Beans.copyAs(row, rowType));
-                        }
-                    }
-                } else if (firstNonNull.get() instanceof Map) {
-                    // The first row alone is not sufficient validation: aggregation/find results can have
-                    // heterogeneous shapes. Silently extracting one of several projected fields loses data.
-                    String propName = null;
-
-                    for (final Object row : rowList) {
-                        if (row != null && !(row instanceof Map)) {
-                            throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
-                        }
-
-                        if (row instanceof Map) {
-                            final String rowPropName = singleValuePropName((Map<String, Object>) row, rowType);
-
-                            if (rowPropName != null) {
-                                if (propName == null) {
-                                    propName = rowPropName;
-                                } else if (!propName.equals(rowPropName)) {
-                                    throw new IllegalArgumentException("Cannot convert documents with inconsistent scalar fields '" + propName + "' and '"
-                                            + rowPropName + "' to class: " + ClassUtil.getCanonicalClassName(rowType));
-                                }
-                            }
-                        }
-                    }
-
-                    if (propName == null) {
-                        propName = _ID;
-                    }
-
-                    // Decide per row, not from one sample value: MongoDB freely mixes BSON types for the same field
-                    // (e.g. int32 and int64), so a later Integer must still be converted for a Long target.
-                    for (final Object row : rowList) {
-                        if (row == null) {
-                            resultList.add(null);
-                        } else {
-                            final Object value = ((Map<String, Object>) row).get(propName);
-
-                            resultList.add(value != null && rowType.isInstance(value) ? value : convertBsonValue(value, rowType));
-                        }
-                    }
-                } else if (targetType.isObjectArray() || targetType.isCollection() || !isScalarRow(firstNonNull.get())) {
-                    throw new IllegalArgumentException(
-                            "Cannot convert document: " + firstNonNull.get() + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                    final Class<Map> mapType = (Class<Map>) (Class<?>) rowType;
+                    mapFactory = !targetType.isMap() ? null : firstNonNull instanceof Document ? IntFunctions.ofMap(mapType) : size -> N.newMap(mapType);
+                    mode = BEAN_OR_MAP;
+                } else if (firstNonNull instanceof Map) {
+                    mode = SCALAR_FROM_MAP;
+                } else if (targetType.isObjectArray() || targetType.isCollection() || !isScalarRow(firstNonNull)) {
+                    mode = NOT_CONVERTIBLE;
+                    failure = new IllegalArgumentException(
+                            "Cannot convert document: " + firstNonNull + " to class: " + ClassUtil.getCanonicalClassName(rowType));
                 } else {
-                    // Scalar rows (e.g. from a typed distinct/aggregate iterable) whose Java type differs from the requested
-                    // one: convert each row on its own, as MongoDB freely mixes BSON types (int32/int64) for the same field.
-                    for (final Object row : rowList) {
-                        if (row == null) {
-                            resultList.add(null);
-                        } else if (!isScalarRow(row)) {
-                            throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
-                        } else {
-                            resultList.add(convertBsonValue(row, rowType));
-                        }
+                    mode = SCALAR;
+                }
+            } catch (final RuntimeException e) {
+                mode = NOT_CONVERTIBLE;
+                failure = e;
+            }
+
+            // The rows kept so far (all but the last one rowType instances or null) are converted like any later row.
+            for (int i = 0, size = rows.size(); i < size; i++) {
+                if (!hasFailed()) {
+                    convert(i);
+                } else if (mode == SCALAR_FROM_MAP) {
+                    validate(rows.get(i));
+                }
+            }
+
+            if (hasFailed()) {
+                rows.clear();
+            }
+        }
+
+        private void convert(final int index) {
+            final Object row = rows.get(index);
+
+            if (mode == SCALAR_FROM_MAP) {
+                final boolean pending = propName == null;
+
+                validate(row);
+
+                if (validationFailure == null && propName != null) {
+                    // The value field was just found: the rows before this one were all pending.
+                    for (int i = pending ? 0 : index; i <= index && failure == null; i++) {
+                        convertFromMap(i);
                     }
                 }
 
-                return (List<T>) resultList;
+                return;
             }
-        } else {
-            // No non-null sample can mean an all-null result, not just an empty iterable. Preserve its cardinality.
-            return (List<T>) rowList;
+
+            try {
+                if (row != null) {
+                    rows.set(index, mode == BEAN_OR_MAP ? convertBeanOrMapRow(row) : convertScalarRow(row));
+                }
+            } catch (final RuntimeException e) {
+                failure = e;
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        private Object convertBeanOrMapRow(final Object row) {
+            // A MongoIterable may contain different Map implementations. Dispatch each row independently;
+            // choosing the Document branch from the first row made later maps fail a cast.
+            if (targetType.isMap() && row instanceof final Map<?, ?> map) {
+                final Map<String, Object> rowMap = mapFactory.apply(map.size());
+                rowMap.putAll((Map<String, Object>) map);
+                return rowMap;
+            } else if (targetType.isMap()) {
+                return Beans.beanToMap(row, mapFactory);
+            } else if (row instanceof Map) {
+                // Normalize map keys before resolving _id: identity or comparator-based maps otherwise
+                // change field lookup semantics and may lose or overwrite the entity's identifier.
+                final Document document = row instanceof final Document doc ? doc : new Document((Map<String, Object>) row);
+                return toEntity(document, rowType, conversions, false);
+            } else {
+                return Beans.copyAs(row, rowType);
+            }
+        }
+
+        private Object convertScalarRow(final Object row) {
+            // Scalar rows (e.g. from a typed distinct/aggregate iterable) whose Java type differs from the requested
+            // one: convert each row on its own, as MongoDB freely mixes BSON types (int32/int64) for the same field.
+            if (!isScalarRow(row)) {
+                throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+            }
+
+            return convertBsonValue(row, rowType);
+        }
+
+        @SuppressWarnings("unchecked")
+        private void validate(final Object row) {
+            if (validationFailure != null) {
+                return;
+            }
+
+            // The first row alone is not sufficient validation: aggregation/find results can have
+            // heterogeneous shapes. Silently extracting one of several projected fields loses data.
+            try {
+                if (row != null && !(row instanceof Map)) {
+                    throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                }
+
+                if (row instanceof Map) {
+                    final String rowPropName = singleValuePropName((Map<String, Object>) row, rowType);
+
+                    if (rowPropName != null) {
+                        if (propName == null) {
+                            propName = rowPropName;
+                        } else if (!propName.equals(rowPropName)) {
+                            throw new IllegalArgumentException("Cannot convert documents with inconsistent scalar fields '" + propName + "' and '" + rowPropName
+                                    + "' to class: " + ClassUtil.getCanonicalClassName(rowType));
+                        }
+                    }
+                }
+            } catch (final RuntimeException e) {
+                validationFailure = e;
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        private void convertFromMap(final int index) {
+            final Object row = rows.get(index);
+
+            if (row == null) {
+                return;
+            }
+
+            // Decide per row, not from one sample value: MongoDB freely mixes BSON types for the same field
+            // (e.g. int32 and int64), so a later Integer must still be converted for a Long target.
+            try {
+                final Object value = ((Map<String, Object>) row).get(propName);
+
+                rows.set(index, value != null && rowType.isInstance(value) ? value : convertBsonValue(value, rowType));
+            } catch (final RuntimeException e) {
+                failure = e;
+            }
         }
     }
 
@@ -2155,31 +2335,76 @@ public abstract class MongoDBBase {
     }
 
     /**
-     * Returns {@code true} when every non-null element of {@code rowList} is an instance of {@code rowType}.
-     */
-    private static boolean isEveryRowInstanceOf(final List<?> rowList, final Class<?> rowType) {
-        for (final Object row : rowList) {
-            if (row != null && !rowType.isInstance(row)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Returns {@code true} when {@code row} is a single value (not a bean, map, collection or object array)
      * that can be converted to a scalar target type as a whole.
      */
     private static boolean isScalarRow(final Object row) {
         if (row instanceof Binary) {
             // Binary has bean-like accessors but is a BSON scalar that convertBsonValue handles explicitly.
+            // WHY not isBsonValueType: convertBsonValue does not unwrap Code, Symbol or a BsonValue (a BsonString read as a
+            // String became the JSON text {"value": "x"}, a BsonInt32 read as an Integer threw NumberFormatException), so
+            // such a row stays "not convertible" and is rejected with the clear IllegalArgumentException.
             return true;
         }
 
         final Type<?> rowType = N.typeOf(row.getClass());
 
         return !(rowType.isBean() || rowType.isMap() || rowType.isCollection() || rowType.isObjectArray());
+    }
+
+    /**
+     * Returns {@code true} when {@code row} is a bean whose properties can be read with {@code Beans.beanToMap} or
+     * {@code Beans.copyAs}: a {@link Beans#isBeanClass(Class) bean class} instance that is not a BSON value type.
+     * {@code Beans.isBeanClass} is true for {@link Binary}, {@link Code}, {@link Symbol} and {@link BsonValue} classes such as
+     * {@code BsonBinary} or {@code BsonString} (they have getters), but such a value is a single scalar: reading it as a bean
+     * turned a {@code Binary} row into a {@code {type: 0, data: [...]}} map, or copied it into an empty target bean.
+     */
+    private static boolean isBeanRow(final Object row) {
+        return !isBsonValueType(row) && Beans.isBeanClass(row.getClass());
+    }
+
+    /**
+     * Returns {@code true} when {@code value} is a BSON value type with bean-like accessors ({@link Binary}, {@link Code},
+     * {@link Symbol} or a {@link BsonValue}), which the Dataset and scalar conversions treat as a single value. A
+     * {@code BsonDocument} (a Map) and a {@code BsonArray} (a List) are containers, not values.
+     */
+    private static boolean isBsonValueType(final Object value) {
+        return value instanceof Binary || value instanceof Code || value instanceof Symbol
+                || (value instanceof BsonValue && !(value instanceof Map || value instanceof Collection));
+    }
+
+    /**
+     * Returns the row the Dataset should read for a scalar position in {@code extractData}: any row other than a BSON value
+     * type is returned as-is, while a {@link #isBsonValueType(Object) BSON value} is wrapped as the one-column map
+     * {@code {<column>: value}}. The Dataset reads a scalar row into its single column, but {@code Beans.isBeanClass} is true
+     * for {@link Binary}, {@link Code}, {@link Symbol} and the {@link BsonValue} classes, so passed as-is such a value would be
+     * read as a bean of its own properties and leave the column {@code null}.
+     *
+     * @param row a non-null row
+     * @param selectPropNames the selected column names, or null/empty when they are taken from {@code firstRow}
+     * @param firstRow the first non-null row, whose keys or bean properties name the columns when {@code selectPropNames} is empty
+     * @return {@code row}, or the one-column map holding a BSON value row
+     * @throws IllegalArgumentException if {@code row} is a BSON value and the Dataset has more (or fewer) than one column, as for any
+     *         other scalar row
+     */
+    private static Object asDatasetRow(final Object row, final Collection<String> selectPropNames, final Object firstRow) throws IllegalArgumentException {
+        if (!isBsonValueType(row)) {
+            return row;
+        }
+
+        final Collection<String> columnNames = N.notEmpty(selectPropNames) ? selectPropNames
+                : firstRow instanceof final Map<?, ?> map ? (Collection<String>) map.keySet()
+                        : isBeanRow(firstRow) ? Beans.getPropNameList(firstRow.getClass()) : null;
+
+        if (columnNames == null) {
+            throw new IllegalArgumentException("Cannot read a single " + ClassUtil.getCanonicalClassName(row.getClass())
+                    + " value without selectPropNames: a scalar row needs exactly one selected column");
+        } else if (columnNames.size() != 1) {
+            throw new IllegalArgumentException("Cannot read a single " + ClassUtil.getCanonicalClassName(row.getClass()) + " value against the columns "
+                    + columnNames + ": a scalar row needs exactly one column");
+        }
+
+        return new Document(columnNames.iterator().next(), row);
     }
 
     /**
@@ -2204,7 +2429,8 @@ public abstract class MongoDBBase {
      * @param findIterable the MongoDB query result to extract data from; must not be {@code null}
      * @return a Dataset containing the query results with Map-based rows
      * @throws IllegalArgumentException if findIterable is null, or if the selected columns or fetched rows cannot be converted into a
-     *         consistent Dataset, or if a null row is present while column names are inferred from Map rows
+     *         consistent Dataset, or if a null row, or a row that is neither a Map nor a bean, is present while column names are
+     *         inferred from Map rows
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
@@ -2242,8 +2468,8 @@ public abstract class MongoDBBase {
      * @param rowType the target type for each row in the Dataset; must be non-null and be an entity class with getter/setter methods or assignable to Map
      * @return a Dataset containing the query results with typed rows
      * @throws IllegalArgumentException if findIterable is null, or rowType is null or unsupported (not a bean class and not assignable
-     *         to Map), or if the selected columns or fetched rows cannot be converted into a consistent Dataset, or if a null row is
-     *         present while column names are inferred from Map rows
+     *         to Map), or if the selected columns or fetched rows cannot be converted into a consistent Dataset, or if a null row, or a
+     *         row that is neither a Map nor a bean, is present while column names are inferred from Map rows
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
@@ -2284,8 +2510,8 @@ public abstract class MongoDBBase {
      * @param rowType the target type for each row in the Dataset; must be non-null and be an entity class with getter/setter methods or assignable to Map
      * @return a Dataset containing the selected properties with typed rows
      * @throws IllegalArgumentException if findIterable is null, or rowType is null or unsupported (not a bean class and not assignable
-     *         to Map), or if the selected columns or fetched rows cannot be converted into a consistent Dataset, or if a null row is
-     *         present while column names are inferred from Map rows
+     *         to Map), or if the selected columns or fetched rows cannot be converted into a consistent Dataset, or if a null row, or a
+     *         row that is neither a Map nor a bean, is present while column names are inferred from Map rows
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
@@ -2332,7 +2558,7 @@ public abstract class MongoDBBase {
      *                in which case an empty Dataset is returned
      * @return a Dataset containing the objects as Map-based rows
      * @throws IllegalArgumentException if the selected columns or row values cannot be converted into a consistent Dataset, or if a
-     *         null row is present while column names are inferred from Map rows
+     *         null row, or a row that is neither a Map nor a bean, is present while column names are inferred from Map rows
      * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result bean, invoking a bean accessor, or reading a row value fails during Dataset conversion
@@ -2375,7 +2601,8 @@ public abstract class MongoDBBase {
      * @param rowType the target type for each row in the Dataset; must not be {@code null}
      * @return a Dataset containing the objects as typed rows
      * @throws IllegalArgumentException if {@code rowType} is null, or the selected columns or row values cannot be converted into a
-     *         consistent Dataset, or if a null row is present while column names are inferred from Map rows
+     *         consistent Dataset, or if a null row, or a row that is neither a Map nor a bean, is present while column names are
+     *         inferred from Map rows
      * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a Document row value is incompatible with its component type
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
@@ -2402,13 +2629,24 @@ public abstract class MongoDBBase {
      * <li><strong>Map objects:</strong> Extracts the selected keys as a Dataset row; a Map target preserves Map structure,
      * while a bean target converts each Map row (a {@code Document} or any other {@code Map}) to the bean</li>
      * <li><strong>Document objects:</strong> Converts to target type using the framework's type conversion system</li>
-     * <li><strong>Other objects:</strong> Copies the row to a bean target when the target is a bean; otherwise extracts the
-     * selected properties directly without per-row conversion to the target type</li>
+     * <li><strong>Other objects:</strong> A bean row is converted to a map for a Map target, or copied to a bean target of
+     * another class; other rows (positional {@code Object[]} or collection rows, scalars) are passed to the Dataset as-is and
+     * read against {@code selectPropNames} (or, when it is null or empty, against the column names taken from the first row),
+     * without per-row conversion to the target type</li>
      * </ul>
      *
-     * <p>Rows may mix these shapes. With a Map target and a Map first row, bean rows are converted to maps; with a Document
-     * first row, each row is converted individually, other maps like documents; with a bean target and another Map first
-     * row, Map rows are converted to the bean and non-Map rows are copied or left as-is when already assignable.</p>
+     * <p>Rows may mix these shapes. With a Map target and a Map first row, bean rows are converted to maps and positional
+     * rows and scalars are left as-is; but when {@code selectPropNames} is null or empty the column names are collected from
+     * the keys of every row, so each row must then be a Map or a bean (a null row or any other row is rejected). With a
+     * Document first row, each row is converted individually, other maps like documents; with a bean target and any other
+     * first row, Map rows are converted to the bean, bean rows of another class are copied to it, and the remaining rows
+     * (instances of the target, positional rows, scalars) are left as-is. A BSON value type with bean-like accessors (a
+     * {@link Binary}, {@link Code} or {@link Symbol}, or a {@link BsonValue} such as {@code BsonBinary}) is a scalar here,
+     * although {@code Beans.isBeanClass} is true for it: like any other scalar row it fills the single column rather than
+     * being read as a bean of its own properties, and is rejected with {@link IllegalArgumentException} unless the Dataset
+     * has exactly one column (so also when it is the first row and {@code selectPropNames} is null or empty). With a Map
+     * target, a Map first row and no {@code selectPropNames} it is always rejected, even when every map has a single key,
+     * since the column names are then collected from every row.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2436,7 +2674,9 @@ public abstract class MongoDBBase {
      * @param rowType the target type for each row in the resulting Dataset; must not be {@code null}
      * @return a Dataset containing the extracted properties as typed rows
      * @throws IllegalArgumentException if {@code rowType} is null, or the selected columns or row values cannot be converted into a
-     *         consistent Dataset, or if a null row is present while column names are inferred from Map rows
+     *         consistent Dataset (for example a positional row whose length differs from the column count, or a scalar row read
+     *         against more than one column), or if a null row, or a row that is neither a Map nor a bean, is present while column
+     *         names are inferred from Map rows
      * @throws ClassCastException if row conversion performs an incompatible cast, for example for a row map with non-String field names
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a Document row value is incompatible with its component type
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
@@ -2453,11 +2693,33 @@ public abstract class MongoDBBase {
 
         if (first.isPresent()) {
             if (Map.class.isAssignableFrom(rowType) && Map.class.isAssignableFrom(first.get().getClass())) {
-                // A result may mix map and bean rows, as toList accepts: bean rows become maps instead of failing a cast.
-                final List<?> mapRows = rowList.stream().allMatch(row -> row == null || row instanceof Map) ? rowList
-                        : rowList.stream().map(row -> row == null || row instanceof Map ? row : Beans.beanToMap(row)).toList();
+                final boolean inferColumnNames = N.isEmpty(selectPropNames);
+                List<?> mapRows = rowList;
 
-                if (N.isEmpty(selectPropNames)) {
+                if (!rowList.stream().allMatch(row -> row == null || row instanceof Map)) {
+                    // A result may mix map and bean rows, as toList accepts: bean rows become maps instead of failing a cast.
+                    // Only real bean rows are converted (Beans.beanToMap rejects anything else with "Not a bean class"). With
+                    // selectPropNames, positional rows (Object[], collections) and scalars are passed through and read by the
+                    // Dataset against those names, as in the other branches; without them, every row must supply map keys.
+                    final List<Object> converted = new ArrayList<>(rowList.size());
+
+                    for (final Object row : rowList) {
+                        if (row == null || row instanceof Map) {
+                            converted.add(row);
+                        } else if (isBeanRow(row)) {
+                            converted.add(Beans.beanToMap(row));
+                        } else if (inferColumnNames) {
+                            throw new IllegalArgumentException("Cannot infer column names from a row of type " + ClassUtil.getCanonicalClassName(row.getClass())
+                                    + ": without selectPropNames every non-null row must be a Map or a bean");
+                        } else {
+                            converted.add(asDatasetRow(row, selectPropNames, first.get()));
+                        }
+                    }
+
+                    mapRows = converted;
+                }
+
+                if (inferColumnNames) {
                     @SuppressWarnings("rawtypes")
                     final List<Map<String, Object>> tmp = (List) mapRows;
 
@@ -2488,8 +2750,9 @@ public abstract class MongoDBBase {
                     } else {
                         // Only bean-to-bean rows are copied. Positional rows (Object[], typed arrays, collections)
                         // and scalars are interpreted by Dataset later and must not be forced through copyAs.
-                        newRowList.add(rowType.isInstance(row) || !Beans.isBeanClass(rowType) || !Beans.isBeanClass(row.getClass()) ? row
-                                : Beans.copyAs(row, rowType));
+                        newRowList
+                                .add(rowType.isInstance(row) || !Beans.isBeanClass(rowType) || !isBeanRow(row) ? asDatasetRow(row, selectPropNames, first.get())
+                                        : Beans.copyAs(row, rowType));
                     }
                 }
 
@@ -2509,18 +2772,35 @@ public abstract class MongoDBBase {
                     } else if (row instanceof Map) {
                         newRowList.add(readRow(new Document((Map<String, Object>) row), rowType));
                     } else {
-                        newRowList.add(rowType.isInstance(row) ? row : Beans.copyAs(row, rowType));
+                        // As in the Document branch, only bean rows are copied: positional rows (Object[], collections) and
+                        // scalars are interpreted by the Dataset against selectPropNames, and copyAs rejects them as non-beans.
+                        newRowList
+                                .add(rowType.isInstance(row) || !isBeanRow(row) ? asDatasetRow(row, selectPropNames, first.get()) : Beans.copyAs(row, rowType));
                     }
                 }
 
                 return N.isEmpty(selectPropNames) ? N.newDataset(newRowList) : N.newDataset(selectPropNames, newRowList);
             } else {
+                List<?> datasetRows = rowList;
+
+                // As in the branches above, a BSON value row is a scalar, not a bean of its own properties: passed as is, a
+                // Binary first row became {type, data} columns, and a Binary after a positional row a null column.
+                if (rowList.stream().anyMatch(MongoDBBase::isBsonValueType)) {
+                    final List<Object> converted = new ArrayList<>(rowList.size());
+
+                    for (final Object row : rowList) {
+                        converted.add(row == null ? null : asDatasetRow(row, selectPropNames, first.get()));
+                    }
+
+                    datasetRows = converted;
+                }
+
                 // Mirror the branches above: null/empty selectPropNames means "include all"
                 // (N.newDataset(columnNames, rows) rejects an empty columnNames with IAE).
                 if (N.isEmpty(selectPropNames)) {
-                    return N.newDataset(rowList);
+                    return N.newDataset(datasetRows);
                 } else {
-                    return N.newDataset(selectPropNames, rowList);
+                    return N.newDataset(selectPropNames, datasetRows);
                 }
             }
         } else {

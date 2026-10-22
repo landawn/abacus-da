@@ -971,4 +971,112 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(row.getObject(0)).thenReturn(value);
         return row;
     }
+
+    // ---- 2026-10-19 sliceG ----
+
+    /**
+     * update(entity) / batchUpdate(entities, type) on a class with no updatable non-key property must name the entity class
+     * (thrown eagerly at the call site, as before), not blame a 'propNamesToUpdate' argument the caller never passed.
+     */
+    @Test
+    public void testSliceG_updateWithoutUpdatableProperty_reportsTheEntityClass() {
+        final CassandraExecutorBaseTest.SliceFKeyOnlyEntity entity = new CassandraExecutorBaseTest.SliceFKeyOnlyEntity();
+        entity.setId(1L);
+
+        final IllegalArgumentException single = assertThrows(IllegalArgumentException.class, () -> async.update(entity));
+        final IllegalArgumentException batch = assertThrows(IllegalArgumentException.class,
+                () -> async.batchUpdate(java.util.List.of(entity), com.datastax.oss.driver.api.core.cql.BatchType.LOGGED));
+        final String className = CassandraExecutorBaseTest.SliceFKeyOnlyEntity.class.getSimpleName();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(!single.getMessage().contains("propNamesToUpdate"), single.getMessage()),
+                () -> assertTrue(single.getMessage().contains("No updatable non-key property"), single.getMessage()),
+                () -> assertTrue(single.getMessage().contains(className), single.getMessage()),
+                () -> assertTrue(!batch.getMessage().contains("propNamesToUpdate"), batch.getMessage()),
+                () -> assertTrue(batch.getMessage().contains("No updatable non-key property"), batch.getMessage()),
+                () -> assertTrue(batch.getMessage().contains(className), batch.getMessage()));
+    }
+
+    // ---- 2026-10-21 cassfix2 ----
+
+    /**
+     * A real v4 executor over a mocked session: every query is prepared without variables and returns one row whose first
+     * column ("v") holds {@code value} ({@code null} for a NULL column), so the sync read path (readFirstColumn and its
+     * conversion) is exercised through the async facade.
+     */
+    private static AsyncCassandraExecutor cassfix2AsyncReturning(final Object value) {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement prepared = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        final ColumnDefinitions noVariables = mock(ColumnDefinitions.class);
+        when(noVariables.size()).thenReturn(0);
+        when(prepared.getVariableDefinitions()).thenReturn(noVariables);
+        when(prepared.bind(any(Object[].class))).thenReturn(mock(BoundStatement.class));
+        when(session.prepare(anyString())).thenReturn(prepared);
+        final ColumnDefinitions columns = sliceOColumns();
+        when(session.executeAsync(any(Statement.class))).thenAnswer(inv -> {
+            final Row row = mock(Row.class);
+            when(row.getColumnDefinitions()).thenReturn(columns);
+            when(row.getObject(0)).thenReturn(value);
+            return CompletableFuture.completedFuture(new SliceOPage(columns, null, null, row));
+        });
+
+        return new CassandraExecutor(session).async();
+    }
+
+    private static void cassfix2FailsWith(final Class<? extends Throwable> cause, final ContinuableFuture<?> future) {
+        final java.util.concurrent.ExecutionException failure = assertThrows(java.util.concurrent.ExecutionException.class, future::get);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(cause, failure.getCause());
+    }
+
+    /**
+     * Pins the NULL-column rule the Javadoc of queryForSingleValue/queryForSingleNonNull now states (it used to claim that
+     * every reference target preserves null): a NULL column maps to the default value of the target type, that is the
+     * primitive default, the empty value of an Optional-like type (which therefore never fails queryForSingleNonNull), and
+     * null for a wrapper or other reference type (present-but-null Nullable; queryForSingleNonNull fails with NPE).
+     */
+    @Test
+    @SuppressWarnings("rawtypes")
+    public void cassfix2_nullColumnMapsToTargetDefault_asyncSingleValueFamily() throws Exception {
+        final AsyncCassandraExecutor facade = cassfix2AsyncReturning(null);
+        final String query = "SELECT v FROM t";
+
+        final Nullable<Optional> optionalValue = facade.queryForSingleValue(Optional.class, query).get();
+        final Optional<com.landawn.abacus.util.u.OptionalInt> optionalInt = facade.queryForSingleNonNull(com.landawn.abacus.util.u.OptionalInt.class, query)
+                .get();
+        final Nullable<Integer> wrapper = facade.queryForSingleValue(Integer.class, query).get();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(optionalValue.isPresent()), () -> assertEquals(Optional.empty(), optionalValue.get()),
+                () -> assertEquals(Nullable.of(Optional.empty()), optionalValue), () -> assertTrue(optionalInt.isPresent()),
+                () -> assertEquals(com.landawn.abacus.util.u.OptionalInt.empty(), optionalInt.get()),
+                () -> assertEquals(Optional.of(com.landawn.abacus.util.u.OptionalInt.empty()), optionalInt),
+                () -> assertEquals(Nullable.of(Nullable.empty()), facade.queryForSingleValue(Nullable.class, query).get()),
+                () -> assertEquals(Nullable.of(0), facade.queryForSingleValue(int.class, query).get()),
+                () -> assertEquals(Optional.of(0L), facade.queryForSingleNonNull(long.class, query).get()), () -> assertTrue(wrapper.isPresent()),
+                () -> org.junit.jupiter.api.Assertions.assertNull(wrapper.get()),
+                () -> cassfix2FailsWith(NullPointerException.class, facade.queryForSingleNonNull(Integer.class, query)),
+                () -> cassfix2FailsWith(NullPointerException.class, facade.queryForSingleNonNull(String.class, query)));
+    }
+
+    /**
+     * The strict Boolean rule of the sync read path (class Javadoc of CassandraExecutorBase, "Boolean Conversion") also
+     * governs the async facade: -1 and empty text are false, padded "Y" is true, and a bigint or the text "yes" fails the
+     * future with an IllegalArgumentException cause.
+     */
+    @Test
+    public void cassfix2_strictBooleanRead_asyncQueryForBooleanAndSingleValue() throws Exception {
+        final String query = "SELECT v FROM t";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(false, cassfix2AsyncReturning(-1).queryForBoolean(query).get().get()),
+                () -> assertEquals(true, cassfix2AsyncReturning(" Y ").queryForBoolean(query).get().get()),
+                () -> assertEquals(false, cassfix2AsyncReturning("").queryForBoolean(query).get().get()),
+                () -> assertEquals(Boolean.FALSE, cassfix2AsyncReturning(-1).queryForSingleValue(Boolean.class, query).get().get()),
+                () -> assertEquals(Boolean.TRUE, cassfix2AsyncReturning(" Y ").queryForSingleValue(Boolean.class, query).get().get()),
+                () -> assertEquals(Boolean.FALSE, cassfix2AsyncReturning("").queryForSingleValue(Boolean.class, query).get().get()),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning(1L).queryForBoolean(query)),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning("yes").queryForBoolean(query)),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning(1L).queryForSingleValue(Boolean.class, query)),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning("yes").queryForSingleValue(Boolean.class, query)));
+    }
 }

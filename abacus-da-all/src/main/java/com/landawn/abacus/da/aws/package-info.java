@@ -13,6 +13,10 @@
  */
 
 /**
- * Provides shared helpers for AWS data-access integrations.
+ * Root package of the AWS data-access integrations.
+ *
+ * <p>This package currently exposes no public types; it holds only reserved placeholders for future
+ * AWS helpers. Amazon DynamoDB access is provided by {@code com.landawn.abacus.da.aws.dynamodb} (AWS SDK for
+ * Java 1.x) and {@code com.landawn.abacus.da.aws.dynamodb.v2} (AWS SDK for Java 2.x).</p>
  */
 package com.landawn.abacus.da.aws;

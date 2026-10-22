@@ -3,9 +3,7 @@ package com.landawn.abacus.da.mongodb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
 import java.util.IdentityHashMap;
@@ -178,14 +176,32 @@ public class MongoMixedRowRegressionTest extends TestBase {
         assertEquals(2, source.size());
     }
 
+    // ---- 2026-10-19 mongomem ----
+
+    @Test
+    public void mapFactoryIsChosenByTheFirstNonNullRowEvenWhenItIsKeptUntilALaterRowNeedsConversion() {
+        // toList now converts while streaming and keeps rows that already have the requested type until one does not.
+        // The factory must still come from the first non-null row of the whole result, and the kept rows converted with it.
+        final TrackingMap kept = new TrackingMap(4);
+        kept.put("name", "kept");
+        final Document document = new Document("name", "document");
+
+        final List<TrackingMap> supplied = MongoDBBase.toList(iterable(Arrays.asList(null, kept, document)), TrackingMap.class);
+        final List<TrackingMap> sized = MongoDBBase.toList(iterable(Arrays.asList(null, document, kept)), TrackingMap.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertNull(supplied.get(0)), () -> assertEquals("supplied", supplied.get(1).creator),
+                () -> assertEquals("supplied", supplied.get(2).creator), () -> assertEquals(new LinkedHashMap<>(kept), supplied.get(1)),
+                () -> org.junit.jupiter.api.Assertions.assertNotSame(kept, supplied.get(1)), () -> assertEquals(new LinkedHashMap<>(document), supplied.get(2)),
+                () -> assertNull(sized.get(0)), () -> assertEquals("sized", sized.get(1).creator), () -> assertEquals("sized", sized.get(2).creator),
+                () -> assertEquals(new LinkedHashMap<>(kept), sized.get(2)));
+    }
+
+    // ---- end 2026-10-19 mongomem ----
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
     private static MongoIterable<?> iterable(final List<?> rows) {
         final MongoIterable<Object> result = mock(MongoIterable.class);
-        when(result.into(any())).thenAnswer(invocation -> {
-            final List<Object> target = invocation.getArgument(0);
-            target.addAll(rows);
-            return target;
-        });
+        MongoIterableStubs.stubRows(result, rows);
         return result;
     }
 

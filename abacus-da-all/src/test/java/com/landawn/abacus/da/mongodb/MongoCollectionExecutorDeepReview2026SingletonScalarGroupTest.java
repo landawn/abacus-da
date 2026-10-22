@@ -43,7 +43,10 @@ public class MongoCollectionExecutorDeepReview2026SingletonScalarGroupTest exten
 
         Assertions.assertEquals(2, pipelines.size());
         for (final List<? extends Bson> pipeline : pipelines) {
-            Assertions.assertEquals(new Document("$group", new Document("_id", new Document("n", new Document("m", "$n.m")))), pipeline.get(0));
+            // The group key leaf is wrapped in $ifNull (2026-10-19 sliceT) so a missing field joins the null-key group.
+            Assertions.assertEquals(
+                    new Document("$group", new Document("_id", new Document("n", new Document("m", new Document("$ifNull", Arrays.asList("$n.m", null)))))),
+                    pipeline.get(0));
             Assertions.assertEquals(new Document("$project", new Document("_id", "$_id.n.m")), pipeline.get(1));
         }
     }

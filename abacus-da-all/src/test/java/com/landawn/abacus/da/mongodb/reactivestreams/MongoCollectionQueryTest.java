@@ -1065,4 +1065,42 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
 
         StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
     }
+
+    // ---- 2026-10-20 sliceQ (reactive twin of the blocking regression test) ----
+
+    @Test
+    public void testQueryDottedSelectNamesResultStaysMutableAndKeepsDeepPathsAndPlainColumns() {
+        // Dotted columns are overwritten in place on the extracted Dataset instead of rebuilding (copying) every column:
+        // the result must keep its values, column order, and mutability, and multi-level paths must still resolve.
+        final Bson filter = new Document("status", "active");
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher,
+                new Document("_id", 1).append("name", "n1")
+                        .append("a", new Document("b", new Document("c", 7)))
+                        .append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("name", "n2").append("a", new Document("b", new Document())));
+
+        final Dataset ds = executor.query(Arrays.asList("a.b.c", "name", "address.city"), filter, Map.class).block();
+
+        assertEquals(Arrays.asList("a.b.c", "name", "address.city"), ds.columnNames());
+        assertEquals(2, ds.size());
+        assertEquals(Arrays.asList(7, null), ds.getColumn("a.b.c"));
+        assertEquals(Arrays.asList("n1", "n2"), ds.getColumn("name"));
+        assertEquals(Arrays.asList("Paris", null), ds.getColumn("address.city"));
+        assertEquals(false, ds.isFrozen());
+
+        // "a.b" is the scalar 8 here, so traversing to "c" is not a Document path: signalled through the publisher.
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("a", new Document("b", 8)));
+        StepVerifier.create(executor.query(Arrays.asList("a.b.c"), filter, Map.class)).expectError(ClassCastException.class).verify();
+
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("name", "n1").append("a", new Document("b", new Document("c", 7))));
+        final Dataset single = executor.query(Arrays.asList("a.b.c", "name"), filter, Map.class).block();
+        assertEquals(Arrays.asList(7), single.getColumn("a.b.c"));
+
+        single.set(0, single.getColumnIndex("a.b.c"), 9);
+        single.set(0, single.getColumnIndex("name"), "renamed");
+        assertEquals(Arrays.asList(9), single.getColumn("a.b.c"));
+        assertEquals(Arrays.asList("renamed"), single.getColumn("name"));
+    }
 }

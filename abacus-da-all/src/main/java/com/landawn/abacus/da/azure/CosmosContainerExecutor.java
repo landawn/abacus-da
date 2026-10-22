@@ -1912,6 +1912,20 @@ public class CosmosContainerExecutor {
      * resumes for properties in the surrounding condition after the subquery closes. Use {@code Filters.subQuery(...)} for
      * literal subquery SQL; {@code Filters.expr(...)} still applies the SQL builder's property mapping and naming policy.</p>
      *
+     * <p>Within one {@code Filters.expr(...)}, the SQL builder cannot tell whether a backslash escapes a quote, so property names
+     * after a backslash-escaped quote (as in {@code name = 'O\'Brien' AND bonusPoints > 1}) are qualified but not converted by the
+     * naming policy ({@code c.bonusPoints} rather than {@code c.bonus_points} under {@link NamingPolicy#SNAKE_CASE}). Supply such values
+     * through value conditions such as {@code Filters.eq}, which send them as query parameters, or keep the literal in its own
+     * expression.</p>
+     *
+     * <p>Under {@link NamingPolicy#SCREAMING_SNAKE_CASE} the SQL builder upper-cases every identifier of a {@code Filters.expr(...)}
+     * expression, including the item alias of Cosmos DB's bracket property accessor ({@code c['x']}). The alias is restored for the
+     * surrounding condition, also in function-argument position ({@code ARRAY_CONTAINS(c['tags'], 'x')}), but not inside a subquery
+     * written in the same {@code Filters.expr(...)}, where {@code C} may be the subquery's own alias: in
+     * {@code EXISTS(SELECT VALUE t FROM t IN c.children WHERE t.x = c['y'])} the outer-item accessor renders as {@code C['y']} (and the
+     * subquery's own identifiers as {@code T}, {@code c.CHILDREN}, {@code T.X}), which silently matches nothing. Supply such a subquery
+     * through {@code Filters.subQuery(...)}, whose SQL is left untouched, and keep the outer accessors in the surrounding condition.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * import static com.landawn.abacus.query.Filters.*;
@@ -2499,7 +2513,14 @@ public class CosmosContainerExecutor {
                 final boolean escapeKeyword = "ESCAPE".equals(normalizedIdentifier) && (nextChar == '\'' || nextChar == '"');
                 final boolean keywordToken = COSMOS_CONDITION_KEYWORDS.contains(normalizedIdentifier)
                         && !isCosmosKeywordPropertyReference(query, normalizedIdentifier, previous, next, conditionStart) || escapeKeyword;
-                final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[') || keywordToken;
+                // SCREAMING_SNAKE_CASE upper-cases every identifier of a raw expression, including the item alias of Cosmos DB's
+                // bracket property accessor (c['first name'] -> C['first name']). Cosmos identifiers are case-sensitive, so the alias
+                // is restored instead of being qualified as a property path (c.C['first name'] silently matches nothing). Inside a
+                // subquery, C may be a local alias and is left alone.
+                final boolean upperCasedAliasAccessor = namingPolicy == NamingPolicy.SCREAMING_SNAKE_CASE && subqueryParenthesisDepth == 0 && nextChar == '['
+                        && COSMOS_ALIAS.equalsIgnoreCase(identifier) && !COSMOS_ALIAS.equals(identifier);
+                final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[') || upperCasedAliasAccessor
+                        || keywordToken;
                 final boolean attachedToPreviousIdentifier = identifierStart > conditionStart
                         && Character.isJavaIdentifierPart(query.charAt(identifierStart - 1));
                 final boolean standalone = !alreadyQualified && !functionOrObjectKey && !attachedToPreviousIdentifier;
@@ -2517,6 +2538,8 @@ public class CosmosContainerExecutor {
 
                 if (standalone && !keywordOrAlias && subqueryParenthesisDepth == 0) {
                     sb.append(COSMOS_ALIAS).append('.').append(identifier);
+                } else if (standalone && upperCasedAliasAccessor) {
+                    sb.append(COSMOS_ALIAS);
                 } else if (standalone && escapeKeyword) {
                     // ESCAPE glued to its literal can bypass the builder's naming-policy normalization.
                     sb.append(namingPolicy == NamingPolicy.SCREAMING_SNAKE_CASE ? "ESCAPE" : "escape");

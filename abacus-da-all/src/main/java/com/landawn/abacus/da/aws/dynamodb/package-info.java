@@ -14,6 +14,11 @@
 
 /**
  * Provides synchronous and {@link com.landawn.abacus.util.ContinuableFuture}-based access to Amazon DynamoDB through AWS SDK for Java 1.x.
- * The executors support both native request objects and mapped entity operations.
+ * The executors support both native request objects and mapped entity operations; entity {@code Mapper} operations
+ * are available on the synchronous executor only.
+ *
+ * <p>This package also contains {@link com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorBase}, the SDK-neutral parent
+ * of both this package's executor and the AWS SDK for Java 2.x executor in {@code com.landawn.abacus.da.aws.dynamodb.v2};
+ * it holds the item-to-bean and value-conversion rules the two share.</p>
  */
 package com.landawn.abacus.da.aws.dynamodb;

@@ -665,4 +665,112 @@ public class AnyScanTest extends TestBase {
         assertSame(scan, returned);
         assertArrayEquals(Bytes.toBytes("stop"), scan.getStopRow());
     }
+
+    // ---- 2026-10-20 sliceF ----
+
+    /**
+     * Pins the setStartStopRowForPrefixScan doc: the prefix becomes the inclusive start row and the closest next key the
+     * exclusive stop row, and both bounds (and their inclusivity) replace whatever was set earlier.
+     */
+    @Test
+    public void testSetStartStopRowForPrefixScan_boundsReplaceEarlierOnes_startInclusiveStopExclusive_sliceF() {
+        final AnyScan scan = AnyScan.create().withStartRow("a", false).withStopRow("z", true);
+        assertFalse(scan.includeStartRow());
+        assertTrue(scan.includeStopRow());
+
+        assertSame(scan, scan.setStartStopRowForPrefixScan("user_"));
+
+        assertArrayEquals(Bytes.toBytes("user_"), scan.getStartRow());
+        assertTrue(scan.includeStartRow());
+        // '_' (0x5F) + 1 = '`' (0x60): the first key that no longer carries the prefix
+        assertArrayEquals(Bytes.toBytes("user`"), scan.getStopRow());
+        assertFalse(scan.includeStopRow());
+
+        // trailing 0xFF bytes are dropped before the increment; an all-0xFF prefix runs to the end of the table
+        scan.setStartStopRowForPrefixScan(new byte[] { 'a', (byte) 0xFF });
+        assertArrayEquals(new byte[] { 'b' }, scan.getStopRow());
+        scan.setStartStopRowForPrefixScan(new byte[] { (byte) 0xFF });
+        assertArrayEquals(new byte[] { (byte) 0xFF }, scan.getStartRow());
+        assertEquals(0, scan.getStopRow().length);
+
+        // a null prefix resets both bounds
+        scan.setStartStopRowForPrefixScan((Object) null);
+        assertEquals(0, scan.getStartRow().length);
+        assertEquals(0, scan.getStopRow().length);
+    }
+
+    /** Pins the setRowPrefixFilter doc: same bound-replacement rules as setStartStopRowForPrefixScan, no Filter installed. */
+    @SuppressWarnings("deprecation")
+    @Test
+    public void testSetRowPrefixFilter_sameBoundRulesAsPrefixScan_sliceF() {
+        final AnyScan scan = AnyScan.create().withStartRow("a", false).withStopRow("z", true);
+
+        assertSame(scan, scan.setRowPrefixFilter("user_"));
+
+        assertArrayEquals(Bytes.toBytes("user_"), scan.getStartRow());
+        assertTrue(scan.includeStartRow());
+        assertArrayEquals(Bytes.toBytes("user`"), scan.getStopRow());
+        assertFalse(scan.includeStopRow());
+        assertNull(scan.getFilter());
+
+        scan.setRowPrefixFilter((Object) null);
+        assertEquals(0, scan.getStartRow().length);
+        assertEquals(0, scan.getStopRow().length);
+    }
+
+    private static org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Scan toProto(final AnyScan scan) throws java.io.IOException {
+        return org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil.toScan(scan.val());
+    }
+
+    /**
+     * Pins the null-family docs of addFamily/addColumn/setColumnFamilyTimeRange: the null is accepted and stored here,
+     * but HBase cannot serialize it, so building the request fails with NullPointerException.
+     */
+    @Test
+    public void testNullFamily_acceptedHereButFailsWhenScanRequestIsBuilt_sliceF() {
+        assertEquals(1, AnyScan.create().addFamily((String) null).numFamilies());
+
+        assertThrows(NullPointerException.class, () -> toProto(AnyScan.create().addFamily((String) null)));
+        assertThrows(NullPointerException.class, () -> toProto(AnyScan.create().addFamily((byte[]) null)));
+        assertThrows(NullPointerException.class, () -> toProto(AnyScan.create().addColumn((String) null, "q")));
+        assertThrows(NullPointerException.class, () -> toProto(AnyScan.create().addColumn((byte[]) null, Bytes.toBytes("q"))));
+        assertThrows(NullPointerException.class, () -> toProto(AnyScan.create().setColumnFamilyTimeRange((String) null, 1L, 2L)));
+        assertThrows(NullPointerException.class, () -> toProto(AnyScan.create().setColumnFamilyTimeRange((byte[]) null, 1L, 2L)));
+    }
+
+    /** Pins the "an empty or null family is accepted here" doc: the empty family is serialized as an empty family name. */
+    @Test
+    public void testEmptyFamily_isSerializedWhenScanRequestIsBuilt_sliceF() throws Exception {
+        final org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Scan wholeFamily = toProto(AnyScan.create().addFamily(""));
+        assertEquals(1, wholeFamily.getColumnCount());
+        assertTrue(wholeFamily.getColumn(0).getFamily().isEmpty());
+        assertEquals(0, wholeFamily.getColumn(0).getQualifierCount());
+
+        final org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Scan oneColumn = toProto(
+                AnyScan.create().addColumn(new byte[0], Bytes.toBytes("q")).setColumnFamilyTimeRange("", 1L, 2L));
+        assertEquals(1, oneColumn.getColumnCount());
+        assertTrue(oneColumn.getColumn(0).getFamily().isEmpty());
+        assertArrayEquals(Bytes.toBytes("q"), oneColumn.getColumn(0).getQualifier(0).toByteArray());
+        assertEquals(1, oneColumn.getCfTimeRangeCount());
+        assertTrue(oneColumn.getCfTimeRange(0).getColumnFamily().isEmpty());
+    }
+
+    /** Pins the setScanMetricsEnabled doc: disabling also turns off per-region metrics enabled on the wrapped Scan. */
+    @Test
+    public void testSetScanMetricsEnabled_false_alsoDisablesByRegionMetrics_sliceF() {
+        final AnyScan scan = AnyScan.create().setScanMetricsEnabled(true);
+        scan.val().setEnableScanMetricsByRegion(true);
+        assertTrue(scan.isScanMetricsEnabled());
+        assertTrue(scan.val().isScanMetricsByRegionEnabled());
+
+        assertSame(scan, scan.setScanMetricsEnabled(false));
+
+        assertFalse(scan.isScanMetricsEnabled());
+        assertFalse(scan.val().isScanMetricsByRegionEnabled());
+
+        // re-enabling scan metrics does not re-enable the per-region ones
+        scan.setScanMetricsEnabled(true);
+        assertTrue(scan.isScanMetricsEnabled());
+        assertFalse(scan.val().isScanMetricsByRegionEnabled());
+    }
 }

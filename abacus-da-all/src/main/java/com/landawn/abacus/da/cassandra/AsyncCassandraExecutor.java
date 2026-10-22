@@ -113,7 +113,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with a Stream of {@code Object[]} rows; further result pages are fetched
-     *         (blocking) while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal
+     *         (blocking) while the stream is consumed, so a page-fetch or row-mapping failure is thrown by the stream's terminal
      *         operation rather than reported by the future
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
@@ -157,7 +157,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @param parameters the positional query parameters
      * @return a future that completes with a Stream of mapped objects; further result pages are fetched (blocking)
-     *         while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal operation
+     *         while the stream is consumed, so a page-fetch or row-mapping failure is thrown by the stream's terminal operation
      *         rather than reported by the future
      * @throws IllegalArgumentException if {@code query} or {@code rowMapper} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
@@ -203,7 +203,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param statement the CQL statement to execute
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @return a future that completes with a Stream of mapped objects; further result pages are fetched (blocking)
-     *         while the stream is consumed, so a page-fetch failure is thrown by the stream's terminal operation
+     *         while the stream is consumed, so a page-fetch or row-mapping failure is thrown by the stream's terminal operation
      *         rather than reported by the future
      * @throws IllegalArgumentException if {@code statement} or {@code rowMapper} is {@code null}
      * @throws RuntimeException if the driver rejects request submission (for example, the statement names an
@@ -251,7 +251,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the first mapped row, or empty
-     *         if no row exists
+     *         if no row exists; if the first row maps to {@code null} (for example, a {@code NULL} column
+     *         read into a single-value reference type), {@code get()} throws an {@code ExecutionException}
+     *         whose cause is a {@link NullPointerException}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -268,9 +270,14 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * single value from the first column of the first row converted to {@code valueClass}, or
      * an empty {@link Nullable} if no row is returned. The value may be {@code null}.
      *
-     * <p>A {@code NULL} column becomes the primitive default for a primitive {@code valueClass}
-     * (for example, {@code int.class} yields {@code Nullable.of(0)}). Wrapper and other reference targets
-     * preserve {@code null}; use {@code Integer.class} to distinguish NULL from a stored zero.</p>
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()} <i>only</i> when the
+     * query produces no rows. If a row exists but the column is {@code NULL}, the value maps to the default value of
+     * {@code valueClass}: a primitive class token yields the primitive default (for example, {@code int.class} yields
+     * {@code Nullable.of(0)}), a type whose default is not {@code null}, such as {@code Optional}, {@code Nullable} or
+     * {@code OptionalInt}, yields its empty value (for example, {@code Optional.class} yields
+     * {@code Nullable.of(Optional.empty())}), and a wrapper or other reference type yields a <i>present-but-null</i>
+     * {@code Nullable} ({@code Nullable.of(null)}). Use a wrapper class such as {@code Integer.class} to preserve
+     * {@code NULL} (distinguishing it from a stored zero).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -300,8 +307,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param valueClass the class to convert the single value to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
-     * @return a future that completes with a {@code Nullable} holding the value (possibly
-     *         {@code null}), or empty if no row exists
+     * @return a future that completes with a <i>present</i> {@code Nullable} holding the converted column value (the
+     *         default value of {@code valueClass}, as described above, for a {@code NULL} column) when at least one row
+     *         is returned, or {@code Nullable.empty()} if no row exists
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
@@ -320,9 +328,13 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * but the converted value is {@code null}, {@code get()} throws an {@code ExecutionException} whose cause is a
      * {@link NullPointerException} (an {@link Optional} cannot hold {@code null}).
      *
-     * <p>For a {@code NULL} column and a primitive {@code valueClass}, conversion supplies the primitive default
-     * (for example, {@code int.class} yields {@code Optional.of(0)}). Wrapper and other reference targets
-     * preserve {@code null}, causing the future to fail.</p>
+     * <p>A {@code NULL} column maps to the default value of {@code valueClass}: the primitive default for a primitive
+     * class token (for example, {@code int.class} yields {@code Optional.of(0)}), an empty value for a type whose
+     * default is not {@code null} such as {@code Optional}, {@code Nullable} or {@code OptionalInt} (for example,
+     * {@code OptionalInt.class} yields {@code Optional.of(OptionalInt.empty())}), and {@code null} for a wrapper or
+     * other reference type, which fails the future as described above.
+     * Use {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable}) with a wrapper or
+     * other reference target whose default is {@code null} (not an {@code Optional}-like type) to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

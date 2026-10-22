@@ -1352,11 +1352,32 @@ public final class MongoCollectionExecutor {
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
         if (selectPropNames != null && selectPropNames.size() == 1 && !rowType.isAssignableFrom(Document.class) && isSingleValueType(rowType)) {
-            final List<Document> rowList = findIterable.into(new ArrayList<>());
-            final List<T> result = new ArrayList<>(rowList.size());
+            // Convert each document as the cursor yields it instead of fetching all of them with into(...) first (which held
+            // every Document and its value at once). Same per-row logic as toEntity(row, rowType, selectPropNames), hoisted.
+            // A conversion failure is thrown only after the cursor is drained, so a later cursor failure still wins, as before.
+            final String propName = selectPropNames.iterator().next();
+            final List<T> result = new ArrayList<>();
+            RuntimeException failure = null;
 
-            for (final Document row : rowList) {
-                result.add(toEntity(row, rowType, selectPropNames));
+            try (MongoCursor<Document> cursor = findIterable.iterator()) {
+                while (cursor.hasNext()) {
+                    final Document row = cursor.next();
+
+                    if (failure == null) {
+                        try {
+                            final Object value = row == null ? null : getPropValueByPath(row, propName);
+
+                            result.add(value == null ? null : MongoDBBase.convertBsonValue(value, rowType));
+                        } catch (final RuntimeException e) {
+                            failure = e;
+                            result.clear();
+                        }
+                    }
+                }
+            }
+
+            if (failure != null) {
+                throw failure;
             }
 
             return result;
@@ -1488,10 +1509,11 @@ public final class MongoCollectionExecutor {
      * @param propName the name of the field to retrieve the boolean value from
      * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalBoolean} holding the converted field value (or {@code false}
-     *         for a missing/null field) when a document is matched; {@code OptionalBoolean.empty()} when no
-     *         document matches the filter
+     *         for a missing/null field, or for empty or whitespace-only text) when a document is matched;
+     *         {@code OptionalBoolean.empty()} when no document matches the filter
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
-     *         converted to the requested value type
+     *         converted to {@code Boolean} (for example an int64, double or {@code Decimal128} value, an int32 other than {@code 1}/{@code 0}/{@code -1},
+     *         or text such as {@code "yes"} once its surrounding whitespace is ignored; see {@link MongoDBBase})
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2376,24 +2398,24 @@ public final class MongoCollectionExecutor {
             return dataset;
         }
 
+        // Overwrite only the dotted columns in place: rebuilding through Dataset.columns(...) copies every column,
+        // holding the whole result twice. The extracted Dataset is unfrozen and has one row per returned document.
         final List<String> columnNames = dataset.columnNames();
-        final List<List<?>> columns = new ArrayList<>(columnNames.size());
+        final int rowCount = rowList.size();
 
-        for (final String columnName : columnNames) {
-            if (columnName.indexOf('.') < 0) {
-                columns.add(dataset.getColumn(columnName));
-            } else {
-                final List<Object> column = new ArrayList<>(rowList.size());
+        for (int columnIndex = 0, columnCount = columnNames.size(); columnIndex < columnCount; columnIndex++) {
+            final String columnName = columnNames.get(columnIndex);
 
-                for (final Document row : rowList) {
-                    column.add(getPropValueByPath(row, columnName));
+            if (columnName.indexOf('.') >= 0) {
+                final List<String> path = Arrays.asList(columnName.split("\\."));
+
+                for (int rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+                    dataset.set(rowIndex, columnIndex, rowList.get(rowIndex).getEmbedded(path, Object.class));
                 }
-
-                columns.add(column);
             }
         }
 
-        return Dataset.columns(columnNames, columns);
+        return dataset;
     }
 
     /**
@@ -2786,6 +2808,11 @@ public final class MongoCollectionExecutor {
      * <p>Adds sorting capability to the stream, allowing results to be ordered
      * by one or more fields before processing.</p>
      *
+     * <p>When exactly one field is selected into a single-value {@code rowType}, that field's value is extracted
+     * directly (a dotted path such as {@code address.city} resolves the nested value), and a document that lacks
+     * the field yields a {@code null} element instead of its converted {@code _id}. Result types that can directly
+     * hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get users sorted by creation date
@@ -2819,6 +2846,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>This is the most comprehensive streaming method using collection-based projection,
      * providing all query features in a single operation.</p>
+     *
+     * <p>When exactly one field is selected into a single-value {@code rowType}, that field's value is extracted
+     * directly (a dotted path such as {@code address.city} resolves the nested value), and a document that lacks
+     * the field yields a {@code null} element instead of its converted {@code _id}. Result types that can directly
+     * hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3369,8 +3401,10 @@ public final class MongoCollectionExecutor {
      * Inserts multiple documents into the collection in a single operation (blocking operation).
      *
      * <p>This method inserts multiple documents into the collection efficiently in a single batch operation.
-     * Each object in the collection can be a Document, Map, or entity class. All objects are automatically
-     * converted to BSON documents. Batch operations are more efficient than individual inserts for multiple documents.</p>
+     * Each object in the collection can be a Document, Map, or entity class. Caller-supplied {@link Document}
+     * instances are inserted as-is, so the driver populates a generated {@code _id} on them in place; Maps and
+     * entities are converted to new documents, so a generated {@code _id} is not written back to them (read it from
+     * {@link InsertManyResult#getInsertedIds()}). Batch operations are more efficient than individual inserts for multiple documents.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use {@link #async()}.</p>
      *
@@ -3521,7 +3555,7 @@ public final class MongoCollectionExecutor {
      * update operations. The update can be a Bson update document, a Document with update operators,
      * a Map, or an entity class.</p>
      *
-     * <p><b>Conversion path:</b> The update is converted via {@link #toBson(Object)}. A {@link Document},
+     * <p><b>Conversion path:</b> The update is converted to a BSON update document as follows. A {@link Document},
      * {@link BasicDBObject}, or {@link BsonDocument} containing only top-level operator keys (keys starting
      * with {@code $}) is passed through unchanged; mixing operator keys with ordinary field names is rejected.
      * Other {@code Bson} implementations, such as expressions produced by {@link com.mongodb.client.model.Updates},
@@ -3911,8 +3945,8 @@ public final class MongoCollectionExecutor {
     /**
      * Updates multiple documents matching the filter with the specified update operations (blocking operation).
      *
-     * <p>This method updates every document that matches the given filter. The update is converted via
-     * {@link #toBson(Object)}; see {@link #updateOne(String, Object)} for the full update conversion rules,
+     * <p>This method updates every document that matches the given filter. The update is converted exactly as
+     * by {@link #updateOne(String, Object)}; see that method for the full update conversion rules,
      * including operator-document handling, wrapping plain documents (including {@link BsonDocument}) in
      * {@code $set}, removing the immutable {@code _id}, and handling null values.</p>
      *
@@ -4396,6 +4430,11 @@ public final class MongoCollectionExecutor {
      * flattening — entity getters returning {@code null} are dropped). More efficient than individual
      * inserts for large datasets.</p>
      *
+     * <p><b>Generated {@code _id}:</b> the driver populates a generated {@code _id} in place on caller-supplied
+     * {@link Document} entries that lack one. Converted entries (beans and Maps) are copies, so a generated
+     * {@code _id} is <i>not</i> written back to the original object; read it from
+     * {@link BulkWriteResult#getInserts()} instead.</p>
+     *
      * <p><b>Atomicity:</b> The batch is executed as a single bulk-write call, but it is <i>not</i> a
      * multi-document transaction — see {@link #bulkWrite(List)} for details.</p>
      *
@@ -4427,7 +4466,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Provides control over bulk insert behavior including ordered/unordered execution and
      * validation bypass through BulkWriteOptions. Write concern is configured on the underlying
-     * collection, not on BulkWriteOptions.</p>
+     * collection, not on BulkWriteOptions. Entry conversion and generated-{@code _id} handling are the same as
+     * {@link #bulkInsert(Collection)}: only caller-supplied {@link Document} entries receive the generated
+     * {@code _id} in place.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -5333,6 +5374,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>Creates an aggregation pipeline that groups documents by multiple fields.</p>
      *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group; in the
+     * {@code _id} key document that field is present with the value {@code null} (for example
+     * {@code {_id: {category: "books", status: null}}}), and a dotted path such as {@code "a.b"} appears as the nested
+     * document {@code {a: {b: <value>}}}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("category", "status");
@@ -5362,6 +5408,11 @@ public final class MongoCollectionExecutor {
      * Groups documents by multiple fields with type conversion.
      *
      * <p>Groups by multiple fields and converts results to the specified type.</p>
+     *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} for {@link Document} rows, as a
+     * top-level field or property for Map, bean and {@code Object} rows &mdash; and a dotted path such as {@code "a.b"}
+     * appears as the nested document {@code {a: {b: <value>}}}.</p>
      *
      * <p>If {@code fieldNames} contains only one distinct field and {@code rowType} is a single-value type,
      * each group key is converted to that type. The null-key group is omitted for a primitive class token
@@ -5468,6 +5519,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>Groups by multiple fields and includes a count of documents in each group.</p>
      *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group; in the
+     * {@code _id} key document that field is present with the value {@code null} (for example
+     * {@code {_id: {category: "books", status: null}, count: 2}}), and a dotted path such as {@code "a.b"} appears as the
+     * nested document {@code {a: {b: <value>}}}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("category", "status");
@@ -5497,6 +5553,11 @@ public final class MongoCollectionExecutor {
      * Groups by multiple fields, counts, and converts to type.
      *
      * <p>The most flexible grouping and counting method with type conversion.</p>
+     *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} for {@link Document} rows, as a
+     * top-level field or property for Map, bean and {@code Object} rows &mdash; and a dotted path such as {@code "a.b"}
+     * appears as the nested document {@code {a: {b: <value>}}}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

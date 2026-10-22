@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import java.nio.ByteBuffer;
@@ -283,7 +282,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         assertSame(oid, bean.getId());
         assertSame(oid, map.get("_id"));
         assertSame(oid, document.get("_id"));
-    } 
+    }
 
     @Test
     public void testExtractDataDocumentFirstKeepsLaterObjectArrayRow() {
@@ -1057,7 +1056,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     @Test
     public void testToListRejectsExactlyTwoNonIdFieldsForScalarResult() {
         List<Document> docs = Arrays.asList(new Document("a", 1).append("b", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
     }
@@ -1065,7 +1064,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     @Test
     public void testToListRejectsInconsistentScalarFieldNames() {
         List<Document> docs = Arrays.asList(new Document("a", 1), new Document("b", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
     }
@@ -1075,7 +1074,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         // Regression: only validating the first row allowed a later heterogeneous row to be
         // silently reduced to one value even though it cannot represent a scalar projection.
         List<Document> docs = Arrays.asList(new Document("value", 1), new Document("a", 1).append("b", 2).append("c", 3));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
     }
@@ -1084,7 +1083,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     public void testToListBinaryValuesPreservesEachPayload() {
         final byte[] first = { 1, 2 };
         final byte[] second = { 3, 4, 5 };
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(new Document("value", first), new Document("value", new Binary(second))));
+        MongoIterableStubs.stubRows(mockFindIterable, Arrays.asList(new Document("value", first), new Document("value", new Binary(second))));
 
         assertEquals(Arrays.asList(ByteBuffer.wrap(first), ByteBuffer.wrap(second)), MongoDBBase.toList(mockFindIterable, ByteBuffer.class));
     }
@@ -1095,14 +1094,14 @@ public class MongoDBBaseTest extends MockitoTestBase {
         // Regression: scalar rows (e.g. from a typed distinct/aggregate iterable) whose Java type differed from the
         // requested one were rejected as "Cannot convert document: 1 to class: java.lang.Long".
         final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
-        when(iterable.into(any())).thenReturn(Arrays.asList(1, null, 2L, "3"));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(1, null, 2L, "3"));
 
         final List<Long> result = MongoDBBase.toList(iterable, Long.class);
 
         assertEquals(Arrays.asList(1L, null, 2L, 3L), result);
 
         // Binary rows are BSON scalars too and follow the same conversion rules as document field values.
-        when(iterable.into(any())).thenReturn(Arrays.asList(new Binary(new byte[] { 1, 2 })));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(new Binary(new byte[] { 1, 2 })));
 
         final List<ByteBuffer> buffers = MongoDBBase.toList(iterable, ByteBuffer.class);
 
@@ -1119,7 +1118,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("name", "alice");
         row.put("age", 31);
-        when(iterable.into(any())).thenReturn(Arrays.asList(row));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(row));
 
         List<Document> result = MongoDBBase.toList(iterable, Document.class);
 
@@ -1134,7 +1133,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     public void testToListLargeDocSingleValueRejected() {
         // A document with multiple projected fields cannot be converted to a primitive type.
         List<Document> docs = Arrays.asList(new Document("a", 1).append("b", 2).append("c", 3));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
     }
@@ -1148,7 +1147,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         final Map<String, Object> row = new LinkedHashMap<>();
         row.put("_id", new ObjectId("507f1f77bcf86cd799439011"));
         row.put("name", "alice");
-        when(iterable.into(any())).thenReturn(Arrays.asList(row, null, new BasicDBObject("name", "bob")));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(row, null, new BasicDBObject("name", "bob")));
 
         final List<TestEntity> result = MongoDBBase.toList(iterable, TestEntity.class);
 
@@ -1166,7 +1165,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     public void testToListPrimitiveExtractionWithConversion() {
         // Documents have integer value; requested as Long -- needs convert path
         List<Document> docs = Arrays.asList(new Document("v", 10), new Document("v", 20));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         List<Long> result = MongoDBBase.toList(mockFindIterable, Long.class);
 
@@ -1180,7 +1179,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         // Regression: when the first non-null sample was already an instance of rowType, every row was returned raw.
         // MongoDB freely mixes int32/int64 for the same field, so a later Integer leaked into a List<Long>.
         final List<Document> docs = Arrays.asList(new Document("v", 1L), new Document("v", 2), new Document("v", null));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         final List<Long> result = MongoDBBase.toList(mockFindIterable, Long.class);
 
@@ -1198,7 +1197,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         // a later row that carries the non-_id key — previously every value was silently read from "_id".
         Document idOnly = new Document("_id", new ObjectId());
         Document withName = new Document("_id", new ObjectId()).append("name", "alice");
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(idOnly, withName));
+        MongoIterableStubs.stubRows(mockFindIterable, Arrays.asList(idOnly, withName));
 
         List<String> result = MongoDBBase.toList(mockFindIterable, String.class);
 
@@ -1216,7 +1215,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
         // Integer row (MongoDB mixes int32/int64 for one field) leaked into the List<Long>. With an Integer first
         // the same rows were converted, so the result depended on row order.
         final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
-        when(iterable.into(any())).thenReturn(Arrays.asList(1L, null, 2));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(1L, null, 2));
 
         final List<Long> result = MongoDBBase.toList(iterable, Long.class);
 
@@ -1226,11 +1225,16 @@ public class MongoDBBaseTest extends MockitoTestBase {
         assertEquals(Long.class, result.get(2).getClass());
         assertEquals(Long.valueOf(2L), result.get(2));
 
-        // Rows that all have the requested type are still returned as-is (no copy).
-        final List<Object> sameType = Arrays.asList(1L, null, 2L);
-        when(iterable.into(any())).thenReturn(sameType);
+        // Rows that all have the requested type are still returned as-is (no per-row copy): the result holds the
+        // fetched row instances themselves. (Values outside the Long cache, so the identity check is meaningful.)
+        final List<Object> sameType = Arrays.asList(1_000_001L, null, 2_000_002L);
+        MongoIterableStubs.stubRows(iterable, sameType);
 
-        assertSame(sameType, MongoDBBase.toList(iterable, Long.class));
+        final List<Long> asIs = MongoDBBase.toList(iterable, Long.class);
+
+        assertEquals(sameType, asIs);
+        assertSame(sameType.get(0), asIs.get(0));
+        assertSame(sameType.get(2), asIs.get(2));
     }
 
     @SuppressWarnings("unchecked")
@@ -1239,16 +1243,16 @@ public class MongoDBBaseTest extends MockitoTestBase {
         final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
         final TestEntity bean = new TestEntity();
         bean.setName("x");
-        when(iterable.into(any())).thenReturn(Arrays.asList(bean));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(bean));
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Long.class));
 
-        when(iterable.into(any())).thenReturn(Arrays.asList(Arrays.asList(1, 2)));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(Arrays.asList(1, 2)));
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Long.class));
 
         // A scalar row cannot become an array/collection target either.
-        when(iterable.into(any())).thenReturn(Arrays.asList(1));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(1));
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Object[].class));
     }
@@ -1256,7 +1260,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     @Test
     public void testToListWithNullElementsReturnsEmpty() {
         // No non-null first => returns empty list
-        when(mockFindIterable.into(any())).thenReturn(new ArrayList<>());
+        MongoIterableStubs.stubRows(mockFindIterable, new ArrayList<>());
         List<String> result = MongoDBBase.toList(mockFindIterable, String.class);
         assertEquals(0, result.size());
     }
@@ -1265,7 +1269,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     public void testToListWithDocumentsAlreadyMatchingType() {
         // Documents returned exactly match rowType -> fast path returning rowList as-is
         List<Document> docs = Arrays.asList(new Document("a", 1));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         List<Document> result = MongoDBBase.toList(mockFindIterable, Document.class);
 
@@ -1279,7 +1283,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     public void testToListWithMapClass() {
         // Documents are Maps already so the cast path returns them unchanged
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         @SuppressWarnings("rawtypes")
         List<Map> result = MongoDBBase.toList(mockFindIterable, Map.class);
@@ -1291,7 +1295,7 @@ public class MongoDBBaseTest extends MockitoTestBase {
     public void testToListWithSingleValueExtraction() {
         // A doc with one non-_id field, requested as plain type (String) -- readRow takes value path
         List<Document> docs = Arrays.asList(new Document("name", "alice"), new Document("name", "bob"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         List<String> result = MongoDBBase.toList(mockFindIterable, String.class);
 
@@ -1697,15 +1701,15 @@ public class MongoDBBaseTest extends MockitoTestBase {
         final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
 
         // toList: Document rows and non-Document Map rows are both mapped through toEntity.
-        when(iterable.into(any())).thenReturn(Arrays.asList(new Document("longs", new ArrayList<>(Arrays.asList(1)))));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(new Document("longs", new ArrayList<>(Arrays.asList(1)))));
         assertEquals(Long.class, MongoDBBase.toList(iterable, ContainerEntity.class).get(0).getLongs().get(0).getClass());
-        when(iterable.into(any())).thenReturn(Arrays.asList(new BasicDBObject("longs", new ArrayList<>(Arrays.asList(2)))));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(new BasicDBObject("longs", new ArrayList<>(Arrays.asList(2)))));
         assertEquals(Long.class, MongoDBBase.toList(iterable, ContainerEntity.class).get(0).getLongs().get(0).getClass());
 
         // toList: scalar rows and single-field projections requested as LocalDate are read in UTC.
-        when(iterable.into(any())).thenReturn(Arrays.asList(day, null));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(day, null));
         assertEquals(Arrays.asList(LocalDate.of(2024, 1, 2), null), MongoDBBase.toList(iterable, LocalDate.class));
-        when(iterable.into(any())).thenReturn(Arrays.asList(new Document("_id", 1).append("day", day)));
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(new Document("_id", 1).append("day", day)));
         assertEquals(Arrays.asList(LocalDate.of(2024, 1, 2)), MongoDBBase.toList(iterable, LocalDate.class));
 
         // A bean decoded by its registry codec (e.g. from a typed collection) gets the same element conversion.
@@ -3271,6 +3275,304 @@ public class MongoDBBaseTest extends MockitoTestBase {
     }
 
     // ---- end 2026-10-04 coverageMB ----
+
+    // ---- 2026-10-19 sliceT ----
+
+    @Test
+    public void testExtractDataBeanTargetPassesPositionalRowsThroughLikeTheDocumentBranch_sliceT() {
+        // Rows whose first non-null element is not a Document reach the bean-target branch. Positional rows (Object[], List)
+        // are interpreted by the Dataset against selectPropNames, as in the Document-first branch; forcing them through
+        // Beans.copyAs failed with "Not a bean class".
+        final List<String> columns = Arrays.asList("id", "name");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final Dataset ds = MongoDBBase.extractData(columns, Arrays.asList(new Object[] { "1", "a" }, new Object[] { "2", "b" }), TestEntity.class);
+            assertEquals(columns, ds.columnNames());
+            assertEquals(Arrays.asList("a", "b"), ds.getColumn("name"));
+        }, () -> {
+            final Dataset ds = MongoDBBase.extractData(columns, Collections.singletonList(Arrays.asList("1", "a")), TestEntity.class);
+            assertEquals(Collections.singletonList("a"), ds.getColumn("name"));
+        }, () -> {
+            final Dataset ds = MongoDBBase.extractData(columns, Arrays.asList(new BasicDBObject("name", "x"), new Object[] { "2", "b" }), TestEntity.class);
+            assertEquals(Arrays.asList("x", "b"), ds.getColumn("name"));
+        }, () -> {
+            // A bean row of another class is still copied to the target bean.
+            final ObjectIdEntity other = new ObjectIdEntity();
+            other.setName("o");
+            final Dataset ds = MongoDBBase.extractData(columns, Arrays.asList(new BasicDBObject("name", "x"), other), TestEntity.class);
+            assertEquals(Arrays.asList("x", "o"), ds.getColumn("name"));
+        });
+    }
+
+    @Test
+    public void testToEntitySkipsValuesOfAccessFieldByMethodGetterOnlyProperties_sliceT() {
+        // abacus-common 8.2 treats a field-backed getter-only property of an @AccessFieldByMethod bean as read-only and
+        // Beans.mapToBean skips it, but the decoded-value pass still converted its stored value, so an unconvertible
+        // element ("abc" for a List<Long>/Long[] property) failed the whole row with NumberFormatException.
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final MethodAccessEntity entity = MongoDBBase.toEntity(new Document("name", "x").append("codes", Arrays.asList("abc")), MethodAccessEntity.class);
+            assertEquals("x", entity.getName());
+            assertEquals(0, entity.getCodes().length);
+        }, () -> {
+            final MethodAccessEntity entity = MongoDBBase.toEntity(new Document("name", "y").append("nums", Arrays.asList("abc")), MethodAccessEntity.class);
+            assertEquals("y", entity.getName());
+            assertTrue(entity.getNums().isEmpty());
+        });
+    }
+
+    @Test
+    public void testAppendGroupFieldLeafMapsMissingFieldsToNullKey_sliceT() {
+        // A bare "$a" inside a $group _id expression object is omitted for a document without "a" but kept as null for
+        // {a: null}, splitting one null-key group into two (live, MongoDB 7). Each leaf must be {$ifNull: ["$a", null]}.
+        final Document groupFields = new Document();
+        MongoDBBase.appendGroupField(groupFields, "a");
+        MongoDBBase.appendGroupField(groupFields, "n.m");
+        MongoDBBase.appendGroupField(groupFields, "n.k");
+        MongoDBBase.appendGroupField(groupFields, "n.m"); // a repeated identical path stays harmless
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(new Document("a", new Document("$ifNull", Arrays.asList("$a", null))).append("n",
+                        new Document("m", new Document("$ifNull", Arrays.asList("$n.m", null))).append("k",
+                                new Document("$ifNull", Arrays.asList("$n.k", null)))),
+                        groupFields),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.appendGroupField(groupFields, "n")),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.appendGroupField(groupFields, "a.b")),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.appendGroupField(groupFields, "n.m.x")));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.AccessFieldByMethod
+    public static class MethodAccessEntity {
+        private String name;
+        private final Long[] codes = new Long[0];
+        private final List<Long> nums = new ArrayList<>();
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public Long[] getCodes() {
+            return codes;
+        }
+
+        public List<Long> getNums() {
+            return nums;
+        }
+    }
+
+    // ---- end 2026-10-19 sliceT ----
+
+    // ---- 2026-10-19 mongomem ----
+    // toList converts rows as the cursor yields them (it used to fetch every Document with into(...) and then convert,
+    // holding the result twice). These pin that the observable result is unchanged.
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListStreamsMixedRowsInOrderAndClosesCursor_mongomem() {
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        final TestEntity bean = new TestEntity();
+        bean.setName("c");
+        final ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
+        final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(iterable,
+                Arrays.asList(new Document("_id", id).append("name", "a"), null, new BasicDBObject("name", "b"), bean, new Document("name", "d")));
+
+        final List<TestEntity> result = MongoDBBase.toList(iterable, TestEntity.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(5, result.size()), () -> assertEquals(id.toHexString(), result.get(0).getId()),
+                () -> assertEquals("a", result.get(0).getName()), () -> assertNull(result.get(1)), () -> assertEquals("b", result.get(2).getName()),
+                () -> assertEquals("c", result.get(3).getName()), () -> assertEquals("d", result.get(4).getName()), () -> assertEquals(1, cursors.size()),
+                () -> assertTrue(cursors.get(0).isClosed()), () -> assertEquals(5, cursors.get(0).rowsRead()),
+                // The rows are no longer collected with into(...) first.
+                () -> org.mockito.Mockito.verify(iterable, org.mockito.Mockito.never()).into(org.mockito.ArgumentMatchers.any()));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListKeepsNullRowsEmptyResultsAndMutableLists_mongomem() {
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(iterable, Collections.emptyList());
+            final List<String> empty = MongoDBBase.toList(iterable, String.class);
+            assertTrue(empty.isEmpty());
+            empty.add("mutable");
+            assertTrue(cursors.get(0).isClosed());
+        }, () -> {
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(null, null));
+            final List<String> allNull = MongoDBBase.toList(iterable, String.class);
+            assertEquals(Arrays.asList(null, null), allNull);
+            allNull.add("mutable");
+        }, () -> {
+            // _id-only rows before the first row carrying the value field read as null (the value field is missing) ...
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(new Document("_id", 1), null, new Document("_id", 2).append("a", "x"), new Document("_id", 3)));
+            assertEquals(Arrays.asList(null, null, "x", null), MongoDBBase.toList(iterable, String.class));
+        }, () -> {
+            // ... and by their _id when no row has a value field.
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(new Document("_id", 7), null, new Document("_id", 8)));
+            assertEquals(Arrays.asList("7", null, "8"), MongoDBBase.toList(iterable, String.class));
+        }, () -> {
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(null, new Document("name", "a"), null));
+            final List<TestEntity> beans = MongoDBBase.toList(iterable, TestEntity.class);
+            assertEquals(3, beans.size());
+            assertNull(beans.get(0));
+            assertEquals("a", beans.get(1).getName());
+            assertNull(beans.get(2));
+        }, () -> {
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(null, new Document("a", 1)));
+            final List<HashMap> maps = MongoDBBase.toList(iterable, HashMap.class);
+            assertEquals(Arrays.asList(null, new HashMap<>(Map.of("a", 1))), maps);
+            assertEquals(HashMap.class, maps.get(1).getClass());
+            maps.add(null);
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListConvertsRowsKeptBeforeTheFirstRowNeedingConversion_mongomem() {
+        // Rows already of the requested type are kept as fetched until a row needs conversion; then they are converted
+        // too, exactly as when every row was fetched first.
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        final HashMap<String, Object> hashMap = new HashMap<>(Map.of("name", "bob"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(1_000_001L, null, 2, 3_000_003L));
+            final List<Long> longs = MongoDBBase.toList(iterable, Long.class);
+            assertEquals(Arrays.asList(1_000_001L, null, 2L, 3_000_003L), longs);
+            assertEquals(Long.class, longs.get(2).getClass());
+        }, () -> {
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(hashMap, null, new Document("a", 1)));
+            final List<HashMap> maps = MongoDBBase.toList(iterable, HashMap.class);
+            assertEquals(Arrays.asList(hashMap, null, new HashMap<>(Map.of("a", 1))), maps);
+            // Not every row was a HashMap, so (as before) the HashMap row is copied too.
+            org.junit.jupiter.api.Assertions.assertNotSame(hashMap, maps.get(0));
+            assertEquals(HashMap.class, maps.get(2).getClass());
+        }, () -> {
+            // A scalar row kept first selects scalar conversion, so a later document is rejected.
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(1, new Document("a", 1)));
+            assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Integer.class));
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListConversionFailureClosesCursorAndKeepsFetchThenConvertPrecedence_mongomem() {
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(iterable,
+                    Arrays.asList(new Document("a", "x"), new Document("a", 1), new Document("a", 2)));
+            assertThrows(NumberFormatException.class, () -> MongoDBBase.toList(iterable, Integer.class));
+            assertTrue(cursors.get(0).isClosed());
+            // The rest of the cursor is still read, as when every row was fetched before converting.
+            assertEquals(3, cursors.get(0).rowsRead());
+        }, () -> {
+            final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(iterable, Arrays.asList(new Document("name", "x"), "str"));
+            assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, TestEntity.class));
+            assertTrue(cursors.get(0).isClosed());
+        }, () -> {
+            // A later cursor failure still wins over an earlier conversion failure.
+            final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(iterable,
+                    Arrays.asList(new Document("a", "x"), MongoIterableStubs.CURSOR_FAILURE));
+            assertThrows(com.mongodb.MongoException.class, () -> MongoDBBase.toList(iterable, Integer.class));
+            assertTrue(cursors.get(0).isClosed());
+        }, () -> {
+            // For a scalar target read from documents, every row is validated before any value is converted: the
+            // inconsistent second row is reported, not the unconvertible first value.
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(new Document("a", "x"), new Document("b", 1)));
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(iterable, Integer.class));
+            assertTrue(e.getMessage().contains("inconsistent scalar fields 'a' and 'b'"), e.getMessage());
+        }, () -> {
+            final List<MongoIterableStubs.ListCursor<?>> cursors = MongoIterableStubs.stubRows(iterable,
+                    Arrays.asList(new Document("a", 1), MongoIterableStubs.CURSOR_FAILURE));
+            assertThrows(com.mongodb.MongoException.class, () -> MongoDBBase.toList(iterable, HashMap.class));
+            assertTrue(cursors.get(0).isClosed());
+        });
+    }
+
+    // ---- end 2026-10-19 mongomem ----
+
+    // ---- 2026-10-20 mongoxd ----
+
+    @Test
+    public void testExtractDataMapTargetPassesPositionalAndScalarRowsThroughWithSelectPropNames_mongoxd() {
+        // A Map target with a Map first row sent every non-Map row through Beans.beanToMap, so positional (Object[], List)
+        // and scalar rows failed with "Not a bean class" instead of being read against selectPropNames like other branches.
+        final List<String> columns = Arrays.asList("id", "name");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final Dataset ds = MongoDBBase.extractData(columns, Arrays.asList(new Document("name", "x"), new Object[] { "2", "b" }), Map.class);
+            assertEquals(columns, ds.columnNames());
+            assertEquals(Arrays.asList(null, "2"), ds.getColumn("id"));
+            assertEquals(Arrays.asList("x", "b"), ds.getColumn("name"));
+        }, () -> {
+            final Dataset ds = MongoDBBase.extractData(columns, Arrays.asList(new Document("name", "x"), Arrays.asList("2", "b")), Document.class);
+            assertEquals(Arrays.asList(null, "2"), ds.getColumn("id"));
+            assertEquals(Arrays.asList("x", "b"), ds.getColumn("name"));
+        }, () -> {
+            final Map<String, Object> first = new LinkedHashMap<>();
+            first.put("name", "x");
+            final Dataset ds = MongoDBBase.extractData(columns, Arrays.asList(first, null, new Object[] { "2", "b" }), LinkedHashMap.class);
+            assertEquals(Arrays.asList("x", null, "b"), ds.getColumn("name"));
+        }, () -> {
+            // A scalar row is read as the single selected column.
+            final Dataset ds = MongoDBBase.extractData(Collections.singletonList("name"), Arrays.asList(new Document("name", "x"), "y"), Map.class);
+            assertEquals(Arrays.asList("x", "y"), ds.getColumn("name"));
+        }, () -> {
+            // ... and rejected by the Dataset against several columns, not by a bean conversion.
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> MongoDBBase.extractData(columns, Arrays.asList(new Document("name", "x"), "y"), Map.class));
+            assertTrue(!e.getMessage().contains("Not a bean class"), e.getMessage());
+        }, () -> {
+            // Bean rows are still converted to maps.
+            final TestEntity bean = new TestEntity();
+            bean.setId("1");
+            bean.setName("o");
+            final Dataset ds = MongoDBBase.extractData(columns, Arrays.asList(new Document("name", "x"), bean, new Object[] { "2", "b" }), Map.class);
+            assertEquals(Arrays.asList(null, "1", "2"), ds.getColumn("id"));
+            assertEquals(Arrays.asList("x", "o", "b"), ds.getColumn("name"));
+        });
+    }
+
+    @Test
+    public void testExtractDataMapTargetInferringColumnNamesRejectsNonMapNonBeanRowsClearly_mongoxd() {
+        // Without selectPropNames the column names are collected from every row's keys, so a positional or scalar row cannot
+        // be read; it is rejected with a message naming the row's class instead of "Not a bean class".
+        final Document doc = new Document("name", "x");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> MongoDBBase.extractData(null, Arrays.asList(doc, new Object[] { "2", "b" }), Map.class));
+            assertTrue(e.getMessage().contains("java.lang.Object[]") && !e.getMessage().contains("Not a bean class"), e.getMessage());
+        }, () -> {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> MongoDBBase.extractData(Collections.emptyList(), Arrays.asList(doc, new ArrayList<>(Arrays.asList("2", "b"))), Document.class));
+            assertTrue(e.getMessage().contains("java.util.ArrayList") && !e.getMessage().contains("Not a bean class"), e.getMessage());
+        }, () -> {
+            final Map<String, Object> first = new LinkedHashMap<>();
+            first.put("name", "x");
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> MongoDBBase.extractData(Arrays.asList(first, "y"), LinkedHashMap.class));
+            assertTrue(e.getMessage().contains("java.lang.String") && !e.getMessage().contains("Not a bean class"), e.getMessage());
+        }, () -> {
+            // The null-row check is kept.
+            assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(Arrays.asList(doc, null), Map.class));
+        }, () -> {
+            // Bean rows are still converted, and their keys join the inferred column names.
+            final TestEntity bean = new TestEntity();
+            bean.setId("1");
+            bean.setName("o");
+            final Dataset ds = MongoDBBase.extractData(Arrays.asList(doc, bean), Map.class);
+            assertEquals(Arrays.asList("name", "id"), ds.columnNames());
+            assertEquals(Arrays.asList("x", "o"), ds.getColumn("name"));
+            assertEquals(Arrays.asList(null, "1"), ds.getColumn("id"));
+        });
+    }
+
+    // ---- end 2026-10-20 mongoxd ----
 
     public static class BinaryEntity {
         private ByteBuffer buffer;

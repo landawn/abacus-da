@@ -73,11 +73,7 @@ class MongoDocumentBoundaryTest {
     @SuppressWarnings("unchecked")
     private static MongoIterable<?> iterable(final List<?> rows) {
         final MongoIterable<Object> result = mock(MongoIterable.class);
-        when(result.into(any())).thenAnswer(invocation -> {
-            final List<Object> target = invocation.getArgument(0);
-            target.addAll(rows);
-            return target;
-        });
+        MongoIterableStubs.stubRows(result, rows);
         return result;
     }
 }

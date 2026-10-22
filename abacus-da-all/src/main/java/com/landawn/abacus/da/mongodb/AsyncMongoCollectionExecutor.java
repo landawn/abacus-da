@@ -1427,12 +1427,15 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code queryForBoolean} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command, for example with an {@link IllegalArgumentException} when the stored value cannot be converted to
+     * {@code Boolean} (such as an int64, double or {@code Decimal128} value, an int32 other than {@code 1}/{@code 0}/{@code -1}, or
+     * text such as {@code "yes"} once its surrounding whitespace is ignored; empty or whitespace-only text is {@code false}, not a
+     * failure; see {@link MongoDBBase}).</p>
      *
      * @param propName the name of the boolean property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalBoolean}
-     *         holding the field value (or {@code false} for missing/null) when at least one document
+     *         holding the field value (or {@code false} for missing/null, or for blank text) when at least one document
      *         matches; {@code OptionalBoolean.empty()} when no document matches
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
@@ -2769,8 +2772,9 @@ public final class AsyncMongoCollectionExecutor {
     /**
      * Asynchronously creates a typed change stream to watch for changes.
      *
-     * <p>Returns a ChangeStreamIterable that deserializes change events to the specified type
-     * for type-safe change monitoring.</p>
+     * <p>Returns a ChangeStreamIterable whose change events decode {@code ChangeStreamDocument.fullDocument}
+     * as the specified type. The iterated elements are still {@code ChangeStreamDocument<T>} change events,
+     * not {@code T} instances.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2782,8 +2786,8 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
      * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
      *
-     * @param <T> the type to deserialize change events to
-     * @param rowType the Class object representing the row type
+     * @param <T> the type to decode each change event's full document into
+     * @param rowType the class to decode each change event's full document into
      * @return a ContinuableFuture that completes with a typed ChangeStreamIterable
      * @throws IllegalArgumentException if {@code rowType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
@@ -2836,8 +2840,9 @@ public final class AsyncMongoCollectionExecutor {
     /**
      * Asynchronously creates a typed change stream with an aggregation pipeline.
      *
-     * <p>Combines pipeline filtering with type-safe deserialization for advanced
-     * change stream processing with custom types.</p>
+     * <p>Combines pipeline filtering with typed decoding of each change event's
+     * {@code ChangeStreamDocument.fullDocument}. The iterated elements are still
+     * {@code ChangeStreamDocument<T>} change events, not {@code T} instances.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2851,9 +2856,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
      * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
      *
-     * @param <T> the type to deserialize change events to
+     * @param <T> the type to decode each change event's full document into
      * @param pipeline the aggregation pipeline to apply to change events
-     * @param rowType the Class object representing the row type
+     * @param rowType the class to decode each change event's full document into
      * @return a ContinuableFuture that completes with a filtered typed ChangeStreamIterable
      * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
@@ -2876,7 +2881,10 @@ public final class AsyncMongoCollectionExecutor {
      * <p>This method performs a non-blocking insert operation for a single document. The object can be
      * a Document, Map, or any entity class with getter/setter methods. Entity objects are converted
      * via {@link MongoDBBase#toDocument(Object)} (null bean properties dropped; Map null values
-     * preserved). The operation is executed on the configured thread pool.</p>
+     * preserved). The operation is executed on the configured thread pool. A caller-supplied {@link Document}
+     * is inserted as-is, so the driver populates a generated {@code _id} on it in place; Maps and entities are
+     * converted to new documents, so a generated {@code _id} is not written back to them (read it from
+     * {@link InsertOneResult#getInsertedId()}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2920,7 +2928,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking insertion of a single document into the collection
      * with custom insertion options. The document is converted via {@link MongoDBBase#toDocument(Object)}
-     * (or passed through when already a {@link Document}), and the insertion is executed on the thread pool.</p>
+     * (or passed through when already a {@link Document}), and the insertion is executed on the thread pool.
+     * Only a passed-through {@link Document} receives a generated {@code _id} in place; for a converted Map or
+     * entity, read it from {@link InsertOneResult#getInsertedId()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2956,7 +2966,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking insertion of multiple documents in a single operation.
      * The documents are converted to BSON format and inserted efficiently using MongoDB's bulk
-     * write capabilities. This is more efficient than individual insertOne operations.</p>
+     * write capabilities. This is more efficient than individual insertOne operations. Caller-supplied
+     * {@link Document} instances are inserted as-is, so the driver populates a generated {@code _id} on them in
+     * place; Maps and entities are converted to new documents, so a generated {@code _id} is not written back to
+     * them (read it from {@link InsertManyResult#getInsertedIds()}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2994,7 +3007,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking insertion of multiple documents using custom
      * insertion options. Options can control ordering behavior, document validation bypass,
-     * and error handling strategies for bulk operations.</p>
+     * and error handling strategies for bulk operations. Generated-{@code _id} handling is the same as
+     * {@link #insertMany(Collection)}: only caller-supplied {@link Document} instances receive it in place.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3471,7 +3485,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
      * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal
-     * ObjectId.</p>
+     * ObjectId, or when the converted replacement has a top-level field name starting with {@code $}.</p>
      *
      * @param objectId the string representation of the ObjectId to identify the document
      * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
@@ -3509,7 +3523,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level field name
+     * starting with {@code $}.</p>
      *
      * @param objectId the ObjectId to identify the document for replacement
      * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
@@ -3560,7 +3575,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level field name
+     * starting with {@code $}.</p>
      *
      * @param filter the query filter to select the document to replace
      * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
@@ -3599,7 +3615,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
-     * the MongoDB command.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level field name
+     * starting with {@code $}.</p>
      *
      * @param filter the query filter to select the document to replace
      * @param replacement the replacement document; for a match, an omitted {@code _id} is retained while
@@ -3855,6 +3872,11 @@ public final class AsyncMongoCollectionExecutor {
      * multiple documents in a single database round trip. The operation is ordered by default,
      * meaning it stops on the first error encountered.</p>
      *
+     * <p><b>Generated {@code _id}:</b> the driver populates a generated {@code _id} in place on caller-supplied
+     * {@link Document} entries that lack one. Converted entries (beans and Maps) are copies, so a generated
+     * {@code _id} is <i>not</i> written back to the original object; read it from
+     * {@link BulkWriteResult#getInserts()} instead.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(new User("Alice"), new User("Bob"), new User("Charlie"));
@@ -3886,7 +3908,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking bulk insert operation with additional control
      * through BulkWriteOptions. You can specify whether the operations should be ordered
-     * (stop on first error) or unordered (continue despite errors), and control validation.</p>
+     * (stop on first error) or unordered (continue despite errors), and control validation.
+     * Entry conversion and generated-{@code _id} handling are the same as {@link #bulkInsert(Collection)}:
+     * only caller-supplied {@link Document} entries receive the generated {@code _id} in place.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4315,7 +4339,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level
+     * field name starting with {@code $}.</p>
      *
      * @param filter the query filter to find the document
      * @param replacement the replacement document
@@ -4348,7 +4373,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level
+     * field name starting with {@code $}.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4387,7 +4413,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level
+     * field name starting with {@code $}.</p>
      *
      * @param filter the query filter to find the document
      * @param replacement the replacement document
@@ -4422,7 +4449,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level
+     * field name starting with {@code $}.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4791,6 +4819,11 @@ public final class AsyncMongoCollectionExecutor {
      * composite key, e.g. {@code {_id: {department: <value>, location: <value>}}}.
      * This is a beta API and may change in future versions.</p>
      *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group; in the
+     * {@code _id} key document that field is present with the value {@code null} (for example
+     * {@code {_id: {department: "sales", location: null}}}), and a dotted path such as {@code "a.b"} appears as the nested
+     * document {@code {a: {b: <value>}}}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.groupBy(Arrays.asList("department", "location"))
@@ -4882,6 +4915,11 @@ public final class AsyncMongoCollectionExecutor {
      * fields and counts the number of documents in each group. It's a convenience method that
      * creates an aggregation pipeline with a $group stage using a $sum accumulator for composite grouping.
      * Each result is the raw group document {@code {_id: {<field>: <value>, ...}, count: <n>}}.</p>
+     *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group; in the
+     * {@code _id} key document that field is present with the value {@code null} (for example
+     * {@code {_id: {department: "sales", location: null}, count: 2}}), and a dotted path such as {@code "a.b"} appears as
+     * the nested document {@code {a: {b: <value>}}}.</p>
      *
      * <p>This is a beta API and may change in future versions.</p>
      *
@@ -5058,12 +5096,24 @@ public final class AsyncMongoCollectionExecutor {
          * Releases a stream whose cancellation already succeeded. Stream.close() runs close handlers and may throw;
          * propagating that failure would make Future.cancel() throw instead of returning its documented boolean and
          * would mask the successful cancellation, so cleanup failures are intentionally swallowed here.
+         *
+         * <p>The close runs with the current thread's interrupt status cleared and restores it afterwards. After a
+         * successful {@code cancel(true)}, the worker that publishes a late stream has always been interrupted already
+         * (FutureTask interrupts the runner before cancel returns), and the MongoDB sync driver's cursor close on an
+         * interrupted thread returns normally without sending {@code killCursors}, leaving the server-side cursor open
+         * until it times out.</p>
          */
         private static void closeQuietly(final Stream<?> stream) {
+            final boolean interrupted = Thread.interrupted();
+
             try {
                 stream.close();
             } catch (final RuntimeException e) {
                 // No consumer for a cleanup failure after a successful cancellation.
+            } finally {
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
 

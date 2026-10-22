@@ -25,9 +25,11 @@ import org.neo4j.ogm.cypher.Filter;
 import org.neo4j.ogm.cypher.Filters;
 import org.neo4j.ogm.cypher.query.Pagination;
 import org.neo4j.ogm.cypher.query.SortOrder;
+import org.neo4j.ogm.session.Neo4jSession;
 import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
 import org.neo4j.ogm.transaction.Transaction;
+import org.neo4j.ogm.transaction.TransactionManager;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
@@ -56,7 +58,15 @@ import com.landawn.abacus.util.u.Optional;
  *       session is offered back to the queue. If the queue is full the session is silently dropped
  *       (no {@code close()} call is made; the OGM {@link Session} has no {@code close} operation).
  *       A runtime failure while inspecting, rolling back, or clearing a returned session is logged
- *       and the session is discarded, so it cannot replace an exception raised by the database operation itself.
+ *       and the session is discarded. The session return has try-with-resources semantics: once the
+ *       database operation itself has thrown, nothing raised while returning its session &mdash; an
+ *       {@link Error} included &mdash; can replace that exception; it is attached to the operation's
+ *       exception as a suppressed exception instead. An {@code Error} raised by the session return
+ *       propagates only when the operation completed normally.
+ *       A session discarded because its leftover transaction could not be rolled back is still cleared
+ *       (best effort), and for a {@link Neo4jSession} the stale transaction is detached from the
+ *       session's transaction manager without committing it, so the discarded session is not kept
+ *       reachable by the manager's thread-local state.
  *       Other session-level state mutated by callers of {@link #run(Consumer)}/{@link #call(Function)}
  *       — registered event listeners, bookmarks, load strategy — is <i>not</i> reset and would leak
  *       into subsequent borrowers; do not mutate such configuration on a pooled session.</li>
@@ -309,13 +319,7 @@ public final class Neo4jExecutor {
     public void run(final Consumer<? super Session> action) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(action, cs.action);
 
-        final Session session = getSession();
-
-        try {
-            action.accept(session);
-        } finally {
-            closeSession(session);
-        }
+        runWithSession(action);
     }
 
     /**
@@ -351,13 +355,7 @@ public final class Neo4jExecutor {
     public <T> T call(final Function<? super Session, ? extends T> action) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(action, cs.action);
 
-        final Session session = getSession();
-
-        try {
-            return action.apply(session);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(action);
     }
 
     /**
@@ -392,13 +390,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(id, cs.id);
 
-        final Session session = getSession();
-
-        try {
-            return session.load(targetClass, id);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.load(targetClass, id));
     }
 
     /**
@@ -436,13 +428,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(id, cs.id);
 
-        final Session session = getSession();
-
-        try {
-            return session.load(targetClass, id, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.load(targetClass, id, depth));
     }
 
     /**
@@ -482,13 +468,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids));
     }
 
     /**
@@ -526,13 +506,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids, depth));
     }
 
     /**
@@ -572,13 +546,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids, sortOrder);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids, sortOrder));
     }
 
     /**
@@ -617,13 +585,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids, sortOrder, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids, sortOrder, depth));
     }
 
     /**
@@ -662,13 +624,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids, pagination));
     }
 
     /**
@@ -708,13 +664,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids, pagination, depth));
     }
 
     /**
@@ -756,13 +706,7 @@ public final class Neo4jExecutor {
             final Pagination pagination) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids, sortOrder, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids, sortOrder, pagination));
     }
 
     /**
@@ -807,13 +751,7 @@ public final class Neo4jExecutor {
             final Pagination pagination, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, ids, sortOrder, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, ids, sortOrder, pagination, depth));
     }
 
     /**
@@ -821,7 +759,9 @@ public final class Neo4jExecutor {
      * <p>
      * This method extracts the identifiers from the provided entities and returns entities loaded
      * in the borrowed session; it does not mutate the supplied instances or collection. The
-     * entities must already have identifiers. The OGM default load depth of 1 applies.
+     * entities must already have identifiers: an entity whose primary-index value (or native graph ID,
+     * for a class without a primary index) is {@code null} is skipped and is absent from the result.
+     * The OGM default load depth of 1 applies.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -844,21 +784,15 @@ public final class Neo4jExecutor {
      * @see #loadAll(Collection, int)
      */
     public <T> Collection<T> loadAll(final Collection<T> objects) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects));
     }
 
     /**
      * Reloads a collection of existing node entities from Neo4j with specified relationship depth.
      * <p>
-     * This method refreshes the provided entities from the database and loads their
-     * relationships up to the specified depth. Useful for ensuring entities have
-     * the most current data and relationship information.
+     * This method reloads the provided entities from the database by identifier and loads their
+     * relationships up to the specified depth. As with {@link #loadAll(Collection)}, the result holds
+     * newly loaded instances; the supplied instances are not modified.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -883,21 +817,15 @@ public final class Neo4jExecutor {
      * @see #loadAll(Collection)
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final int depth) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects, depth));
     }
 
     /**
      * Reloads a collection of existing node entities from Neo4j with specified sort order.
      * <p>
-     * This method refreshes the provided entities from the database and returns them
-     * sorted according to the specified order. Useful for maintaining consistent
-     * ordering when refreshing entity collections.
+     * This method reloads the provided entities from the database by identifier and returns the
+     * newly loaded instances sorted according to the specified order; the supplied instances are
+     * not modified.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -926,21 +854,15 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects, sortOrder);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects, sortOrder));
     }
 
     /**
      * Reloads a collection of existing node entities from Neo4j with sort order and relationship depth.
      * <p>
-     * This method refreshes the provided entities, loads their relationships to the specified
-     * depth, and returns them sorted according to the specified order. Provides comprehensive
-     * entity refresh with related data and ordering.
+     * This method reloads the provided entities by identifier, loads their relationships to the
+     * specified depth, and returns the newly loaded instances sorted according to the specified
+     * order; the supplied instances are not modified.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -968,21 +890,14 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final int depth) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects, sortOrder, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects, sortOrder, depth));
     }
 
     /**
      * Reloads a collection of existing node entities from Neo4j with pagination.
      * <p>
-     * This method refreshes the provided entities and returns a paginated subset.
-     * Useful for refreshing large collections of entities while managing memory usage
-     * and response times.
+     * This method reloads the provided entities by identifier and returns a paginated subset of
+     * the newly loaded instances; the supplied instances are not modified.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1011,21 +926,15 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final Pagination pagination) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects, pagination));
     }
 
     /**
      * Reloads a collection of existing node entities from Neo4j with pagination and relationship depth.
      * <p>
-     * This method refreshes the provided entities with their relationships and returns a
-     * paginated subset. Combines entity refresh, relationship loading, and pagination
-     * for comprehensive data management.
+     * This method reloads the provided entities by identifier together with their relationships
+     * and returns a paginated subset of the newly loaded instances; the supplied instances are not
+     * modified.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1054,21 +963,15 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final Pagination pagination, final int depth) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects, pagination, depth));
     }
 
     /**
      * Reloads a collection of existing node entities from Neo4j with sort order and pagination.
      * <p>
-     * This method refreshes the provided entities, sorts them according to the specified
-     * order, and returns a paginated subset. Ideal for building sorted, paginated views
-     * of refreshed entity data.
+     * This method reloads the provided entities by identifier, sorts the newly loaded instances
+     * according to the specified order, and returns a paginated subset; the supplied instances are
+     * not modified.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1100,13 +1003,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final Pagination pagination) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects, sortOrder, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects, sortOrder, pagination));
     }
 
     /**
@@ -1148,13 +1045,7 @@ public final class Neo4jExecutor {
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final SortOrder sortOrder, final Pagination pagination, final int depth)
             throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(objects, sortOrder, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(objects, sortOrder, pagination, depth));
     }
 
     /**
@@ -1192,13 +1083,7 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass));
     }
 
     /**
@@ -1231,13 +1116,7 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, depth));
     }
 
     /**
@@ -1272,13 +1151,7 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, sortOrder);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, sortOrder));
     }
 
     /**
@@ -1312,13 +1185,7 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final SortOrder sortOrder, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, sortOrder, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, sortOrder, depth));
     }
 
     /**
@@ -1354,13 +1221,7 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Pagination pagination) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, pagination));
     }
 
     /**
@@ -1396,13 +1257,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, pagination, depth));
     }
 
     /**
@@ -1441,13 +1296,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, sortOrder, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, sortOrder, pagination));
     }
 
     /**
@@ -1487,13 +1336,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, sortOrder, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, sortOrder, pagination, depth));
     }
 
     /**
@@ -1530,13 +1373,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter));
     }
 
     /**
@@ -1572,13 +1409,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter, depth));
     }
 
     /**
@@ -1619,13 +1450,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter, sortOrder);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter, sortOrder));
     }
 
     /**
@@ -1665,13 +1490,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter, sortOrder, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter, sortOrder, depth));
     }
 
     /**
@@ -1711,13 +1530,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter, pagination));
     }
 
     /**
@@ -1757,13 +1570,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter, pagination, depth));
     }
 
     /**
@@ -1807,13 +1614,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter, sortOrder, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter, sortOrder, pagination));
     }
 
     /**
@@ -1857,13 +1658,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filter, sortOrder, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filter, sortOrder, pagination, depth));
     }
 
     /**
@@ -1904,13 +1699,7 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters));
     }
 
     /**
@@ -1948,13 +1737,7 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters, depth));
     }
 
     /**
@@ -1997,13 +1780,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters, sortOrder);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters, sortOrder));
     }
 
     /**
@@ -2045,13 +1822,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters, sortOrder, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters, sortOrder, depth));
     }
 
     /**
@@ -2092,13 +1863,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters, pagination));
     }
 
     /**
@@ -2139,13 +1904,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters, pagination, depth));
     }
 
     /**
@@ -2190,13 +1949,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters, sortOrder, pagination);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters, sortOrder, pagination));
     }
 
     /**
@@ -2242,13 +1995,7 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.loadAll(targetClass, filters, sortOrder, pagination, depth);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.loadAll(targetClass, filters, sortOrder, pagination, depth));
     }
 
     /**
@@ -2288,13 +2035,7 @@ public final class Neo4jExecutor {
     public void save(final Object object) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(object, cs.object);
 
-        final Session session = getSession();
-
-        try {
-            session.save(object);
-        } finally {
-            closeSession(session);
-        }
+        runWithSession(session -> session.save(object));
     }
 
     /**
@@ -2331,13 +2072,7 @@ public final class Neo4jExecutor {
     public void save(final Object object, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(object, cs.object);
 
-        final Session session = getSession();
-
-        try {
-            session.save(object, depth);
-        } finally {
-            closeSession(session);
-        }
+        runWithSession(session -> session.save(object, depth));
     }
 
     /**
@@ -2373,13 +2108,7 @@ public final class Neo4jExecutor {
     public void delete(final Object object) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(object, cs.object);
 
-        final Session session = getSession();
-
-        try {
-            session.delete(object);
-        } finally {
-            closeSession(session);
-        }
+        runWithSession(session -> session.delete(object));
     }
 
     /**
@@ -2414,13 +2143,7 @@ public final class Neo4jExecutor {
     public void deleteAll(final Class<?> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            session.deleteAll(targetClass);
-        } finally {
-            closeSession(session);
-        }
+        runWithSession(session -> session.deleteAll(targetClass));
 
     }
 
@@ -2478,13 +2201,7 @@ public final class Neo4jExecutor {
             logger.debug("Executing Cypher: {}", cypher);
         }
 
-        final Session session = getSession();
-
-        try {
-            return Optional.ofNullable(session.queryForObject(targetClass, cypher, parameters));
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> Optional.ofNullable(session.queryForObject(targetClass, cypher, parameters)));
     }
 
     /**
@@ -2529,13 +2246,7 @@ public final class Neo4jExecutor {
             logger.debug("Executing Cypher: {}", cypher);
         }
 
-        final Session session = getSession();
-
-        try {
-            return Stream.of(session.query(cypher, parameters).iterator());
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> Stream.of(session.query(cypher, parameters).iterator()));
     }
 
     /**
@@ -2595,13 +2306,7 @@ public final class Neo4jExecutor {
             logger.debug("Executing Cypher: {}", cypher);
         }
 
-        final Session session = getSession();
-
-        try {
-            return Stream.of(session.query(cypher, parameters, readOnly).iterator());
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> Stream.of(session.query(cypher, parameters, readOnly).iterator()));
     }
 
     /**
@@ -2651,13 +2356,7 @@ public final class Neo4jExecutor {
             logger.debug("Executing Cypher: {}", cypher);
         }
 
-        final Session session = getSession();
-
-        try {
-            return Stream.of(session.query(targetClass, cypher, parameters).iterator());
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> Stream.of(session.query(targetClass, cypher, parameters).iterator()));
     }
 
     /**
@@ -2703,13 +2402,7 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filters, cs.filters);
 
-        final Session session = getSession();
-
-        try {
-            return session.count(targetClass, filters);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.count(targetClass, filters));
     }
 
     /**
@@ -2749,13 +2442,7 @@ public final class Neo4jExecutor {
     public long count(final Class<?> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        final Session session = getSession();
-
-        try {
-            return session.countEntitiesOfType(targetClass);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.countEntitiesOfType(targetClass));
     }
 
     /**
@@ -2791,13 +2478,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Serializable)
      */
     public Long getGraphId(final Object possibleEntity) throws RuntimeException {
-        final Session session = getSession();
-
-        try {
-            return session.resolveGraphIdFor(possibleEntity);
-        } finally {
-            closeSession(session);
-        }
+        return withSession(session -> session.resolveGraphIdFor(possibleEntity));
     }
 
     private Session getSession() {
@@ -2810,6 +2491,65 @@ public final class Neo4jExecutor {
         }
 
         return session;
+    }
+
+    /**
+     * Borrows a pooled session, applies {@code body} to it and returns the session to the pool with
+     * try-with-resources semantics: if {@code body} throws, its exception always wins and whatever the
+     * session return throws (an {@link Error} included) is attached to it as a suppressed exception; if
+     * {@code body} completes normally, a failure of the session return propagates as it is.
+     *
+     * @param <T> the type returned by {@code body}
+     * @param body the work to do with the borrowed session
+     * @return the value produced by {@code body}
+     */
+    private <T> T withSession(final Function<? super Session, ? extends T> body) {
+        final Session session = getSession();
+        Throwable primary = null;
+
+        try {
+            return body.apply(session);
+        } catch (final Throwable e) {
+            primary = e;
+
+            throw e;
+        } finally {
+            closeSession(session, primary);
+        }
+    }
+
+    /**
+     * {@link #withSession(Function)} for a {@code body} that produces no value.
+     */
+    private void runWithSession(final Consumer<? super Session> body) {
+        withSession(session -> {
+            body.accept(session);
+
+            return null;
+        });
+    }
+
+    /**
+     * Returns a borrowed session to the pool (see {@link #closeSession(Session)}) on behalf of an operation
+     * that threw {@code primary}, or that completed normally when {@code primary} is {@code null}.
+     */
+    private void closeSession(final Session session, final Throwable primary) {
+        if (primary == null) {
+            closeSession(session);
+
+            return;
+        }
+
+        try {
+            closeSession(session);
+        } catch (final Throwable cleanupFailure) { // NOSONAR
+            // WHY: this runs in the finally block of every borrowing operation, where Java's finally semantics would let
+            // an Error escaping the session return (releaseDiscardedSession lets Errors through on purpose) replace the
+            // operation's own exception; discardSession can only attach the rollback failure to that Error, never the
+            // exception the operation threw. Mirror try-with-resources instead: the operation's exception always wins and
+            // the clean-up failure survives as its suppressed exception.
+            addSuppressedIfDistinct(primary, cleanupFailure);
+        }
     }
 
     @SuppressWarnings("resource")
@@ -2852,9 +2592,7 @@ public final class Neo4jExecutor {
                         }
                     }
 
-                    if (logger.isWarnEnabled()) {
-                        logger.warn("Failed to roll back a transaction left open on a returned session; discarding the session", e);
-                    }
+                    discardSession(session, tx, e);
 
                     return;
                 }
@@ -2862,9 +2600,7 @@ public final class Neo4jExecutor {
                 try {
                     tx.close();
                 } catch (final RuntimeException e) {
-                    if (logger.isWarnEnabled()) {
-                        logger.warn("Failed to roll back a transaction left open on a returned session; discarding the session", e);
-                    }
+                    discardSession(session, tx, e);
 
                     return;
                 }
@@ -2881,6 +2617,84 @@ public final class Neo4jExecutor {
             }
 
             sessionPool.offer(session); //NOSONAR
+        }
+    }
+
+    /**
+     * Discards a returned session whose leftover transaction could not be rolled back (or closed):
+     * releases it through {@link #releaseDiscardedSession} and logs {@code failure} with every secondary
+     * failure attached, whatever the release did. An {@code Error} thrown by the release leaves this method
+     * with {@code failure} attached as a suppressed exception; {@link #closeSession(Session, Throwable)} then
+     * lets it propagate only when the operation that borrowed the session completed normally, otherwise it
+     * becomes a suppressed exception of the operation's own exception.
+     */
+    private static void discardSession(final Session session, final Transaction tx, final RuntimeException failure) {
+        try {
+            releaseDiscardedSession(session, tx, failure);
+        } catch (final Error releaseError) {
+            // WHY: releaseDiscardedSession lets an Error propagate on purpose, but the Error must not erase the
+            // rollback failure it interrupted: attach it as suppressed (it is the reason the release ran at all).
+            addSuppressedIfDistinct(releaseError, failure);
+
+            throw releaseError;
+        } finally {
+            // WHY: in finally, not after the release, so the rollback failure is still logged when the release
+            // throws an Error; otherwise it would only survive as a suppressed exception of that Error.
+            if (logger.isWarnEnabled()) {
+                logger.warn("Failed to roll back a transaction left open on a returned session; discarding the session", failure);
+            }
+        }
+    }
+
+    /**
+     * Best-effort release of a session that is being discarded because its leftover transaction
+     * could not be rolled back. Never throws a {@code RuntimeException}: secondary runtime failures are
+     * attached to {@code failure} (which the caller logs) so they cannot replace the operation's own
+     * exception. An {@code Error} is deliberately not caught: it propagates out of the clean-up, past the
+     * rest of this release (a failed detach is then not followed by {@code clear()}), and the caller
+     * ({@link #discardSession}) attaches {@code failure} to it as a suppressed exception and still logs
+     * {@code failure}. Such an {@code Error} reaches the executor's caller only when the operation that
+     * borrowed the session completed normally; if the operation itself threw, the {@code Error} is attached
+     * to that exception as a suppressed exception instead (see {@link #closeSession(Session, Throwable)}).
+     * Nothing in here commits: the detach runs with a no-op callback.
+     */
+    private static void releaseDiscardedSession(final Session session, final Transaction tx, final RuntimeException failure) {
+        // WHY: OGM's DefaultTransactionManager removes a transaction from its per-manager ThreadLocal
+        // only after the native rollback/commit succeeded, so after a failed rollback the stale
+        // transaction stays registered. Its value chain (tx -> manager -> ThreadLocal key) keeps the
+        // weakly-referenced key alive, so the entry is never expunged and would pin this discarded
+        // session - mapping context and native transaction included - for the thread's lifetime.
+        // 1) Detach it through the public TransactionManager.close(tx, callback) contract: with a
+        //    no-op callback nothing is rolled back or committed (no COMMIT_PENDING commit), the
+        //    transaction is just unregistered from the current thread. getTransactionManager() is
+        //    documented by OGM as safe to use after down-casting to Neo4jSession.
+        if (session instanceof final Neo4jSession neo4jSession) {
+            try {
+                final TransactionManager txManager = neo4jSession.getTransactionManager();
+
+                // Skip if a close() retry already deregistered it (close() would throw "not current").
+                if (txManager != null && txManager.getCurrentTransaction() == tx) {
+                    txManager.close(tx, listener -> {
+                        // intentionally empty: detach only, do not touch the native transaction
+                    });
+                }
+            } catch (final RuntimeException detachFailure) {
+                addSuppressedIfDistinct(failure, detachFailure);
+            }
+        }
+
+        // 2) Release the mapping context even when the session itself stays reachable (e.g. a
+        //    non-Neo4jSession implementation, or a failed detach).
+        try {
+            session.clear();
+        } catch (final RuntimeException clearFailure) {
+            addSuppressedIfDistinct(failure, clearFailure);
+        }
+    }
+
+    private static void addSuppressedIfDistinct(final Throwable failure, final Throwable other) {
+        if (other != failure) {
+            failure.addSuppressed(other);
         }
     }
 

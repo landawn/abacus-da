@@ -65,7 +65,6 @@ import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry
 import com.datastax.oss.driver.api.core.type.reflect.GenericType;
 import com.datastax.oss.protocol.internal.ProtocolConstants;
 import com.datastax.oss.driver.api.core.AllNodesFailedException;
-import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.exception.ParsingException;
@@ -124,7 +123,24 @@ import lombok.experimental.Accessors;
  * subsequent identical CQL strings reuse the cached server-side preparation; a fresh
  * {@link BoundStatement} is created from the cached preparation on every call. Bind values are
  * positionally bound after parameter-name resolution and best-effort type conversion against the
- * prepared statement's metadata.</p>
+ * prepared statement's metadata. For a {@code timestamp} column (driver type {@link java.time.Instant}) a
+ * {@link java.time.LocalDateTime} is bound as the instant of its wall-clock time in the JVM default time zone (as the
+ * driver 3 executor and a raw {@link CqlBuilder} literal store it), and a {@link java.time.ZonedDateTime} or
+ * {@link java.time.OffsetDateTime} as the instant it denotes; a {@code timestamp} read into a {@code LocalDateTime},
+ * {@code ZonedDateTime} or {@code OffsetDateTime} target or bean property is that instant expressed in the JVM default
+ * time zone (use {@code withZoneSameInstant(ZoneOffset.UTC)}, or {@code withOffsetSameInstant} for an {@code OffsetDateTime}, for
+ * UTC), as the driver 3 executor reads it.</p>
+ *
+ * <h2>Boolean Conversion</h2>
+ * <p>Column reads into {@code Boolean}/{@code boolean} targets and bind values for {@code boolean} columns follow the strict
+ * rule described under <i>Boolean Conversion</i> in {@link CassandraExecutorBase}: only an {@code int}, {@code smallint} or
+ * {@code tinyint} value {@code 1} (true), {@code 0} or {@code -1} (both false), and the text {@code 1}, {@code 0}, {@code -1},
+ * {@code y}, {@code Y}, {@code n}, {@code N}, {@code true} or {@code false} (any case) convert. Text is read without its
+ * leading and trailing padding ({@code " Y "} converts), and empty or whitespace-only text converts to {@code false} for a
+ * {@code boolean} and a {@code Boolean} target alike. Any other value read, including
+ * every {@code bigint}, {@code double} or {@code decimal} value and a {@code count(*)} result, throws
+ * {@link IllegalArgumentException}; a bind value the rule rejects (a {@code Long 1L}, the text {@code "yes"}) is bound
+ * unchanged and fails with a {@link CodecNotFoundException}.</p>
  *
  * <h2>Batch Semantics</h2>
  * <p>Batch helpers accept a {@link BatchType}: {@link BatchType#LOGGED LOGGED} (the default when
@@ -693,7 +709,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             }
         }
 
-        return new RowDataset(columnNameList, columnList);
+        // The public constructor copies every column (abacus-common 8.1.0+), holding the whole result twice. These lists are
+        // built here, one per column, and never exposed or changed afterwards, so the Dataset can adopt them.
+        return RowDataset.fromOwnedColumns(columnNameList, columnList);
     }
 
     /**
@@ -713,9 +731,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <li><strong>Basic types:</strong> For single-column results (String, Integer, etc.)</li>
      * </ul>
      *
-     * <p>For single-value targets, a {@code NULL} column becomes the primitive default when {@code targetClass}
-     * is primitive (for example, {@code 0} for {@code int.class}). Wrapper and other reference targets preserve
-     * {@code null}; use {@code Integer.class} instead of {@code int.class} to distinguish NULL from a stored zero.
+     * <p>For single-value targets, a {@code NULL} column maps to the default value of {@code targetClass}: the primitive
+     * default for a primitive class token (for example, {@code 0} for {@code int.class}), an empty value for
+     * {@code Optional}, {@code Nullable}, {@code OptionalInt} and similar types, and {@code null} for wrappers and other
+     * reference types; use {@code Integer.class} instead of {@code int.class} to distinguish NULL from a stored zero.
      * An empty result set produces an empty list for either target type.</p>
      *
      * <p>For raw-row targets, the list returned by {@link ResultSet#all()} is returned unchanged.
@@ -875,10 +894,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     // A getter-only (computed) property, e.g. one inherited from an @Entity superclass (abacus-common 8.1.0), is in
     // propInfoList, so generated INSERT/SELECT statements (and UDT serialization) include its column; but
     // PropInfo.setPropValue throws UnsupportedOperationException for it, which failed the whole row on read. Its value is
-    // skipped on read, as the JSON parser does. PropInfo's isReadOnlyProperty flag is package-private; a property without
-    // a field is SERIALIZE_ONLY exactly when it is read-only.
+    // skipped on read, as the JSON parser does. Since abacus-common 8.2.1 a read-only property may also have a backing field
+    // (an @AccessFieldByMethod field without a setter), so the public isReadOnlyProperty flag is tested rather than
+    // field == null. WHY no direction test: an explicit DESERIALIZE_ONLY (declarable only on an @AccessFieldByMethod field
+    // without a setter) cannot make the property writable; setPropValue still throws, which failed the whole row. A read-only
+    // property is skipped whatever its direction, as by the HBase, DynamoDB and MongoDB executors.
     private static boolean isReadOnlyProperty(final PropInfo propInfo) {
-        return propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY;
+        return propInfo.isReadOnlyProperty;
     }
 
     /**
@@ -980,8 +1002,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * converts a {@code ByteBuffer} to {@code null} for {@code byte[]}, and a {@code byte[]} to a
      * {@code ByteBuffer} whose position already equals its limit (so the driver would encode an empty blob).
      * A {@link LocalTime} is converted to {@code java.sql.Time} here as well (keeping milliseconds), because
-     * {@code N.convert} rejects one with a fractional second or on a whole minute. Every other conversion is delegated to
-     * {@code N.convert}.
+     * {@code N.convert} rejects one with a fractional second or on a whole minute. The {@code timestamp} mappings that
+     * {@code N.convert} rejects are handled here too: a {@link java.time.LocalDateTime} bound to a {@code timestamp} column
+     * (driver type {@link Instant}) is the instant of its wall-clock time in the JVM default time zone (the instant the driver 3
+     * executor stores for the same value, and the one {@link CqlBuilder} inlines for a raw {@code LocalDateTime} literal), a
+     * {@link java.time.ZonedDateTime} (any {@link java.time.chrono.ChronoZonedDateTime}) is its instant, and an {@code Instant}
+     * read into a {@code LocalDateTime}, {@code ZonedDateTime} or {@link java.time.OffsetDateTime} target is that instant
+     * expressed in the JVM default time zone ({@code N.convert} gave the zoned targets offset UTC, the accidental result of parsing
+     * {@code Instant.toString()}; the driver 3 executor and abacus-common's own {@code Date} conversions use the default zone).
+     * Every other conversion is delegated to {@code N.convert}.
      * @throws RuntimeException if {@code value} cannot be converted to {@code targetClass}
      */
     @SuppressWarnings("unchecked")
@@ -996,6 +1025,31 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             return (T) ByteBuffer.wrap(bytes);
         } else if (targetClass == java.sql.Time.class && value instanceof final LocalTime localTime) {
             return (T) fromTimeOfDay(localTime, targetClass);
+        } else if (targetClass == Instant.class && value instanceof final java.time.LocalDateTime localDateTime) {
+            // WHY: N.convert(LocalDateTime, Instant.class) parses the zone-less toString() as an Instant and throws
+            // DateTimeParseException, which the bind loop does not catch, so a LocalDateTime bound to a timestamp column failed.
+            // Read in the JVM default zone: the instant the driver 3 executor stores for it (N.convert(localDateTime, Date.class))
+            // and the one CqlBuilder inlines for a raw LocalDateTime literal.
+            return (T) localDateTime.atZone(java.time.ZoneId.systemDefault()).toInstant();
+        } else if (targetClass == Instant.class && value instanceof final java.time.chrono.ChronoZonedDateTime<?> zonedDateTime) {
+            // WHY: N.convert(ZonedDateTime, Instant.class) parses the "[region]"-suffixed toString() and throws as well; the value
+            // already denotes an instant. (An OffsetDateTime converts through N.convert.)
+            return (T) zonedDateTime.toInstant();
+        } else if (targetClass == java.time.LocalDateTime.class && value instanceof final Instant instant) {
+            // WHY: N.convert(Instant, LocalDateTime.class) rejects the trailing 'Z' (DateTimeParseException), so a timestamp column
+            // could not be read into a LocalDateTime target or bean property. The driver 3 executor reads a timestamp (a Date) into
+            // a LocalDateTime in the JVM default zone; do the same.
+            return (T) java.time.LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+        } else if (targetClass == java.time.ZonedDateTime.class && value instanceof final Instant instant) {
+            // WHY: N.convert(Instant, ZonedDateTime.class) parses Instant.toString() and so yielded the accidental offset UTC ("Z").
+            // The instant is preserved either way; one rule for every java.time target: zone-less and zoned targets are expressed in
+            // the JVM default zone, consistent with the LocalDateTime read above, with the driver 3 executor (N.convert(Date,
+            // ZonedDateTime.class) uses the default zone) and with abacus-common's own Date conversions. Callers wanting UTC use
+            // withZoneSameInstant(ZoneOffset.UTC).
+            return (T) instant.atZone(java.time.ZoneId.systemDefault());
+        } else if (targetClass == java.time.OffsetDateTime.class && value instanceof final Instant instant) {
+            // WHY: same as the ZonedDateTime branch; N.convert gave offset UTC rather than the JVM default zone's offset.
+            return (T) java.time.OffsetDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
         }
 
         return N.convert(value, targetClass);
@@ -1005,13 +1059,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Converts a driver-decoded column or field value to {@code targetClass}. A CQL time, which the driver decodes as a
      * {@link LocalTime}, becomes a value of each supported date/time type (see {@link #fromTimeOfDay(LocalTime, Class)});
      * {@code N.convert} parses the LocalTime's text and rejects it for those types.
-     * Every other value is converted by {@link #convertValue(Object, Class)}. A null value becomes the primitive default
-     * for a primitive class token and remains null for a wrapper or other reference target.
+     * Every other value is converted by {@link #convertValue(Object, Class)}. A null value becomes the default value of
+     * {@code targetClass}: the primitive default, an empty value for Optional/Nullable/OptionalInt-like types, and null
+     * for wrappers and other reference types.
      * @throws RuntimeException if {@code value} cannot be converted to {@code targetClass}
      */
     @SuppressWarnings("unchecked")
     private static <T> T decodeValue(final Object value, final Class<T> targetClass) throws RuntimeException {
-        // Keep null on the conversion path: primitive targets use their default; reference targets preserve null.
+        // Keep null on the conversion path: it supplies the target's default (primitive default, empty Optional-like, or null).
         return value instanceof final LocalTime localTime && isTimeOfDayTarget(targetClass) ? (T) fromTimeOfDay(localTime, targetClass)
                 : convertValue(value, targetClass);
     }
@@ -1068,14 +1123,21 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Converts a driver-decoded value for {@link PropInfo#setPropValue(Object, Object)} where that method's own conversion
-     * fails: it turns a BLOB {@link ByteBuffer} into {@code null} for a {@code byte[]} property, and rejects a {@link LocalTime}
-     * for a {@code java.sql.Time} or other date/time property (see {@link #fromTimeOfDay(LocalTime, Class)}). Any other value is
-     * returned unchanged.
+     * fails: it turns a BLOB {@link ByteBuffer} into {@code null} for a {@code byte[]} property, rejects a {@link LocalTime}
+     * for a {@code java.sql.Time} or other date/time property (see {@link #fromTimeOfDay(LocalTime, Class)}), rejects a
+     * {@code timestamp} {@link Instant} for a {@link java.time.LocalDateTime} property and would express it at offset UTC for a
+     * {@link java.time.ZonedDateTime}/{@link java.time.OffsetDateTime} property (see {@link #convertValue(Object, Class)}: the JVM
+     * default zone is used). Any other value is returned unchanged.
      * @throws RuntimeException if {@code value} cannot be converted to {@code propClass}
      */
     private static Object toPropValue(final Class<?> propClass, final Object value) throws RuntimeException {
+        // WHY: PropInfo.setPropValue converts through N.convert, which throws DateTimeParseException for Instant -> LocalDateTime and
+        // yields offset UTC for Instant -> ZonedDateTime/OffsetDateTime; route those pairs through convertValue like the other driver
+        // values it cannot map.
         return (propClass == byte[].class && value instanceof ByteBuffer)
-                || (value instanceof LocalTime && propClass != LocalTime.class && isTimeOfDayTarget(propClass)) ? decodeValue(value, propClass) : value;
+                || (value instanceof LocalTime && propClass != LocalTime.class && isTimeOfDayTarget(propClass))
+                || (value instanceof Instant && (propClass == java.time.LocalDateTime.class || propClass == java.time.ZonedDateTime.class
+                        || propClass == java.time.OffsetDateTime.class)) ? decodeValue(value, propClass) : value;
     }
 
     /**
@@ -1151,7 +1213,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         } else if (columnCount == 1) {
             value = row.getObject(0);
 
-            if (value == null || rowClass.isAssignableFrom(value.getClass())) {
+            // A NULL column goes through decodeValue like createRowMapper's: a primitive class token yields its default.
+            if (value != null && rowClass.isAssignableFrom(value.getClass())) {
                 res = value;
             } else {
                 res = decodeValue(value, rowClass);
@@ -1176,17 +1239,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         Function<Row, T> mapper = null;
 
         if (rowType == null || rowType.isObjectArray()) {
+            final Class<?> componentType = rowClass == null ? Object.class : rowClass.getComponentType();
+
             mapper = row -> {
-                final Object[] a = rowClass == null ? new Object[columnCount] : N.newArray(rowClass.getComponentType(), columnCount);
+                final Object[] a = N.newArray(componentType, columnCount);
                 Object value = null;
 
                 for (int i = 0; i < columnCount; i++) {
                     value = row.getObject(i);
 
                     if (value instanceof Row) {
-                        a[i] = toArrayElement((Row) value, a.getClass().getComponentType());
+                        a[i] = toArrayElement((Row) value, componentType);
                     } else {
-                        a[i] = toArrayElement(value, a.getClass().getComponentType());
+                        a[i] = toArrayElement(value, componentType);
                     }
                 }
 
@@ -1307,7 +1372,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * query produces no rows. If a row exists but the column is {@code NULL}, a wrapper or other reference
      * {@code valueClass} yields a <i>present-but-null</i> {@code Nullable} ({@code Nullable.of(null)}).
      * A primitive class token yields the primitive default (for example, {@code int.class} yields
-     * {@code Nullable.of(0)}). Use a wrapper class such as {@code Integer.class} to preserve {@code NULL}.</p>
+     * {@code Nullable.of(0)}), and a type whose default is not {@code null}, such as {@code Optional},
+     * {@code Nullable} or {@code OptionalInt}, yields its empty value (for example, {@code Optional.class} yields
+     * {@code Nullable.of(Optional.empty())}). Use a wrapper class such as {@code Integer.class} to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1359,11 +1426,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload. If
      * conversion to {@code valueClass} yields {@code null},
      * this method throws {@link NullPointerException} rather than returning {@code Optional.empty()}.
-     * For a {@code NULL} column and a primitive {@code valueClass}, conversion supplies the primitive default
-     * (for example, {@code int.class} yields {@code Optional.of(0)}). Wrapper and other reference targets
-     * preserve {@code null}, causing the exception.
+     * A {@code NULL} column maps to the default value of {@code valueClass}: the primitive default for a primitive
+     * class token (for example, {@code int.class} yields {@code Optional.of(0)}), an empty value for a type whose
+     * default is not {@code null} such as {@code Optional}, {@code Nullable} or {@code OptionalInt} (for example,
+     * {@code Optional.class} yields {@code Optional.of(Optional.empty())}), and {@code null} for a wrapper or other
+     * reference type, which causes the exception.
      * Use {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable})
-     * with a wrapper or other reference target to preserve {@code NULL}.</p>
+     * with a wrapper or other reference target whose default is {@code null} (not an {@code Optional}-like type) to preserve {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1425,7 +1494,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
      * query produces no rows. When a row is found, the mapped value is returned as a <i>present</i>
      * {@code Optional}. Because {@code Optional} cannot carry a {@code null} payload, the mapped value
-     * itself must be non-null.</p>
+     * itself must be non-null. For a single-value {@code targetClass}, a {@code NULL} column maps to the default
+     * value of that type: the primitive default for a primitive class token (for example, {@code int.class} yields
+     * {@code Optional.of(0)}), an empty value for a type whose default is not {@code null} such as {@code Optional},
+     * {@code Nullable} or {@code OptionalInt} (for example, {@code Optional.class} yields {@code Optional.of(Optional.empty())}),
+     * and {@code null} for a wrapper or other reference type, which causes the {@link NullPointerException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2280,24 +2353,50 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * @throws RuntimeException if the statement cache is closed or the driver cannot prepare the CQL
+     * Returns the cached prepared statement for {@code cql}, preparing (and caching) it on a miss. A closed cache is
+     * treated as a miss: the statement is prepared without being cached. Any other {@link IllegalStateException} raised by
+     * the cache propagates.
+     *
+     * @throws RuntimeException if the driver cannot prepare the CQL or the session is closed
+     * @throws IllegalStateException if the statement cache fails for a reason other than being closed
      */
     private PreparedStatement getOrPrepareStatement(final String cql) throws RuntimeException {
+        // The cache is only an optimization. The pool also closes itself from its own JVM shutdown hook, after which get/put
+        // throw IllegalStateException; CQL executed by an application's shutdown hook must still run (uncached) then.
+        // WHY: only a CLOSED cache is a miss. Swallowing every IllegalStateException hid any other cache failure (the driver 3
+        // executor's getCachedStatement/cacheStatement rethrow unless the pool is closed); the two executors now agree.
+        final boolean cacheable = cql.length() <= POOLABLE_LENGTH;
         PreparedStatement preStmt = null;
 
-        if (cql.length() <= POOLABLE_LENGTH) {
-            final PoolableAdapter<PreparedStatement> wrapper = preparedStatementPool.get(cql);
+        if (cacheable && !preparedStatementPool.isClosed()) {
+            try {
+                final PoolableAdapter<PreparedStatement> wrapper = preparedStatementPool.get(cql);
 
-            if (wrapper != null) {
-                preStmt = wrapper.value();
+                if (wrapper != null) {
+                    preStmt = wrapper.value();
+                }
+            } catch (final IllegalStateException e) {
+                if (!preparedStatementPool.isClosed()) {
+                    throw e;
+                }
+
+                // Closed concurrently: a cache miss.
             }
         }
 
         if (preStmt == null) {
             preStmt = prepare(cql);
 
-            if (cql.length() <= POOLABLE_LENGTH) {
-                preparedStatementPool.put(cql, Poolable.wrap(preStmt));
+            if (cacheable && !preparedStatementPool.isClosed()) {
+                try {
+                    preparedStatementPool.put(cql, Poolable.wrap(preStmt));
+                } catch (final IllegalStateException e) {
+                    if (!preparedStatementPool.isClosed()) {
+                        throw e;
+                    }
+
+                    // Closed concurrently: use the statement uncached.
+                }
             }
         }
 
@@ -2450,8 +2549,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * @return the converted first column; a {@code NULL} column becomes the primitive default for a primitive
-     *         {@code targetClass}, or {@code null} for a wrapper or other reference target
+     * @return the converted first column; a {@code NULL} column becomes the default value of {@code targetClass}: the
+     *         primitive default, an empty value for Optional/Nullable/OptionalInt-like types, or {@code null} for a
+     *         wrapper or other reference type
      * @throws IllegalArgumentException if {@code row} or {@code targetClass} is null
      * @throws RuntimeException if the first column cannot be read or converted to {@code targetClass}
      */
@@ -2468,7 +2568,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param targetClass the Java type for the row
      * @param resultSet the rows to consume
-     * @return the mapped row, or {@code null} when there are no rows
+     * @return the mapped row, or {@code null} when there are no rows; for a single-value {@code targetClass}, a
+     *         {@code NULL} column yields the default value of {@code targetClass} (the primitive default for a primitive class
+     *         token, an empty value for Optional/Nullable/OptionalInt-like types, or {@code null} for a wrapper or other
+     *         reference type)
      * @throws IllegalArgumentException if {@code resultSet} is null
      * @throws RuntimeException if fetching a row fails or its columns cannot be mapped to {@code targetClass}
      * @throws DuplicateResultException if {@code resultSet} contains more than one row
@@ -2494,6 +2597,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
+     * Sets one UDT field, with the same fallbacks as ordinary binding when no registered codec accepts the value: a {@code byte[]}
+     * for a BLOB field, a {@link Date}/{@link Calendar} for a TIME field, and for a TIMESTAMP field any value that
+     * {@link #convertValue(Object, Class)} turns into an {@link Instant}: a {@link java.time.LocalDateTime} (in the JVM default
+     * time zone), a {@link java.time.ZonedDateTime} or {@link java.time.OffsetDateTime}, and also a {@code Date},
+     * {@code java.sql.Timestamp}, {@code Calendar} or {@code Long} (epoch milliseconds), as the same value bound to a
+     * {@code timestamp} column is converted. A value the conversion rejects fails with the driver's original
+     * {@link CodecNotFoundException}.
+     *
      * @throws RuntimeException if no codec supports the field value, the value cannot be encoded, or the field index is invalid
      */
     private static void setUdtField(final UserDefinedType cqlType, final UdtValue udtValue, final int index, final Object value) throws RuntimeException {
@@ -2514,6 +2625,22 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     // Match ordinary TIME binding for legacy temporal values after registered codec lookup fails.
                     // Serialization stays outside this catch so a registered codec's failure is never replaced by a fallback.
                     udtValue.setLocalTime(index, convertValue(value, LocalTime.class));
+                    return;
+                } else if (cqlType.getFieldTypes().get(index).getProtocolCode() == ProtocolConstants.DataType.TIMESTAMP) {
+                    // WHY: match ordinary TIMESTAMP binding (convertValue) for every value the driver has no codec for: the java.time
+                    // date-time types, and also Date, java.sql.Timestamp, Calendar and Long (epoch milliseconds), which bound to a
+                    // timestamp column convert but as a UDT field failed with CodecNotFoundException. A value the conversion rejects
+                    // keeps the original lookup failure (the conversion failure is suppressed) rather than a parse error.
+                    final Instant instant;
+
+                    try {
+                        instant = convertValue(value, Instant.class);
+                    } catch (final ClassCastException | IllegalArgumentException | java.time.DateTimeException conversionFailure) {
+                        e.addSuppressed(conversionFailure);
+                        throw e;
+                    }
+
+                    udtValue.setInstant(index, instant);
                     return;
                 }
 
@@ -2536,7 +2663,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>Note that the positional collection mapping described on {@link #create(UserDefinedType, Class)}
      * is a property of the codec that factory returns; a hand-written subclass supplies its own
-     * {@code serialize} and is not bound by it.</p>
+     * {@code serialize} and is not bound by it. A raw {@link UdtValue} passed to {@link #encode} or {@link #format} is handed
+     * to the driver's own UDT codec unchanged, which bypasses a subclass's {@code serialize(T)} when {@code T} is a supertype of
+     * the driver value (for example a {@code UDTCodec<Object>}).</p>
      *
      * @param <T> the Java type to encode/decode
      */
@@ -2545,6 +2674,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         private final UserDefinedType cqlType;
         private final GenericType<T> javaType;
         private final TypeCodec<UdtValue> udtValueTypeCodec;
+
+        // The property bound to each UDT field (null where none), resolved against one BeanInfo instance.
+        private record UdtBeanFields(BeanInfo beanInfo, PropInfo[] propInfos) {
+        }
 
         /**
          * Constructs a {@code UDTCodec} bound to the given UDT definition and target Java class.
@@ -2614,6 +2747,53 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          */
         public static <T> UDTCodec<T> create(final UserDefinedType userType, final Class<T> javaClazz) throws IllegalArgumentException {
             return new UDTCodec<>(userType, javaClazz) {
+                // The UDT definition and Java class are fixed for this codec, so the field names and, for a bean, the
+                // property bound to each field are resolved once instead of for every encoded or decoded value. Both are
+                // published through immutable objects (a benign race only repeats the identical resolution); the bean
+                // resolution is redone if ParserUtil hands out a different (refreshed) BeanInfo.
+                private List<String> fieldNames;
+                private UdtBeanFields beanFields;
+
+                private List<String> fieldNames() {
+                    List<String> result = fieldNames;
+
+                    if (result == null) {
+                        result = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
+                        fieldNames = result;
+                    }
+
+                    return result;
+                }
+
+                private PropInfo[] fieldPropInfos(final BeanInfo beanInfo) {
+                    UdtBeanFields result = beanFields;
+
+                    if (result == null || result.beanInfo() != beanInfo) {
+                        final List<String> names = fieldNames();
+                        final Map<String, String> columnToPropNameMap = QueryUtil.columnToPropNameMap(javaClazz);
+                        final PropInfo[] propInfos = new PropInfo[names.size()];
+                        PropInfo propInfo = null;
+                        String fieldName = null;
+
+                        for (int i = 0; i < propInfos.length; i++) {
+                            fieldName = names.get(i);
+                            propInfo = beanInfo.getPropInfo(fieldName);
+
+                            if (propInfo == null) {
+                                final String propName = columnToPropNameMap.get(fieldName);
+                                propInfo = propName == null ? null : beanInfo.getPropInfo(propName);
+                            }
+
+                            propInfos[i] = propInfo;
+                        }
+
+                        result = new UdtBeanFields(beanInfo, propInfos);
+                        beanFields = result;
+                    }
+
+                    return result.propInfos();
+                }
+
                 /**
                  * @throws IllegalArgumentException if the UDT value is non-null and the configured Java type is neither a collection, map, nor bean
                  * @throws RuntimeException if reading a UDT field, creating the target object, or assigning a bean property fails
@@ -2636,7 +2816,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         return (T) coll;
                     } else if (Map.class.isAssignableFrom(javaClazz)) {
                         final Map<String, Object> map = N.newMap((Class<Map<String, Object>>) javaClazz);
-                        final List<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
+                        final List<String> fieldNames = fieldNames();
 
                         // Fields are read by position: the driver's getObject(String) treats the name as CQL (case-insensitive
                         // unless quoted), so of two fields differing only by case both would read the first one's value.
@@ -2647,20 +2827,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         return (T) map;
                     } else if (Beans.isBeanClass(javaClazz)) {
                         final BeanInfo beanInfo = ParserUtil.getBeanInfo(javaClazz);
-                        final List<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
-                        final Map<String, String> columnToPropNameMap = QueryUtil.columnToPropNameMap(javaClazz);
+                        final PropInfo[] propInfos = fieldPropInfos(beanInfo);
                         Object targetBean = beanInfo.createBeanResult();
                         PropInfo propInfo = null;
-                        String fieldName = null;
 
                         for (int i = 0; i < size; i++) {
-                            fieldName = fieldNames.get(i);
-                            propInfo = beanInfo.getPropInfo(fieldName);
-
-                            if (propInfo == null) {
-                                final String propName = columnToPropNameMap.get(fieldName);
-                                propInfo = propName == null ? null : beanInfo.getPropInfo(propName);
-                            }
+                            propInfo = propInfos[i];
 
                             if (propInfo != null && !isReadOnlyProperty(propInfo)) {
                                 // Read by position for the same reason as the Map branch above.
@@ -2705,7 +2877,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         }
                     } else if (value instanceof Map) {
                         final Map<String, Object> map = (Map<String, Object>) value;
-                        final Collection<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
+                        final List<String> fieldNames = fieldNames();
                         int idx = 0;
 
                         for (final String fieldName : fieldNames) {
@@ -2715,20 +2887,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         final BeanInfo beanInfo = ParserUtil.getBeanInfo(javaClazz);
                         //noinspection UnnecessaryLocalVariable
                         final Object bean = value;
-                        final Collection<String> fieldNames = userType.getFieldNames().stream().map(CqlIdentifier::asInternal).toList();
-                        final Map<String, String> columnToPropNameMap = QueryUtil.columnToPropNameMap(javaClazz);
+                        final PropInfo[] propInfos = fieldPropInfos(beanInfo);
                         PropInfo propInfo = null;
-                        int idx = 0;
 
-                        for (final String fieldName : fieldNames) {
-                            propInfo = beanInfo.getPropInfo(fieldName);
+                        for (int idx = 0; idx < propInfos.length; idx++) {
+                            propInfo = propInfos[idx];
 
-                            if (propInfo == null) {
-                                final String propName = columnToPropNameMap.get(fieldName);
-                                propInfo = propName == null ? null : beanInfo.getPropInfo(propName);
-                            }
-
-                            setUdtField(userType, udtValue, idx++, propInfo == null ? null : propInfo.getPropValue(bean));
+                            setUdtField(userType, udtValue, idx, propInfo == null ? null : propInfo.getPropValue(bean));
                         }
                     } else {
                         throw new IllegalArgumentException(
@@ -2840,7 +3005,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * <p>This method encodes the value into a ByteBuffer suitable for storage in Cassandra. The Java
          * value is first converted to a {@link UdtValue} via the subclass {@code serialize(T)} and then
-         * encoded by the underlying UDT codec.</p>
+         * encoded by the underlying UDT codec. A raw driver {@link UdtValue} is passed to the underlying UDT codec
+         * unchanged, without being mapped as a {@code T}. The driver itself never hands one to this codec (a row's field is
+         * decoded to {@code T} through this codec, and {@code setUdtValue} resolves a codec by the {@code UdtValue} Java type),
+         * but caller code that resolves {@code CodecRegistry.codecFor(DataType)} for this user type itself, which returns
+         * this registered codec, and passes it a value read from a row reaches this method with one.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2851,7 +3020,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * ByteBuffer none = codec.encode(null, ProtocolVersion.V4);                        // returns null for a null value
          * }</pre>
          *
-         * @param value the value to encode
+         * @param value the value to encode: a {@code T}, or a raw {@link UdtValue} of this codec's user type passed by caller code
+         *        that resolved this codec by CQL type itself
          * @param protocolVersion the protocol version to use for encoding
          * @return a ByteBuffer containing the encoded value, or {@code null} for a {@code null} value
          * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
@@ -2864,6 +3034,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         @Override
         public ByteBuffer encode(final T value, final ProtocolVersion protocolVersion)
                 throws IllegalArgumentException, CodecNotFoundException, RuntimeException {
+            // WHY: as in format(T), the registry's codecFor(DataType) returns this registered codec for its user type, so caller code
+            // that resolves the codec by CQL type itself can hand it a raw UdtValue read from a row (the driver never does: getObject
+            // decodes a field to T through this codec, and setUdtValue/getFormattedContents look a codec up by the UdtValue Java type,
+            // skipping this one); serialize(value) cast it to T and threw ClassCastException. A driver value already has the UDT
+            // shape: the driver's UDT codec encodes it.
+            if (value instanceof final UdtValue udtValue) {
+                return udtValueTypeCodec.encode(udtValue, protocolVersion);
+            }
+
             return udtValueTypeCodec.encode(serialize(value), protocolVersion);
         }
 
@@ -2931,7 +3110,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * <p>The Java value is mapped to a {@link UdtValue}, then formatted by the driver's UDT
          * codec. If the value is null, this method returns {@link CassandraExecutorBase#NULL_STR}.
-         * The returned representation is a CQL literal, not JSON.</p>
+         * The returned representation is a CQL literal, not JSON. A driver {@link UdtValue}, which reaches this codec
+         * when it is looked up by CQL type only ({@code CodecRegistry.codecFor(DataType)}), is formatted as is by the
+         * driver's UDT codec.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2953,7 +3134,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          */
         @Override
         public String format(final T value) throws IllegalArgumentException, CodecNotFoundException, RuntimeException {
-            return value == null ? NULL_STR : udtValueTypeCodec.format(serialize(value));
+            if (value == null) {
+                return NULL_STR;
+            }
+
+            // The registry's codecFor(DataType) returns this registered codec for its user type, so code formatting a value read
+            // from a row through that codec passes the raw UdtValue; mapping it as a T failed with ClassCastException (twin of the
+            // driver 3 UDTValue.toString() failure). A driver value already has the UDT shape: the driver's UDT codec formats it.
+            if (value instanceof final UdtValue udtValue) {
+                return udtValueTypeCodec.format(udtValue);
+            }
+
+            return udtValueTypeCodec.format(serialize(value));
         }
 
         /**

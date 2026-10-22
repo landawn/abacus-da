@@ -102,6 +102,10 @@ public class MongoNestedIdRegressionTest extends TestBase {
                         return args[0];
                     }
 
+                    if (method.getName().equals("iterator") || method.getName().equals("cursor")) {
+                        return new MongoIterableStubs.ListCursor<>(Arrays.asList(null, null));
+                    }
+
                     throw new UnsupportedOperationException(method.getName());
                 });
 

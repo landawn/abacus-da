@@ -18,8 +18,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Calendar;
 import java.util.Collection;
@@ -518,6 +520,71 @@ public class CassandraUdtTimeRegressionTest extends TestBase {
         }
 
         public void setTime(final Date value) {
+            time = value;
+        }
+    }
+
+    // ---- 2026-10-20 rounify ----
+
+    @Test
+    void timestampUdtFieldsAcceptJavaTimeValuesAndReadIntoLocalDateTime_rounify() throws Exception {
+        // Driver 3 has no java.time codecs, so a LocalDateTime, ZonedDateTime, OffsetDateTime or Instant in a TIMESTAMP field failed
+        // with CodecNotFoundException although the same value bound to a timestamp column converts to the driver's Date (v4 twin:
+        // cassandra.CassandraUdtTimeRegressionTest#timestampUdtFieldsAcceptJavaTimeValuesAndReadIntoLocalDateTime_cassfix).
+        final UserType type = fieldType(new CodecRegistry(), DataType.timestamp());
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(type, Map.class);
+        final CassandraExecutor.UDTCodec<List> listCodec = CassandraExecutor.UDTCodec.create(type, List.class);
+        final CassandraExecutor.UDTCodec<LocalDateTimeTimedValue> beanCodec = CassandraExecutor.UDTCodec.create(type, LocalDateTimeTimedValue.class);
+        final CassandraExecutor.UDTCodec<ZonedDateTimedValue> zonedBeanCodec = CassandraExecutor.UDTCodec.create(type, ZonedDateTimedValue.class);
+        final LocalDateTime local = LocalDateTime.of(2026, 10, 13, 12, 34, 56, 123_000_000);
+        final Instant localInstant = local.atZone(ZoneId.systemDefault()).toInstant(); // the JVM default zone, not a hard-coded one
+        final Instant instant = Instant.parse("2026-10-13T12:34:56.123Z");
+        final ZonedDateTime tokyo = instant.atZone(ZoneId.of("Asia/Tokyo"));
+        final OffsetDateTime offset = instant.atOffset(ZoneOffset.ofHours(5));
+
+        for (final Map.Entry<Object, Instant> example : List.<Map.Entry<Object, Instant>> of(Map.entry(local, localInstant), Map.entry(tokyo, instant),
+                Map.entry(offset, instant), Map.entry(instant, instant))) {
+            final Object value = example.getKey();
+            final Instant expected = example.getValue();
+            final ByteBuffer encoded = mapCodec.serialize(Map.of("time", value), ProtocolVersion.V4);
+
+            // The driver reads a timestamp field as a Date.
+            assertEquals(Date.from(expected), mapCodec.deserialize(encoded, ProtocolVersion.V4).get("time"), value.getClass().getName());
+            assertEquals(Date.from(expected), listCodec.deserialize(listCodec.serialize(List.of(value), ProtocolVersion.V4), ProtocolVersion.V4).get(0));
+            final LocalDateTime decodedLocal = beanCodec.deserialize(encoded, ProtocolVersion.V4).getTime();
+            final ZonedDateTime decodedZoned = zonedBeanCodec.deserialize(encoded, ProtocolVersion.V4).getTime();
+            assertEquals(LocalDateTime.ofInstant(expected, ZoneId.systemDefault()), decodedLocal);
+            // A zoned property is read in the JVM default zone, so it agrees with the LocalDateTime read.
+            assertEquals(expected, decodedZoned.toInstant());
+            assertEquals(ZoneId.systemDefault(), decodedZoned.getZone());
+            assertEquals(decodedLocal, decodedZoned.toLocalDateTime());
+        }
+
+        final LocalDateTimeTimedValue bean = new LocalDateTimeTimedValue();
+        bean.setTime(local);
+        assertEquals(Date.from(localInstant), beanCodec.serialize(bean).getTimestamp(0));
+        assertEquals(local, roundTrip(type, LocalDateTimeTimedValue.class, bean).getTime());
+        final ZonedDateTimedValue zonedBean = new ZonedDateTimedValue();
+        zonedBean.setTime(tokyo);
+        assertEquals(Date.from(instant), zonedBeanCodec.serialize(zonedBean).getTimestamp(0));
+        assertEquals(tokyo.withZoneSameInstant(ZoneId.systemDefault()), roundTrip(type, ZonedDateTimedValue.class, zonedBean).getTime());
+
+        // A value the Date conversion rejects keeps the driver's lookup failure (the conversion failure is attached as suppressed).
+        final CodecNotFoundException rejected = assertThrows(CodecNotFoundException.class, () -> mapCodec.serialize(Map.of("time", "not a timestamp")));
+        assertEquals(DataType.timestamp(), rejected.getCqlType());
+        assertEquals(TypeToken.of(String.class), rejected.getJavaType());
+        assertEquals(1, rejected.getSuppressed().length);
+        assertTrue(rejected.getSuppressed()[0] instanceof IllegalArgumentException);
+    }
+
+    public static final class ZonedDateTimedValue {
+        private ZonedDateTime time;
+
+        public ZonedDateTime getTime() {
+            return time;
+        }
+
+        public void setTime(final ZonedDateTime value) {
             time = value;
         }
     }

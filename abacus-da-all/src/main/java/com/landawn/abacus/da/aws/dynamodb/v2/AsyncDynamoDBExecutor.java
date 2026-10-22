@@ -14,6 +14,7 @@
 
 package com.landawn.abacus.da.aws.dynamodb.v2;
 
+import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.addRows;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.createRowMapper;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.extractData;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.getAttrName;
@@ -21,12 +22,10 @@ import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.readRow;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntities;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toKeyAttributeValue;
-import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toList;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toUpdateItem;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +50,7 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.ObjIterator;
 import com.landawn.abacus.util.Strings;
+import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.stream.Stream;
 
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
@@ -111,16 +111,16 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  *
  * <h3>Underlying executor:</h3>
  * <p>Single-item and batch CRUD futures are completed on whatever thread the underlying
- * {@link DynamoDbAsyncClient} dispatches its asynchronous responses on (typically the SDK's
- * Netty event-loop or the executor configured via
- * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}). The auto-paginating
+ * {@link DynamoDbAsyncClient} dispatches its asynchronous responses on: by default the SDK's
+ * future-completion thread pool ({@code sdk-async-response-*} threads), or the executor configured via
+ * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}. The auto-paginating
  * {@code list}/{@code query}/{@code stream}/{@code scan} methods instead deliver their result on the
  * common {@code ForkJoinPool} (see the threading notes on those methods). For stream and scan,
  * only the lazy stream is delivered there; its page fetches block the thread that consumes it.
  * Continuations attached with
  * {@code thenApply}/{@code thenAccept} therefore run on the completing pool — push CPU-heavy or
  * blocking work onto your own executor with the {@code *Async} variants (e.g.
- * {@code thenApplyAsync(fn, myExecutor)}) to avoid blocking I/O threads.</p>
+ * {@code thenApplyAsync(fn, myExecutor)}) to avoid tying up the SDK's response threads or the common pool.</p>
  *
  * <h3>Thread Safety &amp; Performance:</h3>
  * <p>This class is fully thread-safe and optimized for high-concurrency scenarios. The underlying
@@ -1799,13 +1799,18 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Threading note:</b> response conversion runs in the common
      * {@link java.util.concurrent.ForkJoinPool}. Auto-pagination composes the asynchronous page
      * requests without blocking a worker thread. Completing the returned future early (for example with
-     * {@code cancel(...)} or {@code orTimeout(...)}) stops the pagination: no page after the one in flight is requested.</p>
+     * {@code cancel(...)} or {@code orTimeout(...)}) stops the pagination: no page after the one in flight is requested.
+     * Every page is converted with the same row mapper straight into the result list, exactly as the synchronous
+     * {@link DynamoDBExecutor#list(QueryRequest, Class)} converts its pages, so the two return identical rows for the
+     * same responses.</p>
      *
      * @param <T> the type of objects to return
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
      * @return a CompletableFuture containing the matching items materialized under the pagination
-     *         behavior above as typed objects
+     *         behavior above as typed objects; an empty list when the query matches nothing (or the client completes with no
+     *         response at all). A null response ends the result there: for the first page the list is empty, for a later page
+     *         the list holds the rows of the pages before it and no further page is requested
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> CompletableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) throws IllegalArgumentException {
@@ -1821,11 +1826,22 @@ public final class AsyncDynamoDBExecutor {
     // caller has already completed it (cancel(), orTimeout(), completeOnTimeout()): a dependent stage's cancellation does
     // not propagate upstream, so the chain used to keep requesting (and paying read capacity for) every remaining page.
     private <T> CompletableFuture<List<T>> listAllPages(final QueryRequest queryRequest, final Class<T> targetClass, final CompletableFuture<?> resultFuture) {
+        // One row mapper for every page, as in the sync list(QueryRequest, Class): toList(page, targetClass) resolved the row
+        // type and built a mapper per page, and copied each page's list into the result.
+        final Function<Map<String, AttributeValue>, T> rowMapper = createRowMapper(targetClass);
+
         return dynamoDBClient.query(queryRequest).thenComposeAsync(queryResult -> {
-            final List<T> res = toList(queryResult, targetClass);
+            // A null response only comes from an un-stubbed client; keep the empty-result behaviour of the former toList path
+            // (no rows, and no further page is requested).
+            if (queryResult == null) {
+                return CompletableFuture.completedFuture(new ArrayList<T>(0));
+            }
+
+            final List<T> res = new ArrayList<>(N.size(queryResult.items()));
+            addRows(queryResult, rowMapper, res);
 
             if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
-                return appendQueryPages(queryRequest, queryResult.lastEvaluatedKey(), res, targetClass, resultFuture);
+                return appendQueryPages(queryRequest, queryResult.lastEvaluatedKey(), res, rowMapper, resultFuture);
             }
 
             return CompletableFuture.completedFuture(res);
@@ -1833,7 +1849,7 @@ public final class AsyncDynamoDBExecutor {
     }
 
     private <T> CompletableFuture<List<T>> appendQueryPages(final QueryRequest originalRequest, final Map<String, AttributeValue> lastEvaluatedKey,
-            final List<T> result, final Class<T> targetClass, final CompletableFuture<?> resultFuture) {
+            final List<T> result, final Function<Map<String, AttributeValue>, T> rowMapper, final CompletableFuture<?> resultFuture) {
         if (resultFuture.isDone()) {
             // The caller cancelled or timed out the returned future: nobody can observe further pages, so stop paginating.
             return CompletableFuture.completedFuture(result);
@@ -1842,10 +1858,17 @@ public final class AsyncDynamoDBExecutor {
         final QueryRequest nextRequest = originalRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
 
         return dynamoDBClient.query(nextRequest).thenComposeAsync(queryResponse -> {
-            result.addAll(toList(queryResponse, targetClass));
+            // A null later page only comes from an un-stubbed client as well; like a null first page it ends the result
+            // there (the rows gathered so far are kept, no rows are added, and no further page is requested).
+            if (queryResponse == null) {
+                return CompletableFuture.completedFuture(result);
+            }
+
+            // Convert the page straight into the result with the shared row mapper, instead of through a per-page list.
+            addRows(queryResponse, rowMapper, result);
 
             return N.notEmpty(queryResponse.lastEvaluatedKey())
-                    ? appendQueryPages(originalRequest, queryResponse.lastEvaluatedKey(), result, targetClass, resultFuture)
+                    ? appendQueryPages(originalRequest, queryResponse.lastEvaluatedKey(), result, rowMapper, resultFuture)
                     : CompletableFuture.completedFuture(result);
         });
     }
@@ -3670,7 +3693,7 @@ public final class AsyncDynamoDBExecutor {
         private Map<String, AttributeValue> createKey(final T entity) throws IllegalArgumentException, RuntimeException {
             N.checkArgNotNull(entity, cs.entity);
 
-            final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
+            final Map<String, AttributeValue> key = N.newHashMap(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
                 final String keyPropName = keyPropNames.get(i);

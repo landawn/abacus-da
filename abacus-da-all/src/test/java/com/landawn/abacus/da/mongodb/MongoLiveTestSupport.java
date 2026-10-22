@@ -25,13 +25,7 @@ public final class MongoLiveTestSupport {
     }
 
     static MongoClient documentsClient(final String connectionString) {
-        final MongoClientSettings settings = MongoClientSettings.builder()
-                .applyConnectionString(new ConnectionString(connectionString))
-                .applyToClusterSettings(builder -> builder.serverSelectionTimeout(1, TimeUnit.SECONDS))
-                .applyToSocketSettings(builder -> builder.connectTimeout(1, TimeUnit.SECONDS).readTimeout(1, TimeUnit.SECONDS))
-                .timeout(2, TimeUnit.SECONDS)
-                .build();
-        final MongoClient client = MongoClients.create(settings);
+        final MongoClient client = MongoClients.create(clientSettings(connectionString));
         try {
             requireDocumentsStage(client);
             return client;
@@ -39,6 +33,23 @@ public final class MongoLiveTestSupport {
             client.close();
             throw e;
         }
+    }
+
+    /**
+     * The settings {@link #documentsClient()} connects with (local server, short timeouts), for opening a reactive streams
+     * client against the same server after {@link #documentsClient()} has confirmed it is reachable.
+     */
+    public static MongoClientSettings clientSettings() {
+        return clientSettings("mongodb://localhost:27017");
+    }
+
+    static MongoClientSettings clientSettings(final String connectionString) {
+        return MongoClientSettings.builder()
+                .applyConnectionString(new ConnectionString(connectionString))
+                .applyToClusterSettings(builder -> builder.serverSelectionTimeout(1, TimeUnit.SECONDS))
+                .applyToSocketSettings(builder -> builder.connectTimeout(1, TimeUnit.SECONDS).readTimeout(1, TimeUnit.SECONDS))
+                .timeout(2, TimeUnit.SECONDS)
+                .build();
     }
 
     static void requireDocumentsStage(final MongoClient client) {

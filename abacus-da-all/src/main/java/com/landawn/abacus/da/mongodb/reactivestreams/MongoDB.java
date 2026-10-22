@@ -487,14 +487,14 @@ public final class MongoDB extends MongoDBBase {
      * Converts a BSON {@link Document} into an instance of {@code rowType} using the same mapping
      * rules as the synchronous variant. This {@code protected static} method is a bridge that
      * delegates to {@link MongoDBBase#readRow(Document, Class)}; it exists so reactive
-     * collaborators in this package and subclasses can decode rows without referencing the
-     * protected helper on the base class directly.
+     * collaborators in this package can decode rows without referencing the protected helper on
+     * the base class directly (this class is {@code final}, so it has no subclasses).
      *
      * @param <T> the target row type
      * @param row the BSON document to convert; if {@code null}, the helper's null-handling
      *            contract applies (the default value of {@code rowType} is returned, or
      *            {@code null} when {@code rowType} is {@code null})
-     * @param rowType the target Java class to map the document to
+     * @param rowType the target Java class to map the document to, or {@code null} to produce an {@code Object[]}
      * @return an instance of {@code rowType} populated from {@code row}
      * @throws IllegalArgumentException if {@code rowType} is a {@link java.util.Collection} or {@link java.util.Map} type that cannot be
      *         instantiated, if a bean {@code rowType} cannot be populated from the row, if a scalar {@code rowType} is requested for a row with multiple

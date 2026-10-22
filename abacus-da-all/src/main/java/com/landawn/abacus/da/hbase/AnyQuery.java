@@ -40,7 +40,7 @@ import com.landawn.abacus.util.N;
  * hint, and per-family time ranges. String family / qualifier names are converted to byte arrays
  * via {@link HBaseExecutor}.</p>
  *
- * <h3>Key features</h3>
+ * <h2>Key features</h2>
  * <ul>
  * <li><strong>Server-side filtering</strong>: any {@link Filter} or {@code FilterList}.</li>
  * <li><strong>Consistency control</strong>: strong reads from the primary, or timeline-consistent
@@ -50,7 +50,7 @@ import com.landawn.abacus.util.N;
  *     {@link IsolationLevel}, and per-family time ranges.</li>
  * </ul>
  *
- * <h3>Common usage patterns</h3>
+ * <h2>Common usage patterns</h2>
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Basic query with filtering
@@ -68,13 +68,13 @@ import com.landawn.abacus.util.N;
  * anyQuery.setColumnFamilyTimeRange("metrics", startTime, System.currentTimeMillis());
  * }</pre>
  *
- * <h3>Consistency levels (see {@link Consistency})</h3>
+ * <h2>Consistency levels (see {@link Consistency})</h2>
  * <ul>
  * <li><strong>STRONG</strong>: read from the primary region replica only.</li>
  * <li><strong>TIMELINE</strong>: read from any replica; results may be slightly stale.</li>
  * </ul>
  *
- * <h3>Isolation levels (see {@link IsolationLevel})</h3>
+ * <h2>Isolation levels (see {@link IsolationLevel})</h2>
  * <ul>
  * <li><strong>READ_COMMITTED</strong>: only committed data is visible (default).</li>
  * <li><strong>READ_UNCOMMITTED</strong>: in-flight writes are also visible.</li>
@@ -202,10 +202,12 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @param authorizations the {@link Authorizations} to apply; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code authorizations} is {@code null}
+     * @throws NullPointerException if {@code authorizations} holds a {@code null} label list or a
+     *         {@code null} label (raised by HBase while serializing the labels)
      * @see #getAuthorizations()
      * @see Authorizations
      */
-    public AQ setAuthorizations(final Authorizations authorizations) throws IllegalArgumentException {
+    public AQ setAuthorizations(final Authorizations authorizations) throws IllegalArgumentException, NullPointerException {
         N.checkArgNotNull(authorizations, cs.authorizations);
 
         query.setAuthorizations(authorizations);
@@ -485,6 +487,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     /**
      * Returns the per-column-family time ranges set on this query. Keys are family names as
      * byte arrays; values are the {@link TimeRange} restrictions applied to those families.
+     * The returned map is the live map held by the wrapped {@link Query} (not a copy), so
+     * mutating it changes this query; use the {@code setColumnFamilyTimeRange} overloads for updates.
      *
      * @return the per-family time-range map; never {@code null} but may be empty
      * @see #setColumnFamilyTimeRange(String, long, long)
@@ -529,7 +533,9 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * @param cf the column-family name; converted to bytes via
      *           {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} name is
-     *           tolerated and forwarded to the underlying {@link Query} as a {@code null} array)
+     *           tolerated and forwarded to the underlying {@link Query} as a {@code null} array, but
+     *           HBase cannot serialize a {@code null} family: executing the query then fails with a
+     *           {@code NullPointerException} while the request is built)
      * @param minStamp minimum timestamp, in milliseconds, inclusive
      * @param maxStamp maximum timestamp, in milliseconds, exclusive
      * @return this query instance, to allow fluent method chaining
@@ -571,7 +577,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * }</pre>
      *
      * @param cf the column-family name as a byte array; forwarded to the underlying {@link Query}
-     *           (a {@code null} array is tolerated)
+     *           (a {@code null} array is tolerated here, but HBase cannot serialize it: executing the
+     *           query then fails with a {@code NullPointerException} while the request is built)
      * @param minStamp minimum timestamp, in milliseconds, inclusive
      * @param maxStamp maximum timestamp, in milliseconds, exclusive
      * @return this query instance, to allow fluent method chaining

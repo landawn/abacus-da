@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
 import com.landawn.abacus.da.cs;
@@ -165,7 +166,8 @@ public final class ParsedCql {
     // Retention is bounded by entry count and by MAX_CACHEABLE_CQL_LENGTH; no byte-measure budget is installed.
     // get() and put() are individually thread-safe, but a miss is not published atomically: concurrent misses for the
     // same key may each parse and return their own instance (see parse(String)).
-    private static final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> pool = PoolFactory.createKeyedObjectPool(1000, EVICT_TIME);
+    // null if the pool could not be created (JVM shutdown already in progress, see createCache); parsing is then uncached.
+    private static final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> pool = createCache(() -> PoolFactory.createKeyedObjectPool(1000, EVICT_TIME));
 
     private static final String PREFIX_OF_NAMED_PARAMETER = ":";
 
@@ -281,7 +283,7 @@ public final class ParsedCql {
             try {
                 // [0] is the current {...} depth; [1] is 1 while scanning a $$...$$ string across tokens.
                 final int[] literalState = new int[2];
-                // The open '{' / '[' collection literals and subscripts, innermost last.
+                // The open '{' / '[' / '(' literals, subscripts, tuples and argument lists, innermost last.
                 final StringBuilder openContainers = new StringBuilder();
                 final TokenReader tokens = new TokenReader(words);
 
@@ -297,7 +299,8 @@ public final class ParsedCql {
                     }
 
                     final int prevCurlyDepth = literalState[0];
-                    final boolean prevInsideBrackets = openContainers.length() > 0 && openContainers.charAt(openContainers.length() - 1) == '[';
+                    // Innermost open container is '[' or '(' (not a '{' literal), so a ':' here cannot be a field separator.
+                    final boolean prevInsideNonLiteralContainer = openContainers.length() > 0 && openContainers.charAt(openContainers.length() - 1) != '{';
                     final boolean dollarQuotedToken = updateLiteralState(literalState, openContainers, word, bracketMask);
                     // A '{' opened by this very token counts, so a self-contained single-field literal such as
                     // "{street::street}" (balanced braces => prevCurlyDepth and the post-token depth are both 0)
@@ -395,8 +398,9 @@ public final class ParsedCql {
                         // A separate ':name' token immediately following that separator is nevertheless a genuine
                         // value bind marker (valid for UDT fields). Use prevCurlyDepth so a token such as ":2}" that
                         // closes an unspaced map literal is still treated as literal syntax rather than a parameter.
-                        // Directly inside [...] (even one nested in braces) a ':' cannot be a map/UDT separator.
-                        if (prevCurlyDepth == 0 || prevInsideBrackets || tokens.followsLiteralValueSeparator()) {
+                        // Directly inside [...] or (...) (even one nested in braces, such as the tuple in
+                        // "{loc: (:lat, :lon)}") a ':' cannot be a map/UDT separator.
+                        if (prevCurlyDepth == 0 || prevInsideNonLiteralContainer || tokens.followsLiteralValueSeparator()) {
                             if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
                             } else {
@@ -442,8 +446,8 @@ public final class ParsedCql {
     }
 
     /**
-     * Updates brace/dollar-quote state and the stack of open <code>'&#123;'</code>/{@code '['} containers (innermost
-     * last; brackets appear here as the characters of {@code bracketMask}, and are not tracked when it is
+     * Updates brace/dollar-quote state and the stack of open <code>'&#123;'</code>/{@code '['}/{@code '('} containers
+     * (innermost last; brackets appear here as the characters of {@code bracketMask}, and are not tracked when it is
      * {@code null}), and reports whether any part of this token is dollar quoted.
      */
     private static boolean updateLiteralState(final int[] state, final StringBuilder openContainers, final String word, final BracketMask bracketMask) {
@@ -484,7 +488,11 @@ public final class ParsedCql {
             } else if (ch == '}' && state[0] > 0) {
                 state[0]--;
                 final int index = openContainers.lastIndexOf("{");
-                openContainers.setLength(index < 0 ? 0 : index); // also drops any '[' left unclosed inside the braces
+                openContainers.setLength(index < 0 ? 0 : index); // also drops any '[' / '(' left unclosed inside the braces
+            } else if (ch == '(') {
+                openContainers.append('(');
+            } else if (ch == ')' && openContainers.length() > 0 && openContainers.charAt(openContainers.length() - 1) == '(') {
+                openContainers.setLength(openContainers.length() - 1);
             } else if (bracketMask != null && ch == bracketMask.left) {
                 openContainers.append('[');
             } else if (bracketMask != null && ch == bracketMask.right && openContainers.length() > 0
@@ -1085,7 +1093,8 @@ public final class ParsedCql {
      * <p>On a cache hit, this method returns the retained, unexpired instance. On a miss, it parses
      * the input and attempts to cache the new result. Concurrent misses for identical text may return
      * distinct but equal instances; eviction and expiration can also cause reparsing. Callers must not
-     * rely on reference identity. See {@link #equals(Object)} for value equality.</p>
+     * rely on reference identity. See {@link #equals(Object)} for value equality. Once the JVM has begun
+     * shutting down, the cache may be closed or absent; statements are then parsed without caching.</p>
      *
      * <p>Empty and whitespace-only inputs are accepted and produce empty normalized CQL with zero parameters.
      * Recognized data operations are processed as described in {@link #parameterizedCql()}; this method
@@ -1112,18 +1121,28 @@ public final class ParsedCql {
     public static ParsedCql parse(final String cql) throws IllegalArgumentException {
         N.checkArgNotNull(cql, cs.cql);
 
+        return parse(cql, pool);
+    }
+
+    /**
+     * Returns the instance cached in {@code cache} for {@code cql}, parsing and caching it on a miss.
+     *
+     * <p>The cache is only an optimization: a {@code null} cache, or one that is closed (the pool closes itself from a
+     * JVM shutdown hook), is treated as a miss and the statement is parsed without being retained, so CQL issued by
+     * other shutdown hooks still parses instead of failing with the pool's {@link IllegalStateException}.</p>
+     *
+     * @param cql the non-null CQL text, used untrimmed as the cache key
+     * @param cache the cache to consult and fill, or {@code null} to parse without caching
+     * @return the cached instance, or a newly parsed one
+     * @throws IllegalArgumentException if the statement is rejected by parameter detection (see {@link #parse(String)})
+     */
+    static ParsedCql parse(final String cql, final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> cache) throws IllegalArgumentException {
         // Admission: an oversized input is parsed directly and is neither looked up nor retained.
-        if (cql.length() > MAX_CACHEABLE_CQL_LENGTH) {
+        if (cache == null || cql.length() > MAX_CACHEABLE_CQL_LENGTH) {
             return new ParsedCql(cql);
         }
 
-        ParsedCql result = null;
-
-        final PoolableAdapter<ParsedCql> w = pool.get(cql);
-
-        if (w != null) {
-            result = w.value();
-        }
+        ParsedCql result = cachedValue(cql, cache);
 
         if (result != null) {
             return result;
@@ -1131,9 +1150,48 @@ public final class ParsedCql {
 
         result = new ParsedCql(cql);
 
-        pool.put(cql, Poolable.wrap(result, LIVE_TIME, MAX_IDLE_TIME));
+        if (!cache.isClosed()) {
+            try {
+                cache.put(cql, Poolable.wrap(result, LIVE_TIME, MAX_IDLE_TIME));
+            } catch (final IllegalStateException e) {
+                // Closed concurrently (JVM shutdown): return the parsed instance uncached.
+            }
+        }
 
         return result;
+    }
+
+    /** Returns the live cached instance, or {@code null} on a miss, including a cache closed at JVM shutdown. */
+    private static ParsedCql cachedValue(final String cql, final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> cache) {
+        if (cache.isClosed()) {
+            return null;
+        }
+
+        try {
+            final PoolableAdapter<ParsedCql> w = cache.get(cql);
+            return w == null ? null : w.value();
+        } catch (final IllegalStateException e) {
+            return null; // closed concurrently (JVM shutdown): treat as a miss
+        }
+    }
+
+    /**
+     * Creates the parse cache, or returns {@code null} if it cannot be created. Creating a pool registers a JVM shutdown
+     * hook, which the runtime refuses once shutdown has begun ({@code IllegalStateException: Shutdown in progress}, or an
+     * {@code ExceptionInInitializerError} when the pool classes are initialized then). Letting that escape this class's
+     * static initializer would leave {@code ParsedCql} unusable ({@code NoClassDefFoundError}) when its first use happens
+     * inside a shutdown hook, so any failure leaves the cache absent and every parse runs uncached instead (mirroring
+     * abacus-query's {@code ParsedSql}).
+     *
+     * @param factory creates the pool
+     * @return the new pool, or {@code null} if {@code factory} threw
+     */
+    static KeyedObjectPool<String, PoolableAdapter<ParsedCql>> createCache(final Supplier<KeyedObjectPool<String, PoolableAdapter<ParsedCql>>> factory) {
+        try {
+            return factory.get();
+        } catch (final Throwable e) { // NOSONAR - the cache is optional; no failure to build it may break class initialization
+            return null;
+        }
     }
 
     /**
@@ -1190,8 +1248,8 @@ public final class ParsedCql {
      * {@code #{ userId, jdbcType=BIGINT }} contributes the name {@code userId} to {@link #namedParameters()}.</p>
      *
      * <p><b>Known limitation.</b> Inside braces, a native named marker ({@code :name}) is recognized only when it follows a map/UDT field
-     * separator ({@code {street: :street}}, {@code {street::street}}) or sits directly inside a {@code [...]} nested in
-     * the braces. A native named marker written directly after <code>&#123;</code> or after {@code ,} inside braces — for example
+     * separator ({@code {street: :street}}, {@code {street::street}}) or sits directly inside a {@code [...]} or
+     * {@code (...)} nested in the braces (for example the tuple in {@code {loc: (:lat, :lon)}}). A native named marker written directly after <code>&#123;</code> or after {@code ,} inside braces — for example
      * <code>tags + &#123;:tag&#125;</code> or
      * <code>&#123;:a, :b&#125;</code> — is <i>not</i> rewritten and is <i>not</i> counted: <code>&#123;</code>
      * does not start a new token, and a named marker after {@code ,} inside braces is taken for a map key. Such a

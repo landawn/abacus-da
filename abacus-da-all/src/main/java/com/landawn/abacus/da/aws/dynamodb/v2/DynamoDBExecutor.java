@@ -17,7 +17,6 @@ package com.landawn.abacus.da.aws.dynamodb.v2;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -933,9 +932,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             final Type<Object> type = N.typeOf((Class<Object>) value.getClass());
 
             if (type.isNumber()) {
-                N.checkArgument(!(value instanceof Double) || Double.isFinite((Double) value), "DynamoDB numbers must be finite: %s", value);
-                N.checkArgument(!(value instanceof Float) || Float.isFinite((Float) value), "DynamoDB numbers must be finite: %s", value);
-                return AttributeValue.fromN(type.stringOf(value));
+                final String text = type.stringOf(value);
+                // Check the rendered text rather than only Double/Float values: other numeric types (MutableDouble,
+                // MutableFloat, DoubleAdder) also render a non-finite value as NaN/Infinity, which DynamoDB rejects.
+                N.checkArgument(!isNonFiniteNumberText(text), "DynamoDB numbers must be finite: %s", value);
+                return AttributeValue.fromN(text);
             } else if (type.isBoolean()) {
                 return AttributeValue.fromBool((Boolean) value);
             } else if (value instanceof byte[]) {
@@ -963,6 +964,13 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
     }
 
     /**
+     * Returns whether {@code text} is the Java rendering of a NaN or infinite floating-point value.
+     */
+    private static boolean isNonFiniteNumberText(final String text) {
+        return "NaN".equals(text) || "Infinity".equals(text) || "-Infinity".equals(text);
+    }
+
+    /**
      * Converts and validates a primary-key value. DynamoDB accepts only non-empty String,
      * Number, or binary values for partition and sort keys.
      *
@@ -982,7 +990,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
                 "DynamoDB key attribute '%s' must be scalar, not %s", keyName, ClassUtil.getCanonicalClassName(value.getClass()));
 
         final AttributeValue attrVal = toAttributeValue(value);
-        if (Strings.isNotEmpty(attrVal.s()) || Strings.isNotEmpty(attrVal.n()) || attrVal.b() != null && attrVal.b().asByteArray().length > 0) {
+        if (Strings.isNotEmpty(attrVal.s()) || Strings.isNotEmpty(attrVal.n()) || attrVal.b() != null && attrVal.b().asByteBuffer().hasRemaining()) {
             return attrVal;
         }
 
@@ -1112,7 +1120,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * name/value pairs) into a DynamoDB item Map, where each property is represented as an
      * {@link AttributeValue}. The conversion uses the {@link NamingPolicy#CAMEL_CASE} naming policy.
      * For bean entities, properties with {@code null} values are skipped; for {@code Map} inputs all
-     * entries (including {@code null} values) are preserved.</p>
+     * entries (including {@code null} values) are preserved. A {@code Map} entity must be keyed by {@code String}: its keys
+     * become the attribute names as they are, so a non-String key fails with {@link ClassCastException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1124,9 +1133,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not an Entity, Map, or Object[], is an Object[] with an odd
      *         length or a non-String name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a floating-point
      *         infinity
+     * @throws ClassCastException if {@code entity} is a Map with a non-String key
      * @throws RuntimeException if a value converter or an entity property accessor fails while encoding an attribute value
      */
-    public static Map<String, AttributeValue> toItem(final Object entity) throws IllegalArgumentException, RuntimeException {
+    public static Map<String, AttributeValue> toItem(final Object entity) throws IllegalArgumentException, ClassCastException, RuntimeException {
         return toItem(entity, NamingPolicy.CAMEL_CASE);
     }
 
@@ -1138,7 +1148,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * {@link AttributeValue}. The supplied naming policy is applied to attribute names; bean
      * properties annotated with {@code @Column} use their column name instead. For bean entities,
      * properties with {@code null} values are skipped; for {@code Map} inputs all entries are
-     * preserved.</p>
+     * preserved. A {@code Map} entity must be keyed by {@code String}: its keys are the attribute names (converted by the
+     * naming policy, not to text), so a non-String key fails with {@link ClassCastException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1151,18 +1162,21 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, if {@code entity} is not an Entity, Map,
      *         or Object[] or is an Object[] with an odd length or a non-String name, or if a value being converted is {@code Float.NaN},
      *         {@code Double.NaN}, or a floating-point infinity
+     * @throws ClassCastException if {@code entity} is a Map with a non-String key
      * @throws RuntimeException if a value converter or an entity property accessor fails while encoding an attribute value
      */
-    public static Map<String, AttributeValue> toItem(final Object entity, final NamingPolicy namingPolicy) throws IllegalArgumentException, RuntimeException {
+    public static Map<String, AttributeValue> toItem(final Object entity, final NamingPolicy namingPolicy)
+            throws IllegalArgumentException, ClassCastException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, cs.namingPolicy);
 
         final boolean isCamelCase = namingPolicy == NamingPolicy.CAMEL_CASE;
-        final Map<String, AttributeValue> attrs = new LinkedHashMap<>();
+        final Map<String, AttributeValue> attrs;
         final Class<?> cls = entity.getClass();
 
         if (Beans.isBeanClass(cls)) {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(cls);
+            attrs = N.newLinkedHashMap(entityInfo.propInfoList.size());
             Object propValue = null;
 
             for (final PropInfo propInfo : entityInfo.propInfoList) {
@@ -1176,6 +1190,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             }
         } else if (Map.class.isAssignableFrom(cls)) {
             final Map<String, Object> map = (Map<String, Object>) entity;
+            attrs = N.newLinkedHashMap(map.size());
 
             if (isCamelCase) {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
@@ -1203,7 +1218,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * name/value pairs) into a DynamoDB update item Map, where each value is wrapped in an
      * {@link AttributeValueUpdate} with the default PUT action. The conversion uses the
      * {@link NamingPolicy#CAMEL_CASE} naming policy. For bean entities, properties with
-     * {@code null} values are skipped; for {@code Map} inputs all entries are preserved.</p>
+     * {@code null} values are skipped; for {@code Map} inputs all entries are preserved. A {@code Map} entity must be keyed
+     * by {@code String}: its keys become the attribute names as they are, so a non-String key fails with
+     * {@link ClassCastException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1215,9 +1232,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not an Entity, Map, or Object[], is an Object[] with an odd
      *         length or a non-String name, or if a value being converted is {@code Float.NaN}, {@code Double.NaN}, or a floating-point
      *         infinity
+     * @throws ClassCastException if {@code entity} is a Map with a non-String key
      * @throws RuntimeException if a value converter or an entity property accessor fails while encoding an attribute value
      */
-    public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity) throws IllegalArgumentException, RuntimeException {
+    public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity) throws IllegalArgumentException, ClassCastException, RuntimeException {
         return toUpdateItem(entity, NamingPolicy.CAMEL_CASE);
     }
 
@@ -1229,7 +1247,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * {@link AttributeValueUpdate} with the default PUT action. The supplied naming policy is
      * applied to attribute names; bean properties annotated with {@code @Column} use their column
      * name instead. For bean entities, properties with {@code null} values are skipped; for
-     * {@code Map} inputs all entries are preserved.</p>
+     * {@code Map} inputs all entries are preserved. A {@code Map} entity must be keyed by {@code String}: its keys are the
+     * attribute names (converted by the naming policy, not to text), so a non-String key fails with
+     * {@link ClassCastException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1242,19 +1262,21 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, if {@code entity} is not an Entity, Map,
      *         or Object[] or is an Object[] with an odd length or a non-String name, or if a value being converted is {@code Float.NaN},
      *         {@code Double.NaN}, or a floating-point infinity
+     * @throws ClassCastException if {@code entity} is a Map with a non-String key
      * @throws RuntimeException if a value converter or an entity property accessor fails while encoding an attribute value
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity, final NamingPolicy namingPolicy)
-            throws IllegalArgumentException, RuntimeException {
+            throws IllegalArgumentException, ClassCastException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, cs.namingPolicy);
 
         final boolean isCamelCase = namingPolicy == NamingPolicy.CAMEL_CASE;
-        final Map<String, AttributeValueUpdate> attrs = new LinkedHashMap<>();
+        final Map<String, AttributeValueUpdate> attrs;
         final Class<?> cls = entity.getClass();
 
         if (Beans.isBeanClass(cls)) {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(cls);
+            attrs = N.newLinkedHashMap(entityInfo.propInfoList.size());
             Object propValue = null;
 
             for (final PropInfo propInfo : entityInfo.propInfoList) {
@@ -1268,6 +1290,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             }
         } else if (Map.class.isAssignableFrom(cls)) {
             final Map<String, Object> map = (Map<String, Object>) entity;
+            attrs = N.newLinkedHashMap(map.size());
 
             if (isCamelCase) {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
@@ -1413,7 +1436,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             throw new IllegalArgumentException("The length of property name/value array must be even: " + propNameAndValues.length);
         }
 
-        final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length / 2);
+        final Map<String, Object> props = N.newLinkedHashMap(propNameAndValues.length / 2);
 
         for (int i = 0, len = propNameAndValues.length; i < len; i += 2) {
             props.put(String.valueOf(propNameAndValues[i]), propNameAndValues[i + 1]);
@@ -1523,7 +1546,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *         the item's attributes cannot be mapped to the bean properties
      * @throws RuntimeException if an attribute cannot be converted to the requested Java type, or the target bean or container cannot be constructed or
      *         populated
-     * @throws ParsingException if recursive construction of an {@code EnumMap} is required but its resolved key type is not a concrete enum
+     * @throws ParsingException if recursive construction of an {@code EnumMap} is required but its resolved key type is not a concrete enum,
+     *         or a value read with a field number format does not completely match that format
      */
     public static <T> T toEntity(final GetItemResponse getItemResponse, final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1584,8 +1608,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * wrapper only after several recurrences. Recursive schemas with no reachable field number format use the ordinary
      * typed JSON reader. The complete formatted value must match; trailing content is rejected.</p>
      *
-     * <p>Direct native bean and bean-array properties instead retain map-to-bean rules: field-backed SERIALIZE_ONLY properties and
-     * dotted paths are assigned, property types (including generics and enum representations) are retained, and scalar conversion
+     * <p>Direct native bean and bean-array properties instead retain map-to-bean rules: SERIALIZE_ONLY properties that have a write path
+     * (a writable field or a setter) and dotted paths are assigned, read-only properties (including getter-only properties of an
+     * {@code @AccessFieldByMethod} bean) are skipped, property types (including generics and enum representations) are retained, and scalar conversion
      * does not apply JSON date/number formats. Their nested containers retain the dependency's native conversion factories and
      * map-key collision checks. A String assignable to a container's element type remains a single literal element in this context.</p>
      *
@@ -1617,7 +1642,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *         or the item's attributes cannot be mapped to the bean properties
      * @throws RuntimeException if an attribute cannot be converted to the requested Java type, or the target bean or container cannot be constructed or
      *         populated
-     * @throws ParsingException if recursive construction of an {@code EnumMap} is required but its resolved key type is not a concrete enum
+     * @throws ParsingException if recursive construction of an {@code EnumMap} is required but its resolved key type is not a concrete enum,
+     *         or a value read with a field number format does not completely match that format
      */
     public static <T> T toEntity(final Map<String, AttributeValue> item, final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1751,7 +1777,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             //noinspection rawtypes
             return row -> (T) toMap(row, IntFunctions.ofMap((Class<Map>) rowClass));
         } else if (rowType.isBean()) {
-            return row -> toEntity(row, rowClass);
+            // Reuse the resolved row type instead of re-validating and looking it up for every row.
+            return row -> toEntity(row, rowType, DynamoDBExecutor::toValue, MappingContext.ITEM);
         } else {
             return row -> {
                 if (row.size() != 1) {
@@ -1851,7 +1878,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             ret = val;
         } else if (x.hasM()) {
             final Map<String, AttributeValue> attrMap = x.m();
-            final Map<String, Object> val = new LinkedHashMap<>(attrMap.size());
+            final Map<String, Object> val = N.newLinkedHashMap(attrMap.size());
 
             for (final Map.Entry<String, AttributeValue> entry : attrMap.entrySet()) {
                 val.put(entry.getKey(), toValue(entry.getValue()));
@@ -1918,7 +1945,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      */
     static <T> Map<String, List<T>> toEntities(final Map<String, List<Map<String, AttributeValue>>> tableItems, final Class<T> targetClass)
             throws IllegalArgumentException, RuntimeException {
-        final Map<String, List<T>> tableEntities = new LinkedHashMap<>();
+        final Map<String, List<T>> tableEntities = N.newLinkedHashMap(N.size(tableItems));
 
         if (N.notEmpty(tableItems)) {
             for (final Map.Entry<String, List<Map<String, AttributeValue>>> entry : tableItems.entrySet()) {
@@ -1933,7 +1960,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * Converts a QueryResponse to a List of entities of the specified class.
      *
      * <p>This method extracts the items from the QueryResponse and converts them to a List of entities
-     * using the specified target class. If the response does not contain any items, it returns an empty list.</p>
+     * using the specified target class. If the response does not contain any items (no {@code Items} member, or an empty
+     * one), it returns an empty list. An item without attributes (the SDK stores a {@code null} item of a hand-built response
+     * as an empty map) becomes an empty bean, {@code Map}, array or collection, and is rejected for a single-value
+     * {@code targetClass} because it has no column.</p>
      *
      * <p><b>Single page only:</b> Only the items already present in {@code queryResult} are converted;
      * this does not follow {@code lastEvaluatedKey}. Use {@link #list(QueryRequest, Class)} for
@@ -2128,12 +2158,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
         N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
 
         final Function<Map<String, AttributeValue>, T> mapper = createRowMapper(targetClass);
-        final List<T> resultList = new ArrayList<>();
+        final int size = N.size(items);
+        final List<T> resultList = new ArrayList<>(offset < size ? N.min(count, size - offset) : 0);
 
-        if (N.notEmpty(items)) {
-            for (int i = offset, to = items.size(); i < to && count > 0; i++, count--) {
-                resultList.add(mapper.apply(items.get(i)));
-            }
+        for (int i = offset; i < size && count > 0; i++, count--) {
+            resultList.add(mapper.apply(items.get(i)));
         }
 
         return resultList;
@@ -2305,7 +2334,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             }
         }
 
-        return new RowDataset(columnNameList, columnList);
+        // The public RowDataset constructor copies every column; these lists are freshly built and never exposed,
+        // so hand them over instead of holding two copies of the whole result at once.
+        return RowDataset.fromOwnedColumns(columnNameList, columnList);
     }
 
     /**
@@ -3466,7 +3497,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @param targetClass the class of the entities to convert to. Must not be null.
      * @return a list of entities aggregated across all pages (when pagination is auto-driven),
-     *         never {@code null}; empty when the query matches nothing
+     *         never {@code null}; empty when the query matches nothing (or the client returns no response at all). A null
+     *         response ends the result there: for the first page the list is empty, for a later page the list holds the rows
+     *         of the pages before it and no further page is requested
      * @throws IllegalArgumentException if {@code queryRequest} or {@code targetClass} is null, or a returned item cannot be converted to
      *         {@code targetClass}
      * @throws SdkException if the SDK cannot send the list request or DynamoDB rejects it because of credentials, table/key data, conditions, or
@@ -3478,8 +3511,17 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
+        final Function<Map<String, AttributeValue>, T> rowMapper = createRowMapper(targetClass);
         final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
-        final List<T> res = toList(queryResult, targetClass);
+
+        // A null response only comes from an un-stubbed client; keep the empty-result behaviour of the former toList path
+        // (no rows, and no further page is requested).
+        if (queryResult == null) {
+            return new ArrayList<>(0);
+        }
+
+        final List<T> res = new ArrayList<>(N.size(queryResult.items()));
+        addRows(queryResult, rowMapper, res);
 
         if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
             QueryResponse newQueryResult = queryResult;
@@ -3488,11 +3530,34 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
                 final Map<String, AttributeValue> lastEvaluatedKey = newQueryResult.lastEvaluatedKey();
                 final QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
                 newQueryResult = dynamoDBClient.query(newQueryRequest);
-                res.addAll(toList(newQueryResult, targetClass));
+
+                // A null later page only comes from an un-stubbed client as well; like a null first page it ends the result
+                // there (the rows gathered so far are kept, no rows are added, and no further page is requested).
+                if (newQueryResult == null) {
+                    break;
+                }
+
+                // Convert each page straight into the result, with one row mapper, instead of through a per-page list.
+                addRows(newQueryResult, rowMapper, res);
             } while (N.notEmpty(newQueryResult.lastEvaluatedKey()));
         }
 
         return res;
+    }
+
+    /**
+     * Converts the items of one query page with {@code rowMapper} and appends them to {@code output}; a page without an
+     * {@code Items} member adds nothing. Shared with {@link AsyncDynamoDBExecutor}, whose page chain converts each page
+     * the same way with one row mapper.
+     *
+     * @throws RuntimeException if {@code rowMapper} cannot convert an item
+     */
+    static <T> void addRows(final QueryResponse page, final Function<Map<String, AttributeValue>, T> rowMapper, final List<T> output) {
+        if (page.hasItems()) {
+            for (final Map<String, AttributeValue> item : page.items()) {
+                output.add(rowMapper.apply(item));
+            }
+        }
     }
 
     /**
@@ -4866,7 +4931,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
         private Map<String, AttributeValue> createKey(final T entity) throws IllegalArgumentException, RuntimeException {
             N.checkArgNotNull(entity, cs.entity);
 
-            final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
+            final Map<String, AttributeValue> key = N.newHashMap(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
                 final String keyPropName = keyPropNames.get(i);

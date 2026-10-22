@@ -156,4 +156,28 @@ class CassandraExecutorTest {
         verify(fixture.session, never()).close();
         verify(fixture.cluster, never()).close();
     }
+
+    // ---- 2026-10-19 sliceK ----
+
+    // The statement pool closes itself in its own JVM shutdown hook; CQL run afterwards (e.g. from an application's
+    // shutdown hook) must still prepare and bind, just without caching.
+    @Test
+    void sliceK_closedStatementCacheIsTreatedAsAMiss() throws Exception {
+        try (CassandraTestFixture fixture = new CassandraTestFixture()) {
+            fixture.columns(DataType.bigint(), "id");
+            final String query = "SELECT * FROM items WHERE id = ?";
+            fixture.executor.prepareStatement(query, 1L);
+            fixture.executor.prepareStatement(query, 2L);
+            verify(fixture.session, times(1)).prepare(query);
+
+            final var poolField = CassandraExecutor.class.getDeclaredField("preparedStatementPool");
+            poolField.setAccessible(true);
+            ((com.landawn.abacus.pool.KeyedObjectPool<?, ?>) poolField.get(fixture.executor)).close();
+
+            org.junit.jupiter.api.Assertions.assertAll(() -> fixture.executor.prepareStatement(query, 3L),
+                    () -> fixture.executor.prepareStatement("SELECT * FROM items"),
+                    () -> assertEquals(List.of(1L, 2L, 3L), fixture.values.stream().filter(v -> v.length == 1).map(v -> v[0]).toList()),
+                    () -> verify(fixture.session, times(2)).prepare(query));
+        }
+    }
 }

@@ -349,7 +349,9 @@ public final class AnyRowMutations implements Row {
      *        are all accepted by {@link RowMutations}
      * @return this AnyRowMutations instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code mutations} is null or contains a null element
-     * @throws IOException if any mutation's row key does not match this batch's row key
+     * @throws IOException if any mutation's row key does not match this batch's row key; every row
+     *         key is checked before anything is appended, so in that case none of {@code mutations}
+     *         is added
      * @see Put
      * @see Delete
      * @see #add(Mutation)

@@ -764,4 +764,183 @@ public class HBaseExecutorToValueTest extends TestBase {
 
     public static class SubclassOfEntityWithComputedProperty extends EntityWithComputedProperty {
     }
+
+    // ---- 2026-10-19 sliceM ----
+
+    // abacus-common 8.2: a field-backed @AccessFieldByMethod property without a setter is read-only
+    // (PropInfo.setPropValue throws UnsupportedOperationException); AnyPut.create still writes its cell.
+    @Test
+    public void test_toEntity_accessFieldByMethodGetterOnlyPropertyCellsAreSkipped() {
+        final MethodAccessNested nested = new MethodAccessNested();
+        nested.setFirstName("Bob");
+        final MethodAccessEntity entity = new MethodAccessEntity();
+        entity.setId("r3");
+        entity.setName("k");
+        entity.setNested(nested);
+
+        final org.apache.hadoop.hbase.client.Put put = AnyPut.create(entity).val();
+        assertTrue(put.has(Bytes.toBytes("code"), Bytes.toBytes("")), "precondition: the getter-only field is written as a cell");
+        assertTrue(put.has(Bytes.toBytes("nested"), Bytes.toBytes("tag")), "precondition: the nested getter-only field is written as a cell");
+
+        // Before the fix: UnsupportedOperationException "Property 'code' ... is read-only".
+        final MethodAccessEntity back = HBaseExecutor.toEntity(toResult(put), MethodAccessEntity.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("r3", back.getId()), () -> assertEquals("k", back.getName()),
+                () -> assertEquals("c0", back.getCode()), () -> assertEquals("Bob", back.getNested().getFirstName()),
+                () -> assertEquals("t0", back.getNested().getTag()));
+    }
+
+    // ---- 2026-10-19 verify6 ----
+
+    // A getter-only nested bean held by a final field is read-only under abacus-common 8.2, but its cells are written into the
+    // instance the field already holds (no setter needed); skipping the whole family silently dropped them.
+    @Test
+    public void test_toEntity_fieldBackedReadOnlyNestedBeanFamilyIsFilledInPlace() {
+        final ReadOnlyNestedHolder entity = new ReadOnlyNestedHolder();
+        entity.setId("r4");
+        entity.getNested().setFirstName("Bob");
+
+        final org.apache.hadoop.hbase.client.Put put = AnyPut.create(entity).val();
+        assertTrue(put.has(Bytes.toBytes("nested"), Bytes.toBytes("firstName")), "precondition: the nested family is written");
+
+        final ReadOnlyNestedHolder back = HBaseExecutor.toEntity(toResult(put), ReadOnlyNestedHolder.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("r4", back.getId()), () -> assertEquals("Bob", back.getNested().getFirstName()),
+                () -> assertEquals("t0", back.getNested().getTag()));
+    }
+
+    // The same read-only nested bean whose field holds null: there is no instance to fill and none can be assigned,
+    // so the family is skipped (setPropValue would throw UnsupportedOperationException) and the rest of the row -
+    // the sibling "name" family here - is still read.
+    @Test
+    public void test_toEntity_fieldBackedReadOnlyNestedBeanFamilyHoldingNullIsSkipped() {
+        final ReadOnlyNestedHolder source = new ReadOnlyNestedHolder();
+        source.setId("r5");
+        source.setName("k");
+        source.getNested().setFirstName("Bob");
+
+        final org.apache.hadoop.hbase.client.Put put = AnyPut.create(source).val();
+        assertTrue(put.has(Bytes.toBytes("nested"), Bytes.toBytes("firstName")), "precondition: the nested family is written");
+        assertTrue(put.has(Bytes.toBytes("name"), Bytes.toBytes("")), "precondition: the sibling scalar is written");
+
+        final ReadOnlyNullNestedHolder back = HBaseExecutor.toEntity(toResult(put), ReadOnlyNullNestedHolder.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("r5", back.getId()), () -> assertNull(back.getNested()),
+                () -> assertEquals("k", back.getName(), "sibling columns of the row must still be read"));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.AccessFieldByMethod
+    public static class ReadOnlyNullNestedHolder {
+        @Id
+        private String id;
+        private final MethodAccessNested nested = null;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public MethodAccessNested getNested() {
+            return nested;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.AccessFieldByMethod
+    public static class ReadOnlyNestedHolder {
+        @Id
+        private String id;
+        private final MethodAccessNested nested = new MethodAccessNested();
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public MethodAccessNested getNested() {
+            return nested;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.AccessFieldByMethod
+    public static class MethodAccessNested {
+        private String firstName;
+        private final String tag = "t0";
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(final String firstName) {
+            this.firstName = firstName;
+        }
+
+        public String getTag() {
+            return tag;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.AccessFieldByMethod
+    public static class MethodAccessEntity {
+        @Id
+        private String id;
+        private String name;
+        private final String code = "c0";
+        private MethodAccessNested nested;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public MethodAccessNested getNested() {
+            return nested;
+        }
+
+        public void setNested(final MethodAccessNested nested) {
+            this.nested = nested;
+        }
+    }
 }

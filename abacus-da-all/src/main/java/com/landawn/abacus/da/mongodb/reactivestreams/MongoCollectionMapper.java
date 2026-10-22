@@ -76,6 +76,13 @@ import reactor.core.publisher.Mono;
  *       ID property of any other type (e.g. {@code long}) is stored as an ordinary field under its own
  *       name, and MongoDB assigns a separate {@code _id}. The collection codec registry handles BSON
  *       values stored inside the document.</li>
+ *   <li><strong>Generated {@code _id}:</strong> when the {@code _id} value is omitted, the driver assigns an
+ *       {@link ObjectId}. A bean entity (or any other non-{@link Document} entity, such as a {@code Map}) is
+ *       copied into a new document, so the generated value is <strong>not</strong> written back: its id
+ *       property stays {@code null} and the value is available only from the emitted result (for example
+ *       {@link InsertOneResult#getInsertedId()}). A {@link Document} entity is passed to the driver unchanged,
+ *       and the driver stamps the generated {@code _id} on that same instance while the insert publisher is
+ *       built, that is, before subscription.</li>
  *   <li><strong>Back-pressure support:</strong> Streaming {@code Flux} operations propagate
  *       Reactive Streams {@code Subscription.request(n)} demand to the driver.</li>
  *   <li><strong>Error propagation:</strong> Database errors are signalled via
@@ -1185,7 +1192,10 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher, for example an {@link IllegalArgumentException} when the stored
+     * value cannot be converted to {@code Boolean} (such as an int64, double or {@code Decimal128} value, an int32 other than
+     * {@code 1}/{@code 0}/{@code -1}, or text such as {@code "yes"} once its surrounding whitespace is ignored; empty or
+     * whitespace-only text emits {@code false} rather than failing; see {@link com.landawn.abacus.da.mongodb.MongoDBBase}).</p>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
@@ -2108,7 +2118,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method provides a reactive way to insert a single entity of the mapped type into the
      * collection. The entity is converted via {@link com.landawn.abacus.da.mongodb.MongoDBBase#toDocument(Object)}
-     * (or passed through when already a {@link Document}).</p>
+     * (or passed through when already a {@link Document}). A converted (bean or other non-{@code Document}) entity
+     * does not receive a generated {@code _id}; {@link InsertOneResult#getInsertedId()} reports it. A {@link Document}
+     * entity receives the generated {@code _id} in place when this method builds the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2156,7 +2168,9 @@ public final class MongoCollectionMapper<T> {
      * Inserts a single entity into the collection with custom options reactively.
      *
      * <p>This method provides a reactive way to insert a single entity with additional insertion options
-     * such as bypass document validation. The entity is automatically converted to a MongoDB document.</p>
+     * such as bypass document validation. The entity is automatically converted to a MongoDB document.
+     * Generated {@code _id}s are handled as in {@link #insertOne(Object)}: a {@link Document} entity receives it
+     * in place, while a converted bean (or other non-{@code Document}) entity does not.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2203,7 +2217,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method provides a reactive way to insert a collection of entities of the mapped type.
      * Each entity is converted via {@link com.landawn.abacus.da.mongodb.MongoDBBase#toDocument(Object)}
-     * (or passed through when already a {@link Document}).</p>
+     * (or passed through when already a {@link Document}). {@link Document} entities receive generated
+     * {@code _id}s in place when this method builds the publisher; converted bean (and other non-{@code Document})
+     * entities do not, and {@link InsertManyResult#getInsertedIds()} reports them.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2248,8 +2264,9 @@ public final class MongoCollectionMapper<T> {
      * Inserts multiple entities into the collection with custom options reactively.
      *
      * <p>This method provides a reactive way to insert a collection of entities with additional
-     * insertion options such as ordered insertion and bypass document validation. All entities
-     * are automatically converted to MongoDB documents.</p>
+     * insertion options such as ordered insertion and bypass document validation. Generated {@code _id}s are
+     * handled as in {@link #insertMany(Collection)}: {@link Document} entities are passed through and receive them
+     * in place, while bean (and other non-{@code Document}) entities are converted to new documents and do not.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2287,6 +2304,14 @@ public final class MongoCollectionMapper<T> {
      * <p>Updates the first document matching the specified string object ID with the values
      * from the provided entity in a reactive manner. The entity is converted to update operations automatically.
      * Returns a Mono that emits the update result.</p>
+     *
+     * <p>A bean entity is converted via {@link com.landawn.abacus.da.mongodb.MongoDBBase#toDocument(Object)} and wrapped
+     * in {@code {$set: ...}} after its immutable {@code _id} is removed; properties whose getter returns {@code null} are
+     * dropped, so entity nulls cannot clear fields through this path. Because {@code update} is typed {@code T}, a
+     * driver-built {@link Bson} update can be passed here only when {@code T} is itself a {@link Bson} type such as
+     * {@link Document}; for a bean mapper, use
+     * {@link #collectionExecutor()}{@code .updateOne(objectId, Updates.set(field, null))} to write {@code null}
+     * explicitly.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2331,7 +2356,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Updates the first document matching the specified ObjectId with the values
      * from the provided entity in a reactive manner. This method provides type-safe ObjectId handling
-     * and returns a Mono.</p>
+     * and returns a Mono. The entity is converted as described by {@link #updateOne(String, Object)} (null bean
+     * properties are dropped).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2687,7 +2713,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param objectId the string representation of the MongoDB ObjectId
      * @param replacement the entity to replace the existing document with
@@ -2718,7 +2746,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param objectId the MongoDB ObjectId to match
      * @param replacement the entity to replace the existing document with
@@ -2749,7 +2779,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to match documents against
      * @param replacement the entity to replace the existing document with
@@ -2781,7 +2813,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to match documents against
      * @param replacement the entity to replace the existing document with
@@ -3013,6 +3047,11 @@ public final class MongoCollectionMapper<T> {
      * {@link MongoCollectionExecutor#bulkInsert(Collection)}, which emits the underlying
      * {@link BulkWriteResult}.</p>
      *
+     * <p>A {@link Document} entity is wrapped as-is, so the driver writes a generated {@code _id} into that same
+     * document when this method builds the publisher. A bean (or other non-{@code Document}) entity is converted via
+     * {@link com.landawn.abacus.da.mongodb.MongoDBBase#toDocument(Object)} and does not receive the generated
+     * {@code _id}; {@link BulkWriteResult#getInserts()} reports the generated ids.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: emits the BulkWriteResult (one inserted document per entity on success).
@@ -3055,7 +3094,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Inserts multiple entities with additional control over the write behavior,
      * such as ordering guarantees and bypass document validation. Ordered inserts
-     * stop on first error, while unordered continue despite errors.</p>
+     * stop on first error, while unordered continue despite errors. Generated {@code _id}s are handled as in
+     * {@link #bulkInsert(Collection)}: {@link Document} entities receive them in place, converted bean (and other
+     * non-{@code Document}) entities do not.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3368,7 +3409,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to identify the document to replace
      * @param replacement the complete replacement document
@@ -3404,7 +3447,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
+     * likewise signalled through the publisher, not thrown at call time.</p>
      *
      * @param filter the query filter to identify the document
      * @param replacement the complete replacement document
@@ -3757,6 +3802,11 @@ public final class MongoCollectionMapper<T> {
      * mapper's row type {@code T}. Unless {@code T} is {@link Document}, a {@code $project} stage
      * follows that drops {@code _id} and surfaces each key component under its own field name.</p>
      *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} when {@code T} is
+     * {@link Document}, otherwise as a field or property of the row &mdash; and a dotted path such as {@code "a.b"} appears
+     * as the nested document {@code {a: {b: <value>}}}.</p>
+     *
      * <p>If {@code fieldNames} contains only one distinct field and the mapper has a single-value row type,
      * each group key is converted to that type. The null-key group is omitted, including for a primitive
      * class token such as {@code int.class}, without emitting a primitive default.</p>
@@ -3847,6 +3897,11 @@ public final class MongoCollectionMapper<T> {
      * emitted document represents one unique combination of {@code fieldNames} and carries the
      * count of documents that fell into it. As with {@link #groupByAndCount(String)}, a single-value
      * {@code T} fails with an {@link IllegalArgumentException} signalled through the publisher.</p>
+     *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} when {@code T} is
+     * {@link Document}, otherwise as a field or property of the row &mdash; and a dotted path such as {@code "a.b"} appears
+     * as the nested document {@code {a: {b: <value>}}}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -208,4 +208,307 @@ class CassandraRowMappingTest {
             this.number = number;
         }
     }
+
+    // ---- 2026-10-19 sliceK ----
+
+    // abacus-common 8.2.1 marks a field-backed property read-only when @AccessFieldByMethod forbids the field write and
+    // there is no setter; PropInfo.setPropValue then throws UnsupportedOperationException. Like a getter-only property,
+    // its column must be skipped on read instead of failing the whole row.
+    @Test
+    void sliceK_accessFieldByMethodGetterOnlyPropertyIsSkippedOnRead() throws Exception {
+        final Row row = row(new String[] { "name", "computed" }, "Ada", "stored");
+        final com.datastax.driver.core.UserType userType = sliceKUserType("name", "computed");
+        final com.datastax.driver.core.UDTValue udtValue = userType.newValue().setString(0, "Grace").setString(1, "stored");
+        final CassandraExecutor.UDTCodec<AccessorOnly> codec = CassandraExecutor.UDTCodec.create(userType, AccessorOnly.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final AccessorOnly entity = CassandraExecutor.toEntity(row, AccessorOnly.class);
+            assertEquals("Ada", entity.getName());
+            assertEquals("computed", entity.getComputed());
+        }, () -> assertEquals("Ada", CassandraExecutor.toList(result(row), AccessorOnly.class).getFirst().getName()), () -> {
+            final AccessorOnly decoded = codec.deserialize(udtValue);
+            assertEquals("Grace", decoded.getName());
+            assertEquals("computed", decoded.getComputed());
+        });
+    }
+
+    private static com.datastax.driver.core.UserType sliceKUserType(final String... fieldNames) throws Exception {
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class, DataType.class);
+        fieldConstructor.setAccessible(true);
+        final List<com.datastax.driver.core.UserType.Field> fields = new ArrayList<>();
+
+        for (final String fieldName : fieldNames) {
+            fields.add(fieldConstructor.newInstance(fieldName, DataType.text()));
+        }
+
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, com.datastax.driver.core.ProtocolVersion.class, com.datastax.driver.core.CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        return typeConstructor.newInstance("ks", "accessor_only", false, fields, com.datastax.driver.core.ProtocolVersion.V4,
+                new com.datastax.driver.core.CodecRegistry());
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.AccessFieldByMethod
+    public static class AccessorOnly {
+        private String name;
+        private String computed = "computed";
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public String getComputed() {
+            return computed;
+        }
+    }
+
+    // ---- 2026-10-20 rounify ----
+
+    // An explicit DESERIALIZE_ONLY direction cannot make a read-only property writable (setPropValue still throws), so its
+    // column is skipped like any other read-only one, as by the HBase, DynamoDB and MongoDB executors; it used to fail the row.
+    @Test
+    void rounify_deserializeOnlyReadOnlyPropertyIsSkippedAndSiblingsAreRead() throws Exception {
+        final Row row = row(new String[] { "other", "name" }, "stored", "Ada");
+        final com.datastax.driver.core.UserType userType = sliceKUserType("name", "other");
+        final com.datastax.driver.core.UDTValue udtValue = userType.newValue().setString(0, "Grace").setString(1, "stored");
+        final CassandraExecutor.UDTCodec<DeserializeOnlyReadOnly> codec = CassandraExecutor.UDTCodec.create(userType, DeserializeOnlyReadOnly.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final DeserializeOnlyReadOnly entity = CassandraExecutor.toEntity(row, DeserializeOnlyReadOnly.class);
+            assertEquals("Ada", entity.getName());
+            assertEquals("init", entity.getOther());
+        }, () -> {
+            final DeserializeOnlyReadOnly listed = CassandraExecutor.toList(result(row), DeserializeOnlyReadOnly.class).getFirst();
+            assertEquals("Ada", listed.getName());
+            assertEquals("init", listed.getOther());
+        }, () -> {
+            final DeserializeOnlyReadOnly decoded = codec.deserialize(udtValue);
+            assertEquals("Grace", decoded.getName());
+            assertEquals("init", decoded.getOther());
+        });
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class DeserializeOnlyReadOnly {
+        private String name;
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        @com.landawn.abacus.annotation.JsonXmlField(direction = com.landawn.abacus.annotation.JsonXmlField.Direction.DESERIALIZE_ONLY)
+        private String other = "init";
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public String getOther() {
+            return other;
+        }
+    }
+
+    // Twin of cassandra.CassandraRowMappingTest#udtCodecReusedAcrossValuesKeepsFieldBindings_sliceH: the codec resolves the property
+    // bound to each UDT field once (the cached fieldPropInfos); every later value must still map by field position, including a
+    // field bound through @Column, and must not see an earlier value's data.
+    @Test
+    @SuppressWarnings("rawtypes")
+    void rounify_udtCodecReusedAcrossValuesKeepsFieldBindings() throws Exception {
+        final com.datastax.driver.core.UserType userType = rounifyUserType("counted", "name", DataType.text(), "order_count", DataType.cint());
+        final CassandraExecutor.UDTCodec<RounifyCounted> beanCodec = CassandraExecutor.UDTCodec.create(userType, RounifyCounted.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final com.datastax.driver.core.ProtocolVersion v4 = com.datastax.driver.core.ProtocolVersion.V4;
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (int i = 1; i <= 3; i++) {
+            final int n = i;
+            final RounifyCounted source = new RounifyCounted("n" + n, n);
+
+            checks.add(() -> {
+                // The @Column-bound property is written to its field's position.
+                final com.datastax.driver.core.UDTValue udtValue = beanCodec.serialize(source);
+                assertEquals("n" + n, udtValue.getString(0));
+                assertEquals(n, udtValue.getInt(1));
+                final RounifyCounted decoded = beanCodec.deserialize(beanCodec.serialize(source, v4), v4);
+                assertEquals("n" + n, decoded.getName());
+                assertEquals(n, decoded.getOrderCount());
+            });
+            checks.add(() -> {
+                final Map<String, Object> map = new LinkedHashMap<>();
+                map.put("name", "m" + n);
+                map.put("order_count", n == 2 ? null : n);
+                assertEquals(map, mapCodec.deserialize(mapCodec.serialize(map, v4), v4));
+                assertEquals(map, mapCodec.deserialize(beanCodec.serialize(new RounifyCounted("m" + n, n == 2 ? null : n), v4), v4));
+            });
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    private static com.datastax.driver.core.UserType rounifyUserType(final String typeName, final Object... fieldNamesAndTypes) throws Exception {
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class, DataType.class);
+        fieldConstructor.setAccessible(true);
+        final List<com.datastax.driver.core.UserType.Field> fields = new ArrayList<>();
+
+        for (int i = 0; i < fieldNamesAndTypes.length; i += 2) {
+            fields.add(fieldConstructor.newInstance((String) fieldNamesAndTypes[i], (DataType) fieldNamesAndTypes[i + 1]));
+        }
+
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, com.datastax.driver.core.ProtocolVersion.class, com.datastax.driver.core.CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        return typeConstructor.newInstance("ks", typeName, false, fields, com.datastax.driver.core.ProtocolVersion.V4,
+                new com.datastax.driver.core.CodecRegistry());
+    }
+
+    public static class RounifyCounted {
+        private String name;
+        @com.landawn.abacus.annotation.Column("order_count")
+        private Integer orderCount;
+
+        public RounifyCounted() {
+        }
+
+        RounifyCounted(final String name, final Integer orderCount) {
+            this.name = name;
+            this.orderCount = orderCount;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public Integer getOrderCount() {
+            return orderCount;
+        }
+
+        public void setOrderCount(final Integer orderCount) {
+            this.orderCount = orderCount;
+        }
+    }
+
+    // ---- 2026-10-19 verify2 ----
+
+    // The driver's UDTValue.toString() asks the registry for the codec of the value's user type by CQL type only, which is the
+    // registered UDTCodec, and passes it the raw UDTValue; format(T) mapped it as a bean and threw ClassCastException.
+    @Test
+    void verify2_udtValueToStringWithRegisteredUdtCodec() throws Exception {
+        final com.datastax.driver.core.CodecRegistry registry = new com.datastax.driver.core.CodecRegistry();
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class, DataType.class);
+        fieldConstructor.setAccessible(true);
+        final List<com.datastax.driver.core.UserType.Field> fields = List.of(fieldConstructor.newInstance("street", DataType.text()),
+                fieldConstructor.newInstance("city", DataType.text()));
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, com.datastax.driver.core.ProtocolVersion.class, com.datastax.driver.core.CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        final com.datastax.driver.core.UserType userType = typeConstructor.newInstance("ks", "verify2_addr", false, fields,
+                com.datastax.driver.core.ProtocolVersion.V4, registry);
+        final CassandraExecutor.UDTCodec<Verify2Addr> codec = CassandraExecutor.UDTCodec.create(userType, Verify2Addr.class);
+        registry.register(codec);
+
+        final com.datastax.driver.core.UDTValue udtValue = userType.newValue().setString(0, "Main St").setString(1, "Springfield");
+        final String literal = com.datastax.driver.core.TypeCodec.userType(userType).format(udtValue);
+        final Verify2Addr bean = new Verify2Addr();
+        bean.setStreet("Main St");
+        bean.setCity("Springfield");
+        @SuppressWarnings({ "rawtypes", "unchecked" })
+        final org.junit.jupiter.api.function.ThrowingSupplier<String> rawFormat = () -> ((com.datastax.driver.core.TypeCodec) codec).format(udtValue);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertSame(codec, registry.codecFor(userType)), () -> assertEquals(literal, udtValue.toString()),
+                () -> assertEquals(literal, rawFormat.get()), () -> assertEquals(literal, codec.format(bean)), () -> assertEquals("NULL", codec.format(null)));
+    }
+
+    public static class Verify2Addr {
+        private String street;
+        private String city;
+
+        public String getStreet() {
+            return street;
+        }
+
+        public void setStreet(final String street) {
+            this.street = street;
+        }
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+    }
+
+    // ---- 2026-10-20 cassfix ----
+
+    // format(T) passes a raw UDTValue straight to the driver's UDT codec, but serialize(T, ProtocolVersion) still called
+    // serialize(value), which cast the UDTValue to T and threw ClassCastException when the driver handed this codec a UDTValue
+    // looked up by CQL type (v4 twin: cassandra.CassandraRowMappingTest#cassfix_encodeOfDriverUdtValueThroughRegistryLookup).
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    void cassfix_serializeOfDriverUdtValueThroughRegistryLookup() throws Exception {
+        final com.datastax.driver.core.CodecRegistry registry = new com.datastax.driver.core.CodecRegistry();
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class, DataType.class);
+        fieldConstructor.setAccessible(true);
+        final List<com.datastax.driver.core.UserType.Field> fields = List.of(fieldConstructor.newInstance("street", DataType.text()),
+                fieldConstructor.newInstance("city", DataType.text()));
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, com.datastax.driver.core.ProtocolVersion.class, com.datastax.driver.core.CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        final com.datastax.driver.core.UserType userType = typeConstructor.newInstance("ks", "cassfix_addr", false, fields,
+                com.datastax.driver.core.ProtocolVersion.V4, registry);
+        final CassandraExecutor.UDTCodec<Verify2Addr> codec = CassandraExecutor.UDTCodec.create(userType, Verify2Addr.class);
+        registry.register(codec);
+
+        final com.datastax.driver.core.ProtocolVersion version = com.datastax.driver.core.ProtocolVersion.V4;
+        final com.datastax.driver.core.UDTValue udtValue = userType.newValue().setString(0, "Main St").setString(1, "Springfield");
+        final java.nio.ByteBuffer expected = com.datastax.driver.core.TypeCodec.userType(userType).serialize(udtValue, version);
+        final Verify2Addr bean = new Verify2Addr();
+        bean.setStreet("Main St");
+        bean.setCity("Springfield");
+        final com.datastax.driver.core.TypeCodec lookedUp = registry.codecFor(userType);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertSame(codec, lookedUp), () -> assertEquals(expected, lookedUp.serialize(udtValue, version)),
+                () -> assertEquals(expected, codec.serialize(bean, version)),
+                () -> assertEquals("Springfield",
+                        codec.deserialize(((com.datastax.driver.core.TypeCodec) codec).serialize(udtValue, version), version).getCity()),
+                () -> assertNull(codec.serialize(null, version)));
+    }
+
+    // extractData adopts its per-column lists through RowDataset.fromOwnedColumns (no defensive copy): the Dataset must still
+    // be a normal mutable Dataset that is independent of the driver rows and shares nothing with another extraction.
+    @Test
+    void cassfix_extractedDatasetIsMutableAndOwnsItsColumns() {
+        final Row first = row(new String[] { "id", "name" }, 1L, "Ada");
+        final Row second = row(new String[] { "id", "name" }, 2L, "Grace");
+        final com.landawn.abacus.util.Dataset dataset = CassandraExecutor.extractData(result(first, second));
+        final com.landawn.abacus.util.Dataset other = CassandraExecutor.extractData(result(first, second));
+
+        when(first.getObject(1)).thenReturn("changed after extraction");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> org.junit.jupiter.api.Assertions.assertFalse(dataset.isFrozen()),
+                () -> assertEquals(List.of("Ada", "Grace"), dataset.getColumn("name")),
+                () -> org.junit.jupiter.api.Assertions.assertNotSame(dataset.getColumn("id"), other.getColumn("id")));
+
+        dataset.addRow(new Object[] { 3L, "Linus" });
+        dataset.set(0, 1, "Ada L.");
+        dataset.removeRow(1);
+        dataset.addColumn("upper", "name", (final String name) -> name.toUpperCase());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(2, dataset.size()), () -> assertEquals(List.of(1L, 3L), dataset.getColumn("id")),
+                () -> assertEquals(List.of("Ada L.", "Linus"), dataset.getColumn("name")),
+                () -> assertEquals(List.of("ADA L.", "LINUS"), dataset.getColumn("upper")),
+                // The second extraction (and its column lists) is untouched.
+                () -> assertEquals(2, other.size()), () -> assertEquals(List.of(1L, 2L), other.getColumn("id")),
+                () -> assertEquals(List.of("Ada", "Grace"), other.getColumn("name")), () -> assertEquals(List.of("id", "name"), other.columnNames()));
+    }
 }

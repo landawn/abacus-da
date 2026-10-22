@@ -77,7 +77,8 @@ import com.mongodb.client.result.UpdateResult;
  *       {@code long}) is stored as an ordinary field under its own name, and MongoDB assigns a
  *       separate {@code _id}.</li>
  *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId} during insert. For a
- *       bean entity the generated value is <strong>not</strong> written back: the entity's id property
+ *       bean entity (or any other non-{@link Document} entity, such as a {@code Map}, which is copied into a
+ *       new document) the generated value is <strong>not</strong> written back: the entity's id property
  *       remains {@code null} after the insert returns, and the generated {@code _id} exists only in the
  *       database. A {@link Document} entity is passed to the driver unchanged, so the driver populates
  *       the generated {@code _id} on that same document instance.</li>
@@ -1210,10 +1211,11 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the boolean property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalBoolean} holding the field value (or {@code false} for a
-     *         missing/{@code null} field) when at least one document is matched;
+     *         missing/{@code null} field, or for empty or whitespace-only text) when at least one document is matched;
      *         {@code OptionalBoolean.empty()} when no document matches
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot be
-     *         converted to the requested value type
+     *         converted to {@code Boolean} (for example an int64, double or {@code Decimal128} value, an int32 other than {@code 1}/{@code 0}/{@code -1},
+     *         or text such as {@code "yes"} once its surrounding whitespace is ignored; see {@link MongoDBBase})
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2492,8 +2494,10 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method inserts multiple entities of the mapped type into the collection efficiently
      * in a single batch operation. Each bean entity is automatically converted to a BSON document;
-     * {@link Document} entities are passed through unchanged. Batch operations are more efficient
-     * than individual inserts for multiple entities and provide better performance for bulk data loading.</p>
+     * {@link Document} entities are passed through unchanged, so the driver writes each generated {@code _id}
+     * into those same documents, while converted (non-{@code Document}) entities do not receive it. Batch
+     * operations are more efficient than individual inserts for multiple entities and provide better
+     * performance for bulk data loading.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2534,7 +2538,9 @@ public final class MongoCollectionMapper<T> {
      * <p>This method inserts multiple entities in a batch operation with fine-grained control
      * through InsertManyOptions. Options allow configuration of ordered/unordered inserts and
      * bypass document validation. Write concern is configured on the underlying collection, not
-     * on InsertManyOptions.</p>
+     * on InsertManyOptions. As with {@link #insertMany(Collection)}, {@link Document} entities are passed
+     * through and receive generated {@code _id}s in place; bean (and other non-{@code Document}) entities
+     * are converted to new documents and do not.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2573,7 +2579,9 @@ public final class MongoCollectionMapper<T> {
      * and wrapped in {@code {$set: ...}} (the immutable {@code _id} field is stripped from the
      * converted document first); properties whose getter returns {@code null} are
      * <i>dropped</i> by the bean conversion, so entity nulls cannot be used to clear fields through
-     * this path. Use a driver-built {@link Bson} update (e.g. {@code Updates.set(field, null)})
+     * this path. Because {@code update} is typed {@code T}, a driver-built {@link Bson} update can be
+     * passed here only when {@code T} is itself a {@link Bson} type such as {@link Document}; for a bean
+     * mapper, use {@link #collectionExecutor()}{@code .updateOne(objectId, Updates.set(field, null))}
      * when you need to explicitly write {@code null}. If nothing updatable remains (every property
      * is {@code null} or only {@code _id} was set), an {@link IllegalArgumentException} is thrown —
      * this executor requires at least one updatable field.</p>
@@ -2990,7 +2998,8 @@ public final class MongoCollectionMapper<T> {
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
-     *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
+     *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs, or if the converted
+     *         replacement has a top-level field name starting with {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3023,7 +3032,8 @@ public final class MongoCollectionMapper<T> {
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting with
+     *         {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3056,7 +3066,8 @@ public final class MongoCollectionMapper<T> {
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting with
+     *         {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3094,7 +3105,8 @@ public final class MongoCollectionMapper<T> {
      * @param options additional options for the replace operation (null uses defaults)
      * @return UpdateResult containing information about the replace operation
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting with
+     *         {@code $} (rejected by the driver before the command is sent)
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3309,6 +3321,11 @@ public final class MongoCollectionMapper<T> {
      * (use {@link BulkWriteResult#getInsertedCount()} for the inserted count). Per-document atomicity
      * applies; the bulk as a whole is not atomic across documents.</p>
      *
+     * <p>A {@link Document} entity is wrapped as-is, so the driver writes a generated {@code _id} into that
+     * same document. A bean (or other non-{@code Document}) entity is converted via
+     * {@link MongoDBBase#toDocument(Object)} (null bean properties dropped) and does not receive the generated
+     * {@code _id}; {@link BulkWriteResult#getInserts()} reports the generated ids.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Product> products = loadLargeProductCatalog(); // e.g. 5000 products
@@ -3339,7 +3356,9 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p>This method provides fine-grained control over bulk insert operations through
      * BulkWriteOptions. Options enable ordered/unordered execution and validation bypass. Write
-     * concern is configured on the underlying collection, not on BulkWriteOptions.</p>
+     * concern is configured on the underlying collection, not on BulkWriteOptions. Generated {@code _id}s are
+     * handled as in {@link #bulkInsert(Collection)}: {@link Document} entities receive them in place, converted
+     * bean (and other non-{@code Document}) entities do not.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3624,7 +3643,8 @@ public final class MongoCollectionMapper<T> {
      * @param replacement the new entity to replace the existing one
      * @return the original entity before replacement, or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to the mapped type
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting with
+     *         {@code $} (rejected by the driver before the command is sent), or if the returned document cannot be converted to the mapped type
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3662,7 +3682,8 @@ public final class MongoCollectionMapper<T> {
      * @param options additional options for the find and replace operation (null uses defaults)
      * @return the entity before or after replacement (based on options), or null if not found
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
-     *         from a Map, bean, or array of String name/value pairs, or if the returned document cannot be converted to the mapped type
+     *         from a Map, bean, or array of String name/value pairs, or if the converted replacement has a top-level field name starting with
+     *         {@code $} (rejected by the driver before the command is sent), or if the returned document cannot be converted to the mapped type
      * @throws RuntimeException if a bean accessor, BSON implementation, codec, or value converter throws during request or result conversion
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -3976,6 +3997,11 @@ public final class MongoCollectionMapper<T> {
      * <p>This method groups entities by multiple field values, enabling compound grouping
      * for more complex analysis. Each group represents a unique combination of the specified fields.</p>
      *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} when {@code T} is
+     * {@link Document}, otherwise as a field or property of the row &mdash; and a dotted path such as {@code "a.b"} appears
+     * as the nested document {@code {a: {b: <value>}}}.</p>
+     *
      * <p>If {@code fieldNames} contains only one distinct field and the mapper has a single-value row type,
      * each group key is converted to that type. A primitive class token (such as {@code int.class}) omits the
      * null-key group; a wrapper or reference single-value type receives a {@code null} element.</p>
@@ -4059,6 +4085,11 @@ public final class MongoCollectionMapper<T> {
      * in each group. The count surfaces under a {@code count} field on the entity and is only readable
      * if the entity declares a matching property. This enables multi-dimensional analysis with count
      * statistics for complex data aggregation scenarios.</p>
+     *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} when {@code T} is
+     * {@link Document}, otherwise as a field or property of the row &mdash; and a dotted path such as {@code "a.b"} appears
+     * as the nested document {@code {a: {b: <value>}}}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

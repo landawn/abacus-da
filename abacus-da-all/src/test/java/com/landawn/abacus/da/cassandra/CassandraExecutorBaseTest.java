@@ -756,4 +756,56 @@ public class CassandraExecutorBaseTest extends CassandraExecutorBaseTestSupport 
     public void testUsingTTLRejectsNegativeValue() {
         assertThrows(IllegalArgumentException.class, () -> CqlBuilder.Dsl.PSC.insert("id").into("events").usingTTL(-1));
     }
+
+    // ---- 2026-10-19 sliceF ----
+
+    /** An entity whose only properties are its key (plus a computed getter-only one): nothing can be SET by an UPDATE. */
+    public static class SliceFKeyOnlyEntity {
+        @com.landawn.abacus.annotation.Id
+        private Long id;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+
+        public String getDisplayName() {
+            return "entity-" + id;
+        }
+    }
+
+    /**
+     * update(entity) / batchUpdate(entities, type) derive the update properties themselves; when the entity class has no
+     * updatable non-key property they reported "'propNamesToUpdate' can't be null or empty", naming an argument the caller
+     * never passed.
+     */
+    @Test
+    public void testSliceF_updateWithoutUpdatableProperty_reportsTheEntityClass() {
+        final SliceFKeyOnlyEntity entity = new SliceFKeyOnlyEntity();
+        entity.setId(1L);
+
+        final IllegalArgumentException single = assertThrows(IllegalArgumentException.class, () -> executor.update(entity));
+        final IllegalArgumentException batch = assertThrows(IllegalArgumentException.class, () -> executor.batchUpdate(List.of(entity), TestBatchType.LOGGED));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(!single.getMessage().contains("propNamesToUpdate"), single.getMessage()),
+                () -> assertTrue(single.getMessage().contains("No updatable non-key property"), single.getMessage()),
+                () -> assertTrue(single.getMessage().contains(SliceFKeyOnlyEntity.class.getSimpleName()), single.getMessage()),
+                () -> assertTrue(!batch.getMessage().contains("propNamesToUpdate"), batch.getMessage()),
+                () -> assertTrue(batch.getMessage().contains("No updatable non-key property"), batch.getMessage()),
+                () -> assertTrue(batch.getMessage().contains(SliceFKeyOnlyEntity.class.getSimpleName()), batch.getMessage()));
+    }
+
+    /** An explicitly empty propNamesToUpdate still reports that argument. */
+    @Test
+    public void testSliceF_updateWithEmptyExplicitPropNames_stillNamesTheArgument() {
+        final TestEntity entity = new TestEntity();
+        entity.setId(1L);
+
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> executor.update(entity, new ArrayList<>()));
+
+        assertTrue(e.getMessage().contains("propNamesToUpdate"), e.getMessage());
+    }
 }

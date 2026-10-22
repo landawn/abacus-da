@@ -208,7 +208,15 @@ final class ResultSets {
          */
         @Override
         public List<Row> all() throws RuntimeException, UncheckedInterruptedException {
-            return N.toList(iterator());
+            // Pre-size for the rows already held by the current page, like the driver's default PagingIterable.all();
+            // later pages still grow the list on demand. Math.max guards a custom AsyncResultSet reporting a negative count.
+            final List<Row> rows = new ArrayList<>(Math.max(0, currentResultSet.remaining()));
+
+            while (rowIterator.hasNext()) {
+                rows.add(rowIterator.next());
+            }
+
+            return rows;
         }
 
         @Override

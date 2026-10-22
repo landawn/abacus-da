@@ -1327,13 +1327,16 @@ public final class MongoCollectionExecutor {
      * // Edge: matching document but the "isActive" field is absent/null -> also completes EMPTY
      * // (the Boolean.class wrapper means there is NO bogus 'false' default).
      *
-     * // Negative: a blank propName throws IllegalArgumentException synchronously (at call time,
+     * // Negative: an empty propName throws IllegalArgumentException synchronously (at call time,
      * // before any Mono is returned), because propName is validated eagerly.
      * executor.queryForBoolean("", Filters.eq("userId", "123")); // throws IllegalArgumentException
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher, for example an {@link IllegalArgumentException} when the stored
+     * value cannot be converted to {@code Boolean} (such as an int64, double or {@code Decimal128} value, an int32 other than
+     * {@code 1}/{@code 0}/{@code -1}, or text such as {@code "yes"} once its surrounding whitespace is ignored; empty or
+     * whitespace-only text emits {@code false} rather than failing; see {@link com.landawn.abacus.da.mongodb.MongoDBBase}).</p>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
@@ -1525,7 +1528,7 @@ public final class MongoCollectionExecutor {
      * executor.queryForInt("age", Filters.eq("userId", "missing"))
      *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
      *
-     * // Negative: a blank propName throws IllegalArgumentException synchronously (at call time,
+     * // Negative: an empty propName throws IllegalArgumentException synchronously (at call time,
      * // before any Mono is returned), because propName is validated eagerly.
      * executor.queryForInt("", Filters.eq("userId", "user123")); // throws IllegalArgumentException
      * }</pre>
@@ -1725,7 +1728,7 @@ public final class MongoCollectionExecutor {
      * executor.queryForString("username", Filters.eq("userId", "missing"))
      *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
      *
-     * // Negative: a blank propName throws IllegalArgumentException synchronously (at call time,
+     * // Negative: an empty propName throws IllegalArgumentException synchronously (at call time,
      * // before any Mono is returned), because propName is validated eagerly.
      * executor.queryForString("", Filters.eq("userId", "u123")); // throws IllegalArgumentException
      * }</pre>
@@ -1881,7 +1884,7 @@ public final class MongoCollectionExecutor {
      * executor.queryForSingleValue("balance", Filters.eq("accountId", "x"), BigDecimal.class)
      *         .subscribe(b -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
      *
-     * // Negative: a blank propName or a null valueType throws IllegalArgumentException synchronously
+     * // Negative: an empty propName or a null valueType throws IllegalArgumentException synchronously
      * // (at call time, before any Mono is returned), because both are validated eagerly.
      * executor.queryForSingleValue("", Filters.eq("accountId", id), BigDecimal.class); // throws IllegalArgumentException
      * }</pre>
@@ -2192,24 +2195,24 @@ public final class MongoCollectionExecutor {
             return dataset;
         }
 
+        // Overwrite only the dotted columns in place (one Dataset row per document, in order). Rebuilding the result with
+        // Dataset.columns(...) copied every column, so the whole result set was held in memory twice.
         final List<String> columnNames = dataset.columnNames();
-        final List<List<?>> columns = new ArrayList<>(columnNames.size());
+        final int rowCount = rowList.size();
 
-        for (final String columnName : columnNames) {
-            if (columnName.indexOf('.') < 0) {
-                columns.add(dataset.getColumn(columnName));
-            } else {
-                final List<Object> column = new ArrayList<>(rowList.size());
+        for (int columnIndex = 0, columnCount = columnNames.size(); columnIndex < columnCount; columnIndex++) {
+            final String columnName = columnNames.get(columnIndex);
 
-                for (final Document row : rowList) {
-                    column.add(getPropValueByPath(row, columnName));
+            if (columnName.indexOf('.') >= 0) {
+                final List<String> path = java.util.Arrays.asList(columnName.split("\\."));
+
+                for (int rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+                    dataset.set(rowIndex, columnIndex, rowList.get(rowIndex).getEmbedded(path, Object.class));
                 }
-
-                columns.add(column);
             }
         }
 
-        return Dataset.columns(columnNames, columns);
+        return dataset;
     }
 
     /**
@@ -2550,6 +2553,11 @@ public final class MongoCollectionExecutor {
      * {@link Document}, {@link java.util.Map}, or an entity class with getter/setter methods
      * (non-Document inputs are converted via {@code MongoDBBase.toDocument}).</p>
      *
+     * <p><b>Generated {@code _id}:</b> a caller-supplied {@link Document} without an {@code _id} is inserted as-is,
+     * so the driver populates the generated {@code _id} on that instance in place (when this method is called, before
+     * subscription). A Map or entity is converted to a new document, so a generated {@code _id} is <i>not</i> written
+     * back to it; read it from {@link InsertOneResult#getInsertedId()}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: insert an entity; the result carries the generated _id.
@@ -2600,7 +2608,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Inserts the provided object with custom insert options, such as bypass document
      * validation. Non-{@link Document} input is converted via {@code MongoDBBase.toDocument}
-     * before insertion.</p>
+     * before insertion. As with {@link #insertOne(Object)}, a generated {@code _id} is populated in place only on a
+     * caller-supplied {@link Document}; for a Map or entity, read it from {@link InsertOneResult#getInsertedId()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2639,7 +2648,10 @@ public final class MongoCollectionExecutor {
      * <p>Batch inserts a collection of objects as documents. Each element may be a
      * {@link Document}, {@link java.util.Map}, or an entity class — non-Document elements are
      * converted via {@code MongoDBBase.toDocument}. A bulk insert is more efficient than multiple
-     * single inserts.</p>
+     * single inserts. Caller-supplied {@link Document} elements are inserted as-is, so the driver populates a
+     * generated {@code _id} on them in place (when this method is called, before subscription); Maps and entities are
+     * converted to new documents, so a generated {@code _id} is not written back to them (read it from
+     * {@link InsertManyResult#getInsertedIds()}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2685,7 +2697,8 @@ public final class MongoCollectionExecutor {
      * ordered/unordered insertion. With {@code ordered(false)}, the driver continues after
      * per-document failures and reports them in the resulting bulk-write exception. Caller-supplied
      * {@link Document} instances are passed through even when the batch also contains Maps or beans,
-     * so driver-generated {@code _id} values are visible on those same instances.</p>
+     * so driver-generated {@code _id} values are visible on those same instances; converted Maps and beans do not
+     * receive them (read them from {@link InsertManyResult#getInsertedIds()}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2939,8 +2952,8 @@ public final class MongoCollectionExecutor {
      * Updates the first document matching the filter using a pipeline of update stages reactively.
      *
      * <p>Applies a list of update operations as a MongoDB <i>pipeline-style</i> update
-     * (server requires MongoDB 4.2+). Each element is converted via {@link #toBson(Object)}; any
-     * non-operator object is wrapped in a {@code $set}.</p>
+     * (server requires MongoDB 4.2+). Each element is converted with the same rules as the single-update
+     * overloads (see {@link #updateOne(String, Object)}); any non-operator object is wrapped in a {@code $set}.</p>
      *
      * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
      * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
@@ -3734,6 +3747,11 @@ public final class MongoCollectionExecutor {
      * {@link BulkWriteOptions} via {@link #bulkInsert(Collection, BulkWriteOptions)} to continue
      * after errors.</p>
      *
+     * <p><b>Generated {@code _id}:</b> the driver populates a generated {@code _id} in place on caller-supplied
+     * {@link Document} entries that lack one (when this method is called, before subscription). Converted entries
+     * (beans and Maps) are copies, so a generated {@code _id} is <i>not</i> written back to the original object;
+     * read it from {@link BulkWriteResult#getInserts()} instead.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: emits the BulkWriteResult.
@@ -3780,7 +3798,9 @@ public final class MongoCollectionExecutor {
      * <p>Inserts multiple documents with custom bulk write options. This method provides
      * control over the bulk operation including ordered/unordered execution and validation
      * bypass. Write concern is configured on the underlying collection, not on BulkWriteOptions.
-     * Unordered operations can continue after errors and may perform better.</p>
+     * Unordered operations can continue after errors and may perform better. Generated {@code _id} values are
+     * populated in place only on caller-supplied {@link Document} entries; for beans and Maps, read them from
+     * {@link BulkWriteResult#getInserts()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4627,7 +4647,10 @@ public final class MongoCollectionExecutor {
      * Finds distinct values for a specified field.
      *
      * <p>Returns distinct values for the specified field across all documents in the collection.
-     * Useful for getting unique values such as categories, tags, or statuses.</p>
+     * Useful for getting unique values such as categories, tags, or statuses. Values are decoded by the driver
+     * as {@code rowType}. A BSON {@code null} value is not emitted (Reactive Streams forbids {@code null} elements),
+     * unlike the blocking {@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor#distinct(String, Class)}, which
+     * includes {@code null}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4666,7 +4689,8 @@ public final class MongoCollectionExecutor {
      * Finds distinct values for a field with a filter.
      *
      * <p>Returns distinct values for the specified field among documents matching the filter.
-     * Useful for getting unique values within a subset of documents.</p>
+     * Useful for getting unique values within a subset of documents. As with
+     * {@link #distinct(String, Class)}, a BSON {@code null} value is not emitted.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4857,6 +4881,11 @@ public final class MongoCollectionExecutor {
      * <p>Groups documents by multiple fields creating composite grouping keys. This is useful
      * for multi-dimensional analysis and reporting.</p>
      *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group; in the
+     * {@code _id} key document that field is present with the value {@code null} (for example
+     * {@code {_id: {category: "books", status: null}}}), and a dotted path such as {@code "a.b"} appears as the nested
+     * document {@code {a: {b: <value>}}}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Flux<Document> grouped = executor.groupBy(Arrays.asList("category", "status"));
@@ -4882,6 +4911,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>Groups documents by multiple fields and maps results to the specified type.
      * Enables multi-dimensional grouping with type-safe results.</p>
+     *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} for {@link Document} rows, as a
+     * top-level field or property for Map, bean and {@code Object} rows &mdash; and a dotted path such as {@code "a.b"}
+     * appears as the nested document {@code {a: {b: <value>}}}.</p>
      *
      * <p>If {@code fieldNames} contains only one distinct field and {@code rowType} is a single-value type,
      * each group key is converted to that type. The null-key group is omitted for every single-value type,
@@ -4986,6 +5020,11 @@ public final class MongoCollectionExecutor {
      * <p>Groups documents by multiple fields and includes a count of documents in each group.
      * Useful for multi-dimensional frequency analysis and cross-tabulation.</p>
      *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group; in the
+     * {@code _id} key document that field is present with the value {@code null} (for example
+     * {@code {_id: {status: "open", priority: null}, count: 2}}), and a dotted path such as {@code "a.b"} appears as the
+     * nested document {@code {a: {b: <value>}}}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Flux<Document> counts = executor.groupByAndCount(Arrays.asList("status", "priority"));
@@ -5013,6 +5052,11 @@ public final class MongoCollectionExecutor {
      * specified type. Enables complex multi-dimensional analysis with type-safe results. Each row carries
      * the group keys and the count, so a single-value {@code rowType} fails with an
      * {@link IllegalArgumentException} signalled through the publisher; use a bean, Map or {@link Document} type.</p>
+     *
+     * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
+     * result that field is present with the value {@code null} &mdash; inside {@code _id} for {@link Document} rows, as a
+     * top-level field or property for Map, bean and {@code Object} rows &mdash; and a dotted path such as {@code "a.b"}
+     * appears as the nested document {@code {a: {b: <value>}}}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

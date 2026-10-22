@@ -18,9 +18,20 @@ package com.landawn.abacus.da.cassandra;
 
 import static com.landawn.abacus.util.SK._SPACE;
 
+import java.net.InetAddress;
+import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,18 +45,22 @@ import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.query.AbstractQueryBuilder;
 import com.landawn.abacus.query.QueryUtil;
+import com.landawn.abacus.query.SortDirection;
 import com.landawn.abacus.query.SqlDialect;
 import com.landawn.abacus.query.SqlDialect.SqlPolicy;
 import com.landawn.abacus.query.condition.Between;
 import com.landawn.abacus.query.condition.Binary;
 import com.landawn.abacus.query.condition.Cell;
+import com.landawn.abacus.query.condition.Clause;
 import com.landawn.abacus.query.condition.ComposableCell;
 import com.landawn.abacus.query.condition.Condition;
+import com.landawn.abacus.query.condition.Criteria;
 import com.landawn.abacus.query.condition.SqlExpression;
 import com.landawn.abacus.query.condition.Having;
 import com.landawn.abacus.query.condition.In;
 import com.landawn.abacus.query.condition.InSubQuery;
 import com.landawn.abacus.query.condition.Junction;
+import com.landawn.abacus.query.condition.Limit;
 import com.landawn.abacus.query.condition.NotBetween;
 import com.landawn.abacus.query.condition.NotIn;
 import com.landawn.abacus.query.condition.NotInSubQuery;
@@ -139,6 +154,24 @@ import com.landawn.abacus.util.u.Optional;
  *   <li><b>Allow Filtering:</b> {@code allowFiltering()} for server-side filtering (use with caution)</li>
  * </ul>
  *
+ * <p>The following inherited SQL-only methods fail fast instead of rendering CQL that Cassandra rejects. These throw
+ * {@link UnsupportedOperationException} (after the closed-builder check): {@code limit(count, offset)}, {@code offset(...)}
+ * and {@code offsetRows(...)} (use {@code limit(count)} with the driver's paging state); {@code fetchFirstRows(...)} and
+ * {@code fetchNextRows(...)} (use {@code limit(count)}); both {@code having(...)} overloads; {@code forUpdate()}; every
+ * set-operation method, that is {@code union(...)}, {@code unionAll(...)}, {@code intersect(...)}, {@code except(...)} and
+ * {@code minus(...)} with a {@code String} or a {@code CqlBuilder} argument and {@code unionSelect(...)},
+ * {@code unionAllSelect(...)}, {@code intersectSelect(...)}, {@code exceptSelect(...)} and {@code minusSelect(...)}; and the
+ * {@code groupBy(...)} overloads that take a {@link SortDirection} ({@code groupBy(String, SortDirection)},
+ * {@code groupBy(Collection, SortDirection)} and {@code groupBy(Map)}), because CQL GROUP BY has no ASC/DESC. These throw
+ * {@link IllegalArgumentException}: a condition passed to {@code append(...)} (hence {@code appendIf(...)} and
+ * {@code appendIfOrElse(...)}), {@code where(...)} or {@code Dsl.renderCondition(...)} that is a HAVING clause, a set-operation
+ * clause ({@code Union}, {@code UnionAll}, {@code Intersect}, {@code Except} or {@code Minus}), a {@code GroupBy} clause whose
+ * sort list carries a direction (such as {@code Filters.groupByDesc(...)}), a {@code Limit} rendering OFFSET or FETCH, or a
+ * {@code Criteria} carrying any of them; and {@code from(CqlBuilder, alias)} (a derived table). Nothing else is rejected by
+ * this builder: {@code groupBy(String...)}/{@code groupBy(Collection)}, {@code limit(count)} and {@code orderBy(...)} (with
+ * or without a direction) render as usual, and in particular the {@code join(...)}/{@code leftJoin(...)}/... methods still
+ * render a JOIN clause exactly as written, which Cassandra rejects only when the statement is executed.</p>
+ *
  * <h2>Thread Safety</h2>
  * <p>This builder is <b>NOT thread-safe</b>. Each thread should use its own builder instance.
  * The builder maintains internal state during query construction and must not be shared across threads.
@@ -175,6 +208,24 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     private static final String TTL = "TTL";
 
     private static final String TIMESTAMP = "TIMESTAMP";
+
+    private static final String MSG_OFFSET_NOT_SUPPORTED = "Cassandra CQL does not support OFFSET; use limit(count) and page with the driver's paging state instead";
+
+    private static final String MSG_HAVING_NOT_SUPPORTED = "Cassandra CQL does not support HAVING";
+
+    private static final String MSG_FETCH_NOT_SUPPORTED = "Cassandra CQL does not support FETCH FIRST/NEXT ... ROWS ONLY; use limit(count) instead";
+
+    private static final String MSG_FOR_UPDATE_NOT_SUPPORTED = "Cassandra CQL does not support FOR UPDATE (row locking); use a lightweight transaction (onlyIf(...)/ifExists()) for a conditional write instead";
+
+    private static final String MSG_GROUP_BY_DIRECTION_NOT_SUPPORTED = "Cassandra CQL does not support GROUP BY with a sort direction (ASC/DESC); use groupBy(String...) and sort with orderBy(...) instead";
+
+    /** Prefix of the set-operation message; the rejected keyword (UNION, UNION ALL, INTERSECT, EXCEPT or MINUS) follows it. */
+    private static final String MSG_SET_OPERATION_NOT_SUPPORTED_PREFIX = "Cassandra CQL does not support ";
+
+    private static final String MSG_SET_OPERATION_NOT_SUPPORTED_SUFFIX = " (set operations combining SELECT results); run each SELECT separately and combine the results in the application";
+
+    /** Lower-case hex formatter for inlined CQL blob literals ({@code 0x0102ff}). */
+    private static final HexFormat HEX_FORMAT = HexFormat.of();
 
     /** Pre-rendered {@code " IF "} separator emitted before a conditional IF expression. */
     static final char[] _SPACE_IF_SPACE = " IF ".toCharArray();
@@ -851,13 +902,31 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     /**
      * Inlines {@code propValue} as a CQL literal. A {@code String} is quoted with CQL's doubled-quote escaping, a
-     * {@link UUID} is rendered as a bare (unquoted) {@code uuid}/{@code timeuuid} literal; every other value is
-     * rendered by the parent builder.
+     * {@link UUID} is rendered as a bare (unquoted) {@code uuid}/{@code timeuuid} literal, and an instant-valued
+     * {@link Date} (including {@code java.sql.Timestamp}), {@link Calendar}, {@link Instant}, {@link OffsetDateTime} or
+     * {@link ZonedDateTime} is rendered as a quoted ISO-8601 UTC {@code timestamp} literal with millisecond precision
+     * (for example {@code '2023-11-14T22:13:20.123Z'}; a finer fraction is truncated, as a CQL {@code timestamp} stores
+     * milliseconds and a bound value is truncated the same way), so the stored instant does not depend on the time zone
+     * of the client or the Cassandra coordinator. That quoted form is used only when the UTC year is {@code 0001}..{@code 9999}:
+     * Cassandra's timestamp parser rejects a signed or more-than-four-digit year ({@code '+10000-01-01T00:00:00Z'}) and the
+     * year {@code 0000}, so an instant outside that range is rendered as the bare integer of milliseconds since the epoch
+     * ({@code 253402300800000} for {@code +10000-01-01T00:00:00Z}), the other CQL {@code timestamp} literal form, which
+     * Cassandra accepts for any representable value. A {@link LocalDateTime} has no zone: it is rendered as the instant it denotes in the JVM
+     * default time zone, which is the instant the same value stores when bound as a parameter (the executors convert a
+     * bound {@code LocalDateTime} in the JVM default zone). A {@code byte[]} is rendered as a CQL {@code blob} constant in lower-case hex
+     * ({@code 0x01ff}; an empty array renders {@code 0x}), a {@link ByteBuffer} likewise from its remaining bytes
+     * (its position is not changed), and an {@link InetAddress} as a quoted {@code inet} literal of its
+     * {@link InetAddress#getHostAddress() host address} without an IPv6 scope suffix (for example {@code '127.0.0.1'}
+     * or {@code 'fe80:0:0:0:0:0:0:1'} for {@code fe80::1%eth0}), matching the address bytes a bound value sends. Every other value,
+     * including {@code java.sql.Date} ({@code 'yyyy-mm-dd'}) and
+     * {@code java.sql.Time} ({@code 'hh:mm:ss'}) in the JVM default time zone, is rendered by the parent builder.
      *
      * @param propValue the value to render into the CQL string
      * @throws IllegalStateException if this builder is closed
      * @throws IllegalArgumentException if {@code propValue} is a {@code Float} or {@code Double} that is {@code NaN} or
-     *         infinite, or another {@code Number} whose text is not a valid numeric literal
+     *         infinite, another {@code Number} whose text is not a valid numeric literal, or an instant-valued
+     *         {@code java.time} value whose milliseconds since the epoch do not fit in a {@code long} (such as
+     *         {@link Instant#MAX}), which no CQL {@code timestamp} can hold
      */
     @Override
     protected void setParameterForRawSql(final Object propValue) throws IllegalStateException, IllegalArgumentException {
@@ -872,8 +941,109 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             // A CQL uuid/timeuuid literal is bare hex; the parent's fallback renders unknown types as a quoted
             // string, which Cassandra rejects for uuid columns ("Invalid STRING constant ... for type uuid").
             _sb.append(propValue.toString());
+        } else if (propValue instanceof final Date date && !(date instanceof java.sql.Date) && !(date instanceof java.sql.Time)) {
+            // Since abacus-query 4.9.5 the parent inlines a Date/Calendar as zone-less JVM-local wall-clock text
+            // ('2023-11-14 14:13:20.123'). Cassandra reads a zone-less timestamp literal in the COORDINATOR's time zone,
+            // so the stored instant shifted by the client/server offset. A CQL timestamp is an instant: render it in UTC.
+            appendTimestampLiteral(Instant.ofEpochMilli(date.getTime()));
+        } else if (propValue instanceof final Calendar calendar) {
+            appendTimestampLiteral(Instant.ofEpochMilli(calendar.getTimeInMillis()));
+        } else if (propValue instanceof final ZonedDateTime zonedDateTime) {
+            // ZonedDateTime.toString() appends a "[region]" suffix, which Cassandra cannot parse as a timestamp.
+            // Truncated to milliseconds (a CQL timestamp's precision; Cassandra and the driver's bound value both floor
+            // the fraction), so the literal matches the documented millisecond form instead of carrying nanoseconds.
+            appendTimestampLiteral(zonedDateTime.toInstant().truncatedTo(ChronoUnit.MILLIS));
+        } else if (propValue instanceof final Instant instant) {
+            // The parent inlines Instant.toString(), which carries up to nine fraction digits ('...20.123456789Z'). Cassandra
+            // (verified on 5.0) accepts that and truncates it to the milliseconds a timestamp stores; render the same
+            // millisecond UTC form as the other instant-valued types, which is also what a bound Instant stores.
+            appendTimestampLiteral(instant.truncatedTo(ChronoUnit.MILLIS));
+        } else if (propValue instanceof final OffsetDateTime offsetDateTime) {
+            // The parent inlines OffsetDateTime.toString() ('...20.123456789+05:00'), which Cassandra also accepts and truncates;
+            // the offset is folded into the UTC instant it denotes, for the same millisecond UTC form.
+            appendTimestampLiteral(offsetDateTime.toInstant().truncatedTo(ChronoUnit.MILLIS));
+        } else if (propValue instanceof final LocalDateTime localDateTime) {
+            // WHY: the parent inlines LocalDateTime.toString(), zone-less text, which Cassandra reads in the COORDINATOR's time
+            // zone, so the stored instant shifted by the client/server offset. A bound LocalDateTime is converted in the
+            // JVM default zone (N.convert(localDateTime, Date.class) in the driver 3 executor), so the raw literal denotes the
+            // same instant as the bound value: the wall-clock time read in the JVM default zone, rendered in UTC.
+            appendTimestampLiteral(localDateTime.atZone(ZoneId.systemDefault()).toInstant().truncatedTo(ChronoUnit.MILLIS));
+        } else if (propValue instanceof final byte[] bytes) {
+            // The parent renders a byte[] as the quoted text '[1, 2]', which Cassandra rejects for a blob column.
+            // A CQL blob constant is 0x followed by hex digits ("0x" alone is the empty blob).
+            HEX_FORMAT.formatHex(_sb.append("0x"), bytes);
+        } else if (propValue instanceof final ByteBuffer buffer) {
+            // The parent renders a ByteBuffer as a quoted string ('' or a Base64 fragment, not its bytes), which Cassandra
+            // rejects for a blob column. Render the remaining bytes like a byte[]; absolute reads leave the caller's
+            // buffer position untouched, as binding the buffer would.
+            appendBlobLiteral(buffer);
+        } else if (propValue instanceof final InetAddress inetAddress) {
+            // InetAddress.toString() renders "hostname/address" ('/127.0.0.1'), which Cassandra rejects for an inet
+            // column; the literal must be the bare address text.
+            // WHY (verify8): a scoped IPv6 host address ends in "%zone"; live Cassandra rejects an interface-name zone
+            // ("Unable to make inet address from 'fe80:0:0:0:0:0:0:1%eth0'") and drops a numeric one, and a bound
+            // InetAddress sends only the address bytes. Render the unscoped address so both forms store the same value.
+            final String hostAddress = inetAddress.getHostAddress();
+            final int zoneIndex = hostAddress.indexOf('%');
+
+            _sb.append('\'').append(hostAddress, 0, zoneIndex < 0 ? hostAddress.length() : zoneIndex).append('\'');
         } else {
             super.setParameterForRawSql(propValue);
+        }
+    }
+
+    /**
+     * Appends {@code instant} as a CQL {@code timestamp} literal: the quoted ISO-8601 UTC form when its UTC year is
+     * 0001..9999, otherwise the bare integer of milliseconds since the epoch.
+     *
+     * @param instant the instant, already truncated to milliseconds
+     * @throws IllegalArgumentException if the instant's epoch milliseconds do not fit in a {@code long}
+     */
+    private void appendTimestampLiteral(final Instant instant) {
+        // WHY: Instant.toString() renders a UTC year outside 0000-9999 with a sign and more than four digits
+        // ('+10000-01-01T00:00:00Z', '-0001-01-01T00:00:00Z'), and Cassandra's timestamp parser rejects that, as it does the
+        // unsigned year 0000 (its 'yyyy' is a year-of-era, which starts at 1): verified on 5.0, "Unable to parse a date/time
+        // from '+10000-01-01T00:00:00Z'" / "... from '0000-01-01T00:00:00Z'". A CQL timestamp literal may also be the bare
+        // integer of milliseconds since the epoch, which the same server accepted for the whole long range (253402300800000
+        // and -62198755200000 round-trip), so render that form outside years 0001-9999: the raw CQL stays executable and
+        // stores the same instant a bound value would. The year is judged on the epoch milliseconds, not through
+        // atOffset(UTC).getYear(): Instant.MIN/MAX lie outside LocalDate's year range and that call throws DateTimeException.
+        final long epochMillis;
+
+        try {
+            epochMillis = instant.toEpochMilli();
+        } catch (final ArithmeticException e) {
+            // Beyond the 64-bit millisecond range no CQL timestamp (and no bound value) can carry it.
+            throw new IllegalArgumentException("Instant " + instant + " is out of the range of a CQL timestamp (milliseconds since the epoch as a long)", e);
+        }
+
+        if (epochMillis >= ISO_TIMESTAMP_LITERAL_MIN_EPOCH_MILLIS && epochMillis < ISO_TIMESTAMP_LITERAL_END_EPOCH_MILLIS) {
+            _sb.append('\'').append(instant.toString()).append('\'');
+        } else {
+            _sb.append(epochMillis);
+        }
+    }
+
+    /** {@code 0001-01-01T00:00:00Z}: the first instant Cassandra's quoted {@code yyyy-...} timestamp literal can express. */
+    private static final long ISO_TIMESTAMP_LITERAL_MIN_EPOCH_MILLIS = LocalDateTime.of(1, 1, 1, 0, 0).toInstant(ZoneOffset.UTC).toEpochMilli();
+
+    /** {@code +10000-01-01T00:00:00Z}: the first instant past year 9999, which that literal can no longer express. */
+    private static final long ISO_TIMESTAMP_LITERAL_END_EPOCH_MILLIS = LocalDateTime.of(10000, 1, 1, 0, 0).toInstant(ZoneOffset.UTC).toEpochMilli();
+
+    private void appendBlobLiteral(final ByteBuffer buffer) {
+        _sb.append("0x");
+
+        final int position = buffer.position();
+        final int limit = buffer.limit();
+
+        if (buffer.hasArray()) {
+            final int offset = buffer.arrayOffset();
+            HEX_FORMAT.formatHex(_sb, buffer.array(), offset + position, offset + limit);
+        } else {
+            // Direct or read-only buffer: no accessible backing array.
+            for (int i = position; i < limit; i++) {
+                HEX_FORMAT.toHexDigits(_sb, buffer.get(i));
+            }
         }
     }
 
@@ -1647,6 +1817,633 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
+     * Unsupported: Cassandra CQL has no {@code OFFSET} clause, so this inherited overload always fails instead of
+     * rendering {@code LIMIT count OFFSET offset}, which Cassandra rejects as a syntax error. It fails for every
+     * {@code offset}, including {@code 0}, so that paging code is caught on its first page rather than on its second.
+     * Use {@link #limit(int)} and page through the result with the driver's paging state instead.
+     *
+     * @param count the maximum number of rows to return
+     * @param offset the number of rows to skip
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support OFFSET
+     */
+    @Override
+    public CqlBuilder limit(final int count, final int offset) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_OFFSET_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code OFFSET} clause, so this inherited method always fails instead of
+     * rendering {@code OFFSET offset}, which Cassandra rejects as a syntax error. Use {@link #limit(int)} and page
+     * through the result with the driver's paging state instead.
+     *
+     * @param offset the number of rows to skip
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support OFFSET
+     */
+    @Override
+    public CqlBuilder offset(final int offset) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_OFFSET_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code OFFSET} clause, so this inherited method always fails instead of
+     * rendering {@code OFFSET offset ROWS}, which Cassandra rejects as a syntax error. Use {@link #limit(int)} and
+     * page through the result with the driver's paging state instead.
+     *
+     * @param offset the number of rows to skip
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support OFFSET
+     */
+    @Override
+    public CqlBuilder offsetRows(final int offset) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_OFFSET_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code HAVING} clause, so this inherited overload always fails instead of
+     * rendering {@code HAVING expr}, which Cassandra rejects as a syntax error.
+     *
+     * @param expr the HAVING condition expression
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support HAVING
+     */
+    @Override
+    public CqlBuilder having(final String expr) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_HAVING_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code HAVING} clause, so this inherited overload always fails instead of
+     * rendering {@code HAVING condition}, which Cassandra rejects as a syntax error.
+     *
+     * @param condition the HAVING condition
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support HAVING
+     */
+    @Override
+    public CqlBuilder having(final Condition condition) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_HAVING_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code FETCH} clause, so this inherited method always fails instead of
+     * rendering {@code FETCH FIRST count ROWS ONLY}, which Cassandra rejects as a syntax error. Use
+     * {@link #limit(int)} instead.
+     *
+     * @param count the number of rows to fetch
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support FETCH
+     */
+    @Override
+    public CqlBuilder fetchFirstRows(final int count) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_FETCH_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code FETCH} clause, so this inherited method always fails instead of
+     * rendering {@code FETCH NEXT count ROWS ONLY}, which Cassandra rejects as a syntax error. Use
+     * {@link #limit(int)} instead.
+     *
+     * @param count the number of rows to fetch
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support FETCH
+     */
+    @Override
+    public CqlBuilder fetchNextRows(final int count) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_FETCH_NOT_SUPPORTED);
+    }
+
+    // WHY: the parent renders FOR UPDATE, the set operations and GROUP BY ... ASC/DESC as SQL text; Cassandra has no such
+    // syntax and rejected the statement only when it was executed ("mismatched input ... expecting EOF"). Like the
+    // OFFSET/HAVING/FETCH overrides above, the methods fail at build time, after the closed-builder check so that a closed
+    // builder still reports IllegalStateException first.
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code FOR UPDATE} clause (there is no row locking), so this inherited method
+     * always fails instead of rendering {@code FOR UPDATE}, which Cassandra rejects as a syntax error. Use a lightweight
+     * transaction ({@link #onlyIf(Condition)}, {@link #ifExists()}) for a conditional write instead.
+     *
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support FOR UPDATE
+     */
+    @Override
+    public CqlBuilder forUpdate() throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_FOR_UPDATE_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code UNION}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in the
+     * application.
+     *
+     * @param cqlBuilder the right-hand SELECT builder
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support UNION
+     */
+    @Override
+    public CqlBuilder union(final CqlBuilder cqlBuilder) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.UNION));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code UNION}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in the
+     * application.
+     *
+     * @param query the right-hand SELECT query
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support UNION
+     */
+    @Override
+    public CqlBuilder union(final String query) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.UNION));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code UNION SELECT ...}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the
+     * results in the application.
+     *
+     * @param propOrColumnNames the columns of the right-hand SELECT
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support UNION
+     */
+    @Override
+    public CqlBuilder unionSelect(final Collection<String> propOrColumnNames) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.UNION));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code UNION ALL}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in
+     * the application.
+     *
+     * @param cqlBuilder the right-hand SELECT builder
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support UNION ALL
+     */
+    @Override
+    public CqlBuilder unionAll(final CqlBuilder cqlBuilder) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.UNION_ALL));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code UNION ALL}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in
+     * the application.
+     *
+     * @param query the right-hand SELECT query
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support UNION ALL
+     */
+    @Override
+    public CqlBuilder unionAll(final String query) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.UNION_ALL));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code UNION ALL SELECT ...}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the
+     * results in the application.
+     *
+     * @param propOrColumnNames the columns of the right-hand SELECT
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support UNION ALL
+     */
+    @Override
+    public CqlBuilder unionAllSelect(final Collection<String> propOrColumnNames) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.UNION_ALL));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code INTERSECT}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in
+     * the application.
+     *
+     * @param cqlBuilder the right-hand SELECT builder
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support INTERSECT
+     */
+    @Override
+    public CqlBuilder intersect(final CqlBuilder cqlBuilder) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.INTERSECT));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code INTERSECT}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in
+     * the application.
+     *
+     * @param query the right-hand SELECT query
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support INTERSECT
+     */
+    @Override
+    public CqlBuilder intersect(final String query) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.INTERSECT));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code INTERSECT SELECT ...}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the
+     * results in the application.
+     *
+     * @param propOrColumnNames the columns of the right-hand SELECT
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support INTERSECT
+     */
+    @Override
+    public CqlBuilder intersectSelect(final Collection<String> propOrColumnNames) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.INTERSECT));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code EXCEPT}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in
+     * the application.
+     *
+     * @param cqlBuilder the right-hand SELECT builder
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support EXCEPT
+     */
+    @Override
+    public CqlBuilder except(final CqlBuilder cqlBuilder) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.EXCEPT));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code EXCEPT}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in
+     * the application.
+     *
+     * @param query the right-hand SELECT query
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support EXCEPT
+     */
+    @Override
+    public CqlBuilder except(final String query) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.EXCEPT));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code EXCEPT SELECT ...}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the
+     * results in the application.
+     *
+     * @param propOrColumnNames the columns of the right-hand SELECT
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support EXCEPT
+     */
+    @Override
+    public CqlBuilder exceptSelect(final Collection<String> propOrColumnNames) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.EXCEPT));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code MINUS}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in the
+     * application.
+     *
+     * @param cqlBuilder the right-hand SELECT builder
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support MINUS
+     */
+    @Override
+    public CqlBuilder minus(final CqlBuilder cqlBuilder) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.EXCEPT_MINUS));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code MINUS}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the results in the
+     * application.
+     *
+     * @param query the right-hand SELECT query
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support MINUS
+     */
+    @Override
+    public CqlBuilder minus(final String query) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.EXCEPT_MINUS));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no set operations, so this inherited method always fails instead of rendering
+     * {@code MINUS SELECT ...}, which Cassandra rejects as a syntax error. Run each SELECT separately and combine the
+     * results in the application.
+     *
+     * @param propOrColumnNames the columns of the right-hand SELECT
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support MINUS
+     */
+    @Override
+    public CqlBuilder minusSelect(final Collection<String> propOrColumnNames) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(setOperationNotSupported(SK.EXCEPT_MINUS));
+    }
+
+    /**
+     * Unsupported: Cassandra CQL {@code GROUP BY} lists primary-key columns only and has no {@code ASC}/{@code DESC}, so
+     * this inherited overload always fails instead of rendering {@code GROUP BY expr direction}, which Cassandra rejects
+     * as a syntax error. Use {@link #groupBy(String...)} and sort with {@link #orderBy(String, SortDirection)} instead.
+     *
+     * @param expr the column to group by
+     * @param direction the sort direction
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL GROUP BY does not support a sort direction
+     */
+    @Override
+    public CqlBuilder groupBy(final String expr, final SortDirection direction) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_GROUP_BY_DIRECTION_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL {@code GROUP BY} lists primary-key columns only and has no {@code ASC}/{@code DESC}, so
+     * this inherited overload always fails instead of rendering {@code GROUP BY a direction, b direction}, which Cassandra
+     * rejects as a syntax error. Use {@link #groupBy(Collection)} and sort with {@link #orderBy(Collection, SortDirection)}
+     * instead.
+     *
+     * @param propOrColumnNames the columns to group by
+     * @param direction the sort direction
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL GROUP BY does not support a sort direction
+     */
+    @Override
+    public CqlBuilder groupBy(final Collection<String> propOrColumnNames, final SortDirection direction)
+            throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_GROUP_BY_DIRECTION_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL {@code GROUP BY} lists primary-key columns only and has no {@code ASC}/{@code DESC}, so
+     * this inherited overload always fails instead of rendering {@code GROUP BY a direction, b direction}, which Cassandra
+     * rejects as a syntax error. Use {@link #groupBy(String...)} and sort with {@link #orderBy(Map)} instead.
+     *
+     * @param groupings the columns to group by with their sort directions
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL GROUP BY does not support a sort direction
+     */
+    @Override
+    public CqlBuilder groupBy(final Map<String, SortDirection> groupings) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_GROUP_BY_DIRECTION_NOT_SUPPORTED);
+    }
+
+    /**
+     * Appends {@code condition} exactly as the parent builder does, after rejecting a condition that would render a
+     * clause Cassandra CQL does not have: a HAVING clause ({@code Filters.having(...)}), a set-operation clause
+     * ({@code Filters.union(...)}, {@code unionAll(...)}, {@code intersect(...)}, {@code except(...)} or
+     * {@code minus(...)}), a {@code GroupBy} clause whose sort list carries a direction ({@code Filters.groupByDesc(...)},
+     * {@code Filters.groupBy(name, direction)}, ...), a {@link Limit} that skips rows, such as {@code Filters.limit(10, 20)}
+     * or {@code Filters.limit("LIMIT 10 OFFSET 20")}, or a {@link Criteria} carrying any of them. A <i>resolved</i>
+     * {@code Limit} whose offset is zero ({@code Filters.limit(10, 0)}) renders a plain {@code LIMIT count} and is accepted,
+     * whereas an unresolved expression naming OFFSET, such as {@code Filters.limit("LIMIT 99999999999 OFFSET 0")}, is
+     * rejected because the parent would render it verbatim. The check runs before anything is rendered, so a rejected
+     * condition leaves this builder unchanged. {@code appendIf(...)} and {@code appendIfOrElse(...)} append through this
+     * method.
+     *
+     * @param condition the condition, clause or {@code Criteria} to append; must not be {@code null}
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalStateException if this builder is closed, or the parent builder cannot append the condition at
+     *         the builder's current position (for example a clause that was already specified)
+     * @throws IllegalArgumentException if {@code condition} is {@code null}, or it or a nested condition is not
+     *         supported by CQL (see {@link #appendCondition(Condition)}), or it would render a HAVING, OFFSET,
+     *         {@code FETCH ... ROWS ONLY}, FOR UPDATE, set-operation or {@code GROUP BY ... ASC/DESC} clause (the same
+     *         exception {@code where(...)} throws for such a condition)
+     */
+    @Override
+    public CqlBuilder append(final Condition condition) throws IllegalStateException, IllegalArgumentException {
+        assertNotClosed();
+
+        if (condition != null) {
+            checkNoUnsupportedClause(condition);
+        }
+
+        return super.append(condition);
+    }
+
+    /**
+     * The parent's {@code append(Condition)} renders HAVING, OFFSET, the set operations and {@code GROUP BY ... ASC/DESC}
+     * without going through the overridden {@code having(...)}/{@code union(...)}/{@code groupBy(...)} methods, and renders
+     * an out-of-{@code int}-range {@code Limit} expression verbatim (without {@code limit(int, int)}), so those conditions
+     * are rejected up front. The method itself is supported, only the argument is not, hence IllegalArgumentException (as
+     * {@code where(...)} reports the same conditions). There is no FOR UPDATE condition class in abacus-query; a
+     * hand-rolled {@code Cell} with that operator is rejected here all the same.
+     */
+    private static void checkNoUnsupportedClause(final Condition condition) throws IllegalArgumentException {
+        final Operator operator = condition.operator();
+
+        if (operator == Operator.HAVING) {
+            throw new IllegalArgumentException(MSG_HAVING_NOT_SUPPORTED);
+        }
+
+        if (operator == Operator.FOR_UPDATE) {
+            throw new IllegalArgumentException(MSG_FOR_UPDATE_NOT_SUPPORTED);
+        }
+
+        if (isSetOperation(operator)) {
+            throw new IllegalArgumentException(setOperationNotSupported(operator.toString()));
+        }
+
+        if (condition instanceof final Criteria criteria) {
+            if (criteria.having() != null) {
+                throw new IllegalArgumentException(MSG_HAVING_NOT_SUPPORTED);
+            }
+
+            if (!criteria.setOperations().isEmpty()) {
+                throw new IllegalArgumentException(setOperationNotSupported(criteria.setOperations().get(0).operator().toString()));
+            }
+
+            if (criteria.groupBy() != null) {
+                checkNoUnsupportedClause(criteria.groupBy());
+            }
+
+            if (criteria.limit() != null) {
+                checkNoUnsupportedClause(criteria.limit());
+            }
+        } else if (operator == Operator.GROUP_BY && condition instanceof final Clause groupBy) {
+            // A GroupBy built with a SortDirection holds an SqlExpression such as "a ASC, b DESC"; the parent renders that
+            // sort list verbatim. Plain groupBy("a", "b") ("a, b") is CQL and passes.
+            if (hasSortDirection(groupBy.condition())) {
+                throw new IllegalArgumentException(MSG_GROUP_BY_DIRECTION_NOT_SUPPORTED);
+            }
+        } else if (condition instanceof final Limit limit) {
+            // An unresolved (out-of-int-range) Limit reports offset() == 0 even when its expression has an OFFSET
+            // portion ("LIMIT n OFFSET m", "LIMIT m, n" or "OFFSET m ROWS FETCH ..."), so inspect the expression. A
+            // resolved FETCH expression renders a plain LIMIT; an unresolved one is rendered verbatim.
+            final String expr = limit.isResolved() ? null : limit.expression();
+            final boolean hasOffset = limit.isResolved() ? limit.offset() > 0
+                    : expr != null && (expr.indexOf(',') >= 0 || Strings.containsIgnoreCase(expr, SK.OFFSET));
+
+            if (hasOffset) {
+                throw new IllegalArgumentException(MSG_OFFSET_NOT_SUPPORTED);
+            }
+
+            if (expr != null && Strings.containsIgnoreCase(expr, "FETCH")) {
+                throw new IllegalArgumentException(MSG_FETCH_NOT_SUPPORTED);
+            }
+        }
+    }
+
+    private static boolean isSetOperation(final Operator operator) {
+        return operator == Operator.UNION || operator == Operator.UNION_ALL || operator == Operator.INTERSECT || operator == Operator.EXCEPT
+                || operator == Operator.MINUS;
+    }
+
+    /**
+     * @param keyword the rejected set-operation keyword ({@code UNION}, {@code UNION ALL}, {@code INTERSECT}, {@code EXCEPT} or {@code MINUS})
+     * @return the message of the exception rejecting it
+     */
+    private static String setOperationNotSupported(final String keyword) {
+        return MSG_SET_OPERATION_NOT_SUPPORTED_PREFIX + keyword + MSG_SET_OPERATION_NOT_SUPPORTED_SUFFIX;
+    }
+
+    /**
+     * Tells whether a GROUP BY sort list carries a direction. The {@code Filters.groupBy(...)} factories store the list as an
+     * {@link SqlExpression} ({@code "a ASC, b DESC"}); any other condition is inspected through its rendered text. Items are
+     * split on top-level commas (a function argument list such as {@code floor(ts, 1h)} is one item) and an item whose last
+     * word is {@code ASC} or {@code DESC} (any case) carries a direction. Words are separated by any Unicode whitespace or
+     * space character (space, tab, newline, carriage return, no-break space, ...), not only a space or tab.
+     *
+     * @param sortList the condition held by the GroupBy clause
+     * @return {@code true} if at least one item ends with a sort direction
+     */
+    private static boolean hasSortDirection(final Condition sortList) {
+        if (sortList == null) {
+            return false;
+        }
+
+        final String text = sortList instanceof final SqlExpression expression ? expression.literal() : sortList.toString();
+
+        if (Strings.isBlank(text)) {
+            return false;
+        }
+
+        int depth = 0;
+        int itemStart = 0;
+
+        for (int i = 0, len = text.length(); i <= len; i++) {
+            final char ch = i < len ? text.charAt(i) : ',';
+
+            if (ch == '(') {
+                depth++;
+            } else if (ch == ')') {
+                depth--;
+            } else if (ch == ',' && depth <= 0) {
+                // WHY: only ' ' and '\t' separated the last word before, so a user expression such as "a\nDESC" or "a" + U+00A0 + "desc"
+                // slipped past this check; any whitespace/space character (what trim() and Cassandra's tokenizer treat as a gap) separates it.
+                int end = i;
+
+                while (end > itemStart && isWordSeparator(text.charAt(end - 1))) {
+                    end--;
+                }
+
+                int start = end;
+
+                while (start > itemStart && !isWordSeparator(text.charAt(start - 1))) {
+                    start--;
+                }
+
+                final String lastWord = text.substring(start, end);
+
+                if (SortDirection.ASC.name().equalsIgnoreCase(lastWord) || SortDirection.DESC.name().equalsIgnoreCase(lastWord)) {
+                    return true;
+                }
+
+                itemStart = i + 1;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param ch a character of a GROUP BY sort list
+     * @return {@code true} if it separates words: any Unicode whitespace ({@link Character#isWhitespace(char)}) or space
+     *         character ({@link Character#isSpaceChar(char)}, which adds the no-break spaces {@code isWhitespace} excludes)
+     */
+    private static boolean isWordSeparator(final char ch) {
+        return Character.isWhitespace(ch) || Character.isSpaceChar(ch);
+    }
+
+    /**
      * Compatibility override of the parent SQL builder's protected entity-class-plus-tables hook. Cassandra CQL
      * permits exactly one table in a FROM clause, so {@code tableNames} must contain one element; installing the
      * entity mapping and rendering the FROM clause are atomic.
@@ -2187,6 +2984,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * {@code Dsl} (for example {@link #PSC} or {@link #NSC}); use this
          * factory to obtain a DSL for a combination that is not predefined. The returned {@code Dsl} is
          * immutable and thread-safe, so it is typically stored in a {@code static final} field and reused.</p>
+         *
+         * <p>A dialect whose naming policy is {@code NamingPolicy.KEBAB_CASE} is accepted here, but every statement
+         * method of the returned {@code Dsl} then throws {@code IllegalArgumentException}, because hyphenated names
+         * such as {@code first-name} are not valid unquoted CQL identifiers.</p>
          *
          * @param sqlDialect the dialect (naming policy + parameter style) the DSL is bound to
          * @return a {@code Dsl} that produces {@link CqlBuilder} instances using the given dialect
@@ -3480,7 +4281,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *        property names with the DSL's naming policy only (no entity-based column mapping)
          * @return a new condition-only CqlBuilder instance containing the rendered condition
          * @throws IllegalArgumentException if {@code cond} is {@code null}, uses a condition unsupported by CQL (such as OR, BETWEEN,
-         *         NOT IN, or a subquery), contains a null comparison or IN value, or has an empty junction/IN list
+         *         NOT IN, or a subquery), contains a null comparison or IN value, or has an empty junction/IN list; or if it
+         *         is a HAVING clause, a set-operation clause (UNION, UNION ALL, INTERSECT, EXCEPT or MINUS), a {@code GroupBy}
+         *         clause whose sort list carries a direction, a {@code Limit} that skips rows or renders
+         *         {@code FETCH ... ROWS ONLY}, or a {@code Criteria} carrying any of them (CQL has none of these clauses;
+         *         see {@link CqlBuilder#append(Condition)})
          */
         public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(cond, cs.cond);

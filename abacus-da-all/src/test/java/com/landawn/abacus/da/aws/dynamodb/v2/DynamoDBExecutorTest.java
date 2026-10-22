@@ -889,4 +889,81 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
 
         assertNotNull(result);
     }
+
+    // ---- 2026-10-19 sliceC ----
+
+    @Test
+    public void testList_ConvertsEveryPageInOrderIncludingItemlessPages_sliceC() {
+        final QueryRequest req = QueryRequest.builder().tableName("TestTable").build();
+        final QueryResponse page1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1")), Map.of("id", AttributeValue.fromS("2"))))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.fromS("2")))
+                .build();
+        // An item-less page (no items member at all) that still continues the pagination.
+        final QueryResponse page2 = QueryResponse.builder().lastEvaluatedKey(Map.of("id", AttributeValue.fromS("2b"))).build();
+        final QueryResponse page3 = QueryResponse.builder().items(List.of()).lastEvaluatedKey(Map.of("id", AttributeValue.fromS("2c"))).build();
+        final QueryResponse page4 = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("3")))).build();
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, page2, page3, page4);
+
+        final List<TestEntity> entities = executor.list(req, TestEntity.class);
+        final ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDbClient, times(4)).query(captor.capture());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(List.of("1", "2", "3"), entities.stream().map(TestEntity::getId).toList()),
+                () -> assertDoesNotThrow(() -> entities.add(new TestEntity())), // the aggregated result stays mutable
+                () -> assertNull(captor.getAllValues().get(0).exclusiveStartKey().get("id")),
+                () -> assertEquals("2", captor.getAllValues().get(1).exclusiveStartKey().get("id").s()),
+                () -> assertEquals("2b", captor.getAllValues().get(2).exclusiveStartKey().get("id").s()),
+                () -> assertEquals("2c", captor.getAllValues().get(3).exclusiveStartKey().get("id").s()));
+
+        // A non-bean row type uses the same per-page conversion.
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, page2, page3, page4);
+        assertEquals(List.of("1", "2", "3"), executor.list(req, String.class));
+    }
+
+    // ---- 2026-10-20 fixC ----
+
+    /**
+     * list(QueryRequest, Class) converts each response page directly instead of through toList(QueryResponse, Class). A null
+     * response, which only an un-stubbed client produces, must keep the former toList behaviour: an empty (mutable) list, and
+     * no further page is requested.
+     */
+    @Test
+    public void testListWithClass_NullResponseIsEmptyAndRequestsNoFurtherPage_fixC() {
+        QueryRequest req = QueryRequest.builder().tableName("TestTable").build();
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(null);
+
+        List<TestEntity> result = executor.list(req, TestEntity.class);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        assertDoesNotThrow(() -> result.add(new TestEntity()));
+        verify(mockDynamoDbClient, times(1)).query(any(QueryRequest.class));
+    }
+
+    // ---- 2026-10-21 fixP ----
+
+    /**
+     * A null LATER page (page 1 has rows and a lastEvaluatedKey, page 2 is null) must end the pagination the same way a null
+     * first page does: the result holds page 1's rows, exactly two requests are made and nothing is thrown (the do/while loop
+     * used to dereference the null page and fail with a NullPointerException).
+     */
+    @Test
+    public void testListWithClass_NullLaterPageEndsPaginationWithRowsSoFar_fixP() {
+        QueryRequest req = QueryRequest.builder().tableName("TestTable").build();
+        QueryResponse page1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1")), Map.of("id", AttributeValue.fromS("2"))))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.fromS("2")))
+                .build();
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, (QueryResponse) null);
+
+        List<TestEntity> result = executor.list(req, TestEntity.class);
+
+        assertEquals(List.of("1", "2"), result.stream().map(TestEntity::getId).toList());
+        ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDbClient, times(2)).query(captor.capture());
+        assertTrue(captor.getAllValues().get(0).exclusiveStartKey().isEmpty());
+        assertEquals("2", captor.getAllValues().get(1).exclusiveStartKey().get("id").s());
+    }
 }

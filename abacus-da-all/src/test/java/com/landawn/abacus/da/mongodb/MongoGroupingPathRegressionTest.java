@@ -41,7 +41,8 @@ public class MongoGroupingPathRegressionTest extends TestBase {
         assertEquals(List.of(new Document("$group", new Document("_id", "$count.value").append("count", new Document("$sum", 1)))), pipeline.get());
         // The multi-field overload is exempt with Document rows too: the composite key stays under _id (no $project stage).
         executor.groupByAndCount(List.of("count"), Document.class).close();
-        assertEquals(List.of(new Document("$group", new Document("_id", new Document("count", "$count")).append("count", new Document("$sum", 1)))),
+        assertEquals(List.of(new Document("$group",
+                new Document("_id", new Document("count", new Document("$ifNull", Arrays.asList("$count", null)))).append("count", new Document("$sum", 1)))),
                 pipeline.get());
         executor.groupByAndCount("counter.value", Map.class).close();
         assertEquals("$_id", ((Document) pipeline.get().get(1)).get("$project", Document.class).get("counter.value"));
@@ -201,7 +202,9 @@ public class MongoGroupingPathRegressionTest extends TestBase {
 
         executor.groupBy(List.of("address.city", "address.zip", "status", "address.city", "status")).close();
 
-        final Document key = new Document("address", new Document("city", "$address.city").append("zip", "$address.zip")).append("status", "$status");
+        // Each leaf is wrapped in $ifNull (2026-10-19 sliceT): a missing field then joins the null-key group.
+        final Document key = new Document("address", new Document("city", ifNull("$address.city")).append("zip", ifNull("$address.zip"))).append("status",
+                ifNull("$status"));
         assertEquals(List.of(new Document("$group", new Document("_id", key))), pipeline.get());
 
         executor.groupByAndCount(List.of("address.city", "address.zip", "status"), Map.class).close();
@@ -240,6 +243,10 @@ public class MongoGroupingPathRegressionTest extends TestBase {
                 ((Document) pipeline.get().get(1)).get("$project"));
     }
 
+    private static Document ifNull(final String fieldPath) {
+        return new Document("$ifNull", Arrays.asList(fieldPath, null));
+    }
+
     @Test
     public void sharedGroupingHelpersRejectNullDocuments() {
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.appendGroupField(null, "status"));
@@ -255,7 +262,7 @@ public class MongoGroupingPathRegressionTest extends TestBase {
 
         final Document groupFields = new Document();
         MongoDBBase.appendGroupField(groupFields, "address.city");
-        assertEquals(new Document("address", new Document("city", "$address.city")), groupFields);
+        assertEquals(new Document("address", new Document("city", ifNull("$address.city"))), groupFields);
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.appendGroupField(groupFields, "address"));
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.checkGroupFieldNotCountColumn("count.value", Map.class));

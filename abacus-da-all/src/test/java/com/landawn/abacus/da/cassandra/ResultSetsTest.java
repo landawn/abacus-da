@@ -37,4 +37,32 @@ class ResultSetsTest {
         assertFalse(result.iterator().hasNext());
         verify(first).fetchNextPage();
     }
+
+    // ---- 2026-10-19 sliceG ----
+
+    /**
+     * all() is pre-sized from the current page's remaining() (perf change): it must still drain every later page,
+     * return a mutable list (also when empty), and tolerate a custom page that reports a negative remaining count.
+     */
+    @Test
+    void allDrainsEveryPageIntoAMutableListAndToleratesANegativeRemainingCount_sliceG() {
+        final AsyncResultSet first = mock(AsyncResultSet.class);
+        final AsyncResultSet second = mock(AsyncResultSet.class);
+        final AsyncResultSet empty = mock(AsyncResultSet.class);
+        final Row r1 = mock(Row.class);
+        final Row r2 = mock(Row.class);
+        final Row r3 = mock(Row.class);
+        when(first.currentPage()).thenReturn(List.of(r1));
+        when(first.remaining()).thenReturn(-1);
+        when(first.hasMorePages()).thenReturn(true);
+        when(first.fetchNextPage()).thenReturn(CompletableFuture.completedFuture(second));
+        when(second.currentPage()).thenReturn(List.of(r2, r3));
+        when(empty.currentPage()).thenReturn(List.of());
+
+        final List<Row> rows = ResultSets.wrap(first).all();
+        final List<Row> none = ResultSets.wrap(empty).all();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> org.junit.jupiter.api.Assertions.assertEquals(List.of(r1, r2, r3), rows),
+                () -> assertTrue(rows.add(r1)), () -> assertTrue(none.isEmpty()), () -> assertTrue(none.add(r1)));
+    }
 }

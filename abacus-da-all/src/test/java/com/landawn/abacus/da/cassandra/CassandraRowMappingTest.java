@@ -159,4 +159,243 @@ class CassandraRowMappingTest {
             this.number = number;
         }
     }
+
+    // ---- 2026-10-19 sliceH ----
+
+    @Test
+    void fieldBackedReadOnlyPropertyIsSkippedOnRead_sliceH() {
+        // abacus-common 8.2.1 makes an @AccessFieldByMethod field without a setter read-only (setPropValue throws
+        // UnsupportedOperationException) although it has a backing field; the field == null test missed it, so reading the
+        // generated SELECT's column failed the whole row. It is skipped like a getter-only property.
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                CqlIdentifier.fromInternal("ks"), CqlIdentifier.fromInternal("accessor_type"), false,
+                List.of(CqlIdentifier.fromInternal("id"), CqlIdentifier.fromInternal("total")), List.of(DataTypes.TEXT, DataTypes.TEXT));
+        final CassandraExecutor.UDTCodec<SliceHAccessorEntity> codec = CassandraExecutor.UDTCodec.create(userType, SliceHAccessorEntity.class);
+        final SliceHAccessorEntity source = new SliceHAccessorEntity();
+        source.setId("u1");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final SliceHAccessorEntity entity = CassandraExecutor.toEntity(row(new String[] { "id", "total" }, "a", "stored"), SliceHAccessorEntity.class);
+            assertEquals("a", entity.getId());
+            assertEquals("computed", entity.getTotal());
+        }, () -> {
+            final List<SliceHAccessorEntity> list = CassandraExecutor.toList(result(row(new String[] { "id", "total" }, "b", "stored")),
+                    SliceHAccessorEntity.class);
+            assertEquals("b", list.getFirst().getId());
+            assertEquals("computed", list.getFirst().getTotal());
+        }, () -> {
+            final SliceHAccessorEntity decoded = codec.decode(codec.encode(source, com.datastax.oss.driver.api.core.ProtocolVersion.V4),
+                    com.datastax.oss.driver.api.core.ProtocolVersion.V4);
+            assertEquals("u1", decoded.getId());
+            assertEquals("computed", decoded.getTotal());
+        },
+                // An explicit DESERIALIZE_ONLY direction cannot make the read-only property writable: it is skipped too (as by the
+                // HBase, DynamoDB and MongoDB executors) instead of failing the whole row with UnsupportedOperationException.
+                () -> {
+                    final SliceHAccessorEntity entity = CassandraExecutor.toEntity(row(new String[] { "other", "id" }, "stored", "c"),
+                            SliceHAccessorEntity.class);
+                    assertEquals("c", entity.getId());
+                    assertEquals("other", entity.getOther());
+                }, () -> {
+                    final List<SliceHAccessorEntity> list = CassandraExecutor.toList(result(row(new String[] { "other", "id" }, "stored", "d")),
+                            SliceHAccessorEntity.class);
+                    assertEquals("d", list.getFirst().getId());
+                    assertEquals("other", list.getFirst().getOther());
+                });
+    }
+
+    @Test
+    void udtCodecReusedAcrossValuesKeepsFieldBindings_sliceH() {
+        // The codec resolves its field names and bean properties once; every later value must still map by field position,
+        // including a field bound through @Column, and must not see an earlier value's data.
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                CqlIdentifier.fromInternal("ks"), CqlIdentifier.fromInternal("counted"), false,
+                List.of(CqlIdentifier.fromInternal("name"), CqlIdentifier.fromInternal("order_count")), List.of(DataTypes.TEXT, DataTypes.INT));
+        final CassandraExecutor.UDTCodec<SliceHCounted> beanCodec = CassandraExecutor.UDTCodec.create(userType, SliceHCounted.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final com.datastax.oss.driver.api.core.ProtocolVersion v4 = com.datastax.oss.driver.api.core.ProtocolVersion.V4;
+
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (int i = 1; i <= 3; i++) {
+            final int n = i;
+            final SliceHCounted source = new SliceHCounted();
+            source.setName("n" + n);
+            source.setOrderCount(n);
+
+            checks.add(() -> {
+                final SliceHCounted decoded = beanCodec.decode(beanCodec.encode(source, v4), v4);
+                assertEquals("n" + n, decoded.getName());
+                assertEquals(n, decoded.getOrderCount());
+            });
+            checks.add(() -> {
+                final Map<String, Object> map = new LinkedHashMap<>();
+                map.put("name", "m" + n);
+                map.put("order_count", n == 2 ? null : n);
+                assertEquals(map, mapCodec.decode(mapCodec.encode(map, v4), v4));
+                assertEquals(map, mapCodec.decode(beanCodec.encode(n == 2 ? new SliceHCounted("m2", null) : new SliceHCounted("m" + n, n), v4), v4));
+            });
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    public static class SliceHCounted {
+        private String name;
+        @com.landawn.abacus.annotation.Column("order_count")
+        private Integer orderCount;
+
+        public SliceHCounted() {
+        }
+
+        SliceHCounted(final String name, final Integer orderCount) {
+            this.name = name;
+            this.orderCount = orderCount;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public Integer getOrderCount() {
+            return orderCount;
+        }
+
+        public void setOrderCount(final Integer orderCount) {
+            this.orderCount = orderCount;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class SliceHAccessorEntity {
+        private String id;
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        private String total = "computed";
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        @com.landawn.abacus.annotation.JsonXmlField(direction = com.landawn.abacus.annotation.JsonXmlField.Direction.DESERIALIZE_ONLY)
+        private String other = "other";
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getTotal() {
+            return total;
+        }
+
+        public String getOther() {
+            return other;
+        }
+    }
+
+    // ---- 2026-10-19 verify2 ----
+
+    // CodecRegistry.codecFor(DataType) returns the registered UDTCodec for its user type, so formatting a UdtValue read from a
+    // row through it passed the raw driver value to format(T), which mapped it as a bean and threw ClassCastException.
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    void verify2_formatOfDriverUdtValueThroughRegistryLookup() {
+        final com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry(
+                "verify2");
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                CqlIdentifier.fromInternal("ks"), CqlIdentifier.fromInternal("verify2_counted"), false,
+                List.of(CqlIdentifier.fromInternal("name"), CqlIdentifier.fromInternal("order_count")), List.of(DataTypes.TEXT, DataTypes.INT));
+        userType.attach(new com.datastax.oss.driver.api.core.detach.AttachmentPoint() {
+            @Override
+            public com.datastax.oss.driver.api.core.ProtocolVersion getProtocolVersion() {
+                return com.datastax.oss.driver.api.core.ProtocolVersion.V4;
+            }
+
+            @Override
+            public com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry getCodecRegistry() {
+                return registry;
+            }
+        });
+        final CassandraExecutor.UDTCodec<SliceHCounted> codec = CassandraExecutor.UDTCodec.create(userType, SliceHCounted.class);
+        registry.register(codec);
+
+        final com.datastax.oss.driver.api.core.data.UdtValue udtValue = userType.newValue().setString(0, "n1").setInt(1, 7);
+        final String literal = udtValue.getFormattedContents();
+        final com.datastax.oss.driver.api.core.type.codec.TypeCodec lookedUp = registry.codecFor(userType);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> org.junit.jupiter.api.Assertions.assertSame(codec, lookedUp),
+                () -> assertEquals(literal, lookedUp.format(udtValue)), () -> assertEquals(literal, codec.format(new SliceHCounted("n1", 7))),
+                () -> assertEquals("NULL", codec.format(null)));
+    }
+
+    // ---- 2026-10-20 cassfix ----
+
+    // format(T) passes a raw UdtValue straight to the driver's UDT codec, but encode(T, ProtocolVersion) (and the deprecated
+    // serialize(T, ProtocolVersion) delegating to it) still called serialize(value), which cast the UdtValue to T and threw
+    // ClassCastException when the driver handed this codec a UdtValue looked up by CQL type.
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked", "deprecation" })
+    void cassfix_encodeOfDriverUdtValueThroughRegistryLookup() {
+        final com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry registry = new com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry(
+                "cassfix");
+        final com.datastax.oss.driver.api.core.type.UserDefinedType userType = new com.datastax.oss.driver.internal.core.type.DefaultUserDefinedType(
+                CqlIdentifier.fromInternal("ks"), CqlIdentifier.fromInternal("cassfix_counted"), false,
+                List.of(CqlIdentifier.fromInternal("name"), CqlIdentifier.fromInternal("order_count")), List.of(DataTypes.TEXT, DataTypes.INT));
+        userType.attach(new com.datastax.oss.driver.api.core.detach.AttachmentPoint() {
+            @Override
+            public com.datastax.oss.driver.api.core.ProtocolVersion getProtocolVersion() {
+                return com.datastax.oss.driver.api.core.ProtocolVersion.V4;
+            }
+
+            @Override
+            public com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry getCodecRegistry() {
+                return registry;
+            }
+        });
+        final CassandraExecutor.UDTCodec<SliceHCounted> codec = CassandraExecutor.UDTCodec.create(userType, SliceHCounted.class);
+        registry.register(codec);
+
+        final com.datastax.oss.driver.api.core.data.UdtValue udtValue = userType.newValue().setString(0, "n1").setInt(1, 7);
+        final com.datastax.oss.driver.api.core.ProtocolVersion version = com.datastax.oss.driver.api.core.ProtocolVersion.V4;
+        final java.nio.ByteBuffer expected = com.datastax.oss.driver.api.core.type.codec.TypeCodecs.udtOf(userType).encode(udtValue, version);
+        final com.datastax.oss.driver.api.core.type.codec.TypeCodec lookedUp = registry.codecFor(userType);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> org.junit.jupiter.api.Assertions.assertSame(codec, lookedUp),
+                () -> assertEquals(expected, lookedUp.encode(udtValue, version)),
+                () -> assertEquals(expected, ((CassandraExecutor.UDTCodec) codec).serialize(udtValue, version)),
+                () -> assertEquals(expected, codec.encode(new SliceHCounted("n1", 7), version)),
+                () -> assertEquals("n1", codec.decode((java.nio.ByteBuffer) lookedUp.encode(udtValue, version), version).getName()),
+                () -> assertNull(codec.encode(null, version)));
+    }
+
+    // extractData adopts its per-column lists through RowDataset.fromOwnedColumns (no defensive copy): the Dataset must still
+    // be a normal mutable Dataset that is independent of the driver rows and shares nothing with another extraction.
+    @Test
+    void cassfix_extractedDatasetIsMutableAndOwnsItsColumns() {
+        final Row first = row(new String[] { "id", "name" }, 1L, "Ada");
+        final Row second = row(new String[] { "id", "name" }, 2L, "Grace");
+        final com.landawn.abacus.util.Dataset dataset = CassandraExecutor.extractData(result(first, second));
+        final com.landawn.abacus.util.Dataset other = CassandraExecutor.extractData(result(first, second));
+
+        when(first.getObject(1)).thenReturn("changed after extraction");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> org.junit.jupiter.api.Assertions.assertFalse(dataset.isFrozen()),
+                () -> assertEquals(List.of("Ada", "Grace"), dataset.getColumn("name")),
+                () -> org.junit.jupiter.api.Assertions.assertNotSame(dataset.getColumn("id"), other.getColumn("id")));
+
+        dataset.addRow(new Object[] { 3L, "Linus" });
+        dataset.set(0, 1, "Ada L.");
+        dataset.removeRow(1);
+        dataset.addColumn("upper", "name", (final String name) -> name.toUpperCase());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(2, dataset.size()), () -> assertEquals(List.of(1L, 3L), dataset.getColumn("id")),
+                () -> assertEquals(List.of("Ada L.", "Linus"), dataset.getColumn("name")),
+                () -> assertEquals(List.of("ADA L.", "LINUS"), dataset.getColumn("upper")),
+                // The second extraction (and its column lists) is untouched.
+                () -> assertEquals(2, other.size()), () -> assertEquals(List.of(1L, 2L), other.getColumn("id")),
+                () -> assertEquals(List.of("Ada", "Grace"), other.getColumn("name")), () -> assertEquals(List.of("id", "name"), other.columnNames()));
+    }
 }

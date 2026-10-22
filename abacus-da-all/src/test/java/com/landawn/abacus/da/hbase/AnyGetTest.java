@@ -385,4 +385,43 @@ public class AnyGetTest extends TestBase {
         AnyGet get = AnyGet.of("row");
         assertSame(get.val(), get.val());
     }
+
+    // ---- 2026-10-20 sliceF ----
+
+    private static org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Get toProto(final AnyGet get) throws java.io.IOException {
+        return org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil.toGet(get.val());
+    }
+
+    /**
+     * Pins the null-family docs of addFamily/addColumn/setColumnFamilyTimeRange: the null is accepted and stored here,
+     * but HBase cannot serialize it, so building the request fails with NullPointerException.
+     */
+    @Test
+    public void testNullFamily_acceptedHereButFailsWhenGetRequestIsBuilt_sliceF() {
+        assertEquals(1, AnyGet.of("row").addFamily((String) null).numFamilies());
+
+        assertThrows(NullPointerException.class, () -> toProto(AnyGet.of("row").addFamily((String) null)));
+        assertThrows(NullPointerException.class, () -> toProto(AnyGet.of("row").addFamily((byte[]) null)));
+        assertThrows(NullPointerException.class, () -> toProto(AnyGet.of("row").addColumn((String) null, "q")));
+        assertThrows(NullPointerException.class, () -> toProto(AnyGet.of("row").addColumn((byte[]) null, Bytes.toBytes("q"))));
+        assertThrows(NullPointerException.class, () -> toProto(AnyGet.of("row").setColumnFamilyTimeRange((String) null, 1L, 2L)));
+        assertThrows(NullPointerException.class, () -> toProto(AnyGet.of("row").setColumnFamilyTimeRange((byte[]) null, 1L, 2L)));
+    }
+
+    /** An empty family, unlike a null one, is serialized as an empty family name when the request is built. */
+    @Test
+    public void testEmptyFamily_isSerializedWhenGetRequestIsBuilt_sliceF() throws Exception {
+        final org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Get wholeFamily = toProto(AnyGet.of("row").addFamily(""));
+        assertEquals(1, wholeFamily.getColumnCount());
+        assertTrue(wholeFamily.getColumn(0).getFamily().isEmpty());
+        assertEquals(0, wholeFamily.getColumn(0).getQualifierCount());
+
+        final org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Get oneColumn = toProto(
+                AnyGet.of("row").addColumn(new byte[0], Bytes.toBytes("q")).setColumnFamilyTimeRange("", 1L, 2L));
+        assertEquals(1, oneColumn.getColumnCount());
+        assertTrue(oneColumn.getColumn(0).getFamily().isEmpty());
+        assertArrayEquals(Bytes.toBytes("q"), oneColumn.getColumn(0).getQualifier(0).toByteArray());
+        assertEquals(1, oneColumn.getCfTimeRangeCount());
+        assertTrue(oneColumn.getCfTimeRange(0).getColumnFamily().isEmpty());
+    }
 }

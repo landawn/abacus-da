@@ -201,7 +201,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * byte[] keyBytes = Bytes.toBytes("counter_row_123");
      * AnyIncrement increment = AnyIncrement.of(keyBytes)
      *                                      .addColumn("metrics", "hits", 1L);
-     * increment.getRow(); // returns keyBytes ("counter_row_123")
+     * increment.getRow(); // returns a copy of keyBytes ("counter_row_123"), not keyBytes itself
      *
      * // Edge: a null row key is rejected
      * AnyIncrement.of((byte[]) null); // throws IllegalArgumentException

@@ -571,7 +571,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @param family the column family name to retrieve; the value is converted to bytes and forwarded
-     *               to the underlying {@link Scan} (an empty or {@code null} family is tolerated)
+     *               to the underlying {@link Scan} (an empty or {@code null} family is accepted here, but
+     *               HBase cannot serialize a {@code null} family: executing the scan then fails with a
+     *               {@code NullPointerException} while the request is built)
      * @return this AnyScan instance for method chaining
      * @see #addColumn(String, String)
      * @see #addFamily(byte[])
@@ -598,7 +600,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @param family the column family name as byte array; forwarded to the underlying {@link Scan}
-     *               (an empty or {@code null} array is tolerated)
+     *               (an empty or {@code null} array is accepted here, but HBase cannot serialize a
+     *               {@code null} family: executing the scan then fails with a {@code NullPointerException}
+     *               while the request is built)
      * @return this AnyScan instance for method chaining
      * @see #addFamily(String)
      */
@@ -711,7 +715,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @param family the column family name; converted to bytes and forwarded to the underlying
-     *               {@link Scan} (a {@code null} family is tolerated)
+     *               {@link Scan} (a {@code null} family is accepted here, but HBase cannot serialize it:
+     *               executing the scan then fails with a {@code NullPointerException} while the request
+     *               is built)
      * @param minTimestamp the minimum timestamp (inclusive)
      * @param maxTimestamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining
@@ -746,7 +752,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @param family the column family name as byte array; forwarded to the underlying {@link Scan}
-     *               (a {@code null} array is tolerated)
+     *               (a {@code null} array is accepted here, but HBase cannot serialize it: executing the
+     *               scan then fails with a {@code NullPointerException} while the request is built)
      * @param minTimestamp the minimum timestamp (inclusive)
      * @param maxTimestamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining
@@ -780,7 +787,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @param family the column family name; converted to bytes and forwarded to the underlying
-     *               {@link Scan} (an empty or {@code null} family is tolerated)
+     *               {@link Scan} (an empty or {@code null} family is accepted here, but HBase cannot
+     *               serialize a {@code null} family: executing the scan then fails with a
+     *               {@code NullPointerException} while the request is built)
      * @param qualifier the column qualifier name; converted to bytes (an empty or {@code null}
      *               qualifier is tolerated)
      * @return this AnyScan instance for method chaining
@@ -810,7 +819,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @param family the column family name as byte array; forwarded to the underlying {@link Scan}
-     *               (an empty or {@code null} array is tolerated)
+     *               (an empty or {@code null} array is accepted here, but HBase cannot serialize a
+     *               {@code null} family: executing the scan then fails with a {@code NullPointerException}
+     *               while the request is built)
      * @param qualifier the column qualifier name as byte array (an empty or {@code null} array is tolerated)
      * @return this AnyScan instance for method chaining
      * @see #addColumn(String, String)
@@ -1150,7 +1161,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p>Despite the name, no server-side {@link Filter} is registered: this method delegates to
      * {@link Scan#setRowPrefixFilter(byte[])}, which configures startRow and stopRow to bracket
-     * all keys beginning with the given prefix.</p>
+     * all keys beginning with the given prefix. The same bound-replacement rules as
+     * {@link #setStartStopRowForPrefixScan(Object)} apply.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1182,6 +1194,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>This is an optimized prefix scan that translates the supplied prefix into an
      * inclusive start row and a lexicographically computed exclusive stop row, avoiding the
      * cost of a server-side filter. Delegates to {@link Scan#setStartStopRowForPrefixScan(byte[])}.</p>
+     *
+     * <p>The computed bounds <i>replace</i> any start/stop rows set earlier, and the start row is
+     * reset to inclusive and the stop row to exclusive. Conversely, a later
+     * {@link #withStartRow(Object)} / {@link #withStopRow(Object)} call overwrites the computed bound.
+     * HBase documents that combining a prefix scan with explicit start/stop rows yields undefined
+     * results, so use one or the other.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1926,7 +1944,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * // After scanning, retrieve metrics from ResultScanner
      * }</pre>
      *
-     * @param enabled {@code true} to enable metrics collection, {@code false} to disable
+     * @param enabled {@code true} to enable metrics collection, {@code false} to disable it (disabling
+     *        also turns off per-region scan metrics if they were enabled on the wrapped {@link Scan})
      * @return this AnyScan instance for method chaining
      * @see #isScanMetricsEnabled()
      */

@@ -1,7 +1,9 @@
 package com.landawn.abacus.da.gcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -1181,5 +1183,473 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
         public void setTimeSet(final Set<java.sql.Time> timeSet) {
             this.timeSet = timeSet;
         }
+    }
+
+    // ---- 2026-10-19 sliceL ----
+
+    // A REPEATED column mapped to a non-container property (String, StringBuilder, CharSequence) left the bean-class Dataset
+    // column holding the unwrapped ArrayList, while toEntity stores the property's own type (the list's text). Both paths
+    // must give the column the property's declared type.
+    @Test
+    public void testExtractDataConvertsRepeatedColumnToNonContainerPropertyType_sliceL() throws Exception {
+        final String[] names = { "text", "builder", "chars" };
+        final List<Field> fieldList = new ArrayList<>();
+        final List<FieldValue> cells = new ArrayList<>();
+
+        for (final String name : names) {
+            fieldList.add(fixBqRepeatedField(name, StandardSQLTypeName.STRING));
+            cells.add(fixBqRepeated(verifyCell("a"), verifyCell("b")));
+        }
+
+        final FieldList fields = FieldList.of(fieldList);
+        final FieldValueList row = FieldValueList.of(cells, fields);
+        fixBqStubResult(fields, row);
+
+        final SliceLTextHolder entity = BigQueryExecutor.toEntity(fields, row, SliceLTextHolder.class);
+        final Dataset ds = BigQueryExecutor.extractData(mockTableResult, SliceLTextHolder.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(String.class, ds.getColumn("text").get(0).getClass()),
+                () -> assertEquals(entity.getText(), ds.getColumn("text").get(0)),
+                () -> assertEquals(StringBuilder.class, ds.getColumn("builder").get(0).getClass()),
+                () -> assertEquals(entity.getBuilder().toString(), ds.getColumn("builder").get(0).toString()),
+                () -> assertTrue(ds.getColumn("chars").get(0) instanceof CharSequence, String.valueOf(ds.getColumn("chars").get(0).getClass())),
+                () -> assertEquals(entity.getChars().toString(), ds.getColumn("chars").get(0).toString()));
+    }
+
+    // The same REPEATED column mapped to a scalar property that cannot take it fails in toEntity; the Dataset column must
+    // not silently hold the ArrayList instead.
+    @Test
+    public void testExtractDataRejectsRepeatedColumnForScalarPropertyLikeToEntity_sliceL() throws Exception {
+        final FieldList fields = FieldList.of(fixBqRepeatedField("count", StandardSQLTypeName.INT64));
+        final FieldValueList row = FieldValueList.of(Arrays.asList(fixBqRepeated(verifyCell("1"), verifyCell("2"))), fields);
+        fixBqStubResult(fields, row);
+
+        assertThrows(NumberFormatException.class, () -> BigQueryExecutor.toEntity(fields, row, SliceLTextHolder.class));
+        assertThrows(NumberFormatException.class, () -> BigQueryExecutor.extractData(mockTableResult, SliceLTextHolder.class));
+    }
+
+    // A primitive property column takes the decoded boxed value (no per-cell conversion) and keeps it.
+    @Test
+    public void testExtractDataPrimitivePropertyColumnHoldsBoxedValue_sliceL() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("name", StandardSQLTypeName.STRING));
+        fixBqStubResult(fields, FieldValueList.of(Arrays.asList(verifyCell("42"), verifyCell("n")), fields));
+
+        final Dataset ds = BigQueryExecutor.extractData(mockTableResult, TestEntity.class);
+
+        assertEquals(Integer.valueOf(42), ds.getColumn("id").get(0));
+        assertEquals("n", ds.getColumn("name").get(0));
+
+        // The Dataset adopts its freshly built column lists (no copy) and stays an ordinary mutable Dataset.
+        ds.set(0, 1, "m");
+        assertEquals("m", ds.getColumn("name").get(0));
+        assertEquals(java.util.Arrays.asList("id", "name"), ds.columnNames());
+    }
+
+    // The scalar row mapper of toList/list/stream named the row type as "class java.lang.Long" and not the column count;
+    // the message now matches readRow's (N.convert of a row) for the same input.
+    @Test
+    public void testScalarRowMapperFieldCountMessageNamesTypeAndColumnCount_sliceL() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("a", StandardSQLTypeName.INT64), Field.of("b", StandardSQLTypeName.INT64));
+        fixBqStubResult(fields, FieldValueList.of(Arrays.asList(verifyCell("1"), verifyCell("2")), fields));
+
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toList(mockTableResult, Long.class));
+
+        assertEquals("Field count must be 1 to map a row to the single-value type: java.lang.Long, but the row has 2 columns", e.getMessage());
+    }
+
+    // Pins the documented abacus-query 4.9.5 behavior (class Javadoc, Naming Policy): after a backslash-escaped quote in a raw
+    // Filters.expr, names are emitted as written (4.9.4 converted bonusPoints to bonus_points); names before it, and every
+    // name in an expression with a doubled-quote literal, are still translated.
+    @Test
+    public void testRawExpressionNamesAfterBackslashEscapedQuoteAreNotTranslated_sliceL() throws Exception {
+        when(mockTableResult.getSchema()).thenReturn(null);
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.list(SliceLExprEntity.class, Arrays.asList("accountId"), com.landawn.abacus.query.Filters.expr("firstName = 'O\\'Brien' AND bonusPoints > 1"));
+        assertEquals("SELECT account_id AS `accountId` FROM slice_l_expr_entity WHERE first_name = 'O\\'Brien' AND bonusPoints > 1", captureGeneratedSql());
+
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        executor.list(SliceLExprEntity.class, Arrays.asList("accountId"), com.landawn.abacus.query.Filters.expr("bonusPoints > 1 AND firstName = 'ab'"));
+        assertEquals("SELECT account_id AS `accountId` FROM slice_l_expr_entity WHERE bonus_points > 1 AND first_name = 'ab'", captureGeneratedSql());
+    }
+
+    public static class SliceLExprEntity {
+        private String accountId;
+        private String firstName;
+        private Long bonusPoints;
+
+        public String getAccountId() {
+            return accountId;
+        }
+
+        public void setAccountId(final String accountId) {
+            this.accountId = accountId;
+        }
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(final String firstName) {
+            this.firstName = firstName;
+        }
+
+        public Long getBonusPoints() {
+            return bonusPoints;
+        }
+
+        public void setBonusPoints(final Long bonusPoints) {
+            this.bonusPoints = bonusPoints;
+        }
+    }
+
+    // Pins the documented read-only rule under abacus-common 8.2: a field restricted by @AccessFieldByMethod without a setter
+    // is read-only, so its column is skipped whatever its direction: the default and an explicit BOTH (SERIALIZE_ONLY), and
+    // (2026-10-20 rounify) an explicit DESERIALIZE_ONLY, which cannot make it writable and used to fail the row with
+    // UnsupportedOperationException. extractData keeps that column raw, as for any column toEntity ignores.
+    @Test
+    public void testReadOnlyAccessFieldByMethodPropertyColumns_sliceL() {
+        final FieldList fields = FieldList.of(Field.of("code", StandardSQLTypeName.INT64), Field.of("id", StandardSQLTypeName.STRING));
+        final FieldValueList row = FieldValueList.of(Arrays.asList(verifyCell("n/a"), verifyCell("1")), fields);
+
+        final SliceLReadOnlySub skipped = BigQueryExecutor.toEntity(fields, row, SliceLReadOnlySub.class);
+        assertEquals("1", skipped.getId());
+        assertEquals("init", skipped.getCode());
+        assertEquals("init", BigQueryExecutor.toEntity(fields, row, SliceLReadOnlyBothSub.class).getCode());
+
+        final SliceLDeserializeOnlySub deserializeOnly = BigQueryExecutor.toEntity(fields, row, SliceLDeserializeOnlySub.class);
+        assertEquals("1", deserializeOnly.getId());
+        assertEquals("init", deserializeOnly.getCode());
+
+        final TableResult result = mock(TableResult.class);
+        when(result.getSchema()).thenReturn(Schema.of(fields));
+        when(result.getTotalRows()).thenReturn(1L);
+        when(result.iterateAll()).thenReturn(List.of(row));
+
+        final Dataset dataset = BigQueryExecutor.extractData(result, SliceLDeserializeOnlySub.class);
+        assertEquals(List.of("n/a"), dataset.getColumn("code"));
+        assertEquals(List.of("1"), dataset.getColumn("id"));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class SliceLReadOnlyBase {
+        private String id;
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        private String code = "init";
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getCode() {
+            return code;
+        }
+    }
+
+    public static class SliceLReadOnlySub extends SliceLReadOnlyBase {
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class SliceLReadOnlyBothBase {
+        private String id;
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        @com.landawn.abacus.annotation.JsonXmlField(direction = com.landawn.abacus.annotation.JsonXmlField.Direction.BOTH)
+        private String code = "init";
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getCode() {
+            return code;
+        }
+    }
+
+    public static class SliceLReadOnlyBothSub extends SliceLReadOnlyBothBase {
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class SliceLDeserializeOnlyBase {
+        private String id;
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        @com.landawn.abacus.annotation.JsonXmlField(direction = com.landawn.abacus.annotation.JsonXmlField.Direction.DESERIALIZE_ONLY)
+        private String code = "init";
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getCode() {
+            return code;
+        }
+    }
+
+    public static class SliceLDeserializeOnlySub extends SliceLDeserializeOnlyBase {
+    }
+
+    public static class SliceLTextHolder {
+        private String text;
+        private StringBuilder builder;
+        private CharSequence chars;
+        private Long count;
+
+        public String getText() {
+            return text;
+        }
+
+        public void setText(final String text) {
+            this.text = text;
+        }
+
+        public StringBuilder getBuilder() {
+            return builder;
+        }
+
+        public void setBuilder(final StringBuilder builder) {
+            this.builder = builder;
+        }
+
+        public CharSequence getChars() {
+            return chars;
+        }
+
+        public void setChars(final CharSequence chars) {
+            this.chars = chars;
+        }
+
+        public Long getCount() {
+            return count;
+        }
+
+        public void setCount(final Long count) {
+            this.count = count;
+        }
+    }
+
+    // ---- 2026-10-20 bqro ----
+
+    // A REPEATED column mapped to a read-only (getter-only, SERIALIZE_ONLY) property is ignored by toEntity; extractData kept the
+    // unwrapped List for it until the REPEATED-to-property-type conversion converted it too and failed the whole read
+    // (NumberFormatException: ["1", "2"] is not a valid Long). Writable properties still convert as before.
+    @Test
+    public void testExtractDataKeepsRepeatedColumnOfReadOnlyPropertyUnconverted_bqro() throws Exception {
+        final FieldList fields = FieldList.of(fixBqRepeatedField("count", StandardSQLTypeName.INT64), fixBqRepeatedField("text", StandardSQLTypeName.STRING),
+                Field.of("total", StandardSQLTypeName.INT64));
+        // SDK shape: a REPEATED cell holds a schema-less FieldValueList (FieldValue.fromPb -> FieldValueList.fromPb(list, null)).
+        final FieldValueList row = FieldValueList
+                .of(Arrays.asList(fixBqRepeated(verifyCell("1"), verifyCell("2")), fixBqRepeated(verifyCell("a"), verifyCell("b")), verifyCell("7")), fields);
+        fixBqStubResult(fields, row);
+
+        final BqroReadOnlySub entity = BigQueryExecutor.toEntity(fields, row, BqroReadOnlySub.class);
+        final Dataset ds = BigQueryExecutor.extractData(mockTableResult, BqroReadOnlySub.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(Long.valueOf(9), entity.getCount()),
+                () -> assertEquals(Long.valueOf(7), entity.getTotal()),
+                () -> assertTrue(ds.getColumn("count").get(0) instanceof List, String.valueOf(ds.getColumn("count").get(0))),
+                () -> assertEquals(2, ((List<?>) ds.getColumn("count").get(0)).size()),
+                () -> assertEquals(String.class, ds.getColumn("text").get(0).getClass()), () -> assertEquals(entity.getText(), ds.getColumn("text").get(0)),
+                () -> assertEquals(Long.valueOf(7), ds.getColumn("total").get(0)));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class BqroReadOnlyBase {
+        private String text;
+        private Long total;
+
+        public String getText() {
+            return text;
+        }
+
+        public void setText(final String text) {
+            this.text = text;
+        }
+
+        public Long getTotal() {
+            return total;
+        }
+
+        public void setTotal(final Long total) {
+            this.total = total;
+        }
+
+        public Long getCount() {
+            return 9L;
+        }
+    }
+
+    public static class BqroReadOnlySub extends BqroReadOnlyBase {
+    }
+
+    // ---- 2026-10-20 sliceF: the class Javadoc's strict Boolean rule ----
+
+    public static class BqBoolBean {
+        private Boolean flag;
+        private boolean enabled;
+
+        public Boolean getFlag() {
+            return flag;
+        }
+
+        public void setFlag(final Boolean flag) {
+            this.flag = flag;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(final boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    private static FieldList bqBoolFields(final StandardSQLTypeName type) {
+        return FieldList.of(Field.of("flag", type), Field.of("enabled", type));
+    }
+
+    /** Row (flagText, enabledText) of two {@code type} cells read into BqBoolBean's Boolean and boolean properties. */
+    private static BqBoolBean bqBoolEntity(final StandardSQLTypeName type, final String flagText, final String enabledText) {
+        final FieldList fields = bqBoolFields(type);
+        final FieldValueList row = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, flagText), FieldValue.of(FieldValue.Attribute.PRIMITIVE, enabledText)), fields);
+
+        return BigQueryExecutor.toEntity(fields, row, BqBoolBean.class);
+    }
+
+    /** One-column, one-row result of a {@code type} cell with {@code text}, served by both the mock BigQuery and the mock TableResult. */
+    private void stubSingleBqCell(final StandardSQLTypeName type, final String text) throws Exception {
+        final FieldList fields = FieldList.of(Field.of("v", type));
+        final List<FieldValueList> rows = Arrays.asList(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, text)), fields));
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getValues()).thenReturn(rows);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+    }
+
+    @Test
+    public void testToEntity_strictBoolean_blankOrEmptyStringReadsLikeNull_sliceF() {
+        for (final String text : new String[] { "", "  " }) {
+            final BqBoolBean bean = bqBoolEntity(StandardSQLTypeName.STRING, text, text);
+            assertNull(bean.getFlag(), "Boolean property for \"" + text + "\"");
+            assertFalse(bean.isEnabled(), "boolean property for \"" + text + "\"");
+        }
+    }
+
+    @Test
+    public void testToEntity_strictBoolean_paddedTokensConvert_sliceF() {
+        for (final String text : new String[] { " Y", " true ", "1", "y", "TRUE" }) {
+            final BqBoolBean bean = bqBoolEntity(StandardSQLTypeName.STRING, text, text);
+            assertEquals(Boolean.TRUE, bean.getFlag(), "Boolean property for \"" + text + "\"");
+            assertTrue(bean.isEnabled(), "boolean property for \"" + text + "\"");
+        }
+
+        for (final String text : new String[] { "0", "-1", "n", " N ", "False" }) {
+            final BqBoolBean bean = bqBoolEntity(StandardSQLTypeName.STRING, text, text);
+            assertEquals(Boolean.FALSE, bean.getFlag(), "Boolean property for \"" + text + "\"");
+            assertFalse(bean.isEnabled(), "boolean property for \"" + text + "\"");
+        }
+    }
+
+    @Test
+    public void testToEntity_strictBoolean_otherTextThrowsIllegalArgument_sliceF() {
+        // the other cell is a valid token, so the failing property is the one under test
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.STRING, "yes", "1"));
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.STRING, "1", "yes"));
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.STRING, "T", "1"));
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.STRING, "1", "T"));
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.INT64, "2", "1"));
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.INT64, "1", "2"));
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.FLOAT64, "1.0", "1"));
+        assertThrows(IllegalArgumentException.class, () -> bqBoolEntity(StandardSQLTypeName.FLOAT64, "1", "1.0"));
+    }
+
+    @Test
+    public void testToEntity_strictBoolean_boolCellConvertsAndNullCellIsNullOrFalse_sliceF() {
+        final BqBoolBean trueFalse = bqBoolEntity(StandardSQLTypeName.BOOL, "true", "false");
+        assertEquals(Boolean.TRUE, trueFalse.getFlag());
+        assertFalse(trueFalse.isEnabled());
+
+        final BqBoolBean falseTrue = bqBoolEntity(StandardSQLTypeName.BOOL, "false", "true");
+        assertEquals(Boolean.FALSE, falseTrue.getFlag());
+        assertTrue(falseTrue.isEnabled());
+
+        final BqBoolBean nulls = bqBoolEntity(StandardSQLTypeName.BOOL, null, null);
+        assertNull(nulls.getFlag());
+        assertFalse(nulls.isEnabled());
+    }
+
+    /**
+     * The documented difference from the bean path: queryForSingleValue/queryForSingleNonNull, toList and stream read blank or
+     * empty STRING text as {@code false} for a Boolean as well as for a boolean value class.
+     */
+    @Test
+    public void testSingleValueReads_strictBoolean_blankIsFalseForBothBooleanAndPrimitive_sliceF() throws Exception {
+        final QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT v FROM t").build();
+
+        for (final String text : new String[] { "", "  " }) {
+            stubSingleBqCell(StandardSQLTypeName.STRING, text);
+            final String label = "\"" + text + "\"";
+
+            final Nullable<Boolean> boxed = executor.queryForSingleValue(Boolean.class, "SELECT v FROM t");
+            assertTrue(boxed.isPresent(), label);
+            assertEquals(Boolean.FALSE, boxed.orElse(null), label);
+            assertEquals(Boolean.FALSE, executor.queryForSingleValue(boolean.class, "SELECT v FROM t").orElse(null), label);
+
+            assertEquals(Boolean.FALSE, executor.queryForSingleNonNull(Boolean.class, "SELECT v FROM t").get(), label);
+            assertEquals(Boolean.FALSE, executor.queryForSingleNonNull(boolean.class, "SELECT v FROM t").get(), label);
+
+            assertEquals(Arrays.asList(Boolean.FALSE), BigQueryExecutor.toList(mockTableResult, Boolean.class), label);
+            assertEquals(Arrays.asList(Boolean.FALSE), BigQueryExecutor.toList(mockTableResult, boolean.class), label);
+
+            assertEquals(Arrays.asList(Boolean.FALSE), executor.stream(Boolean.class, cfg).toList(), label);
+            assertEquals(Arrays.asList(Boolean.FALSE), executor.stream(boolean.class, cfg).toList(), label);
+        }
+    }
+
+    /** The single-value reads apply the same strict rule otherwise: padded tokens convert, anything else is rejected, NULL is null/false. */
+    @Test
+    public void testSingleValueReads_strictBoolean_tokensAndRejectionsAndNull_sliceF() throws Exception {
+        final QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT v FROM t").build();
+
+        stubSingleBqCell(StandardSQLTypeName.STRING, " Y");
+        assertEquals(Boolean.TRUE, executor.queryForSingleValue(Boolean.class, "SELECT v FROM t").orElse(null));
+        assertEquals(Arrays.asList(Boolean.TRUE), BigQueryExecutor.toList(mockTableResult, boolean.class));
+        assertEquals(Arrays.asList(Boolean.TRUE), executor.stream(Boolean.class, cfg).toList());
+
+        stubSingleBqCell(StandardSQLTypeName.BOOL, "false");
+        assertEquals(Boolean.FALSE, executor.queryForSingleNonNull(Boolean.class, "SELECT v FROM t").get());
+
+        stubSingleBqCell(StandardSQLTypeName.STRING, "yes");
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue(Boolean.class, "SELECT v FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toList(mockTableResult, Boolean.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(boolean.class, cfg).toList());
+
+        stubSingleBqCell(StandardSQLTypeName.INT64, "2");
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull(boolean.class, "SELECT v FROM t"));
+
+        stubSingleBqCell(StandardSQLTypeName.FLOAT64, "1.0");
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue(boolean.class, "SELECT v FROM t"));
+
+        stubSingleBqCell(StandardSQLTypeName.STRING, null);
+        final Nullable<Boolean> nullBoxed = executor.queryForSingleValue(Boolean.class, "SELECT v FROM t");
+        assertTrue(nullBoxed.isPresent());
+        assertNull(nullBoxed.orElse(null));
+        assertEquals(Boolean.FALSE, executor.queryForSingleValue(boolean.class, "SELECT v FROM t").orElse(null));
+        assertEquals(Arrays.asList((Boolean) null), BigQueryExecutor.toList(mockTableResult, Boolean.class));
+        assertEquals(Arrays.asList(Boolean.FALSE), BigQueryExecutor.toList(mockTableResult, boolean.class));
     }
 }

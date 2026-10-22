@@ -1224,11 +1224,9 @@ public class AsyncCassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void testSliceP_udtCodecBeanDeserializeKeepsBlobBytes() {
-        final com.datastax.driver.core.UserType userType = mock(com.datastax.driver.core.UserType.class);
-        when(userType.getName()).thenReturn(com.datastax.driver.core.DataType.Name.UDT);
-        when(userType.getFieldNames()).thenReturn(Arrays.asList("data"));
-        when(userType.size()).thenReturn(1);
+    public void testSliceP_udtCodecBeanDeserializeKeepsBlobBytes() throws ReflectiveOperationException {
+        // A real driver UserType (field names and positions consistent), so the codec's positional field iteration works.
+        final com.datastax.driver.core.UserType userType = slicePUserType("blobbed", "data", com.datastax.driver.core.DataType.blob());
         final com.datastax.driver.core.UDTValue udtValue = mock(com.datastax.driver.core.UDTValue.class);
         when(udtValue.getObject(0)).thenAnswer(invocation -> java.nio.ByteBuffer.wrap(new byte[] { 6, 7 }));
 
@@ -1696,5 +1694,149 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(resultSet.isExhausted()).thenReturn(true);
 
         return resultSet;
+    }
+
+    // ---- 2026-10-19 udtpos ----
+
+    public static class UdtPosEntity {
+        private String a;
+        private String b;
+
+        public String getA() {
+            return a;
+        }
+
+        public void setA(final String a) {
+            this.a = a;
+        }
+
+        public String getB() {
+            return b;
+        }
+
+        public void setB(final String b) {
+            this.b = b;
+        }
+    }
+
+    /**
+     * Driver 3's {@code UserType.getFieldNames()} is not documented to preserve field (position) order; UDT values are
+     * read and written by position. A user type whose name view lists {@code b, a} while its positional fields are {@code a, b}
+     * must still bind each position to the property/key of the field at that position.
+     */
+    @Test
+    public void testUdtPos_udtCodecBindsFieldsByPositionalNames() throws ReflectiveOperationException {
+        final com.datastax.driver.core.UserType positional = slicePUserType("udtpos", "a", com.datastax.driver.core.DataType.text(), "b",
+                com.datastax.driver.core.DataType.text());
+        final com.datastax.driver.core.UserType userType = mock(com.datastax.driver.core.UserType.class);
+        when(userType.getName()).thenReturn(com.datastax.driver.core.DataType.Name.UDT);
+        when(userType.size()).thenReturn(2);
+        when(userType.iterator()).thenAnswer(invocation -> positional.iterator());
+        when(userType.getFieldNames()).thenReturn(Arrays.asList("b", "a"));
+        when(userType.newValue()).thenAnswer(invocation -> positional.newValue());
+
+        final com.datastax.driver.core.UDTValue stored = positional.newValue().setString(0, "A").setString(1, "B");
+        final CassandraExecutor.UDTCodec<UdtPosEntity> beanCodec = CassandraExecutor.UDTCodec.create(userType, UdtPosEntity.class);
+        @SuppressWarnings("rawtypes")
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(userType, Map.class);
+        final UdtPosEntity bean = new UdtPosEntity();
+        bean.setA("A");
+        bean.setB("B");
+
+        final UdtPosEntity decoded = beanCodec.deserialize(stored);
+        final Map<?, ?> decodedMap = mapCodec.deserialize(stored);
+        final com.datastax.driver.core.UDTValue encoded = beanCodec.serialize(bean);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("A", decoded.getA()), () -> assertEquals("B", decoded.getB()),
+                () -> assertEquals("A", decodedMap.get("a")), () -> assertEquals("B", decodedMap.get("b")), () -> assertEquals("A", encoded.getString(0)),
+                () -> assertEquals("B", encoded.getString(1)));
+    }
+
+    // ---- 2026-10-21 cassfix2 ----
+
+    /**
+     * A real v3 executor over a mocked session: every query is prepared without variables and returns one row whose first
+     * column ("v") holds {@code value} ({@code null} for a NULL column), so the sync read path (readFirstColumn and its
+     * conversion) is exercised through the async facade.
+     */
+    private AsyncCassandraExecutor cassfix2AsyncReturning(final Object value) {
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        final PreparedStatement prepared = mock(PreparedStatement.class);
+        when(prepared.getVariables()).thenReturn(mock(ColumnDefinitions.class));
+        when(prepared.bind(any(Object[].class))).thenReturn(mock(BoundStatement.class));
+        when(session.prepare(anyString())).thenReturn(prepared);
+        final ColumnDefinitions columns = mock(ColumnDefinitions.class);
+        when(columns.size()).thenReturn(1);
+        when(columns.getName(0)).thenReturn("v");
+        when(session.executeAsync(any(Statement.class))).thenAnswer(inv -> {
+            final Row row = mock(Row.class);
+            when(row.getColumnDefinitions()).thenReturn(columns);
+            when(row.getObject(0)).thenReturn(value);
+            final Iterator<Row> rows = List.of(row).iterator(); // one-shot, shared by one()/iterator() like the driver's
+            final ResultSet resultSet = mock(ResultSet.class);
+            when(resultSet.getColumnDefinitions()).thenReturn(columns);
+            when(resultSet.one()).thenAnswer(i -> rows.hasNext() ? rows.next() : null);
+            when(resultSet.isExhausted()).thenAnswer(i -> !rows.hasNext());
+            when(resultSet.getAvailableWithoutFetching()).thenAnswer(i -> rows.hasNext() ? 1 : 0);
+            when(resultSet.iterator()).thenReturn(rows);
+            return immediateFuture(resultSet);
+        });
+
+        return executor.async();
+    }
+
+    private static void cassfix2FailsWith(final Class<? extends Throwable> cause, final ContinuableFuture<?> future) {
+        final java.util.concurrent.ExecutionException failure = assertThrows(java.util.concurrent.ExecutionException.class, future::get);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(cause, failure.getCause());
+    }
+
+    /**
+     * Pins the NULL-column rule the Javadoc of queryForSingleValue/queryForSingleNonNull now states (it used to claim that
+     * every reference target preserves null): a NULL column maps to the default value of the target type, that is the
+     * primitive default, the empty value of an Optional-like type (which therefore never fails queryForSingleNonNull), and
+     * null for a wrapper or other reference type (present-but-null Nullable; queryForSingleNonNull fails with NPE).
+     */
+    @Test
+    @SuppressWarnings("rawtypes")
+    public void cassfix2_nullColumnMapsToTargetDefault_asyncSingleValueFamily() throws Exception {
+        final AsyncCassandraExecutor facade = cassfix2AsyncReturning(null);
+        final String query = "SELECT v FROM t";
+
+        final Nullable<Optional> optionalValue = facade.queryForSingleValue(Optional.class, query).get();
+        final Optional<com.landawn.abacus.util.u.OptionalInt> optionalInt = facade.queryForSingleNonNull(com.landawn.abacus.util.u.OptionalInt.class, query)
+                .get();
+        final Nullable<Integer> wrapper = facade.queryForSingleValue(Integer.class, query).get();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(optionalValue.isPresent()), () -> assertEquals(Optional.empty(), optionalValue.get()),
+                () -> assertEquals(Nullable.of(Optional.empty()), optionalValue), () -> assertTrue(optionalInt.isPresent()),
+                () -> assertEquals(com.landawn.abacus.util.u.OptionalInt.empty(), optionalInt.get()),
+                () -> assertEquals(Optional.of(com.landawn.abacus.util.u.OptionalInt.empty()), optionalInt),
+                () -> assertEquals(Nullable.of(Nullable.empty()), facade.queryForSingleValue(Nullable.class, query).get()),
+                () -> assertEquals(Nullable.of(0), facade.queryForSingleValue(int.class, query).get()),
+                () -> assertEquals(Optional.of(0L), facade.queryForSingleNonNull(long.class, query).get()), () -> assertTrue(wrapper.isPresent()),
+                () -> assertNull(wrapper.get()), () -> cassfix2FailsWith(NullPointerException.class, facade.queryForSingleNonNull(Integer.class, query)),
+                () -> cassfix2FailsWith(NullPointerException.class, facade.queryForSingleNonNull(String.class, query)));
+    }
+
+    /**
+     * The strict Boolean rule of the sync read path (class Javadoc of CassandraExecutorBase, "Boolean Conversion") also
+     * governs the async facade: -1 and empty text are false, padded "Y" is true, and a bigint or the text "yes" fails the
+     * future with an IllegalArgumentException cause.
+     */
+    @Test
+    public void cassfix2_strictBooleanRead_asyncQueryForBooleanAndSingleValue() throws Exception {
+        final String query = "SELECT v FROM t";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(false, cassfix2AsyncReturning(-1).queryForBoolean(query).get().get()),
+                () -> assertEquals(true, cassfix2AsyncReturning(" Y ").queryForBoolean(query).get().get()),
+                () -> assertEquals(false, cassfix2AsyncReturning("").queryForBoolean(query).get().get()),
+                () -> assertEquals(Boolean.FALSE, cassfix2AsyncReturning(-1).queryForSingleValue(Boolean.class, query).get().get()),
+                () -> assertEquals(Boolean.TRUE, cassfix2AsyncReturning(" Y ").queryForSingleValue(Boolean.class, query).get().get()),
+                () -> assertEquals(Boolean.FALSE, cassfix2AsyncReturning("").queryForSingleValue(Boolean.class, query).get().get()),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning(1L).queryForBoolean(query)),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning("yes").queryForBoolean(query)),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning(1L).queryForSingleValue(Boolean.class, query)),
+                () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning("yes").queryForSingleValue(Boolean.class, query)));
     }
 }

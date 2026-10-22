@@ -68,6 +68,23 @@ import com.landawn.abacus.util.function.Function;
  * <li>binary value handling and scalar conversion used by the {@code toValue} methods of the subclasses</li>
  * </ul>
  *
+ * <p><b>Boolean targets:</b> a {@code BOOL} attribute maps directly, and a {@code NULL} attribute is {@code null} for a
+ * {@code Boolean} and {@code false} for a {@code boolean}. An {@code N} or {@code S} attribute read into a
+ * {@code Boolean}/{@code boolean} property, element or map value follows abacus-common's strict text rule: the text, without
+ * its leading and trailing whitespace padding, must be {@code 1}, {@code y}, {@code Y} or {@code true} (any ASCII case) for
+ * {@code true}, or {@code 0}, {@code -1}, {@code n}, {@code N} or {@code false} (any ASCII case) for {@code false}; so
+ * {@code S} {@code " Y"} or {@code " true "} converts, while any other text, such as {@code N} {@code 2} or {@code 1.0}, or
+ * {@code S} {@code yes} or {@code T}, throws {@link IllegalArgumentException}. Blank or empty {@code S} text is not an
+ * error: item mapping, direct ({@code M}) bean mapping and single-value reads ({@code toValue}/{@code toList} with
+ * {@code Boolean.class}) read it as {@code false} for both {@code Boolean} and {@code boolean}, while a bean in JSON
+ * context (an element of {@code L}, or an {@code S} attribute holding JSON text) reads it as {@code null} for a
+ * {@code Boolean} and {@code false} for a {@code boolean}. A native Java number (a decoded {@code Map} value converted to a
+ * bean) converts only as an {@code Integer}, {@code Short} or {@code Byte} {@code 1} (true), {@code 0} or {@code -1}
+ * (false); any other value or {@code Number} class is rejected with {@link IllegalArgumentException}. A JSON number token in
+ * the JSON text of an {@code S} attribute follows the same rule: {@code {"flag":1}} reads as {@code true}, {@code {"flag":0}}
+ * and {@code {"flag":-1}} as {@code false}, and {@code {"flag":1.0}} or {@code {"flag":2}} throw
+ * {@link IllegalArgumentException}.</p>
+ *
  * <p>The format caches are static because the inspected {@code BeanInfo}/{@code PropInfo} metadata is
  * SDK-independent; the two executors share them.</p>
  */
@@ -101,10 +118,22 @@ public abstract class DynamoDBExecutorBase {
      * The decoder supplies raw property values; a {@code null} item returns {@code null}.
      *
      * <p>JSON reads apply property formats, skip every SERIALIZE_ONLY property, and ignore unmatched dotted
-     * names. Item and direct bean mapping permit field-backed SERIALIZE_ONLY properties and resolve dotted
-     * paths. Direct beans additionally retain the full-Type conversions of the dependency's map-to-bean mapper;
-     * those conversions differ from both item scalar conversion and JSON reads.</p>
+     * names. Item and direct bean mapping assign SERIALIZE_ONLY properties that have a write path (a writable field or
+     * a setter), skip read-only properties ({@code PropInfo.isReadOnlyProperty}, including getter-only properties of an
+     * {@code @AccessFieldByMethod} bean), and resolve dotted paths. A read-only property is skipped in every context,
+     * whatever its declared direction: a read-only property can carry an explicit {@code DESERIALIZE_ONLY} only on an
+     * {@code @AccessFieldByMethod} field without a setter, and such a property is skipped too, by item and direct mapping and
+     * by a JSON-context element of {@code L}, since {@code isReadOnlyProperty} is tested before the direction. Only a bean parsed from the JSON
+     * text of an {@code S} attribute is read by abacus-common's JSON parser, which rejects such a property with
+     * {@link UnsupportedOperationException}. Direct beans additionally retain the full-Type
+     * conversions of the dependency's map-to-bean mapper; those conversions differ from both item scalar conversion and
+     * JSON reads.</p>
      *
+     * @param <T> the bean type
+     * @param <V> the type of the raw attribute values in {@code item}
+     * @param item the attributes or decoded native values keyed by attribute or property name; may be {@code null}
+     * @param targetType the complete (possibly parameterized) bean type to create
+     * @param valueDecoder decodes each raw value of {@code item} into its native Java value
      * @param context the conversion rules used by the enclosing value
      * @return the finished bean, or {@code null} for a {@code null} item
      * @throws RuntimeException if decoding, conversion, bean construction, or property assignment fails
@@ -146,8 +175,11 @@ public abstract class DynamoDBExecutorBase {
                 continue;
             }
 
-            // JSON reads skip every SERIALIZE_ONLY property; database mapping only skips computed ones.
-            if ((jsonRead || propInfo.field == null) && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
+            // JSON reads skip every SERIALIZE_ONLY property; database mapping only skips properties without a write path.
+            // isReadOnlyProperty (abacus-common 8.2+) also covers a field-backed getter-only property of an
+            // @AccessFieldByMethod bean, whose setPropValue throws UnsupportedOperationException; testing only
+            // field == null missed it and failed the whole item.
+            if (propInfo.isReadOnlyProperty || (jsonRead && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY)) {
                 continue;
             }
 
@@ -416,31 +448,31 @@ public abstract class DynamoDBExecutorBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: alternating name/value pairs, iteration order preserved.
-     * Map<String, Object> p = AnyUtil.asProps(new Object[] { "name", "Alice", "age", 30 });
+     * Map<String, Object> p = DynamoDBExecutorBase.asProps(new Object[] { "name", "Alice", "age", 30 });
      * // returns {name=Alice, age=30} (a LinkedHashMap)
      *
      * // Negative: a non-String name is rejected.
-     * AnyUtil.asProps(new Object[] { 100, "hundred" });
+     * DynamoDBExecutorBase.asProps(new Object[] { 100, "hundred" });
      * // throws IllegalArgumentException
      *
      * // Duplicate name: later value overwrites, original position retained.
-     * Map<String, Object> r = AnyUtil.asProps(new Object[] { "z", 1, "a", 2, "z", 3 });
+     * Map<String, Object> r = DynamoDBExecutorBase.asProps(new Object[] { "z", 1, "a", 2, "z", 3 });
      * // returns {z=3, a=2}
      *
      * // Edge: null array yields an empty map (not null).
-     * Map<String, Object> s = AnyUtil.asProps(null);
+     * Map<String, Object> s = DynamoDBExecutorBase.asProps(null);
      * // returns {} (an empty LinkedHashMap)
      *
      * // Edge: empty array yields an empty map.
-     * Map<String, Object> t = AnyUtil.asProps(new Object[0]);
+     * Map<String, Object> t = DynamoDBExecutorBase.asProps(new Object[0]);
      * // returns {}
      *
      * // Edge: a null value is allowed and preserved.
-     * Map<String, Object> u = AnyUtil.asProps(new Object[] { "key", null });
+     * Map<String, Object> u = DynamoDBExecutorBase.asProps(new Object[] { "key", null });
      * // returns {key=null}
      *
      * // Negative: odd-length array is rejected.
-     * AnyUtil.asProps(new Object[] { "name", "Alice", "age" });
+     * DynamoDBExecutorBase.asProps(new Object[] { "name", "Alice", "age" });
      * // throws IllegalArgumentException
      * }</pre>
      *
@@ -1195,7 +1227,17 @@ public abstract class DynamoDBExecutorBase {
         } else if (namingPolicy == NamingPolicy.CAMEL_CASE) {
             return propInfo.name;
         } else {
-            return namingPolicy.convert(propInfo.name);
+            // Called for every property of every written entity; NamingPolicy.convert is pure but uncached (~100 ns and
+            // an allocation per call). Keys are bean property names, so each cache is bounded by the bean metadata.
+            return attrNamePool.get(namingPolicy).computeIfAbsent(propInfo.name, namingPolicy::convert);
+        }
+    }
+
+    private static final Map<NamingPolicy, Map<String, String>> attrNamePool = new EnumMap<>(NamingPolicy.class);
+
+    static {
+        for (final NamingPolicy namingPolicy : NamingPolicy.values()) {
+            attrNamePool.put(namingPolicy, new ConcurrentHashMap<>());
         }
     }
 

@@ -1188,6 +1188,68 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
         assertEquals("test", result.get("name"));
     }
 
+    // ---- 2026-10-19 sliceC ----
+
+    @Test
+    public void testToAttributeValue_RejectsNonFiniteValuesOfEveryNumericType_sliceC() {
+        final java.util.concurrent.atomic.DoubleAdder nanAdder = new java.util.concurrent.atomic.DoubleAdder();
+        nanAdder.add(Double.NaN);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                // MutableDouble/MutableFloat/DoubleAdder are numeric types, but only Double and Float were checked: they produced N=NaN /
+                // N=Infinity, which DynamoDB rejects service-side instead of the documented IllegalArgumentException.
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> DynamoDBExecutor.toAttributeValue(com.landawn.abacus.util.MutableDouble.of(Double.NaN))),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> DynamoDBExecutor.toAttributeValue(com.landawn.abacus.util.MutableDouble.of(Double.POSITIVE_INFINITY))),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> DynamoDBExecutor.toAttributeValue(com.landawn.abacus.util.MutableFloat.of(Float.NEGATIVE_INFINITY))),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(nanAdder)),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("k", com.landawn.abacus.util.MutableDouble.of(Double.NaN))),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.Filters.eq("a", com.landawn.abacus.util.MutableFloat.of(Float.NaN))),
+                // Unchanged: Double/Float non-finite values keep their message; finite values of every numeric type are N attributes.
+                () -> assertEquals("DynamoDB numbers must be finite: NaN",
+                        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(Double.NaN)).getMessage()),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(Float.POSITIVE_INFINITY)),
+                () -> assertEquals("1.5", DynamoDBExecutor.toAttributeValue(com.landawn.abacus.util.MutableDouble.of(1.5)).n()),
+                () -> assertEquals("-0.0", DynamoDBExecutor.toAttributeValue(-0.0d).n()),
+                () -> assertEquals("1E+3", DynamoDBExecutor.toAttributeValue(new java.math.BigDecimal("1E+3")).n()),
+                // A wrapped NaN is not a numeric attribute: it is still stored as its S text.
+                () -> assertEquals("NaN", DynamoDBExecutor.toAttributeValue(java.util.Optional.of(Double.NaN)).s()));
+    }
+
+    @Test
+    public void testAsKey_NonEmptyBinaryKeysAreAcceptedWithoutConsumingBuffers_sliceC() {
+        final ByteBuffer buffer = ByteBuffer.wrap(new byte[] { 7, 8, 9 });
+        buffer.get();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertArrayEquals(new byte[] { 1 }, DynamoDBExecutor.asKey("k", new byte[] { 1 }).get("k").b().asByteArray()),
+                () -> assertArrayEquals(new byte[] { 8, 9 }, DynamoDBExecutor.asKey("k", buffer).get("k").b().asByteArray()),
+                () -> assertEquals(1, buffer.position()),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("k", ByteBuffer.allocate(0))),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("k", new byte[0])));
+    }
+
+    @Test
+    public void testToItem_SizedResultsKeepEveryAttributeInOrder_sliceC() {
+        final Map<String, Object> map = new LinkedHashMap<>();
+
+        for (int i = 0; i < 40; i++) {
+            map.put("a" + i, i);
+        }
+
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(map);
+        final Map<String, AttributeValueUpdate> updateItem = DynamoDBExecutor.toUpdateItem(map, NamingPolicy.SCREAMING_SNAKE_CASE);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(new ArrayList<>(map.keySet()), new ArrayList<>(item.keySet())),
+                () -> assertEquals("39", item.get("a39").n()), () -> assertEquals(40, updateItem.size()),
+                () -> assertEquals("A39", new ArrayList<>(updateItem.keySet()).get(39)), () -> assertTrue(DynamoDBExecutor.toItem(new HashMap<>()).isEmpty()),
+                // The returned maps stay mutable (Mapper.updateItem removes key attributes from them).
+                () -> assertDoesNotThrow(() -> DynamoDBExecutor.toItem(new HashMap<>()).put("x", AttributeValue.fromS("y"))),
+                () -> assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toItem(Map.of(1, 2))));
+    }
+
     public static class StringArrayEntity {
         private String id;
         private String[] tags;
@@ -1382,5 +1444,111 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
         public void setId(final byte[] id) {
             this.id = id;
         }
+    }
+
+    // ---- 2026-10-20 ddbfix ----
+
+    /**
+     * Pins the documented ClassCastException of toItem/toUpdateItem: a Map entity's keys become the attribute names as they
+     * are (or converted by the naming policy), never converted to text, so a non-String key fails on both overloads.
+     */
+    @Test
+    public void testToItemAndToUpdateItem_NonStringMapKeyThrowsClassCastException_ddbfix() {
+        final Map<Object, Object> nonStringKey = new HashMap<>();
+        nonStringKey.put(1, "a");
+
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toItem(nonStringKey));
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toItem(nonStringKey, NamingPolicy.SNAKE_CASE));
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toUpdateItem(nonStringKey));
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toUpdateItem(nonStringKey, NamingPolicy.SNAKE_CASE));
+
+        // String keys are attribute names, converted only by the naming policy.
+        assertEquals(Map.of("first_name", AttributeValue.fromS("a")), DynamoDBExecutor.toItem(Map.of("firstName", "a"), NamingPolicy.SNAKE_CASE));
+        assertEquals(Map.of("firstName", AttributeValue.fromS("a")), DynamoDBExecutor.toItem(Map.of("firstName", "a")));
+    }
+
+    /**
+     * extractData hands its freshly built columns to RowDataset.fromOwnedColumns (no defensive copy): the returned Dataset
+     * must still be a mutable, independent result, and two calls on the same response must not share column lists.
+     */
+    @Test
+    public void testExtractData_ReturnsMutableIndependentDataset_ddbfix() {
+        final QueryResponse queryResponse = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1"), "name", AttributeValue.fromS("Test1")),
+                        Map.of("id", AttributeValue.fromS("2"), "name", AttributeValue.fromS("Test2"))))
+                .build();
+        final ScanResponse scanResponse = ScanResponse.builder().items(queryResponse.items()).build();
+
+        final Dataset first = DynamoDBExecutor.extractData(queryResponse);
+        final Dataset second = DynamoDBExecutor.extractData(queryResponse);
+        final Dataset scanned = DynamoDBExecutor.extractData(scanResponse);
+
+        // Column order follows the first item's attribute iteration order (a Map.of), so address columns by name.
+        final int idColumn = first.getColumnIndex("id");
+        final int nameColumn = first.getColumnIndex("name");
+        final Object[] newRow = new Object[2];
+        newRow[idColumn] = "3";
+        newRow[nameColumn] = "Test3";
+
+        assertFalse(first.isFrozen());
+        first.set(0, idColumn, "changed");
+        first.addRow(newRow);
+        first.addColumn("extra", List.of("x", "y", "z"));
+
+        assertEquals(3, first.size());
+        assertEquals("changed", first.get(0, idColumn));
+        assertEquals("3", first.get(2, idColumn));
+        assertEquals(3, first.columnCount());
+
+        assertEquals(2, second.size());
+        assertEquals("1", second.get(0, second.getColumnIndex("id")));
+        assertEquals(2, second.columnCount());
+        assertEquals(List.of("1", "2"), second.getColumn("id"));
+        assertEquals(List.of("1", "2"), scanned.getColumn("id"));
+        assertFalse(scanned.isFrozen());
+        scanned.set(1, scanned.getColumnIndex("name"), "other");
+        assertEquals("Test2", second.get(1, second.getColumnIndex("name")));
+    }
+
+    /**
+     * Pins toList(QueryResponse/ScanResponse, Class) on responses without rows: no Items member and an empty Items list give
+     * an empty list, and a hand-built response holding a null item (which the SDK stores as an empty map, so no NPE can
+     * occur in the row mappers) yields an attribute-less bean, Map, array or collection, and is rejected for a single-value
+     * row type because it has no column; extractData gives that row null cells.
+     */
+    @Test
+    public void testToList_NoItemsEmptyItemsAndAttributeLessItem_ddbfix() {
+        assertEquals(List.of(), DynamoDBExecutor.toList(QueryResponse.builder().build(), TestEntity.class));
+        assertEquals(List.of(), DynamoDBExecutor.toList(QueryResponse.builder().items(List.of()).build(), TestEntity.class));
+        assertEquals(List.of(), DynamoDBExecutor.toList(ScanResponse.builder().build(), String.class));
+        assertEquals(List.of(), DynamoDBExecutor.toList(ScanResponse.builder().items(new ArrayList<>()).build(), Map.class));
+
+        final List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", AttributeValue.fromS("1")));
+        items.add(null);
+        final QueryResponse queryResponse = QueryResponse.builder().items(items).build();
+        final ScanResponse scanResponse = ScanResponse.builder().items(items).build();
+
+        assertEquals(2, queryResponse.items().size());
+        assertNotNull(queryResponse.items().get(1));
+        assertTrue(queryResponse.items().get(1).isEmpty());
+
+        final List<TestEntity> beans = DynamoDBExecutor.toList(queryResponse, TestEntity.class);
+        assertEquals(2, beans.size());
+        assertEquals("1", beans.get(0).getId());
+        assertNotNull(beans.get(1));
+        assertNull(beans.get(1).getId());
+
+        assertEquals(List.of(Map.of("id", "1"), Map.of()), DynamoDBExecutor.toList(scanResponse, Map.class));
+        assertEquals(0, ((Object[]) DynamoDBExecutor.toList(queryResponse, Object[].class).get(1)).length);
+        assertEquals(List.of(), DynamoDBExecutor.toList(queryResponse, List.class).get(1));
+        assertEquals(List.of("1"), DynamoDBExecutor.toList(queryResponse, 0, 1, String.class));
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(queryResponse, String.class)).getMessage()
+                .contains("the row has 0 columns"));
+
+        final Dataset dataset = DynamoDBExecutor.extractData(queryResponse);
+        assertEquals(2, dataset.size());
+        assertEquals("1", dataset.get(0, 0));
+        assertNull(dataset.get(1, 0));
     }
 }

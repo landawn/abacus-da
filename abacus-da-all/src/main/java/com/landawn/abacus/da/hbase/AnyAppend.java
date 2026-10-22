@@ -255,7 +255,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * byte[] keyBytes = Bytes.toBytes("user123");
-     * AnyAppend append = AnyAppend.of(keyBytes);             // returns a new AnyAppend; row = keyBytes
+     * AnyAppend append = AnyAppend.of(keyBytes);             // returns a new AnyAppend; row = a copy of keyBytes
      * append.addColumn("logs", "activity", "login;");        // returns the same AnyAppend (for chaining)
      *
      * AnyAppend.of((byte[]) null);                           // throws IllegalArgumentException (null row key)

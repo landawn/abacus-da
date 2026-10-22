@@ -370,4 +370,109 @@ public class CassandraUdtTimeRegressionTest {
             time = value;
         }
     }
+
+    // ---- 2026-10-20 cassfix ----
+
+    @Test
+    void timestampUdtFieldsAcceptJavaTimeValuesAndReadIntoLocalDateTime_cassfix() {
+        // The driver has no codec for LocalDateTime/ZonedDateTime/OffsetDateTime on a TIMESTAMP field, so setUdtField threw
+        // CodecNotFoundException although the same value bound to a timestamp column converts; and decoding the field's Instant into
+        // a LocalDateTime bean property failed in N.convert (DateTimeParseException on the trailing 'Z').
+        final UserDefinedType type = fieldType(DataTypes.TIMESTAMP, new DefaultCodecRegistry("timestamp-udt"));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(type, Map.class);
+        final CassandraExecutor.UDTCodec<List> listCodec = CassandraExecutor.UDTCodec.create(type, List.class);
+        final CassandraExecutor.UDTCodec<LocalDateTimedValue> beanCodec = CassandraExecutor.UDTCodec.create(type, LocalDateTimedValue.class);
+        final CassandraExecutor.UDTCodec<ZonedDateTimedValue> zonedBeanCodec = CassandraExecutor.UDTCodec.create(type, ZonedDateTimedValue.class);
+        final CassandraExecutor.UDTCodec<OffsetDateTimedValue> offsetBeanCodec = CassandraExecutor.UDTCodec.create(type, OffsetDateTimedValue.class);
+        final LocalDateTime local = LocalDateTime.of(2026, 10, 13, 12, 34, 56, 123_000_000);
+        final Instant localInstant = local.atZone(ZoneId.systemDefault()).toInstant(); // the JVM default zone, not a hard-coded one
+        final Instant instant = Instant.parse("2026-10-13T12:34:56.123Z");
+        final ZonedDateTime tokyo = instant.atZone(ZoneId.of("Asia/Tokyo"));
+        final var offset = instant.atOffset(ZoneOffset.ofHours(5));
+
+        // 2026-10-20 rounify: the fallback covered only the java.time date-time types; a Date, java.sql.Timestamp, Calendar or Long
+        // (epoch milliseconds), which bound to a timestamp column convert, still failed as a UDT field with CodecNotFoundException.
+        for (final Map.Entry<Object, Instant> example : List.<Map.Entry<Object, Instant>> of(Map.entry(local, localInstant), Map.entry(tokyo, instant),
+                Map.entry(offset, instant), Map.entry(instant, instant), Map.entry(Date.from(instant), instant),
+                Map.entry(java.sql.Timestamp.from(instant), instant), Map.entry(calendar(instant, "GMT+05:30"), instant),
+                Map.entry(instant.toEpochMilli(), instant))) {
+            final Object value = example.getKey();
+            final Instant expected = example.getValue();
+            final ByteBuffer encoded = mapCodec.encode(Map.of("time", value), ProtocolVersion.V4);
+
+            assertEquals(expected, mapCodec.decode(encoded, ProtocolVersion.V4).get("time"), value.getClass().getName());
+            assertEquals(expected, listCodec.decode(listCodec.encode(List.of(value), ProtocolVersion.V4), ProtocolVersion.V4).get(0));
+            final LocalDateTime decodedLocal = beanCodec.decode(encoded, ProtocolVersion.V4).getTime();
+            final ZonedDateTime decodedZoned = zonedBeanCodec.decode(encoded, ProtocolVersion.V4).getTime();
+            final java.time.OffsetDateTime decodedOffset = offsetBeanCodec.decode(encoded, ProtocolVersion.V4).getTime();
+            assertEquals(LocalDateTime.ofInstant(expected, ZoneId.systemDefault()), decodedLocal);
+            // A zoned property is read in the JVM default zone (not the accidental UTC of N.convert), so it agrees with the LocalDateTime read.
+            assertEquals(expected, decodedZoned.toInstant());
+            assertEquals(ZoneId.systemDefault(), decodedZoned.getZone());
+            assertEquals(decodedLocal, decodedZoned.toLocalDateTime());
+            // So is an OffsetDateTime property: the same instant at the default zone's offset for it.
+            assertEquals(expected, decodedOffset.toInstant());
+            assertEquals(ZoneId.systemDefault().getRules().getOffset(expected), decodedOffset.getOffset());
+            assertEquals(decodedLocal, decodedOffset.toLocalDateTime());
+        }
+
+        final OffsetDateTimedValue offsetBean = new OffsetDateTimedValue();
+        offsetBean.setTime(offset);
+        assertEquals(instant, offsetBeanCodec.serialize(offsetBean).getInstant(0));
+        assertEquals(offset.withOffsetSameInstant(ZoneId.systemDefault().getRules().getOffset(instant)),
+                roundTrip(type, OffsetDateTimedValue.class, offsetBean).getTime());
+
+        // A value the Instant conversion rejects keeps the driver's lookup failure (the conversion failure is attached as suppressed).
+        final CodecNotFoundException rejected = assertThrows(CodecNotFoundException.class,
+                () -> mapCodec.encode(Map.of("time", "not a timestamp"), ProtocolVersion.V4));
+        assertEquals(DataTypes.TIMESTAMP, rejected.getCqlType());
+        assertEquals(GenericType.of(String.class), rejected.getJavaType());
+        assertEquals(1, rejected.getSuppressed().length);
+        assertTrue(rejected.getSuppressed()[0] instanceof java.time.DateTimeException);
+
+        final LocalDateTimedValue bean = new LocalDateTimedValue();
+        bean.setTime(local);
+        assertEquals(localInstant, beanCodec.serialize(bean).getInstant(0));
+        assertEquals(local, roundTrip(type, LocalDateTimedValue.class, bean).getTime());
+        final ZonedDateTimedValue zonedBean = new ZonedDateTimedValue();
+        zonedBean.setTime(tokyo);
+        assertEquals(tokyo.toInstant(), zonedBeanCodec.serialize(zonedBean).getInstant(0));
+        assertEquals(tokyo.withZoneSameInstant(ZoneId.systemDefault()), roundTrip(type, ZonedDateTimedValue.class, zonedBean).getTime());
+    }
+
+    public static final class LocalDateTimedValue {
+        private LocalDateTime time;
+
+        public LocalDateTime getTime() {
+            return time;
+        }
+
+        public void setTime(final LocalDateTime value) {
+            time = value;
+        }
+    }
+
+    public static final class ZonedDateTimedValue {
+        private ZonedDateTime time;
+
+        public ZonedDateTime getTime() {
+            return time;
+        }
+
+        public void setTime(final ZonedDateTime value) {
+            time = value;
+        }
+    }
+
+    public static final class OffsetDateTimedValue {
+        private java.time.OffsetDateTime time;
+
+        public java.time.OffsetDateTime getTime() {
+            return time;
+        }
+
+        public void setTime(final java.time.OffsetDateTime value) {
+            time = value;
+        }
+    }
 }

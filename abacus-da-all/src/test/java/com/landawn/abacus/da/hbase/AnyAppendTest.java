@@ -345,4 +345,19 @@ public class AnyAppendTest extends TestBase {
         AnyAppend a = AnyAppend.of("row");
         assertSame(a.val(), a.val());
     }
+
+    // ---- 2026-10-20 sliceF ----
+
+    /** Pins the of(byte[]) doc: the row is a copy of the key array, not the array itself. */
+    @Test
+    public void testOf_byteArrayRowKey_rowIsACopyOfTheArray_sliceF() {
+        final byte[] keyBytes = Bytes.toBytes("user123");
+        final AnyAppend append = AnyAppend.of(keyBytes);
+
+        keyBytes[0] = 'X';
+
+        assertNotSame(keyBytes, append.getRow());
+        assertArrayEquals(Bytes.toBytes("user123"), append.getRow());
+        assertArrayEquals(Bytes.toBytes("user123"), append.val().getRow());
+    }
 }

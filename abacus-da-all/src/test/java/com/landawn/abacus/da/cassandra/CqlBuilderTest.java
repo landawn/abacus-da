@@ -352,6 +352,326 @@ public class CqlBuilderTest extends TestBase {
         assertNotNull(SCCB.count("t").build().query());
     }
 
+    // ---- 2026-10-19 sliceI ----
+
+    /**
+     * abacus-query 4.9.5 inlines a Date/Calendar as zone-less JVM-local text, which Cassandra reads in the coordinator's
+     * time zone (a live insert from a UTC-8 JVM stored the instant 8 hours early). Raw CQL must carry the UTC instant.
+     */
+    @Test
+    public void test_sliceI_rawTimestampLiteralsAreUtcInstants() {
+        final java.util.TimeZone defaultZone = java.util.TimeZone.getDefault();
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Los_Angeles"));
+
+        try {
+            final long millis = 1700000000123L; // 2023-11-14T22:13:20.123Z
+            final String utc = "'2023-11-14T22:13:20.123Z'";
+            final java.sql.Timestamp timestamp = new java.sql.Timestamp(millis);
+            timestamp.setNanos(123456789);
+            final java.util.Calendar tokyo = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo"));
+            tokyo.setTimeInMillis(millis);
+            final java.time.ZonedDateTime zoned = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.of("Asia/Tokyo"));
+            final java.util.Map<String, Object> props = new java.util.LinkedHashMap<>();
+            props.put("id", 1);
+            props.put("ts", new java.util.Date(millis));
+
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertEquals("INSERT INTO t (id, ts) VALUES (1, " + utc + ")", SCCB.insert(props).into("t").build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = " + utc, SCCB.select("id").from("t").where(Filters.eq("ts", timestamp)).build().query()),
+                    () -> assertEquals("UPDATE t SET ts = " + utc + " WHERE id = 1",
+                            SCCB.update("t").set(N.asMap("ts", tokyo)).where(Filters.eq("id", 1)).build().query()),
+                    () -> assertEquals("DELETE FROM t WHERE id = 1 IF ts = " + utc,
+                            SCCB.deleteFrom("t").where(Filters.eq("id", 1)).onlyIf(Filters.eq("ts", zoned)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts IN ('2023-11-14T22:13:20Z', " + utc + ")",
+                            SCCB.select("id").from("t").where(Filters.in("ts", N.asList(new java.util.Date(1700000000000L), tokyo))).build().query()),
+                    () -> assertEquals("BEGIN BATCH INSERT INTO t (id, ts) VALUES (1, " + utc + "); APPLY BATCH",
+                            SCCB.batchInsert(N.asList(props)).into("t").build().query()),
+                    // java.sql.Date/Time keep the parent's local date / time-of-day text, which CQL date/time columns accept.
+                    () -> assertEquals("SELECT id FROM t WHERE d = '2023-11-14' AND tm = '14:13:20'",
+                            SCCB.select("id")
+                                    .from("t")
+                                    .where(Filters.and(Filters.eq("d", new java.sql.Date(millis)), Filters.eq("tm", new java.sql.Time(millis))))
+                                    .build()
+                                    .query()),
+                    // Parameterized builders bind the value itself, unchanged.
+                    () -> assertEquals(N.asList(timestamp), PSC.select("id").from("t").where(Filters.eq("ts", timestamp)).build().parameters()));
+        } finally {
+            java.util.TimeZone.setDefault(defaultZone);
+        }
+    }
+
+    // ---- 2026-10-19 verify3 ----
+
+    /** A raw ZonedDateTime literal has the documented millisecond form; it carried the nanosecond fraction before. */
+    @Test
+    public void test_verify3_rawZonedDateTimeLiteralIsTruncatedToMillis() {
+        final java.time.ZonedDateTime zoned = java.time.Instant.ofEpochSecond(1700000000L, 123_999_999).atZone(java.time.ZoneId.of("Asia/Tokyo"));
+        final java.time.ZonedDateTime beforeEpoch = java.time.Instant.ofEpochSecond(-1L, 999_500_000).atZone(java.time.ZoneOffset.UTC);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT id FROM t WHERE ts = '2023-11-14T22:13:20.123Z'",
+                        SCCB.select("id").from("t").where(Filters.eq("ts", zoned)).build().query()),
+                () -> assertEquals("SELECT id FROM t WHERE ts = '1969-12-31T23:59:59.999Z'",
+                        SCCB.select("id").from("t").where(Filters.eq("ts", beforeEpoch)).build().query()));
+    }
+
+    // ---- 2026-10-20 cassfix ----
+
+    /**
+     * A raw Instant/OffsetDateTime fell through to the parent, which inlines its toString() with a nanosecond fraction
+     * ('2023-11-14T22:13:20.123456789Z'; Cassandra 5.0 accepts and truncates it, so this is consistency with the documented
+     * millisecond form); a raw LocalDateTime rendered as zone-less text ('2023-11-14T14:13:20.123456789'), read in the
+     * coordinator's zone, which shifted the stored instant. They now render the millisecond UTC instant; the
+     * LocalDateTime denotes the instant a bound LocalDateTime stores (its wall-clock time in the JVM default zone).
+     */
+    @Test
+    public void test_cassfix_rawJavaTimeTimestampLiterals() {
+        final java.util.TimeZone defaultZone = java.util.TimeZone.getDefault();
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Los_Angeles"));
+
+        try {
+            final java.time.Instant instant = java.time.Instant.ofEpochSecond(1700000000L, 123_456_789); // 2023-11-14T22:13:20.123456789Z
+            final java.time.OffsetDateTime offset = instant.atOffset(java.time.ZoneOffset.ofHours(5)); // 2023-11-15T03:13:20.123456789+05:00
+            final java.time.LocalDateTime local = java.time.LocalDateTime.of(2023, 11, 14, 14, 13, 20, 123_456_789); // 14:13 PST = 22:13Z
+            final java.time.ZonedDateTime zoned = instant.atZone(java.time.ZoneId.of("Asia/Tokyo"));
+            final String utc = "'2023-11-14T22:13:20.123Z'";
+            final java.util.Map<String, Object> props = new java.util.LinkedHashMap<>();
+            props.put("id", 1);
+            props.put("ts", instant);
+            final java.util.Map<String, Object> setProps = new java.util.LinkedHashMap<>();
+            setProps.put("ts", offset);
+            final java.util.Map<String, Object> localProps = new java.util.LinkedHashMap<>();
+            localProps.put("id", 1);
+            localProps.put("ts", local);
+
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertEquals("SELECT id FROM t WHERE ts = " + utc, SCCB.select("id").from("t").where(Filters.eq("ts", instant)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = " + utc, SCCB.select("id").from("t").where(Filters.eq("ts", offset)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = " + utc, SCCB.select("id").from("t").where(Filters.eq("ts", local)).build().query()),
+                    () -> assertEquals("INSERT INTO t (id, ts) VALUES (1, " + utc + ")", SCCB.insert(props).into("t").build().query()),
+                    () -> assertEquals("INSERT INTO t (id, ts) VALUES (1, " + utc + ")", SCCB.insert(localProps).into("t").build().query()),
+                    () -> assertEquals("UPDATE t SET ts = " + utc + " WHERE id = 1", SCCB.update("t").set(setProps).where(Filters.eq("id", 1)).build().query()),
+                    () -> assertEquals("UPDATE t SET ts = " + utc + " WHERE id = 1",
+                            SCCB.update("t").set(N.asMap("ts", local)).where(Filters.eq("id", 1)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts IN (" + utc + ", " + utc + ", '2023-11-14T22:13:20Z', " + utc + ")",
+                            SCCB.select("id")
+                                    .from("t")
+                                    .where(Filters.in("ts", N.asList(zoned, instant, java.time.Instant.ofEpochSecond(1700000000L), local)))
+                                    .build()
+                                    .query()),
+                    () -> assertEquals("DELETE FROM t WHERE id = 1 IF ts = " + utc,
+                            SCCB.deleteFrom("t").where(Filters.eq("id", 1)).onlyIf(Filters.eq("ts", offset)).build().query()),
+                    // Parameterized builders bind the values themselves, unchanged.
+                    () -> assertEquals(N.asList(instant, offset, local),
+                            PSC.select("id")
+                                    .from("t")
+                                    .where(Filters.and(Filters.eq("a", instant), Filters.eq("b", offset), Filters.eq("c", local)))
+                                    .build()
+                                    .parameters()));
+        } finally {
+            java.util.TimeZone.setDefault(defaultZone);
+        }
+    }
+
+    // ---- 2026-10-21 fixQ ----
+
+    /**
+     * Instant.toString() renders a UTC year outside 0000-9999 with a sign ('+10000-01-01T00:00:00Z', '-0001-01-01T00:00:00Z');
+     * Cassandra 5.0 rejects that quoted literal, and the unsigned year 0000 too ("Unable to parse a date/time from ..."), while
+     * it accepts the bare epoch-millisecond integer for the whole long range. Every raw instant-valued branch
+     * (Date, Calendar, Instant, OffsetDateTime, ZonedDateTime and LocalDateTime) now renders the integer outside UTC years
+     * 0001-9999 and keeps the quoted ISO form inside it; the range is judged on the UTC year, not the local one.
+     */
+    @Test
+    public void test_fixQ_rawTimestampLiteralOutsideFourDigitYearsRendersEpochMillis() {
+        final java.util.TimeZone defaultZone = java.util.TimeZone.getDefault();
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Los_Angeles"));
+
+        try {
+            final java.time.Instant lastIso = java.time.Instant.parse("9999-12-31T23:59:59.999Z");
+            final java.time.Instant firstIso = java.time.Instant.parse("0001-01-01T00:00:00Z");
+            final java.time.Instant year10000 = java.time.Instant.parse("+10000-01-01T00:00:00Z"); // 253402300800000
+            final java.time.Instant yearMinus1 = java.time.Instant.parse("-0001-01-01T00:00:00Z"); // -62198755200000
+            final java.time.Instant year0 = java.time.Instant.parse("0000-12-31T23:59:59.999Z"); // -62135596800001
+            final java.util.Date date = new java.util.Date(253402300800000L);
+            final java.util.Calendar calendar = java.util.Calendar.getInstance();
+            calendar.setTimeInMillis(-62198755200000L);
+            final java.time.ZonedDateTime zoned = year10000.atZone(java.time.ZoneId.of("Asia/Tokyo")); // +10000-01-01T09:00+09:00
+            final java.time.OffsetDateTime offset = yearMinus1.atOffset(java.time.ZoneOffset.ofHours(5));
+            final java.time.LocalDateTime local = java.time.LocalDateTime.of(9999, 12, 31, 16, 0); // 16:00 PST on 9999-12-31 = +10000-01-01T00:00Z
+            final java.util.Map<String, Object> props = new java.util.LinkedHashMap<>();
+            props.put("id", 1);
+            props.put("ts", year10000);
+            final java.util.Map<String, Object> dateProps = new java.util.LinkedHashMap<>();
+            dateProps.put("id", 1);
+            dateProps.put("ts", date);
+            final java.util.Map<String, Object> localProps = new java.util.LinkedHashMap<>();
+            localProps.put("id", 1);
+            localProps.put("ts", local);
+
+            org.junit.jupiter.api.Assertions.assertAll(
+                    // Inside 0001-9999 the quoted ISO form is unchanged, at both ends of the range.
+                    () -> assertEquals("SELECT id FROM t WHERE ts = '9999-12-31T23:59:59.999Z'",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", lastIso)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = '0001-01-01T00:00:00Z'",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", firstIso)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = '9999-12-31T23:59:59.999Z'",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", new java.util.Date(253402300799999L))).build().query()),
+                    // Outside it, the bare epoch-millisecond integer, for every instant-valued input type.
+                    () -> assertEquals("SELECT id FROM t WHERE ts = 253402300800000",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", year10000)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = -62198755200000",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", yearMinus1)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = -62135596800001",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", year0)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = 253402300800000",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", date)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = -62198755200000",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", calendar)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = 253402300800000",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", zoned)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = -62198755200000",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", offset)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts = 253402300800000",
+                            SCCB.select("id").from("t").where(Filters.eq("ts", local)).build().query()),
+                    () -> assertEquals("SELECT id FROM t WHERE ts IN (253402300800000, '9999-12-31T23:59:59.999Z', -62198755200000)",
+                            SCCB.select("id").from("t").where(Filters.in("ts", N.asList(zoned, lastIso, calendar))).build().query()),
+                    () -> assertEquals("INSERT INTO t (id, ts) VALUES (1, 253402300800000)", SCCB.insert(props).into("t").build().query()),
+                    () -> assertEquals("INSERT INTO t (id, ts) VALUES (1, 253402300800000)", SCCB.insert(dateProps).into("t").build().query()),
+                    () -> assertEquals("INSERT INTO t (id, ts) VALUES (1, 253402300800000)", SCCB.insert(localProps).into("t").build().query()),
+                    () -> assertEquals("UPDATE t SET ts = -62198755200000 WHERE id = 1",
+                            SCCB.update("t").set(N.asMap("ts", yearMinus1)).where(Filters.eq("id", 1)).build().query()),
+                    () -> assertEquals("DELETE FROM t WHERE id = 1 IF ts = 253402300800000",
+                            SCCB.deleteFrom("t").where(Filters.eq("id", 1)).onlyIf(Filters.eq("ts", date)).build().query()),
+                    // Beyond the 64-bit millisecond range no CQL timestamp exists: rejected as an invalid argument, not an ArithmeticException.
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> SCCB.select("id").from("t").where(Filters.eq("ts", java.time.Instant.MAX)).build()),
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> SCCB.select("id").from("t").where(Filters.eq("ts", java.time.Instant.MIN)).build()),
+                    // Within LocalDate's range (so the value itself is constructible) but past the long millisecond range.
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> SCCB.select("id")
+                                    .from("t")
+                                    .where(Filters.eq("ts", java.time.ZonedDateTime.of(999_999_999, 12, 31, 0, 0, 0, 0, java.time.ZoneOffset.UTC)))
+                                    .build()),
+                    // Parameterized builders bind the values themselves, unchanged.
+                    () -> assertEquals(N.asList(year10000, date, local),
+                            PSC.select("id")
+                                    .from("t")
+                                    .where(Filters.and(Filters.eq("a", year10000), Filters.eq("b", date), Filters.eq("c", local)))
+                                    .build()
+                                    .parameters()));
+        } finally {
+            java.util.TimeZone.setDefault(defaultZone);
+        }
+    }
+
+    /**
+     * A heap buffer sliced out of the middle of an array has a non-zero arrayOffset(); the hex must start at
+     * arrayOffset + position and stop at arrayOffset + limit, and the buffer's position/limit must be left unchanged.
+     * A read-only buffer has no accessible array and takes the absolute-get path.
+     */
+    @Test
+    public void test_cassfix_rawBlobLiteralHonoursArrayOffsetAndReadOnlyBuffers() {
+        final byte[] backing = { 1, 2, 3, 4, 5, 6 };
+        final java.nio.ByteBuffer slice = java.nio.ByteBuffer.wrap(backing, 2, 3).slice(); // array offset 2 -> bytes 3, 4, 5
+        slice.position(1); // remaining: 4, 5
+        final java.nio.ByteBuffer readOnly = java.nio.ByteBuffer.wrap(backing, 1, 4).slice().asReadOnlyBuffer(); // bytes 2, 3, 4, 5
+        readOnly.position(1).limit(3); // remaining: 3, 4
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(slice.hasArray()), () -> assertEquals(2, slice.arrayOffset()),
+                () -> assertEquals("SELECT id FROM t WHERE b = 0x0405", SCCB.select("id").from("t").where(Filters.eq("b", slice)).build().query()),
+                () -> assertEquals(1, slice.position()), () -> assertEquals(3, slice.limit()), () -> assertFalse(readOnly.hasArray()),
+                () -> assertEquals("SELECT id FROM t WHERE b = 0x0304", SCCB.select("id").from("t").where(Filters.eq("b", readOnly)).build().query()),
+                () -> assertEquals(1, readOnly.position()), () -> assertEquals(3, readOnly.limit()), () -> assertEquals("UPDATE t SET b = 0x0405 WHERE id = 1",
+                        SCCB.update("t").set(N.asMap("b", slice)).where(Filters.eq("id", 1)).build().query()));
+    }
+
+    // ---- 2026-10-19 cqlfix ----
+
+    /**
+     * Raw CQL rendered a byte[] as '[1, 2, -1]', a ByteBuffer as '' or a Base64 fragment, and an InetAddress as
+     * '/127.0.0.1'; Cassandra rejects all of them for blob/inet columns ("Invalid STRING constant ... of type blob").
+     * A blob is the constant 0x&lt;hex&gt; and an inet is the quoted host address (both verified on live Cassandra).
+     */
+    @Test
+    public void test_cqlfix_rawBlobAndInetLiterals() throws Exception {
+        final byte[] bytes = { 1, 2, (byte) 0xff };
+        final java.nio.ByteBuffer heap = java.nio.ByteBuffer.wrap(new byte[] { 9, 8, 7, 6 });
+        heap.position(1);
+        final java.nio.ByteBuffer direct = java.nio.ByteBuffer.allocateDirect(2).put(new byte[] { 0x10, (byte) 0xab }).flip();
+        final java.nio.ByteBuffer readOnlySlice = java.nio.ByteBuffer.wrap(new byte[] { 5, 6, 7 }, 1, 2).slice().asReadOnlyBuffer();
+        final java.net.InetAddress v4 = java.net.InetAddress.getByName("127.0.0.1");
+        final java.net.InetAddress v6 = java.net.InetAddress.getByName("::1");
+        final java.util.Map<String, Object> props = new java.util.LinkedHashMap<>();
+        props.put("id", 1);
+        props.put("b", bytes);
+        props.put("ip", v4);
+        final java.util.Map<String, Object> setProps = new java.util.LinkedHashMap<>();
+        setProps.put("b", new byte[0]);
+        setProps.put("ip", v6);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("INSERT INTO t (id, b, ip) VALUES (1, 0x0102ff, '127.0.0.1')", SCCB.insert(props).into("t").build().query()),
+                () -> assertEquals("BEGIN BATCH INSERT INTO t (id, b, ip) VALUES (1, 0x0102ff, '127.0.0.1'); APPLY BATCH",
+                        SCCB.batchInsert(N.asList(props)).into("t").build().query()),
+                () -> assertEquals("UPDATE t SET b = 0x, ip = '0:0:0:0:0:0:0:1' WHERE id = 1",
+                        SCCB.update("t").set(setProps).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("SELECT id FROM t WHERE b = 0x080706", SCCB.select("id").from("t").where(Filters.eq("b", heap)).build().query()),
+                () -> assertEquals(1, heap.position()),
+                () -> assertEquals("SELECT id FROM t WHERE b IN (0x10ab, 0x0607)",
+                        SCCB.select("id").from("t").where(Filters.in("b", N.asList(direct, readOnlySlice))).build().query()),
+                () -> assertEquals(0, direct.position()), () -> assertEquals(0, readOnlySlice.position()),
+                () -> assertEquals("DELETE FROM t WHERE id = 1 IF ip = '0:0:0:0:0:0:0:1'",
+                        SCCB.deleteFrom("t").where(Filters.eq("id", 1)).onlyIf(Filters.eq("ip", v6)).build().query()),
+                () -> {
+                    final String cql = ACCB.select("id").from("t").where(Filters.and(Filters.eq("b", bytes), Filters.eq("ip", v4))).build().query();
+                    assertTrue(cql.endsWith(" = 0x0102ff AND IP = '127.0.0.1'"), cql);
+                }, () -> {
+                    final String cql = LCCB.select("id").from("t").where(Filters.eq("b", java.nio.ByteBuffer.allocate(0))).build().query();
+                    assertTrue(cql.endsWith(" = 0x"), cql);
+                },
+                // Parameterized builders bind the values themselves (the condition keeps its own copy of a byte[]).
+                () -> {
+                    final SP sp = PSC.select("id").from("t").where(Filters.and(Filters.eq("b", bytes), Filters.eq("c", heap), Filters.eq("ip", v4))).build();
+                    assertEquals("SELECT id FROM t WHERE b = ? AND c = ? AND ip = ?", sp.query());
+                    org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, (byte[]) sp.parameters().get(0));
+                    org.junit.jupiter.api.Assertions.assertSame(heap, sp.parameters().get(1));
+                    org.junit.jupiter.api.Assertions.assertSame(v4, sp.parameters().get(2));
+                });
+    }
+
+    // ---- 2026-10-20 verify8 ----
+
+    /**
+     * A scoped IPv6 address's host address carries a "%zone" suffix. Live Cassandra rejects an interface-name zone
+     * ('fe80:0:0:0:0:0:0:1%ethernet_32769', even '%lo'/'%eth0': "Unable to make inet address from ...") and drops a
+     * numeric one; a bound InetAddress sends only the 16 address bytes. The literal must be the unscoped address.
+     */
+    @Test
+    public void test_verify8_rawScopedIpv6LiteralDropsZone() throws Exception {
+        final byte[] linkLocal = java.net.InetAddress.getByName("fe80::1").getAddress();
+        final java.net.InetAddress numericScope = java.net.Inet6Address.getByAddress(null, linkLocal, 1);
+        assertEquals("fe80:0:0:0:0:0:0:1%1", numericScope.getHostAddress());
+
+        assertEquals("SELECT id FROM t WHERE ip = 'fe80:0:0:0:0:0:0:1'", SCCB.select("id").from("t").where(Filters.eq("ip", numericScope)).build().query());
+
+        // An interface-name zone (as on addresses enumerated from NetworkInterface), when this machine has one.
+        for (final java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+            final java.net.InetAddress named;
+
+            try {
+                named = java.net.Inet6Address.getByAddress(null, linkLocal, ni);
+            } catch (final java.net.UnknownHostException e) {
+                continue; // no link-local IPv6 address on this interface
+            }
+
+            assertTrue(named.getHostAddress().contains("%"), named.getHostAddress());
+            assertEquals("SELECT id FROM t WHERE ip = 'fe80:0:0:0:0:0:0:1'", SCCB.select("id").from("t").where(Filters.eq("ip", named)).build().query());
+            break;
+        }
+    }
+
     // ---- 2026-10-02 sliceQ ----
 
     /** Bean whose primary key is declared only via {@link CassandraExecutorBase#registerKeys(Class, java.util.Collection)}. */
@@ -405,5 +725,31 @@ public class CqlBuilderTest extends TestBase {
         public void setName(final String name) {
             this.name = name;
         }
+    }
+
+    // ---- 2026-10-21 cassfix2 ----
+
+    /**
+     * Pins the Dsl.forDialect Javadoc: a KEBAB_CASE dialect is accepted, but every statement method of the returned Dsl
+     * throws IllegalArgumentException, because hyphenated names are not valid unquoted CQL identifiers.
+     */
+    @Test
+    public void cassfix2_kebabCaseDsl_isAcceptedButEveryStatementMethodThrows() {
+        final com.landawn.abacus.query.SqlDialect kebab = com.landawn.abacus.query.SqlDialect.builder()
+                .namingPolicy(com.landawn.abacus.util.NamingPolicy.KEBAB_CASE)
+                .sqlPolicy(com.landawn.abacus.query.SqlDialect.SqlPolicy.PARAMETERIZED_SQL)
+                .build();
+        final CqlBuilder.Dsl dsl = CqlBuilder.Dsl.forDialect(kebab);
+
+        assertNotNull(dsl);
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> dsl.select("firstName").from("t").build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> dsl.select("firstName").from(Account.class).build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> dsl.renderCondition(Filters.eq("firstName", 1), null).build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> dsl.renderCondition(Filters.eq("firstName", 1), Account.class).build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> dsl.insert("firstName").into("t").build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> dsl.update("t").set("firstName").where(Filters.eq("id", 1)).build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> dsl.deleteFrom("t").where(Filters.eq("firstName", 1)).build().query()),
+                // Predefined dialects are unaffected.
+                () -> assertEquals("SELECT first_name AS \"firstName\" FROM t", PSC.select("firstName").from("t").build().query()));
     }
 }

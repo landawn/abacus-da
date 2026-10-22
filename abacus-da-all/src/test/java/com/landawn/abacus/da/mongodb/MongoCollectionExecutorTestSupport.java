@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.util.Collection;
 import java.util.List;
 
 import org.bson.Document;
@@ -95,12 +94,8 @@ abstract class MongoCollectionExecutorTestSupport extends MockitoTestBase {
     }
 
     protected void stubFindRows(final List<Document> rows) {
-        // doAnswer form: re-stubbing via when(mock.into(any())) would invoke the previous answer with a null target.
-        org.mockito.Mockito.doAnswer(invocation -> {
-            final Collection<Object> target = invocation.getArgument(0);
-            target.addAll(rows);
-            return target;
-        }).when(mockFindIterable).into(any());
+        // iterator()/cursor() for paths that stream the cursor, into(...) for the ones that collect it.
+        MongoIterableStubs.stubRows(mockFindIterable, rows);
     }
 
     public static class DottedRow {

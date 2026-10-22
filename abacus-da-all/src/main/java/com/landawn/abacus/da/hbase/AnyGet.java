@@ -364,7 +364,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param family the column family name to retrieve; encoded via
      *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
-     *               tolerated and forwarded to the underlying {@link Get} as a {@code null} array)
+     *               tolerated and forwarded to the underlying {@link Get} as a {@code null} array, but
+     *               HBase cannot serialize a {@code null} family: executing the get then fails with a
+     *               {@code NullPointerException} while the request is built)
      * @return this AnyGet instance for method chaining
      * @see #addColumn(String, String)
      * @see #addFamily(byte[])
@@ -391,7 +393,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * }</pre>
      *
      * @param family the column family name as a byte array; forwarded to the underlying {@link Get}
-     *               (a {@code null} array is tolerated)
+     *               (a {@code null} array is tolerated here, but HBase cannot serialize it: executing
+     *               the get then fails with a {@code NullPointerException} while the request is built)
      * @return this AnyGet instance for method chaining
      * @see #addFamily(String)
      * @see #addColumn(byte[], byte[])
@@ -420,7 +423,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param family the column family name; encoded via
      *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
-     *               tolerated and forwarded to the underlying {@link Get} as a {@code null} array)
+     *               tolerated and forwarded to the underlying {@link Get} as a {@code null} array, but
+     *               HBase cannot serialize a {@code null} family: executing the get then fails with a
+     *               {@code NullPointerException} while the request is built)
      * @param qualifier the column qualifier within the family; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null}
      *                  qualifier is tolerated and stored by HBase as the empty qualifier)
@@ -450,7 +455,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * }</pre>
      *
      * @param family the column family name as a byte array; forwarded to the underlying {@link Get}
-     *               (a {@code null} array is tolerated)
+     *               (a {@code null} array is tolerated here, but HBase cannot serialize it: executing
+     *               the get then fails with a {@code NullPointerException} while the request is built)
      * @param qualifier the column qualifier as a byte array (a {@code null} array is tolerated and
      *                  stored by HBase as the empty qualifier)
      * @return this AnyGet instance for method chaining

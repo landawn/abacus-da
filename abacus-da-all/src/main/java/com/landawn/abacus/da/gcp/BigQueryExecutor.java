@@ -42,7 +42,6 @@ import com.google.cloud.bigquery.QueryJobConfiguration;
 import com.google.cloud.bigquery.QueryParameterValue;
 import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.TableResult;
-import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
@@ -162,6 +161,16 @@ import com.landawn.abacus.util.stream.Stream;
  * Other cells go through the standard abacus type conversion. {@code Map}, {@code Collection}, and
  * {@code Object[]} rows keep the raw cell values; a typed array row (e.g. {@code Long[]} or {@code byte[][]}) decodes
  * and converts each cell to the array's component type.</p>
+ * <p>A cell read into a {@code Boolean}/{@code boolean} bean property, or by {@code queryForSingleValue}/{@code queryForSingleNonNull},
+ * {@code toList} or {@code stream} with a {@code Boolean}/{@code boolean} value class, follows abacus-common's strict rule for the
+ * cell text: a {@code BOOL} cell converts, and so does any other cell whose text, without its leading and trailing whitespace
+ * padding, is {@code 1}, {@code y}, {@code Y} or {@code true} (any ASCII case, giving {@code true}) or {@code 0}, {@code -1},
+ * {@code n}, {@code N} or {@code false} (any ASCII case, giving {@code false}); a {@code STRING} {@code " Y"} or {@code " true "}
+ * converts, while any other text, such as an {@code INT64} {@code 2}, a {@code FLOAT64} {@code 1.0} or a {@code STRING}
+ * {@code yes} or {@code T}, throws {@link IllegalArgumentException}. A {@code NULL} cell is {@code null} for a {@code Boolean}
+ * and {@code false} for a {@code boolean}. Blank or empty {@code STRING} text is not an error: a bean property reads it like
+ * {@code NULL} ({@code null} for a {@code Boolean}, {@code false} for a {@code boolean}), while the single-value reads above
+ * read it as {@code false} for both.</p>
  * <p>A {@code REPEATED} cell is told apart from a {@code STRUCT} cell by its {@link FieldValue.Attribute#REPEATED} attribute
  * (the BigQuery client returns both as a {@link FieldValueList}). Its element values are unwrapped into a {@code List} for
  * {@code Map}, {@code Collection} and {@code Object[]} rows (a {@code STRUCT} element becomes a {@code Map}), and are converted
@@ -190,6 +199,12 @@ import com.landawn.abacus.util.stream.Stream;
  *   <li>{@link NamingPolicy#CAMEL_CASE} &mdash; e.g. {@code firstName} &rarr; {@code firstName}</li>
  * </ul>
  * <p>Any other naming policy is rejected at construction time with {@link IllegalArgumentException}.</p>
+ * <p>Property names inside a raw {@code Filters.expr(...)} condition are translated as well, but only up to an
+ * ambiguous string literal: once the expression contains a backslash-escaped quote (BigQuery's escape syntax, e.g.
+ * {@code 'O\'Brien'}), the SQL builder cannot tell where that literal ends, so names after it are emitted as written
+ * ({@code firstName = 'O\'Brien' AND bonusPoints > 1} renders {@code first_name = 'O\'Brien' AND bonusPoints > 1} under
+ * {@code SNAKE_CASE}). Bind such values as {@code ?} parameters or {@code Filters.eq(...)} conditions, place the
+ * literal last, or write the following names as column names.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -421,10 +436,10 @@ public class BigQueryExecutor {
      * date/time and {@code java.sql.Time} properties as described under <i>Result Value Conversion</i> in the class documentation.
      * A property declared with a type variable that {@code targetClass} binds (e.g. {@code T value} inherited by
      * {@code class LongBox extends Box<Long>}) is converted to the bound type.
-     * A direct column that matches a read-only (getter-only) property is ignored when its exposure is
-     * {@code SERIALIZE_ONLY} (the default for a getter-only property); a dotted column is ignored when its
-     * terminal property is read-only. A getter-only property explicitly exposed as {@code DESERIALIZE_ONLY}
-     * is not ignored by the direct path and fails assignment.
+     * A direct column that matches a read-only property (one with no setter or permitted field write: a getter-only
+     * property, or a field restricted by {@code @AccessFieldByMethod} without a setter) is ignored, whatever its
+     * {@code @JsonXmlField} direction (an explicit {@code DESERIALIZE_ONLY} cannot make it writable); a dotted column is
+     * ignored when its terminal property is read-only.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -511,9 +526,11 @@ public class BigQueryExecutor {
                 }
             }
 
-            // Generated SELECTs can project computed properties that cannot be assigned. Nested-path assignment ignores
-            // every read-only terminal property; a direct property ignores its implicitly serialize-only form.
-            if (nestedProperty ? propInfo.isReadOnlyProperty : propInfo.isReadOnlyProperty && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY) {
+            // Generated SELECTs can project computed properties that cannot be assigned: a read-only property (direct or a
+            // nested-path terminal) is ignored. WHY no direction test: an explicit DESERIALIZE_ONLY, only declarable on an
+            // @AccessFieldByMethod field without a setter, cannot make the property writable; setPropValue rejected it and
+            // failed the whole row. Skipped whatever its direction, as by the HBase, DynamoDB and MongoDB executors.
+            if (propInfo.isReadOnlyProperty) {
                 continue;
             }
 
@@ -607,6 +624,19 @@ public class BigQueryExecutor {
         checkFieldCount(fields, struct);
 
         return toEntity(fields, struct, ParserUtil.getBeanInfo(beanType.reflectType()));
+    }
+
+    // convertRepeatedValue returns the property's container type for a collection or array property, but the plain unwrapped
+    // List for any other property type (a String, StringBuilder or scalar property mapped to a REPEATED column). toEntity
+    // converts that List when it stores it (up front, or in setPropValue); the bean-class Dataset of extractData has no bean to
+    // store it in, so its column held the List itself (an ArrayList in a String column). Convert it the same way. (A property
+    // toEntity ignores never gets here: extractData treats its column as one without a property.)
+    private static Object toPropertyType(final PropInfo propInfo, final Object value) {
+        if (value == null || isInstanceOf(propInfo.clazz, value)) {
+            return value;
+        }
+
+        return N.convert(value, propInfo.jsonXmlType);
     }
 
     // Whether value can be stored in a property of type cls as is (a primitive property takes its wrapper; a primitive
@@ -1456,7 +1486,8 @@ public class BigQueryExecutor {
                         fieldCount = row.size();
 
                         if (fieldCount != 1) {
-                            throw new IllegalArgumentException("Field count must be 1 for type: " + rowClass);
+                            throw new IllegalArgumentException("Field count must be 1 to map a row to the single-value type: "
+                                    + ClassUtil.getCanonicalClassName(rowClass) + ", but the row has " + fieldCount + " columns");
                         }
                     }
 
@@ -1587,7 +1618,11 @@ public class BigQueryExecutor {
      *   <li>If {@code targetClass} is an entity bean, each output column is converted to the
      *       declared type of the matching bean property (resolved via the column-to-property name
      *       map). Columns without a matching property are left unconverted, except that nested
-     *       {@code STRUCT} values become {@code Object[]}.</li>
+     *       {@code STRUCT} values become {@code Object[]}. A column whose property {@link #toEntity(FieldList, FieldValueList, Class)}
+     *       ignores (a read-only property, such as a getter-only property, whatever its direction) counts as a column
+     *       without a matching property: its cells are kept raw (the cell text, a {@code List} for {@code REPEATED}, an
+     *       {@code Object[]} for a {@code STRUCT}), whether or not they would convert to the property type, exactly as
+     *       {@code toEntity} leaves that property untouched.</li>
      *   <li>If {@code targetClass} is assignable to {@link Map}, nested BigQuery {@code STRUCT}
      *       values are converted to {@link Map}s; primitive values are left as-is.</li>
      *   <li>For any other non-{@code null} {@code targetClass} (and for {@code null}), nested
@@ -1669,6 +1704,15 @@ public class BigQueryExecutor {
                     propInfo = entityInfo.getPropInfo(propName);
                 }
 
+                // A direct column of a property toEntity ignores (read-only, toEntity's own test) is a
+                // column without a property here, decided once per column: toEntity never decodes or converts its value, so
+                // decoding it per cell for the Dataset failed reads toEntity completes (a getter-only Long under a STRING
+                // "abc" column: NumberFormatException; earlier, a REPEATED INT64 under a getter-only Long). The column keeps
+                // its raw cell values, like any unmatched column.
+                if (propInfo != null && propInfo.isReadOnlyProperty) {
+                    propInfo = null;
+                }
+
                 columnPropInfos[i] = propInfo;
                 columnClasses[i] = propInfo == null ? null : propInfo.clazz;
             } else {
@@ -1700,8 +1744,9 @@ public class BigQueryExecutor {
                 } else if (!keepsRawValue && isRepeatedCell(cell)) {
                     columnList.get(i)
                             .add(columnPropInfos[i] == null ? unwrapRepeatedValue(fields.get(i), (List<?>) value)
-                                    : convertRepeatedValue(fields.get(i), (List<?>) value, columnPropInfos[i].jsonXmlType));
-                } else if (value == null || targetClass == null || isMap || columnClasses[i] == null || columnClasses[i].isAssignableFrom(value.getClass())) {
+                                    : toPropertyType(columnPropInfos[i], convertRepeatedValue(fields.get(i), (List<?>) value, columnPropInfos[i].jsonXmlType)));
+                } else if (value == null || targetClass == null || isMap || columnClasses[i] == null || isInstanceOf(columnClasses[i], value)) {
+                    // isInstanceOf: a primitive property (int, long) takes the boxed value as is instead of N.convert per cell.
                     columnList.get(i).add(value);
                 } else {
                     columnList.get(i).add(N.convert(value, columnClasses[i]));
@@ -1709,7 +1754,9 @@ public class BigQueryExecutor {
             }
         }
 
-        return new RowDataset(columnNameList, columnList);
+        // The public constructor shallow-copies every column (abacus-common 8.1+), holding the whole result twice while it
+        // copies. These lists were built here, one per column, and are never exposed or mutated again: hand them over.
+        return RowDataset.fromOwnedColumns(columnNameList, columnList);
     }
 
     /**

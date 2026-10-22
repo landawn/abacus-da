@@ -39,7 +39,7 @@ public class MongoCollectionScalarQueryTest extends MongoCollectionExecutorTestS
         for (final Object value : new Object[] { bytes, new Binary(bytes) }) {
             final Document row = new Document("value", value);
             when(mockFindIterable.first()).thenReturn(row);
-            when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+            MongoIterableStubs.stubRows(mockFindIterable, Arrays.asList(row));
 
             Assertions.assertEquals(expected, executor.queryForSingleValue("value", filter, ByteBuffer.class).get());
             Assertions.assertEquals(expected, executor.queryForSingleNonNull("value", filter, ByteBuffer.class).get());
@@ -326,7 +326,7 @@ public class MongoCollectionScalarQueryTest extends MongoCollectionExecutorTestS
         final Document row = new Document("value", Long.MAX_VALUE);
         final Bson filter = new Document();
         when(mockFindIterable.first()).thenReturn(row);
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+        MongoIterableStubs.stubRows(mockFindIterable, Arrays.asList(row));
 
         Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForInt("value", filter));
         Assertions.assertThrows(ArithmeticException.class, () -> executor.queryForSingleValue("value", filter, Integer.class));

@@ -1,6 +1,5 @@
 package com.landawn.abacus.da.mongodb;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
@@ -65,7 +64,7 @@ public class MDBTest extends MockitoTestBase {
     @Test
     public void testExtractDataWithFindIterable() {
         List<Document> docs = Arrays.asList(new Document("id", 1).append("name", "test1"), new Document("id", 2).append("name", "test2"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         Dataset result = MongoDBBase.extractData(mockFindIterable);
 
@@ -75,7 +74,7 @@ public class MDBTest extends MockitoTestBase {
     @Test
     public void testExtractDataWithRowType() {
         List<Document> docs = Arrays.asList(new Document("id", 1).append("name", "test1"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         Dataset result = MongoDBBase.extractData(mockFindIterable, TestEntity.class);
 
@@ -85,7 +84,7 @@ public class MDBTest extends MockitoTestBase {
     @Test
     public void testExtractDataWithSelectPropNames() {
         List<Document> docs = Arrays.asList(new Document("id", 1).append("name", "test1"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         Dataset result = MongoDBBase.extractData(Arrays.asList("id", "name"), mockFindIterable, Map.class);
 
@@ -103,7 +102,7 @@ public class MDBTest extends MockitoTestBase {
 
     @Test
     public void testToListWithEmptyResult() {
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+        MongoIterableStubs.stubRows(mockFindIterable, Arrays.asList());
 
         List<TestEntity> result = MongoDBBase.toList(mockFindIterable, TestEntity.class);
 
@@ -113,7 +112,7 @@ public class MDBTest extends MockitoTestBase {
     @Test
     public void testToListWithDocuments() {
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         List<Document> result = MongoDBBase.toList(mockFindIterable, Document.class);
 
@@ -123,7 +122,7 @@ public class MDBTest extends MockitoTestBase {
     @Test
     public void testToListWithEntityClass() {
         List<Document> docs = Arrays.asList(new Document("name", "test1"), new Document("name", "test2"));
-        when(mockFindIterable.into(any())).thenReturn(docs);
+        MongoIterableStubs.stubRows(mockFindIterable, docs);
 
         List<TestEntity> result = MongoDBBase.toList(mockFindIterable, TestEntity.class);
 

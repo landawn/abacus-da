@@ -2157,4 +2157,110 @@ public class AsyncDynamoDBExecutorTest extends MockitoTestBase {
             this.id = id;
         }
     }
+
+    // ---- 2026-10-20 ddbfix ----
+
+    /**
+     * list(QueryRequest, Class) converts every page with one row mapper straight into the result, as the sync executor
+     * does (it used to build a mapper per page through toList and copy each page's list). The merged rows of a three-page
+     * query, whose middle page has no Items member, equal the sync executor's rows for the same responses (bean and Map
+     * row types), each page is requested with the previous page's LastEvaluatedKey, and no request follows the last page.
+     */
+    @Test
+    public void testListMergesPagesWithOneRowMapperLikeSyncExecutor_ddbfix() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final Map<String, AttributeValue> key1 = Map.of("id", AttributeValue.fromS("2"));
+        final Map<String, AttributeValue> key2 = Map.of("id", AttributeValue.fromS("2b"));
+        final QueryResponse page1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1"), "name", AttributeValue.fromS("a")),
+                        Map.of("id", AttributeValue.fromS("2"), "name", AttributeValue.fromS("b"))))
+                .lastEvaluatedKey(key1)
+                .build();
+        final QueryResponse page2 = QueryResponse.builder().lastEvaluatedKey(key2).build(); // no Items member at all
+        final QueryResponse page3 = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("3"), "name", AttributeValue.fromS("c")))).build();
+
+        for (final Class<?> rowType : List.of(TestEntity.class, Map.class)) {
+            final DynamoDbAsyncClient asyncClient = mock(DynamoDbAsyncClient.class);
+            when(asyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(page1), CompletableFuture.completedFuture(page2),
+                    CompletableFuture.completedFuture(page3));
+            final software.amazon.awssdk.services.dynamodb.DynamoDbClient syncClient = mock(software.amazon.awssdk.services.dynamodb.DynamoDbClient.class);
+            when(syncClient.query(any(QueryRequest.class))).thenReturn(page1, page2, page3);
+
+            final List<?> asyncRows = new AsyncDynamoDBExecutor(asyncClient).list(queryRequest, rowType).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            final List<?> syncRows = new DynamoDBExecutor(syncClient).list(queryRequest, rowType);
+
+            assertEquals(3, asyncRows.size(), rowType.getSimpleName());
+            assertEquals(List.of("1", "2", "3"), asyncRows.stream().map(AsyncDynamoDBExecutorTest::idOf_ddbfix).toList(), rowType.getSimpleName());
+            assertEquals(List.of("a", "b", "c"), asyncRows.stream().map(AsyncDynamoDBExecutorTest::nameOf_ddbfix).toList(), rowType.getSimpleName());
+            assertEquals(syncRows.stream().map(AsyncDynamoDBExecutorTest::idOf_ddbfix).toList(),
+                    asyncRows.stream().map(AsyncDynamoDBExecutorTest::idOf_ddbfix).toList());
+            assertEquals(syncRows.stream().map(AsyncDynamoDBExecutorTest::nameOf_ddbfix).toList(),
+                    asyncRows.stream().map(AsyncDynamoDBExecutorTest::nameOf_ddbfix).toList());
+            assertEquals(syncRows.get(0).getClass(), asyncRows.get(0).getClass(), rowType.getSimpleName());
+
+            final ArgumentCaptor<QueryRequest> requests = ArgumentCaptor.forClass(QueryRequest.class);
+            verify(asyncClient, times(3)).query(requests.capture());
+            assertTrue(requests.getAllValues().get(0).exclusiveStartKey().isEmpty());
+            assertEquals(key1, requests.getAllValues().get(1).exclusiveStartKey());
+            assertEquals(key2, requests.getAllValues().get(2).exclusiveStartKey());
+        }
+    }
+
+    // ---- 2026-10-20 fixC ----
+
+    /**
+     * list(QueryRequest, Class) converts each response page directly instead of through toList(QueryResponse, Class). A future
+     * completed with a null response, which only an un-stubbed client produces, must keep the former toList behaviour: an
+     * empty (mutable) list, and no further page is requested.
+     */
+    @Test
+    public void testListWithClass_NullResponseIsEmptyAndRequestsNoFurtherPage_fixC() throws Exception {
+        QueryRequest req = QueryRequest.builder().tableName("TestTable").build();
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(null));
+
+        List<TestEntity> result = asyncExecutor.list(req, TestEntity.class).get();
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        result.add(new TestEntity());
+        assertEquals(1, result.size());
+        verify(mockDynamoDbAsyncClient, times(1)).query(any(QueryRequest.class));
+    }
+
+    // ---- 2026-10-21 fixP ----
+
+    /**
+     * A LATER page future completed with null (page 1 has rows and a lastEvaluatedKey, page 2 is null) must end the page chain
+     * the same way a null first page does: the future completes normally with page 1's rows, exactly two requests are made
+     * (the chain used to dereference the null page and complete exceptionally with a NullPointerException).
+     */
+    @Test
+    public void testListWithClass_NullLaterPageEndsPaginationWithRowsSoFar_fixP() throws Exception {
+        QueryRequest req = QueryRequest.builder().tableName("TestTable").build();
+        QueryResponse page1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1")), Map.of("id", AttributeValue.fromS("2"))))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.fromS("2")))
+                .build();
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(page1),
+                CompletableFuture.completedFuture((QueryResponse) null));
+
+        CompletableFuture<List<TestEntity>> future = asyncExecutor.list(req, TestEntity.class);
+        List<TestEntity> result = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertTrue(future.isDone());
+        assertFalse(future.isCompletedExceptionally());
+        assertEquals(List.of("1", "2"), result.stream().map(TestEntity::getId).toList());
+        ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDbAsyncClient, times(2)).query(captor.capture());
+        assertTrue(captor.getAllValues().get(0).exclusiveStartKey().isEmpty());
+        assertEquals("2", captor.getAllValues().get(1).exclusiveStartKey().get("id").s());
+    }
+
+    private static String idOf_ddbfix(final Object row) {
+        return row instanceof final Map<?, ?> map ? (String) map.get("id") : ((TestEntity) row).getId();
+    }
+
+    private static String nameOf_ddbfix(final Object row) {
+        return row instanceof final Map<?, ?> map ? (String) map.get("name") : ((TestEntity) row).getName();
+    }
 }

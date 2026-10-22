@@ -1366,4 +1366,57 @@ public class DynamoDBMappingTest extends DynamoDBExecutorTestSupport {
             this.name = name;
         }
     }
+
+    // ---- 2026-10-20 fixC ----
+
+    /** Mirrors the SDK v2 test: a Map entity is keyed by String, and a non-String key fails with ClassCastException on all four overloads. */
+    @Test
+    public void testToItemAndToUpdateItem_NonStringMapKeyThrowsClassCastException_fixC() {
+        final Map<Object, Object> nonStringKey = new HashMap<>();
+        nonStringKey.put(1, "a");
+
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toItem(nonStringKey));
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toItem(nonStringKey, NamingPolicy.SNAKE_CASE));
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toUpdateItem(nonStringKey));
+        assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toUpdateItem(nonStringKey, NamingPolicy.SNAKE_CASE));
+
+        // String keys are attribute names, converted only by the naming policy.
+        assertEquals(Map.of("first_name", new AttributeValue().withS("a")), DynamoDBExecutor.toItem(Map.of("firstName", "a"), NamingPolicy.SNAKE_CASE));
+        assertEquals(Map.of("firstName", new AttributeValue().withS("a")), DynamoDBExecutor.toItem(Map.of("firstName", "a")));
+    }
+
+    /**
+     * Pins the documented null-item behaviour of toList/extractData for a hand-built SDK v1 result (the service never returns a
+     * null item, but the v1 result keeps one): bean and Map rows map it to a null row; object-array, Collection and single-value
+     * rows and extractData fail with NullPointerException.
+     */
+    @Test
+    public void testToListAndExtractData_HandBuiltNullItem_fixC() {
+        final List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", new AttributeValue().withS("1")));
+        items.add(null);
+        final QueryResult queryResult = new QueryResult().withItems(items);
+        final ScanResult scanResult = new ScanResult().withItems(items);
+
+        final List<TestEntity> queriedBeans = DynamoDBExecutor.toList(queryResult, TestEntity.class);
+        final List<TestEntity> scannedBeans = DynamoDBExecutor.toList(scanResult, TestEntity.class);
+        final List<Map> queriedMaps = DynamoDBExecutor.toList(queryResult, Map.class);
+        final List<Map> scannedMaps = DynamoDBExecutor.toList(scanResult, Map.class);
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals("1", queriedBeans.get(0).getId()), //
+                () -> assertNull(queriedBeans.get(1)), //
+                () -> assertNull(scannedBeans.get(1)), //
+                () -> assertEquals("1", queriedMaps.get(0).get("id")), //
+                () -> assertNull(queriedMaps.get(1)), //
+                () -> assertNull(scannedMaps.get(1)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.toList(queryResult, Object[].class)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.toList(queryResult, List.class)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.toList(queryResult, String.class)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.toList(scanResult, Object[].class)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.toList(scanResult, List.class)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.toList(scanResult, String.class)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.extractData(queryResult)), //
+                () -> assertThrows(NullPointerException.class, () -> DynamoDBExecutor.extractData(scanResult)));
+    }
 }

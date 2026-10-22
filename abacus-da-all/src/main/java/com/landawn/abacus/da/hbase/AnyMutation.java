@@ -45,7 +45,7 @@ import com.landawn.abacus.util.N;
  * durability, timestamp, cluster ids, cell visibility, ACLs, TTL, and family-map / cell
  * inspection — without forcing callers to deal with byte arrays.</p>
  *
- * <h3>Key features</h3>
+ * <h2>Key features</h2>
  * <ul>
  * <li><strong>Automatic conversion</strong>: {@link String} family/qualifier names and arbitrary
  *     {@link Object} values are converted to byte arrays via {@link HBaseExecutor}.</li>
@@ -57,7 +57,7 @@ import com.landawn.abacus.util.N;
  *     {@link #cellScanner}, {@link #size}, {@link #numFamilies}, and {@link #isEmpty}.</li>
  * </ul>
  *
- * <h3>Common usage patterns</h3>
+ * <h2>Common usage patterns</h2>
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Basic mutation with durability control
@@ -74,7 +74,7 @@ import com.landawn.abacus.util.N;
  * List<Cell> cells = anyMutation.get("family", "qualifier");
  * }</pre>
  *
- * <h3>Durability levels (see {@link Durability})</h3>
+ * <h2>Durability levels (see {@link Durability})</h2>
  * <ul>
  * <li><strong>SKIP_WAL</strong>: fastest, no durability guarantee</li>
  * <li><strong>ASYNC_WAL</strong>: fast, asynchronous write-ahead log</li>
@@ -312,10 +312,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param expression the {@link CellVisibility} expression to apply; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code expression} is {@code null}
+     * @throws NullPointerException if {@code expression} carries a {@code null} label expression
+     *         (raised by HBase while serializing it)
      * @see #getCellVisibility()
      * @see CellVisibility
      */
-    public AM setCellVisibility(final CellVisibility expression) throws IllegalArgumentException {
+    public AM setCellVisibility(final CellVisibility expression) throws IllegalArgumentException, NullPointerException {
         N.checkArgNotNull(expression, cs.expression);
 
         mutation.setCellVisibility(expression);

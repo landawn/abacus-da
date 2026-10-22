@@ -2,9 +2,7 @@ package com.landawn.abacus.da.mongodb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
 import java.util.List;
@@ -36,11 +34,7 @@ class MongoDBBaseDeepReview2026ScalarRowValidationTest {
     @SuppressWarnings("unchecked")
     private static MongoIterable<?> iterable(final List<?> rows) {
         final MongoIterable<Object> result = mock(MongoIterable.class);
-        when(result.into(any())).thenAnswer(invocation -> {
-            final List<Object> target = invocation.getArgument(0);
-            target.addAll(rows);
-            return target;
-        });
+        MongoIterableStubs.stubRows(result, rows);
         return result;
     }
 

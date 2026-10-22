@@ -52,7 +52,6 @@ import org.apache.hadoop.hbase.util.Bytes;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.google.protobuf.Service;
-import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
 import com.landawn.abacus.exception.UncheckedIOException;
@@ -144,6 +143,14 @@ import com.landawn.abacus.util.stream.Stream;
  *     // JavaBean getters and setters omitted
  * }
  * }</pre>
+ *
+ * <p><b>Boolean properties:</b> a cell mapped to a {@code Boolean}/{@code boolean} property is read as text and follows
+ * abacus-common's strict rule: only {@code 1} (true), {@code 0} or {@code -1} (both false), {@code y}, {@code Y}, {@code n},
+ * {@code N}, {@code true} or {@code false} (any case) convert, so the {@code true}/{@code false} text this executor writes reads
+ * back unchanged. Leading and trailing whitespace is ignored ({@code " TRUE "} reads as {@code true}), and an empty or
+ * whitespace-only cell yields the property's default: {@code false} for {@code boolean}, {@code null} for {@code Boolean}.
+ * Any other cell, such as {@code yes} or {@code 2}, or a binary {@code Bytes.toBytes(boolean)} or
+ * {@code Bytes.toBytes(int)} value, throws {@link IllegalArgumentException}.</p>
  *
  * <h2>Asynchronous access</h2>
  * <p>{@link #async()} exposes an {@link AsyncHBaseExecutor} that wraps the same operations
@@ -803,8 +810,17 @@ public final class HBaseExecutor {
      * populates the row-key property, and each subsequent cell is matched to a bean
      * property using the entity's column-family/qualifier mapping. Cells whose family,
      * qualifier, or field name cannot be resolved are silently ignored without creating nested
-     * bean instances, and so are cells of read-only (getter-only) properties, whose computed values
-     * {@link AnyPut#create(Object)} writes but which cannot be assigned. An empty qualifier maps a
+     * bean instances, and so are cells of read-only properties - no setter and no writable field, such as a
+     * getter-only computed property or a field-backed getter-only property under {@code @AccessFieldByMethod} - whose
+     * values {@link AnyPut#create(Object)} writes but which cannot be assigned. Only that write path decides: a
+     * {@code @JsonXmlField(direction = SERIALIZE_ONLY)} property that has a setter is still written on read (as in
+     * DynamoDB item mapping), and a read-only property is still skipped when its field declares
+     * {@code DESERIALIZE_ONLY}. The one exception is a read-only nested bean that is flattened into its own column
+     * family (the family is the nested bean property, the qualifiers are its properties) and held by a field: its
+     * cells are written into the instance that field already holds, which needs no setter; when that field holds
+     * {@code null} the whole family is skipped and the rest of the row is still read. A read-only nested bean mapped
+     * as a single {@code @Column} cell is skipped like any other read-only property. A cell whose column maps to the
+     * row-key property is ignored too: that property always receives the key of the row. An empty qualifier maps a
      * scalar property stored directly in its family; it does not select a property inside a
      * flattened nested bean. Bean properties declared as {@link HBaseColumn}, {@code Collection<HBaseColumn>}, or
      * {@code Map<?, HBaseColumn>} are populated cell-by-cell with versioned values.</p>
@@ -1113,8 +1129,11 @@ public final class HBaseExecutor {
                 fieldName = familyTP._1;
                 familyPropInfo = entityInfo.getPropInfo(fieldName);
 
-                // ignore the unknown field/property, and a read-only one (see isReadOnlyProperty):
-                if (familyPropInfo == null || isReadOnlyProperty(familyPropInfo)) {
+                // ignore the unknown field/property, and a read-only one (see isReadOnlyProperty), except a field-backed
+                // read-only nested bean: its cells are written into the instance its field already holds (handled below),
+                // which never needs the setter, as before abacus-common 8.2 made such a property read-only.
+                if (familyPropInfo == null
+                        || (isReadOnlyProperty(familyPropInfo) && !(familyPropInfo.field != null && familyPropInfo.jsonXmlType.isBean() && !familyTP._2))) {
                     continue;
                 }
 
@@ -1143,6 +1162,10 @@ public final class HBaseExecutor {
                     Object propEntity = familyPropInfo.getPropValue(entity);
 
                     if (propEntity == null) {
+                        if (isReadOnlyProperty(familyPropInfo)) {
+                            continue; // no instance to fill, and the read-only property cannot be assigned one
+                        }
+
                         propEntity = N.newInstance(propEntityClass);
 
                         familyPropInfo.setPropValue(entity, propEntity);
@@ -1435,10 +1458,14 @@ public final class HBaseExecutor {
 
     // A getter-only (computed) property, e.g. on an @Entity class or, since abacus-common 8.1.0, inherited from an
     // @Entity superclass, is in propInfoList, so AnyPut.create writes its value as a cell; but PropInfo.setPropValue
-    // throws UnsupportedOperationException for it. Its cells are skipped on read, as the JSON parser does. PropInfo's
-    // isReadOnlyProperty flag is package-private; a property without a field is SERIALIZE_ONLY exactly when it is read-only.
+    // throws UnsupportedOperationException for it. Its cells are skipped on read, as the JSON parser does. Use the
+    // (public since abacus-common 8.2) PropInfo flag itself: since 8.2 a field-backed @AccessFieldByMethod property
+    // without a setter is read-only too, which the former "no field and SERIALIZE_ONLY" approximation missed.
+    // Deliberately NOT jsonXmlExpose: the JSON/XML direction is a serialization hint, not a write path. A declared
+    // SERIALIZE_ONLY property with a setter is written on read (as DynamoDB item mapping does), and a read-only
+    // property is skipped even when its field declares DESERIALIZE_ONLY (setPropValue would still throw).
     private static boolean isReadOnlyProperty(final PropInfo propInfo) {
-        return propInfo.field == null && propInfo.jsonXmlExpose == JsonXmlField.Direction.SERIALIZE_ONLY;
+        return propInfo.isReadOnlyProperty;
     }
 
     private static byte[] copyOf(final byte[] bytes, final int offset, final int len) {

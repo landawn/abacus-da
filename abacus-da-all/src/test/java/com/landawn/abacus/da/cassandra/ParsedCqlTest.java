@@ -4,9 +4,11 @@
 
 package com.landawn.abacus.da.cassandra;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,6 +18,9 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.pool.KeyedObjectPool;
+import com.landawn.abacus.pool.PoolFactory;
+import com.landawn.abacus.pool.PoolableAdapter;
 
 public class ParsedCqlTest extends TestBase {
 
@@ -1070,5 +1075,78 @@ public class ParsedCqlTest extends TestBase {
         assertEquals(expected.parameterizedCql(), parsed.parameterizedCql(), cql);
         assertEquals(expected.parameterCount(), parsed.parameterCount(), cql);
         assertEquals(expected.namedParameters(), parsed.namedParameters(), cql);
+    }
+
+    // ---- 2026-10-19 sliceJ ----
+
+    @Test
+    public void testParse_NativeMarkerInsideParenthesesWithinBraces_isRewritten() {
+        // Regression: inside braces a ':name' token was accepted only after a field separator or directly inside [...].
+        // A tuple or function argument in a UDT/map value ("{loc: (:lat, :lon)}") left the markers verbatim and uncounted,
+        // although the positional and MyBatis forms of the same statement were handled.
+        assertAll(
+                () -> assertIbatisParsed("UPDATE t SET u = {loc: (:lat, :lon)} WHERE id = :id", "UPDATE t SET u = {loc: (?, ?)} WHERE id = ?", "lat", "lon",
+                        "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {loc:(:lat,:lon)} WHERE id = :id", "UPDATE t SET u = {loc:(?,?)} WHERE id = ?", "lat", "lon", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {ts: fn(:x)} WHERE id = :id", "UPDATE t SET u = {ts: fn(?)} WHERE id = ?", "x", "id"),
+                // 2026-10-21 cassfix2: a function argument followed by a plain field marker in the same UDT literal binds both.
+                () -> assertIbatisParsed("UPDATE t SET u = {a: f(:x), b: :y} WHERE id = :id", "UPDATE t SET u = {a: f(?), b: ?} WHERE id = ?", "x", "y", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {a:f(:x),b::y} WHERE id = :id", "UPDATE t SET u = {a:f(?),b:?} WHERE id = ?", "x", "y", "id"),
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET u = {a: f(#{x}), b: #{y}} WHERE id = #{id}").parameterizedCql(),
+                        ParsedCql.parse("UPDATE t SET u = {a: f(:x), b: :y} WHERE id = :id").parameterizedCql()),
+                () -> assertIbatisParsed("UPDATE t SET u = {a: ((:x)), b: :y} WHERE id = :id", "UPDATE t SET u = {a: ((?)), b: ?} WHERE id = ?", "x", "y",
+                        "id"),
+                () -> assertIbatisParsed("INSERT INTO t (id, u) VALUES (:id, {loc: (:lat, :lon)})", "INSERT INTO t (id, u) VALUES (?, {loc: (?, ?)})", "id",
+                        "lat", "lon"),
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET u = {loc: (#{lat}, #{lon})} WHERE id = #{id}").parameterCount(),
+                        ParsedCql.parse("UPDATE t SET u = {loc: (:lat, :lon)} WHERE id = :id").parameterCount()),
+                // Pins: after the ')' the brace rules apply again, and literal syntax inside parentheses is untouched.
+                () -> assertIbatisParsed("UPDATE t SET m = {'k':(1),'j':2} WHERE id = :id", "UPDATE t SET m = {'k':(1),'j':2} WHERE id = ?", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {(1,2):'x'} WHERE id = :id", "UPDATE t SET u = {(1,2):'x'} WHERE id = ?", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {a: '(' , b: :y} WHERE id = :id", "UPDATE t SET u = {a: '(' , b: ?} WHERE id = ?", "y", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {a: (1, {b::x})} WHERE id = :id", "UPDATE t SET u = {a: (1, {b:?})} WHERE id = ?", "x", "id"),
+                () -> assertIbatisParsed("UPDATE t SET tags = tags + {:tag} WHERE id = :id", "UPDATE t SET tags = tags + {:tag} WHERE id = ?", "id"));
+    }
+
+    @Test
+    public void testParse_ClosedCache_parsesUncached() {
+        // Regression: the cache pool closes itself from a JVM shutdown hook, after which its get()/put() throw
+        // IllegalStateException; parse() let that escape, so CQL issued by other shutdown hooks could not be parsed.
+        final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> cache = PoolFactory.createKeyedObjectPool(10, 60_000);
+        cache.close();
+
+        final String cql = "SELECT * FROM closed_cache_t WHERE id = :id";
+        final ParsedCql parsed = ParsedCql.parse(cql, cache);
+
+        assertAll(() -> assertEquals("SELECT * FROM closed_cache_t WHERE id = ?", parsed.parameterizedCql()),
+                () -> assertEquals("id", parsed.namedParameters().get(0)), () -> assertEquals(parsed, ParsedCql.parse(cql, null)),
+                () -> assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM t WHERE a = ? AND b = :b", cache)));
+    }
+
+    @Test
+    public void testParse_OpenCache_reusesEntryAndSkipsOversizedInput() {
+        final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> cache = PoolFactory.createKeyedObjectPool(10, 60_000);
+
+        try {
+            final String cql = "SELECT * FROM open_cache_t WHERE id = ?";
+            final ParsedCql first = ParsedCql.parse(cql, cache);
+            final String oversized = "SELECT * FROM open_cache_t WHERE id = ?" + " ".repeat(5_000);
+
+            assertAll(() -> assertSame(first, ParsedCql.parse(cql, cache)), () -> assertEquals(first, ParsedCql.parse(oversized, cache)),
+                    () -> assertEquals(1, cache.size()));
+        } finally {
+            cache.close();
+        }
+    }
+
+    @Test
+    public void testCreateCache_FactoryFailure_returnsNull() {
+        // Creating the pool registers a shutdown hook, which the runtime refuses once shutdown has begun; that failure
+        // must not escape the static initializer (the class would be unusable: NoClassDefFoundError).
+        assertAll(() -> assertNull(ParsedCql.createCache(() -> {
+            throw new IllegalStateException("Shutdown in progress");
+        })), () -> assertNull(ParsedCql.createCache(() -> {
+            throw new ExceptionInInitializerError(new IllegalStateException("Shutdown in progress"));
+        })));
     }
 }

@@ -279,4 +279,31 @@ public class AnyQueryTest extends TestBase {
         // Default replica id is -1 (no specific replica)
         assertEquals(-1, get.getReplicaId());
     }
+
+    // ---- 2026-10-19 sliceP ----
+
+    /** Pins the setAuthorizations doc: a null label (or null label list) fails with NPE while HBase serializes it. */
+    @Test
+    public void testSetAuthorizations_nullLabel_throwsNpe_sliceP() {
+        AnyGet get = AnyGet.of("row");
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertThrows(NullPointerException.class, () -> get.setAuthorizations(new Authorizations((String) null))),
+                () -> assertThrows(NullPointerException.class, () -> get.setAuthorizations(new Authorizations((java.util.List<String>) null))));
+    }
+
+    /** Pins the getColumnFamilyTimeRange doc: the returned map is the live map held by the wrapped query. */
+    @Test
+    public void testGetColumnFamilyTimeRange_isLiveMap_sliceP() {
+        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange("cf", 1L, 2L);
+        assertSame(get.val().getColumnFamilyTimeRange(), get.getColumnFamilyTimeRange());
+        get.getColumnFamilyTimeRange().clear();
+        assertEquals(0, get.val().getColumnFamilyTimeRange().size());
+    }
+
+    /** Pins the setColumnFamilyTimeRange doc: a null family is accepted here but cannot be serialized for execution. */
+    @Test
+    public void testSetColumnFamilyTimeRange_nullFamily_failsWhenRequestIsBuilt_sliceP() {
+        AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange((String) null, 1L, 2L);
+        assertThrows(NullPointerException.class, () -> org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil.toGet(get.val()));
+    }
 }

@@ -14,15 +14,24 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.NavigableMap;
 
 import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.codec.Codec;
+import org.apache.hadoop.hbase.codec.KeyValueCodec;
+import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto.MutationType;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
 
@@ -811,5 +820,73 @@ public class AnyPutTest extends TestBase {
         put.getFamilyCellMap().values().forEach(cells::addAll);
         cells.sort(org.apache.hadoop.hbase.CellComparator.getInstance());
         return org.apache.hadoop.hbase.client.Result.create(cells);
+    }
+
+    // ---- 2026-10-20 sliceF ----
+
+    /**
+     * Pins the addColumn {@code @param family} doc for a single put: a null family is not validated here, and the put
+     * fails with NullPointerException while HBase builds the request (ProtobufUtil.toMutation(PUT, put)).
+     */
+    @Test
+    public void testAddColumn_nullFamily_singlePutFailsWhenRequestIsBuilt_sliceF() throws Exception {
+        final AnyPut stringOverload = AnyPut.of("row").addColumn((String) null, "q", "v");
+        final AnyPut bytesOverload = AnyPut.of("row").addColumn((byte[]) null, Bytes.toBytes("q"), Bytes.toBytes("v"));
+        assertEquals(1, stringOverload.size());
+        assertEquals(1, bytesOverload.size());
+
+        assertThrows(NullPointerException.class, () -> ProtobufUtil.toMutation(MutationType.PUT, stringOverload.val()));
+        assertThrows(NullPointerException.class, () -> ProtobufUtil.toMutation(MutationType.PUT, bytesOverload.val()));
+
+        // a real family builds: one column with one cell
+        final MutationProto proto = ProtobufUtil.toMutation(MutationType.PUT, AnyPut.of("row").addColumn("cf", "q", "v").val());
+        assertEquals(1, proto.getColumnValueCount());
+        assertArrayEquals(Bytes.toBytes("cf"), proto.getColumnValue(0).getFamily().toByteArray());
+    }
+
+    /**
+     * Pins the addColumn {@code @param family} doc for a batch put: the request proto carries no column data (the cells travel
+     * in the RPC cell block, see RequestConverter.buildNoDataRegionAction), and the client's default KeyValueCodec encodes the
+     * null family as an empty one, so the server receives a cell with a zero-length family.
+     */
+    @Test
+    public void testAddColumn_nullFamily_batchCellBlockCarriesAnEmptyFamily_sliceF() throws Exception {
+        final Put put = AnyPut.of("row").addColumn((byte[]) null, Bytes.toBytes("q"), Bytes.toBytes("v")).val();
+
+        final MutationProto proto = ProtobufUtil.toMutationNoData(MutationType.PUT, put);
+        assertEquals(1, proto.getAssociatedCellCount());
+        assertEquals(0, proto.getColumnValueCount());
+
+        final Codec codec = new KeyValueCodec();
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final Codec.Encoder encoder = codec.getEncoder(out);
+        final CellScanner cells = put.cellScanner();
+        while (cells.advance()) {
+            encoder.write(cells.current());
+        }
+        encoder.flush();
+
+        final Codec.Decoder decoder = codec.getDecoder(new ByteArrayInputStream(out.toByteArray()));
+        assertTrue(decoder.advance());
+        final Cell decoded = decoder.current();
+        assertEquals(0, decoded.getFamilyLength());
+        assertArrayEquals(new byte[0], CellUtil.cloneFamily(decoded));
+        assertArrayEquals(Bytes.toBytes("q"), CellUtil.cloneQualifier(decoded));
+        assertArrayEquals(Bytes.toBytes("v"), CellUtil.cloneValue(decoded));
+        assertArrayEquals(Bytes.toBytes("row"), CellUtil.cloneRow(decoded));
+        assertFalse(decoder.advance());
+    }
+
+    /**
+     * Pins the of(Put) doc: an attribute whose name is null (Put.setAttribute(null, bytes) stores it in a HashMap) fails
+     * the copy with NullPointerException, from the TreeMap HBase's copy constructor collects the attributes into.
+     */
+    @Test
+    public void testOf_copyPutWithNullAttributeName_throwsNpe_sliceF() {
+        final Put source = new Put(Bytes.toBytes("k"));
+        source.setAttribute(null, Bytes.toBytes("v"));
+        assertTrue(source.getAttributesMap().containsKey(null));
+
+        assertThrows(NullPointerException.class, () -> AnyPut.of(source));
     }
 }

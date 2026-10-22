@@ -47,10 +47,115 @@ public class BigQueryExecutorDeepReview2026MappingTest extends TestBase {
         final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("computed", StandardSQLTypeName.STRING));
         final FieldValueList row = FieldValueList.of(Arrays.asList(primitive("7"), primitive("from query")), fields);
 
+        // Without @Entity on the bean, "computed" would not be a property at all and this test would pass for the wrong reason.
+        final com.landawn.abacus.parser.ParserUtil.PropInfo computed = com.landawn.abacus.parser.ParserUtil.getBeanInfo(ReadOnlyWithBackingField.class)
+                .getPropInfo("computed");
+        assertNotNull(computed);
+        org.junit.jupiter.api.Assertions.assertTrue(computed.isReadOnlyProperty);
+        assertEquals(com.landawn.abacus.annotation.JsonXmlField.Direction.SERIALIZE_ONLY, computed.jsonXmlExpose);
+
         final ReadOnlyWithBackingField result = BigQueryExecutor.toEntity(fields, row, ReadOnlyWithBackingField.class);
 
         assertEquals(7L, result.getId());
         assertEquals("local", result.getComputed());
+    }
+
+    // ---- 2026-10-20 ddbfix ----
+
+    /**
+     * A scalar column of a property toEntity ignores (read-only, SERIALIZE_ONLY) must not be decoded or converted for the
+     * bean-class Dataset either: extractData failed with NumberFormatException on a getter-only Long under a STRING "abc"
+     * column, and on a getter-only int under an INT64 "abc" column, both of which toEntity reads without error. The column
+     * keeps its raw cell values like an unmatched column (a NULL cell stays null), while writable columns still convert.
+     */
+    @Test
+    public void extractDataKeepsRawCellsOfScalarColumnWhosePropertyToEntityIgnores_ddbfix() {
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("computed", StandardSQLTypeName.STRING),
+                Field.of("count", StandardSQLTypeName.INT64), Field.of("total", StandardSQLTypeName.INT64));
+        final FieldValueList badRow = FieldValueList.of(Arrays.asList(primitive("7"), primitive("abc"), primitive("abc"), primitive("9")), fields);
+        final FieldValueList nullRow = FieldValueList.of(Arrays.asList(primitive("8"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, null),
+                FieldValue.of(FieldValue.Attribute.PRIMITIVE, null), primitive("10")), fields);
+        final com.google.cloud.bigquery.TableResult tableResult = org.mockito.Mockito.mock(com.google.cloud.bigquery.TableResult.class);
+        org.mockito.Mockito.when(tableResult.getSchema()).thenReturn(com.google.cloud.bigquery.Schema.of(fields));
+        org.mockito.Mockito.when(tableResult.getTotalRows()).thenReturn(2L);
+        org.mockito.Mockito.when(tableResult.iterateAll()).thenReturn(List.of(badRow, nullRow));
+
+        final GetterOnlyScalars entity = BigQueryExecutor.toEntity(fields, badRow, GetterOnlyScalars.class);
+        final com.landawn.abacus.util.Dataset dataset = BigQueryExecutor.extractData(tableResult, GetterOnlyScalars.class);
+        final List<GetterOnlyScalars> listed = BigQueryExecutor.toList(tableResult, GetterOnlyScalars.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(7L, entity.getId()), () -> assertEquals(Long.valueOf(5), entity.getComputed()),
+                () -> assertEquals(3, entity.getCount()), () -> assertEquals(Long.valueOf(9), entity.getTotal()), () -> assertEquals(2, dataset.size()),
+                () -> assertEquals(Long.valueOf(7), dataset.get(0, 0)), () -> assertEquals("abc", dataset.get(0, 1)),
+                () -> assertEquals("abc", dataset.get(0, 2)), () -> assertEquals(Long.valueOf(9), dataset.get(0, 3)),
+                () -> assertEquals(Long.valueOf(8), dataset.get(1, 0)), () -> org.junit.jupiter.api.Assertions.assertNull(dataset.get(1, 1)),
+                () -> org.junit.jupiter.api.Assertions.assertNull(dataset.get(1, 2)), () -> assertEquals(Long.valueOf(10), dataset.get(1, 3)),
+                () -> assertEquals(2, listed.size()), () -> assertEquals(Long.valueOf(5), listed.get(0).getComputed()),
+                () -> assertEquals(3, listed.get(1).getCount()), () -> assertEquals(Long.valueOf(10), listed.get(1).getTotal()));
+    }
+
+    // ---- 2026-10-20 sliceF ----
+
+    /**
+     * Pins the extractData doc's parenthetical for a STRUCT cell: a STRUCT under a column whose property toEntity ignores
+     * (getter-only Long "computed") goes down the unmatched-column path and becomes an Object[] of the raw sub-cell values,
+     * while toEntity leaves the property untouched.
+     */
+    @Test
+    public void extractDataKeepsStructCellOfGetterOnlyColumnAsObjectArray_sliceF() {
+        final FieldList subFields = FieldList.of(Field.of("value", StandardSQLTypeName.INT64), Field.of("label", StandardSQLTypeName.STRING));
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+                Field.newBuilder("computed", StandardSQLTypeName.STRUCT, subFields).build(), Field.of("total", StandardSQLTypeName.INT64));
+        final FieldValueList row = FieldValueList.of(Arrays.asList(primitive("7"), record(primitive("9"), primitive("nine")), primitive("11")), fields);
+        final com.google.cloud.bigquery.TableResult tableResult = org.mockito.Mockito.mock(com.google.cloud.bigquery.TableResult.class);
+        org.mockito.Mockito.when(tableResult.getSchema()).thenReturn(com.google.cloud.bigquery.Schema.of(fields));
+        org.mockito.Mockito.when(tableResult.getTotalRows()).thenReturn(1L);
+        org.mockito.Mockito.when(tableResult.iterateAll()).thenReturn(List.of(row));
+
+        final GetterOnlyScalars entity = BigQueryExecutor.toEntity(fields, row, GetterOnlyScalars.class);
+        final com.landawn.abacus.util.Dataset dataset = BigQueryExecutor.extractData(tableResult, GetterOnlyScalars.class);
+        final Object structCell = dataset.get(0, 1);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(Long.valueOf(5), entity.getComputed()),
+                () -> assertEquals(Long.valueOf(11), entity.getTotal()), () -> assertEquals(1, dataset.size()),
+                () -> assertEquals(Long.valueOf(7), dataset.get(0, 0)),
+                () -> org.junit.jupiter.api.Assertions.assertTrue(structCell instanceof Object[], () -> "expected Object[] but was " + structCell),
+                () -> assertArrayEquals(new Object[] { "9", "nine" }, (Object[]) structCell), () -> assertEquals(Long.valueOf(11), dataset.get(0, 2)));
+    }
+
+    /** Getter-only (read-only, implicitly SERIALIZE_ONLY) scalar properties next to writable ones. */
+    @com.landawn.abacus.annotation.Entity
+    public static class GetterOnlyScalars {
+        private long id;
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        private Long computed = 5L;
+        @com.landawn.abacus.annotation.AccessFieldByMethod
+        private int count = 3;
+        private Long total;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public Long getComputed() {
+            return computed;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public Long getTotal() {
+            return total;
+        }
+
+        public void setTotal(final Long total) {
+            this.total = total;
+        }
     }
 
     @Test
@@ -191,6 +296,8 @@ public class BigQueryExecutorDeepReview2026MappingTest extends TestBase {
         }
     }
 
+    // @Entity: only an @Entity class registers a getter-only (no setter) field as a property (abacus-common Beans rule).
+    @com.landawn.abacus.annotation.Entity
     public static class ReadOnlyWithBackingField {
         private long id;
 
