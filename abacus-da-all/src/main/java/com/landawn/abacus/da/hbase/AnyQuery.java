@@ -125,9 +125,9 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Attaches a server-side {@link Filter} to this query, replacing any previous filter. The
-     * filter is evaluated after HBase's standard TTL / column-matching / delete-marker / version
-     * checks.
+     * Attaches a server-side {@link Filter} to this query, replacing any previous filter. Per HBase,
+     * only the filter's {@code filterCell} step runs after HBase's standard TTL / column-matching /
+     * delete-marker / max-versions checks.
      *
      * <p><strong>Common filter types:</strong></p>
      * <ul>

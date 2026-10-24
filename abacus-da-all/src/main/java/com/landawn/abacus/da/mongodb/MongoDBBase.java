@@ -14,6 +14,7 @@
 
 package com.landawn.abacus.da.mongodb;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
@@ -147,6 +148,15 @@ import com.mongodb.client.MongoIterable;
  *   <li>Java primitives &rarr; BSON numeric types</li>
  *   <li>Java Date &rarr; BSON DateTime</li>
  *   <li>Java collections &rarr; BSON arrays</li>
+ *   <li>Java arrays other than {@code byte[]} (such as {@code String[]}, {@code int[]}, {@code ByteBuffer[]} or an array of
+ *       beans) &rarr; BSON arrays, each element stored exactly as the same element of a {@code List} would be (a {@code char}
+ *       as a one-character string, a {@code ByteBuffer} as binary, a bean as an embedded document, {@code null} as BSON
+ *       null), so queries and update operators such as {@code Filters.eq("tags", "a")} or {@code $push} work on their
+ *       elements. An element the driver cannot encode fails as it would inside a {@code List} (for example a
+ *       {@code BigDecimal} outside the {@code Decimal128} range, or a {@code Map} with non-{@code String} keys). Such arrays
+ *       stored as a BSON string of their JSON text (such as {@code ["a", "b"]}), as earlier versions
+ *       of this class wrote them, are still read back (see {@link #toEntity(Document, Class)})</li>
+ *   <li>Java {@code byte[]} and {@code ByteBuffer} &rarr; BSON binary</li>
  *   <li>Java Maps/POJOs &rarr; BSON documents</li>
  * </ul>
  *
@@ -220,6 +230,25 @@ public abstract class MongoDBBase {
         @Override
         protected PropConversions computeValue(final Class<?> cls) {
             return N.typeOf(cls).isBean() ? resolvePropConversions(cls, cls) : NO_PROP_CONVERSIONS;
+        }
+    };
+    /**
+     * Per class: whether it is a bean with a writable property of a {@link #isStringElementArrayType(Class) String-element array
+     * type}, whose JSON text (as earlier versions stored such an array) {@link #normalizeDecodedProperties} must parse (checked
+     * once per document, not per field).
+     */
+    private static final ClassValue<Boolean> hasStringElementArrayProperty = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(final Class<?> cls) {
+            if (Beans.isBeanClass(cls)) {
+                for (final PropInfo propInfo : ParserUtil.getBeanInfo(cls).propInfoList) {
+                    if (!propInfo.isReadOnlyProperty && isStringElementArrayType(propInfo.clazz)) {
+                        return Boolean.TRUE;
+                    }
+                }
+            }
+
+            return Boolean.FALSE;
         }
     };
 
@@ -852,6 +881,10 @@ public abstract class MongoDBBase {
      * ObjectId mapping and ensures proper BSON type compatibility. This is the preferred method for
      * converting Java objects to MongoDB documents.</p>
      *
+     * <p>Property values are put into the Document as they are: an array-valued property such as a {@code String[]} stays a
+     * Java array, which this class's codec registry (the one the databases and collections of {@link MongoDB} use) stores as
+     * a BSON array of its elements, and a {@code byte[]} as BSON binary (see the class description).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Convert a Map to a Document:
@@ -1316,6 +1349,16 @@ public abstract class MongoDBBase {
      * binary value type. A binary collection property can be populated from a source collection or reference array.
      * Raw containers and containers of Object or Binary retain their normal bean-mapping behavior.</p>
      *
+     * <p>An array other than {@code byte[]} is written by this class's codec as a BSON array (see the class description), which
+     * is read back into an array property of any element type, including such arrays inside typed containers, nested beans
+     * and records. Earlier versions wrote such an array as a BSON string holding its JSON text, and that text still reads
+     * back: for an array type whose element type accepts text ({@code String[]}, {@code Object[]}, {@code CharSequence[]},
+     * ...), a stored text enclosed in {@code [...]} is parsed back into its elements ({@code ["a", "b"]} gives
+     * {@code {"a", "b"}}). The parser is lenient: unquoted elements are read as well, so a plain text such as {@code [draft]}
+     * or {@code [a, b]} also gives its elements ({@code {"draft"}}, {@code {"a", "b"}}). Text not enclosed in {@code [...]}, or
+     * that cannot be parsed as an array (such as {@code [a]b]}), becomes the array's single element. Other array types
+     * convert their text as before.</p>
+     *
      * <p>The elements of typed collection, array and map properties are converted to their declared types (for example
      * embedded documents into the beans of a {@code List<Address>} property, or {@code Integer} values into a
      * {@code List<Long>}); an element that cannot be converted fails the conversion, as a property value of that type would.
@@ -1450,7 +1493,10 @@ public abstract class MongoDBBase {
             final PropInfo propInfo = binaryPropertyInfo(beanType, entry.getKey());
             Object converted = value;
 
-            if (propInfo != null) {
+            // As in normalizeDecodedProperties: Beans.mapToBean skips a read-only property, so its stored value is not converted
+            // here either. Converting it made an unconvertible stored value (a list of text for a getter-only byte[]/ByteBuffer
+            // property of an @AccessFieldByMethod bean) fail the whole row.
+            if (propInfo != null && !propInfo.isReadOnlyProperty) {
                 if ((byte[].class.equals(propInfo.clazz) || ByteBuffer.class.equals(propInfo.clazz)) && !(value instanceof Map)) {
                     converted = convertBsonValue(value, propInfo.clazz);
                 } else if (value instanceof Map && Beans.isBeanClass(propInfo.clazz)) {
@@ -1590,7 +1636,8 @@ public abstract class MongoDBBase {
      * Converts decoded values to their declared property types where {@link Beans#mapToBean(Map, Class)} would not:
      * the elements, keys and values of typed collection, array and map properties (including nested bean maps),
      * {@link Date} values of {@link LocalDate}, {@link LocalDateTime} and {@link LocalTime} properties (read in UTC, like
-     * the driver's codecs write them), any value of a property whose type comes from a type argument of a generic bean,
+     * the driver's codecs write them), the JSON text earlier versions of {@link GeneralCodec} stored for a
+     * {@code String[]}/{@code Object[]}-like array property, any value of a property whose type comes from a type argument of a generic bean,
      * and every value of an immutable bean (a record). The supplied map and its nested maps are never modified.
      *
      * @param properties the source bean properties
@@ -1605,12 +1652,17 @@ public abstract class MongoDBBase {
     private static Map<String, Object> normalizeDecodedProperties(final Map<String, Object> properties, final Class<?> beanType,
             final PropConversions propConversions) throws IllegalArgumentException, RuntimeException {
         Map<String, Object> result = properties;
+        // Text is looked at only for a bean with a String[]/Object[]-like property, so other beans pay no lookup per String field.
+        final boolean parseArrayText = hasStringElementArrayProperty.get(beanType);
 
         for (final Map.Entry<String, Object> entry : properties.entrySet()) {
             final Object value = entry.getValue();
 
-            if (value == null || (propConversions == null
-                    && !(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date))) {
+            // A dotted key ("child.tags") names a property of a nested bean, which the flag of beanType does not cover: without
+            // this, such a key's array text was parsed only when beanType itself happened to have a String[]-like property.
+            if (value == null
+                    || (propConversions == null && !(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date)
+                            && !(value instanceof String && (parseArrayText || (entry.getKey() != null && entry.getKey().indexOf('.') > 0))))) {
                 continue;
             }
 
@@ -1639,6 +1691,10 @@ public abstract class MongoDBBase {
                 // wrapper of a primitive one: the constructor call unboxes it).
                 final Class<?> declaredClass = propInfo.jsonXmlType.javaType();
                 converted = toDeclaredElement(value, declaredClass.isPrimitive() ? N.typeOf(ClassUtil.wrap(declaredClass)) : propInfo.jsonXmlType);
+            } else if (value instanceof String && isStringElementArrayType(propInfo.clazz)) {
+                // Earlier versions of GeneralCodec wrote the array as its JSON text; Beans.mapToBean would wrap that text as the
+                // single element.
+                converted = convertBsonValue(value, propInfo.clazz);
             } else if (!(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date)) {
                 continue;
             } else if (value instanceof Map && Beans.isBeanClass(propInfo.clazz)) {
@@ -1906,6 +1962,10 @@ public abstract class MongoDBBase {
      * Converts a BSON scalar value, preserving binary payloads for byte-array and ByteBuffer targets.
      * Newly created buffers are ready for reading; an input buffer is never advanced. A {@link Date} requested as
      * {@link LocalDate}, {@link LocalDateTime} or {@link LocalTime} is read in UTC, as the driver's codecs write those types.
+     * A {@link String} enclosed in {@code [...]} requested as an array type whose element type accepts text ({@code String[]},
+     * {@code Object[]}, ...) is parsed as the JSON text earlier versions of {@link GeneralCodec} wrote for an array (leniently:
+     * unquoted elements, as in {@code [a, b]}, are read too); when it cannot be parsed as an array it becomes the array's
+     * single element, like any other text.
      *
      * @param <T> the target value type
      * @param value the decoded field value, possibly null
@@ -1932,9 +1992,39 @@ public abstract class MongoDBBase {
             final OffsetDateTime utc = Instant.ofEpochMilli(((Date) value).getTime()).atOffset(ZoneOffset.UTC);
 
             return (T) (targetType == LocalDate.class ? utc.toLocalDate() : targetType == LocalDateTime.class ? utc.toLocalDateTime() : utc.toLocalTime());
+        } else if (value instanceof final String text && targetType != null && isStringElementArrayType(targetType) && isArrayLiteral(text)) {
+            // Earlier versions of GeneralCodec stored an array (the driver has no codec for one) as its N.stringOf JSON text,
+            // e.g. ["a", "b"]; it now writes a BSON array, but such stored text must still read back. N.convert wraps a String
+            // as the single element of an array type that accepts it (String[], Object[], ...), so a String[] written that way
+            // was read back as [ "[\"a\", \"b\"]" ]. Parse it as GeneralCodec.decode does; text that is not a valid array
+            // literal (so never written by this class) keeps the single-element wrapping below.
+            try {
+                return N.valueOf(text, targetType);
+            } catch (final ParsingException e) {
+                // Not an array literal written by this class: read it as the array's single element, as before.
+            }
         }
 
         return N.convert(value, targetType);
+    }
+
+    /**
+     * Tells whether {@code cls} is an object-array type whose element type accepts a {@link String} ({@code String[]},
+     * {@code Object[]}, {@code CharSequence[]}, ...). Earlier versions of {@link GeneralCodec} stored such an array as its JSON
+     * text, which {@code N.convert} would wrap as the single element of the array instead of parsing it.
+     */
+    private static boolean isStringElementArrayType(final Class<?> cls) {
+        return cls.isArray() && !cls.getComponentType().isPrimitive() && cls.getComponentType().isAssignableFrom(String.class);
+    }
+
+    /**
+     * Tells whether {@code text}, ignoring surrounding whitespace, is enclosed in square brackets like the JSON text earlier
+     * versions of {@link GeneralCodec} wrote for an array.
+     */
+    private static boolean isArrayLiteral(final String text) {
+        final String trimmed = text.strip();
+
+        return trimmed.length() >= 2 && trimmed.charAt(0) == '[' && trimmed.charAt(trimmed.length() - 1) == ']';
     }
 
     /**
@@ -2002,13 +2092,84 @@ public abstract class MongoDBBase {
         // Document and its converted row at the same time, about twice the result's memory.
         final RowListCollector collector = new RowListCollector(rowType);
 
-        try (MongoCursor<?> cursor = findIterable.iterator()) {
+        try (CursorScope<?> scope = new CursorScope<>(findIterable.iterator())) {
+            final MongoCursor<?> cursor = scope.cursor;
+
             while (cursor.hasNext()) {
                 collector.accept(cursor.next());
             }
         }
 
         return (List<T>) collector.finish();
+    }
+
+    /**
+     * Closes {@code cursor} with the current thread's interrupt status cleared, and restores the status afterwards. A
+     * {@code null} cursor is ignored. Failures of {@code close()} propagate unchanged.
+     *
+     * <p><b>WHY:</b> {@code cancel(true)} on a future of the async executor interrupts the worker thread running the sync
+     * driver code. The next {@code getMore} then fails, and a cursor closed while the thread is still interrupted skips
+     * {@code killCursors}, so the server keeps the cursor open until its idle timeout (10 minutes by default; proven live).</p>
+     *
+     * @param cursor the cursor to close, possibly {@code null}
+     */
+    static void closeCursor(final MongoCursor<?> cursor) {
+        if (cursor == null) {
+            return;
+        }
+
+        final boolean interrupted = Thread.interrupted();
+
+        try {
+            cursor.close();
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
+     * Holds a cursor for a try-with-resources block that closes it through {@link #closeCursor(MongoCursor)}, so the block
+     * keeps the try-with-resources semantics (a close failure propagates, or is suppressed onto the block's own failure).
+     *
+     * @param <T> the row type of the cursor
+     */
+    static final class CursorScope<T> implements AutoCloseable {
+        /** The cursor, possibly {@code null} (then nothing is closed, as with a {@code null} resource). */
+        final MongoCursor<T> cursor;
+
+        CursorScope(final MongoCursor<T> cursor) {
+            this.cursor = cursor;
+        }
+
+        @Override
+        public void close() {
+            closeCursor(cursor);
+        }
+    }
+
+    /**
+     * Fetches every row of {@code iterable} into a new list, exactly as {@code iterable.into(new ArrayList<>())} does (the
+     * driver iterates {@code iterable.iterator()} in a try-with-resources block), but closes the cursor through
+     * {@link #closeCursor(MongoCursor)}.
+     *
+     * @param <T> the row type
+     * @param iterable the iterable to drain
+     * @return the fetched rows
+     */
+    static <T> List<T> fetchAll(final MongoIterable<T> iterable) {
+        final List<T> rows = new ArrayList<>();
+
+        try (CursorScope<T> scope = new CursorScope<>(iterable.iterator())) {
+            final MongoCursor<T> cursor = scope.cursor;
+
+            while (cursor.hasNext()) {
+                rows.add(cursor.next());
+            }
+        }
+
+        return rows;
     }
 
     /**
@@ -2525,7 +2686,8 @@ public abstract class MongoDBBase {
         N.checkArgNotNull(findIterable, cs.findIterable);
         checkResultClass(rowType);
 
-        final List<Object> rowList = findIterable.into(new ArrayList<>());
+        // Not findIterable.into(...): the driver closes that cursor itself, skipping killCursors on an interrupted thread.
+        final List<?> rowList = fetchAll(findIterable);
         return extractData(selectPropNames, rowList, rowType);
     }
 
@@ -3143,11 +3305,13 @@ public abstract class MongoDBBase {
 
     /**
      * Generic {@link Codec} that encodes bean-style entities as BSON documents (via
-     * {@link MongoDBBase#toDocument(Object)}), a {@link ByteBuffer} as BSON binary, and other types (including
-     * value types with bean accessors, such as {@code GregorianCalendar}) as their {@link N#stringOf(Object)}
-     * string form. Decoding mirrors this: entity classes are read as Documents and then mapped to
-     * the bean, while other types parse a BSON string via {@link N#valueOf(String, Class)} and convert
-     * any other BSON value (as decoded for a {@link Document} field) to the target type.
+     * {@link MongoDBBase#toDocument(Object)}), a {@link ByteBuffer} or {@code byte[]} as BSON binary, other arrays as BSON
+     * arrays whose elements are encoded through the codec registry exactly as the elements of a {@code List} are, and other
+     * types (including value types with bean accessors, such as {@code GregorianCalendar}) as their {@link N#stringOf(Object)}
+     * string form. Decoding mirrors this: entity classes are read as Documents and then mapped to the bean, while other types
+     * parse a BSON string via {@link N#valueOf(String, Class)} (which also reads the JSON text earlier versions wrote for an
+     * array) and convert any other BSON value (as decoded for a {@link Document} field, a BSON array as a {@code List}) to the
+     * target type.
      */
     static class GeneralCodec<T> implements Codec<T>, OverridableUuidRepresentationCodec<T> {
 
@@ -3160,6 +3324,9 @@ public abstract class MongoDBBase {
         /** Field name of the one-entry holder document used to decode a single value into its plain Java form. */
         private static final String VALUE_FIELD = "v";
 
+        /** The context the elements of an array are encoded with: the child context a {@code List}'s codec passes its elements. */
+        private static final EncoderContext ELEMENT_CONTEXT = EncoderContext.builder().build();
+
         /** The Java class this codec handles. */
         private final Class<T> cls;
 
@@ -3169,11 +3336,15 @@ public abstract class MongoDBBase {
         /** {@link DocumentCodec} used to encode/decode the BSON document representation of beans. */
         private final Codec<Document> documentCodec;
 
+        /** Registry resolving the codec of each element of an array value, the registry {@link #documentCodec} resolves through. */
+        private final CodecRegistry registry;
+
         /**
          * Creates a codec for the specified Java type.
          *
-         * <p>The codec serializes bean-style entity classes as BSON documents, a {@link ByteBuffer} as BSON binary,
-         * and other values as strings using {@code N.stringOf(Object)}.</p>
+         * <p>The codec serializes bean-style entity classes as BSON documents, a {@link ByteBuffer} or {@code byte[]} as BSON
+         * binary, other arrays as BSON arrays (each element encoded through {@link MongoDBBase#codecRegistry}), and other values
+         * as strings using {@code N.stringOf(Object)}.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3183,25 +3354,26 @@ public abstract class MongoDBBase {
          * @param cls the target Java type to encode/decode
          */
         public GeneralCodec(final Class<T> cls) {
-            this(cls, defaultDocumentCodec);
+            this(cls, codecRegistry, defaultDocumentCodec);
         }
 
         /**
          * Creates a codec for the specified Java type that resolves nested values through {@code registry}.
          *
          * @param cls the target Java type to encode/decode
-         * @param registry the registry used for the codecs of a bean's property values
+         * @param registry the registry used for the codecs of a bean's property values and of an array's elements
          */
         GeneralCodec(final Class<T> cls, final CodecRegistry registry) {
-            this(cls, new DocumentCodec(registry, new BsonTypeClassMap()));
+            this(cls, registry, new DocumentCodec(registry, new BsonTypeClassMap()));
         }
 
-        private GeneralCodec(final Class<T> cls, final Codec<Document> documentCodec) {
+        private GeneralCodec(final Class<T> cls, final CodecRegistry registry, final Codec<Document> documentCodec) {
             this.cls = cls;
             // Beans.isBeanClass is also true for value types with getters/setters (GregorianCalendar, ByteBuffer): encoding
             // those as a document of their bean properties dropped the value itself ({"position": 0, "limit": 3}).
             isEntityClass = Beans.isBeanClass(cls) && N.typeOf(cls).isBean();
             this.documentCodec = documentCodec;
+            this.registry = registry;
         }
 
         /**
@@ -3215,23 +3387,26 @@ public abstract class MongoDBBase {
         public Codec<T> withUuidRepresentation(final UuidRepresentation uuidRepresentation) {
             final Codec<Document> codec = ((OverridableUuidRepresentationCodec<Document>) documentCodec).withUuidRepresentation(uuidRepresentation);
 
-            return codec == documentCodec ? this : new GeneralCodec<>(cls, codec);
+            return codec == documentCodec ? this : new GeneralCodec<>(cls, registry, codec);
         }
 
         /**
          * Encodes {@code value} into the supplied BSON writer. Beans are first converted with
          * {@link MongoDBBase#toDocument(Object)} and written through this codec's {@link DocumentCodec}; the remaining
-         * bytes of a {@link ByteBuffer} are written as BSON binary, and all other types as their {@code N.stringOf(Object)}
-         * string representation.
+         * bytes of a {@link ByteBuffer}, and a {@code byte[]}, are written as BSON binary; any other array is written as a BSON
+         * array, each element through the codec its class has in this codec's registry (as the codec of a {@code List} writes
+         * the same element: a {@code char} as a one-character string, a nested array as a nested BSON array, {@code null} as
+         * BSON null); and all other types as their {@code N.stringOf(Object)} string representation.
          *
          * @param writer destination writer; must not be null
          * @param value the value to encode; must not be null for bean types, while null scalar values are forwarded to the writer
-         * @param encoderContext encoder context required for bean values and ignored for scalar values
+         * @param encoderContext encoder context required for bean values and ignored for scalar and array values
          * @throws IllegalArgumentException if {@code writer} is null, or this codec handles a bean type and {@code value} or
          *         {@code encoderContext} is null, or a bean value cannot be converted to a BSON document, or a scalar value is null
          *         and the writer rejects the resulting null string
          * @throws BsonInvalidOperationException if the writer is not positioned to accept the encoded value
-         * @throws CodecConfigurationException if a bean property value has no usable BSON codec
+         * @throws CodecConfigurationException if a bean property value or an array element has no usable BSON codec (for example
+         *         a {@code UUID} when the registry specifies no UUID representation)
          * @throws RuntimeException if a bean getter or nested codec throws while converting or encoding {@code value}
          */
         @Override
@@ -3250,6 +3425,30 @@ public abstract class MongoDBBase {
                 final byte[] bytes = new byte[buffer.remaining()];
                 buffer.duplicate().get(bytes);
                 writer.writeBinaryData(new BsonBinary(bytes));
+            } else if (value instanceof final byte[] bytes) {
+                // BSON binary, as the driver's ByteArrayCodec writes it (that codec precedes this one in codecRegistry, so only
+                // a direct use of this codec gets here), not a BSON array of int32 values like the other arrays below.
+                writer.writeBinaryData(new BsonBinary(bytes));
+            } else if (value != null && value.getClass().isArray()) {
+                // WHY: the driver has no codec for a Java array, so the registry resolves every array type but byte[] to this
+                // codec, which wrote the array's N.stringOf JSON text as a BSON string: a query on an element (eq("tags", "a"))
+                // matched nothing, $push/$addToSet failed on the field, and a ByteBuffer[] lost its bytes ([""]). Write a BSON
+                // array instead, each element encoded through the registry exactly as the codec of a List encodes the same
+                // element (null as BSON null, a nested array through this codec again). Text written before is still read back
+                // (see convertBsonValue).
+                writer.writeStartArray();
+
+                for (int i = 0, len = Array.getLength(value); i < len; i++) {
+                    final Object element = Array.get(value, i);
+
+                    if (element == null) {
+                        writer.writeNull();
+                    } else {
+                        ((Codec<Object>) registry.get(element.getClass())).encode(writer, element, ELEMENT_CONTEXT);
+                    }
+                }
+
+                writer.writeEndArray();
             } else {
                 writer.writeString(N.stringOf(value));
             }

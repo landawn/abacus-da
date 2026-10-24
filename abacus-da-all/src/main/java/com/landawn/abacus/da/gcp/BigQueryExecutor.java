@@ -143,8 +143,11 @@ import com.landawn.abacus.util.stream.Stream;
  * <p>BigQuery returns every scalar cell as text. When a row is mapped to a bean property or a single-value
  * type, {@code BYTES} cells (base64 text) are decoded for {@code byte[]}/{@link java.nio.ByteBuffer} targets and
  * {@code TIMESTAMP} cells (epoch seconds or microseconds) are decoded for date/time targets. Microsecond precision
- * is retained where the target supports it; {@code java.util.Date} and {@code Calendar} retain milliseconds.
- * {@code TIME} cells ({@code HH:MM:SS[.ffffff]}) are decoded for {@code java.sql.Time} targets, retaining milliseconds.
+ * is retained where the target supports it; {@code java.util.Date} and {@code Calendar} retain milliseconds. A local or zoned
+ * {@code java.time} target ({@code LocalDateTime}, {@code LocalDate}, {@code LocalTime}, {@code ZonedDateTime},
+ * {@code OffsetDateTime}) receives the instant in the JVM default time zone, not in UTC, in which BigQuery displays it.
+ * {@code TIME} cells ({@code HH:MM:SS[.ffffff]}) are decoded for {@code java.sql.Time} targets, retaining milliseconds, and
+ * {@code DATE} cells ({@code YYYY-MM-DD}) for {@code com.google.cloud.Date} targets, the type a {@code DATE} parameter binds from.
  * The same decoding applies to elements of typed collection and array bean properties for {@code REPEATED}
  * columns, and a {@code REPEATED STRUCT} column mapped to a collection or array of beans maps each element
  * like a {@code STRUCT} bean property. A {@code STRUCT} cell mapped to a {@code Map} or {@code Collection} bean property
@@ -157,7 +160,7 @@ import com.landawn.abacus.util.stream.Stream;
  * (e.g. {@code T value} of {@code Box<T>}, read through {@code class LongBox extends Box<Long>} or {@code Box<Long>}) is
  * decoded and converted to the type it is bound to, like any other typed property.
  * Scalar text that still needs property conversion uses the property's configured JSON/XML reader, including date/number
- * formats and time zones. Native {@code BYTES}, {@code TIMESTAMP} and {@code TIME} decoding takes precedence over text formats.
+ * formats and time zones. Native {@code BYTES}, {@code TIMESTAMP}, {@code TIME} and {@code DATE} decoding takes precedence over text formats.
  * Other cells go through the standard abacus type conversion. {@code Map}, {@code Collection}, and
  * {@code Object[]} rows keep the raw cell values; a typed array row (e.g. {@code Long[]} or {@code byte[][]}) decodes
  * and converts each cell to the array's component type.</p>
@@ -205,6 +208,11 @@ import com.landawn.abacus.util.stream.Stream;
  * ({@code firstName = 'O\'Brien' AND bonusPoints > 1} renders {@code first_name = 'O\'Brien' AND bonusPoints > 1} under
  * {@code SNAKE_CASE}). Bind such values as {@code ?} parameters or {@code Filters.eq(...)} conditions, place the
  * literal last, or write the following names as column names.</p>
+ * <p>Generated table and column names are not quoted (only the {@code AS} aliases of a {@code SELECT} are). A name that is a
+ * GoogleSQL reserved keyword, such as the table {@code order} derived from a class {@code Order} or a {@code from}, {@code to}
+ * or {@code group} property, is therefore a syntax error in BigQuery. Declare such a name with backticks, as in
+ * {@code @Table("`order`")} or {@code @Column("`from`")}: the quoted name is emitted as written in every generated statement,
+ * including for a property name inside a raw {@code Filters.expr(...)} condition.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -432,8 +440,9 @@ public class BigQueryExecutor {
      * their field in {@code fields}, into the property's declared type (including the element types of a {@code Map} or
      * {@code Collection} property such as {@code Map<String, Long>}, and the type arguments of a generic bean property such as
      * {@code Box<Long>}); {@code REPEATED} values are converted to the property's
-     * collection or array type. {@code BYTES}, {@code TIMESTAMP} and {@code TIME} cells are decoded for binary,
-     * date/time and {@code java.sql.Time} properties as described under <i>Result Value Conversion</i> in the class documentation.
+     * collection or array type. {@code BYTES}, {@code TIMESTAMP}, {@code TIME} and {@code DATE} cells are decoded for binary,
+     * date/time, {@code java.sql.Time} and {@code com.google.cloud.Date} properties as described under <i>Result Value Conversion</i> in
+     * the class documentation.
      * A property declared with a type variable that {@code targetClass} binds (e.g. {@code T value} inherited by
      * {@code class LongBox extends Box<Long>}) is converted to the bound type.
      * A direct column that matches a read-only property (one with no setter or permitted field write: a getter-only
@@ -783,7 +792,8 @@ public class BigQueryExecutor {
     }
 
     // Whether the elements of a REPEATED field must be decoded one by one for elementClass instead of going through the
-    // JSON codec, which would hand the raw cell text (base64, epoch seconds, fractional TIME) to the element type.
+    // JSON codec, which would hand the raw cell text (base64, epoch seconds, fractional TIME) to the element type (or,
+    // for a com.google.cloud.Date element, which it cannot convert to, keep the DATE text as the element).
     // RECORD elements use the same bean test as readRow's STRUCT dispatch: Beans.isBeanClass alone also accepts value
     // types with bean accessors (GregorianCalendar, ByteBuffer), which toEntity would populate from same-named
     // sub-fields instead of failing. A generic element bean (e.g. G<Long>) is decoded too: it is mapped with its type
@@ -801,7 +811,8 @@ public class BigQueryExecutor {
 
         return (LegacySQLTypeName.BYTES.equals(fieldType) && (elementClass == byte[].class || elementClass == ByteBuffer.class))
                 || (LegacySQLTypeName.TIMESTAMP.equals(fieldType) && isDateTimeClass(elementClass))
-                || (LegacySQLTypeName.TIME.equals(fieldType) && elementClass == java.sql.Time.class);
+                || (LegacySQLTypeName.TIME.equals(fieldType) && elementClass == java.sql.Time.class)
+                || (LegacySQLTypeName.DATE.equals(fieldType) && elementClass == com.google.cloud.Date.class);
     }
 
     // The full type of a container's elements, including type arguments (GenericValue<Long> for List<GenericValue<Long>> or
@@ -834,14 +845,16 @@ public class BigQueryExecutor {
     // epoch microseconds, none of which N.convert/setPropValue can decode (base64 -> NumberFormatException,
     // epoch seconds -> parse failure, epoch micros -> misread as millis). Decode those through FieldValue's
     // typed accessors when the target is a binary or date/time type. A TIME cell is HH:MM:SS[.ffffff], whose
-    // fractional part the java.sql.Time conversion rejects, so it is parsed here for a java.sql.Time target.
+    // fractional part the java.sql.Time conversion rejects, so it is parsed here for a java.sql.Time target, and a
+    // DATE cell (YYYY-MM-DD) is parsed for a com.google.cloud.Date target, which the standard conversion cannot create.
     // Every other value (including the raw String for String/Object targets) is returned unchanged for the
     // caller's normal conversion path.
     /**
-     * Decodes a BYTES, TIMESTAMP or TIME cell for a binary, date/time or {@code java.sql.Time} target; returns any other cell value unchanged.
+     * Decodes a BYTES, TIMESTAMP, TIME or DATE cell for a binary, date/time, {@code java.sql.Time} or {@code com.google.cloud.Date} target;
+     * returns any other cell value unchanged.
      *
      * @throws RuntimeException if a BYTES value is not valid Base64, a TIMESTAMP value cannot be parsed, or its timestamp cannot be converted to the
-     *         requested date/time type, or a TIME value cannot be parsed
+     *         requested date/time type, or a TIME or DATE value cannot be parsed
      */
     private static Object decodeTypedValue(final Field field, final FieldValue fieldValue, final Class<?> targetClass) throws RuntimeException {
         final Object value = fieldValue.getValue();
@@ -882,6 +895,11 @@ public class BigQueryExecutor {
             time.setTime(time.getTime() + localTime.getNano() / 1_000_000);
 
             return time;
+        } else if (LegacySQLTypeName.DATE.equals(fieldType) && targetClass == com.google.cloud.Date.class) {
+            // com.google.cloud.Date is what a DATE parameter binds from (queryParameterMap), but abacus-common has no
+            // conversion to it: N.convert failed with "Conversion returned java.lang.String", and a List<com.google.cloud.Date>
+            // property silently kept the String texts. The DATE cell text ("YYYY-MM-DD") is the format parseDate reads.
+            return com.google.cloud.Date.parseDate((String) value);
         }
 
         return value;
@@ -1765,7 +1783,9 @@ public class BigQueryExecutor {
      * This method converts the entity to the appropriate BigQuery format and executes
      * an INSERT statement. The table name is derived from the entity class name using
      * the configured naming policy. All non-null properties of the entity will be
-     * included in the INSERT statement.
+     * included in the INSERT statement, including id properties holding {@code 0}: BigQuery does not generate ids, so the
+     * SQL convention of leaving out a zero-valued id for the database to generate is not applied (a {@code null} id is left
+     * out like any other {@code null} property).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1792,7 +1812,7 @@ public class BigQueryExecutor {
      * @param entity the entity instance to insert; the table name is resolved from its class via the configured naming policy
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if {@code entity} is null, or if the SQL builder finds no insertable value in it (every insertable
-     *         property is null, or only default-valued ID properties are set)
+     *         property is null)
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #insert(Class, Map)
@@ -1813,20 +1833,52 @@ public class BigQueryExecutor {
      */
     private SP prepareInsert(final Object entity) throws IllegalArgumentException, RuntimeException {
         final Class<?> targetClass = entity.getClass();
+        final Map<String, Object> props = insertedProps(entity);
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return buildSql(PSC.insert(entity), builder -> builder.into(targetClass));
+                return buildSql(props == null ? PSC.insert(entity) : PSC.insert(props), builder -> builder.into(targetClass));
 
             case SCREAMING_SNAKE_CASE:
-                return buildSql(PAC.insert(entity), builder -> builder.into(targetClass));
+                return buildSql(props == null ? PAC.insert(entity) : PAC.insert(props), builder -> builder.into(targetClass));
 
             case CAMEL_CASE:
-                return buildSql(PLC.insert(entity), builder -> builder.into(targetClass));
+                return buildSql(props == null ? PLC.insert(entity) : PLC.insert(props), builder -> builder.into(targetClass));
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
         }
+    }
+
+    // The SQL builder's insert(entity) follows the SQL "database-generated id" convention: while every id property (@Id, or
+    // a conventional `id`) holds null or a numeric zero, it leaves all of them out of the INSERT. BigQuery never generates
+    // ids, so an id 0 (or an all-zero composite key) was inserted as NULL (silent data loss; a REQUIRED column failed the
+    // job), and an entity whose only value was a zero id was rejected. The bean's non-null insertable values, ids included,
+    // are therefore bound through the Map-based insert, which renders the same columns in the same order for every other
+    // entity; a null id is still left out. Returns null, keeping insert(entity) and its exceptions, for a Map or non-bean
+    // entity and for a bean without any non-null insertable value.
+    private static Map<String, Object> insertedProps(final Object entity) throws RuntimeException {
+        final Class<?> entityClass = entity.getClass();
+
+        // insert(entity) inserts any Map from its entries, including an @Entity-annotated Map subclass, which
+        // Beans.isBeanClass accepts: its bean accessors would replace the entries with an `empty` column (isEmpty()).
+        if (entity instanceof Map || !Beans.isBeanClass(entityClass)) {
+            return null;
+        }
+
+        final BeanInfo entityInfo = ParserUtil.getBeanInfo(entityClass);
+        final Collection<String> propNames = QueryUtil.insertPropNames(entityClass, null);
+        final Map<String, Object> props = N.newLinkedHashMap(propNames.size());
+
+        for (final String propName : propNames) {
+            final Object propValue = entityInfo.getPropValue(entity, propName);
+
+            if (propValue != null) {
+                props.put(propName, propValue);
+            }
+        }
+
+        return props.isEmpty() ? null : props;
     }
 
     /**

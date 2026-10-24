@@ -4,10 +4,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -24,13 +29,17 @@ import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
+import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.stream.Stream;
+import com.mongodb.MongoNamespace;
+import com.mongodb.client.MongoCollection;
 
 public class AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest {
 
@@ -324,6 +333,81 @@ public class AsyncMongoCollectionExecutorDeepReview2026StreamCancellationTest {
 
         for (int i = 0; i < expected.length; i++) {
             Assertions.assertSame(expected[i], actual[i], "Argument " + i);
+        }
+    }
+
+    // ---- 2026-10-24 sliceR ----
+
+    @Test
+    public void testSharedDefaultExecutorShutdownFailsStreamCallBeforeTheQueryIsSubmitted(@TempDir final Path tempDir) throws Exception {
+        // A separate JVM: the probe shuts down abacus-common's shared default executor, which cannot be undone.
+        final Path output = tempDir.resolve("shared-executor-probe.txt");
+        final Path arguments = tempDir.resolve("shared-executor-probe.args");
+        final String executable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        final String classPath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
+        // The test classpath approaches the Windows command-line limit, so pass it in a launcher argument file. Quoted
+        // argument-file values treat backslashes as escapes, and the launcher reads the file in the native encoding.
+        Files.writeString(arguments, "-cp\n\"" + classPath.replace("\\", "\\\\") + "\"\n", Charset.forName(System.getProperty("native.encoding")));
+        final Process process = new ProcessBuilder(executable, "-Xmx256m", "-XX:+UseSerialGC", "@" + arguments, SharedExecutorShutdownProbe.class.getName())
+                .redirectErrorStream(true)
+                .redirectOutput(output.toFile())
+                .start();
+
+        try {
+            Assertions.assertTrue(process.waitFor(60, TimeUnit.SECONDS), "Forked shared-executor probe timed out");
+            Assertions.assertEquals(0, process.exitValue(), () -> {
+                try {
+                    return Files.readString(output);
+                } catch (final java.io.IOException e) {
+                    return e.toString();
+                }
+            });
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
+    public static final class SharedExecutorShutdownProbe {
+        public static void main(final String[] args) throws Exception {
+            final AtomicInteger findCalls = new AtomicInteger();
+            final MongoCollection<Document> collection = driverProxy(MongoCollection.class, findCalls);
+            // The caller's own executor stays usable; only the shared default one is gone, as during JVM shutdown.
+            final AsyncMongoCollectionExecutor async = new MongoCollectionExecutor(collection, new AsyncExecutor(Runnable::run)).async();
+            final Field sharedExecutor = N.class.getDeclaredField("ASYNC_EXECUTOR");
+            sharedExecutor.setAccessible(true);
+            ((AsyncExecutor) sharedExecutor.get(null)).shutdown(); // what that pool's JVM shutdown hook does
+
+            Assertions.assertThrows(IllegalStateException.class, () -> async.stream(new Document()));
+            // The failure used to be raised after the inline task had already run the find (opening a cursor that no
+            // future could cancel or close).
+            Assertions.assertEquals(0, findCalls.get(), "the query ran although the stream call failed");
+        }
+
+        @SuppressWarnings("unchecked")
+        private static <T> T driverProxy(final Class<T> type, final AtomicInteger findCalls) {
+            return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] { type }, (proxy, method, methodArgs) -> {
+                switch (method.getName()) {
+                    case "find" -> findCalls.incrementAndGet();
+                    case "getNamespace" -> {
+                        return new MongoNamespace("probe.c");
+                    }
+                    case "hashCode" -> {
+                        return System.identityHashCode(proxy);
+                    }
+                    case "equals" -> {
+                        return proxy == methodArgs[0];
+                    }
+                    case "toString" -> {
+                        return type.getSimpleName() + " probe";
+                    }
+                    default -> {
+                    }
+                }
+
+                final Class<?> returnType = method.getReturnType();
+
+                return returnType.isInterface() ? driverProxy(returnType, findCalls) : returnType == boolean.class ? Boolean.FALSE : null;
+            });
         }
     }
 }

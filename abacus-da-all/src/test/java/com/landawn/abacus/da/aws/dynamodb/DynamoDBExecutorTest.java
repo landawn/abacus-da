@@ -1318,4 +1318,198 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
         assertEquals("2", captor.getAllValues().get(1).getExclusiveStartKey().get("id").getS());
     }
 
+    // ---- 2026-10-24 apply-ddb ----
+
+    /**
+     * A number type whose text is not a decimal number (abacus Fraction renders "3/4"; DynamoDB rejects such an N value) is
+     * written as S holding that text, by every write path (toAttributeValue, asKey, asItem, toAttributeValueUpdate, toItem),
+     * and the S text reads back into the Fraction property and a Fraction single value unchanged.
+     */
+    @Test
+    public void testToAttributeValue_NonDecimalNumberTextIsStoredAsSAndReadsBack_applyDdb() {
+        final com.landawn.abacus.util.Fraction threeQuarters = com.landawn.abacus.util.Fraction.of(3, 4);
+        final com.landawn.abacus.util.Fraction oneThird = com.landawn.abacus.util.Fraction.of(1, 3);
+        final AttributeValue fraction = DynamoDBExecutor.toAttributeValue(threeQuarters);
+        final FractionEntity_applyDdb entity = new FractionEntity_applyDdb();
+        entity.setId(oneThird);
+        entity.setRatio(threeQuarters);
+        entity.setCount(5);
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(entity);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("3/4", fraction.getS()), () -> assertNull(fraction.getN()),
+                () -> assertEquals("2/1", DynamoDBExecutor.toAttributeValue(com.landawn.abacus.util.Fraction.of(2, 1)).getS()),
+                () -> assertEquals("1/3", DynamoDBExecutor.asKey("id", oneThird).get("id").getS()),
+                () -> assertEquals("3/4", DynamoDBExecutor.asItem("ratio", threeQuarters).get("ratio").getS()),
+                () -> assertEquals("3/4", DynamoDBExecutor.toAttributeValueUpdate(threeQuarters).getValue().getS()),
+                () -> assertEquals("1,234", DynamoDBExecutor.toAttributeValue(new GroupedDigitsNumber_applyDdb()).getS()),
+                () -> assertEquals("1/3", item.get("id").getS()), () -> assertEquals("3/4", item.get("ratio").getS()),
+                () -> assertNull(item.get("ratio").getN()), () -> assertEquals("5", item.get("count").getN()),
+                () -> assertEquals(threeQuarters, DynamoDBExecutor.toEntity(item, FractionEntity_applyDdb.class).getRatio()),
+                () -> assertEquals(oneThird, DynamoDBExecutor.toEntity(item, FractionEntity_applyDdb.class).getId()),
+                () -> assertEquals(threeQuarters, DynamoDBExecutor.toValue(fraction, com.landawn.abacus.util.Fraction.class)));
+    }
+
+    /**
+     * Mapper keys and items go through the same conversion: a Fraction key is sent as S, the stored item is written with S, and
+     * an item stored that way maps back to the entity's Fraction properties.
+     */
+    @Test
+    public void testMapperFractionKeyAndItemUseSAndReadBack_applyDdb() {
+        final DynamoDBExecutor.Mapper<FractionEntity_applyDdb> mapper = executor.mapper(FractionEntity_applyDdb.class, "FractionTable",
+                NamingPolicy.CAMEL_CASE);
+        final FractionEntity_applyDdb entity = new FractionEntity_applyDdb();
+        entity.setId(com.landawn.abacus.util.Fraction.of(1, 3));
+        entity.setRatio(com.landawn.abacus.util.Fraction.of(3, 4));
+        final Map<String, AttributeValue> stored = new LinkedHashMap<>();
+        stored.put("id", new AttributeValue().withS("1/3"));
+        stored.put("ratio", new AttributeValue().withS("3/4"));
+        when(mockDynamoDBClient.getItem(eq("FractionTable"), any())).thenReturn(new GetItemResult().withItem(stored));
+
+        final FractionEntity_applyDdb read = mapper.getItem(entity);
+        mapper.putItem(entity);
+
+        @SuppressWarnings("unchecked")
+        final ArgumentCaptor<Map<String, AttributeValue>> keyCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).getItem(eq("FractionTable"), keyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        final ArgumentCaptor<Map<String, AttributeValue>> itemCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).putItem(eq("FractionTable"), itemCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(new AttributeValue().withS("1/3"), keyCaptor.getValue().get("id")),
+                () -> assertEquals(new AttributeValue().withS("1/3"), itemCaptor.getValue().get("id")),
+                () -> assertEquals(new AttributeValue().withS("3/4"), itemCaptor.getValue().get("ratio")),
+                () -> assertEquals(com.landawn.abacus.util.Fraction.of(1, 3), read.getId()),
+                () -> assertEquals(com.landawn.abacus.util.Fraction.of(3, 4), read.getRatio()));
+    }
+
+    /**
+     * Guard for the Fraction change: every number type whose text is a decimal number is still written as N with exactly the
+     * text it had before (the type's own string form, exponent forms included), and non-finite values are still rejected.
+     */
+    @Test
+    public void testToAttributeValue_DecimalNumbersUnchangedAndNonFiniteRejected_applyDdb() {
+        final java.util.concurrent.atomic.DoubleAdder adder = new java.util.concurrent.atomic.DoubleAdder();
+        adder.add(0.25);
+        final List<Object> decimals = List.of((byte) -1, (short) 7, 42, Integer.MIN_VALUE, -42L, Long.MAX_VALUE, 1.5f, Float.MIN_VALUE, -0.0, 1.0E-7, 1.0E21,
+                Double.MIN_VALUE, -Double.MAX_VALUE, new java.math.BigInteger("123456789012345678901234567890"), new java.math.BigDecimal("1E+10"),
+                new java.math.BigDecimal("0E-10"), new java.math.BigDecimal("-0.000001"), new java.math.BigDecimal("12345678901234567890.123456789"),
+                java.math.BigDecimal.valueOf(1e-7), java.math.BigDecimal.valueOf(12, -5), com.landawn.abacus.util.MutableInt.of(3),
+                com.landawn.abacus.util.MutableLong.of(-9L), com.landawn.abacus.util.MutableDouble.of(2.5), com.landawn.abacus.util.MutableFloat.of(0.1f),
+                adder);
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (final Object number : decimals) {
+            @SuppressWarnings("unchecked")
+            final String text = com.landawn.abacus.util.N.typeOf((Class<Object>) number.getClass()).stringOf(number);
+            checks.add(() -> assertEquals(new AttributeValue().withN(text), DynamoDBExecutor.toAttributeValue(number), text));
+            checks.add(() -> assertEquals(new AttributeValue().withN(text), DynamoDBExecutor.asKey("k", number).get("k"), text));
+        }
+
+        for (final Object nonFinite : List.of(Double.NaN, Double.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY,
+                com.landawn.abacus.util.MutableDouble.of(Double.NaN), com.landawn.abacus.util.MutableFloat.of(Float.POSITIVE_INFINITY))) {
+            checks.add(() -> assertTrue(assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(nonFinite)).getMessage()
+                    .startsWith("DynamoDB numbers must be finite"), String.valueOf(nonFinite)));
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    /**
+     * query(QueryRequest, Class) builds a Dataset only from Map or bean rows. Any other row type is rejected with an
+     * IllegalArgumentException before the request is sent - no page is read or paid for - whatever the query would return,
+     * an empty result included. null, Map types (an @Entity-annotated Map subclass too) and bean classes still query.
+     */
+    @Test
+    public void testQueryWithClass_UnsupportedRowTypeRejectedBeforeAnyRequest_applyDdb() {
+        final QueryRequest req = new QueryRequest().withTableName("TestTable");
+        final QueryResult oneItem = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(oneItem, new QueryResult().withItems(new ArrayList<>()));
+        final List<Class<?>> unsupported = List.of(String.class, Integer.class, int.class, Object.class, Object[].class, String[].class, List.class,
+                java.util.Set.class, java.util.Optional.class, com.landawn.abacus.util.Holder.class, com.landawn.abacus.util.MutableBoolean.class);
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (final Class<?> rowType : unsupported) {
+            checks.add(() -> {
+                final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> executor.query(req, rowType), rowType.getName());
+                assertTrue(e.getMessage().startsWith("Unsupported row type: " + com.landawn.abacus.util.ClassUtil.getCanonicalClassName(rowType)),
+                        e.getMessage());
+            });
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+        verify(mockDynamoDBClient, org.mockito.Mockito.never()).query(any(QueryRequest.class));
+
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(oneItem);
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(1, executor.query(req, (Class<?>) null).size()),
+                () -> assertEquals(1, executor.query(req, Map.class).size()), () -> assertEquals(1, executor.query(req, AnnotatedMapRow_applyDdb.class).size()),
+                () -> assertEquals(1, executor.query(req, TestEntity.class).size()));
+        verify(mockDynamoDBClient, times(4)).query(any(QueryRequest.class));
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "FractionTable")
+    public static class FractionEntity_applyDdb {
+        @com.landawn.abacus.annotation.Id
+        private com.landawn.abacus.util.Fraction id;
+        private com.landawn.abacus.util.Fraction ratio;
+        private Integer count;
+
+        public com.landawn.abacus.util.Fraction getId() {
+            return id;
+        }
+
+        public void setId(final com.landawn.abacus.util.Fraction id) {
+            this.id = id;
+        }
+
+        public com.landawn.abacus.util.Fraction getRatio() {
+            return ratio;
+        }
+
+        public void setRatio(final com.landawn.abacus.util.Fraction ratio) {
+            this.ratio = ratio;
+        }
+
+        public Integer getCount() {
+            return count;
+        }
+
+        public void setCount(final Integer count) {
+            this.count = count;
+        }
+    }
+
+    /** A number type whose text is not a decimal literal. */
+    public static final class GroupedDigitsNumber_applyDdb extends Number {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public int intValue() {
+            return 1234;
+        }
+
+        @Override
+        public long longValue() {
+            return 1234;
+        }
+
+        @Override
+        public float floatValue() {
+            return 1234;
+        }
+
+        @Override
+        public double doubleValue() {
+            return 1234;
+        }
+
+        @Override
+        public String toString() {
+            return "1,234";
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class AnnotatedMapRow_applyDdb extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
+
 }

@@ -260,4 +260,21 @@ public class AnyRowMutationsTest extends TestBase {
         assertThrows(IOException.class, () -> rm.add(Arrays.asList(ok, bad)));
         assertEquals(0, rm.val().getMutations().size());
     }
+
+    // ---- 2026-10-24 sliceO ----
+
+    /** Pins the of(byte[]) / of(byte[], int) docs: RowMutations copies the row key, so later changes to the caller's array do not leak in. */
+    @Test
+    public void testOf_byteArrayRowKey_rowIsACopyOfTheArray_sliceO() {
+        final byte[] row = Bytes.toBytes("row-bytes");
+        final AnyRowMutations plain = AnyRowMutations.of(row);
+        final AnyRowMutations sized = AnyRowMutations.of(row, 5);
+        final AnyRowMutations viaObject = AnyRowMutations.of((Object) row);
+
+        row[0] = 'X';
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertNotSame(row, plain.getRow()), () -> assertNotSame(row, sized.getRow()),
+                () -> assertNotSame(row, viaObject.getRow()), () -> assertArrayEquals(Bytes.toBytes("row-bytes"), plain.getRow()),
+                () -> assertArrayEquals(Bytes.toBytes("row-bytes"), sized.getRow()), () -> assertArrayEquals(Bytes.toBytes("row-bytes"), viaObject.getRow()));
+    }
 }

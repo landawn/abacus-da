@@ -180,11 +180,19 @@ public final class ParsedCql {
     // a group that does not start with a marker, may end it at a ']' inside a string literal and swallow the rest of
     // the statement. Outside quoted/dollar-quoted regions and comments, '[' and ']' are therefore replaced by a pair of
     // unused non-ASCII characters (private-use characters are tried first; see BracketMask.of), which the mask's
-    // tokenizer treats as single-character separators, and restored on append. The pair must not occur anywhere in the
-    // statement (not even inside a literal or comment), or a real character would be mistaken for a masked bracket.
+    // tokenizer treats as single-character separators, and restored on append. The mask characters must not occur
+    // anywhere in the statement (not even inside a literal or comment), or a real character would be mistaken for a
+    // masked one.
     private static final char DEFAULT_MASKED_LEFT_BRACKET = (char) 0xE000; // Unicode private-use area
 
     private static final char DEFAULT_MASKED_RIGHT_BRACKET = (char) 0xE001;
+
+    // SqlParser also reads a '#' that does not open a MyBatis "#{" marker as a MySQL hash comment and drops the rest of the
+    // line. CQL has no '#' comments ('#' is not valid CQL outside literals and comments), so that turned invalid CQL into a
+    // different, WIDER statement: "DELETE FROM t WHERE k = ? # AND c = ?" became "DELETE FROM t WHERE k = ?". Such a bare
+    // '#' is masked like the brackets (a third unused character, a single-character separator, restored on append), so
+    // the text reaches Cassandra unchanged and is rejected there.
+    private static final char DEFAULT_MASKED_HASH = (char) 0xE002;
 
     private static final char LAST_PRIVATE_USE_CHAR = (char) 0xF8FF;
 
@@ -198,7 +206,7 @@ public final class ParsedCql {
             .withoutSeparator("?||")
             .build());
 
-    private static final BracketMask DEFAULT_BRACKET_MASK = new BracketMask(DEFAULT_MASKED_LEFT_BRACKET, DEFAULT_MASKED_RIGHT_BRACKET);
+    private static final BracketMask DEFAULT_BRACKET_MASK = new BracketMask(DEFAULT_MASKED_LEFT_BRACKET, DEFAULT_MASKED_RIGHT_BRACKET, DEFAULT_MASKED_HASH);
 
     private final String cql;
 
@@ -239,7 +247,8 @@ public final class ParsedCql {
      * @param cql the non-null raw CQL statement to parse
      * @throws IllegalArgumentException if a recognized data operation contains a named placeholder with an empty name,
      *         mixes parameter styles ({@code ?}, {@code :name}, {@code #{name}}), or contains a MyBatis placeholder
-     *         missing its closing brace; also if brackets require masking but no unused pair of mask characters is available
+     *         missing its closing brace; also if brackets, or a {@code #} that does not open a MyBatis marker, require
+     *         masking but fewer than three unused mask characters are available
      */
     private ParsedCql(final String cql) throws IllegalArgumentException {
         this.cql = cql.trim();
@@ -250,9 +259,10 @@ public final class ParsedCql {
         // them and treat quote characters, "--", "#" or "/*" inside them as literal/comment starts. Each complete
         // constant is therefore replaced by an opaque placeholder before tokenization and restored when appended.
         // Ordinary quoted CQL literals treat backslashes as data; double them temporarily for the SQL tokenizer.
-        // Collection brackets are masked too (see BracketMask), with a private-use pair that the statement does not contain.
+        // Collection brackets and bare '#' are masked too (see BracketMask), with private-use characters that the
+        // statement does not contain.
         final boolean hasBrackets = this.cql.indexOf('[') >= 0 || this.cql.indexOf(']') >= 0;
-        final BracketMask bracketMask = hasBrackets ? BracketMask.of(this.cql) : null;
+        BracketMask bracketMask = hasBrackets ? BracketMask.of(this.cql) : null;
 
         if (hasBrackets && bracketMask == null) {
             // Without a mask, markers inside [...] would be silently lost; fail loudly rather than mis-bind.
@@ -267,6 +277,16 @@ public final class ParsedCql {
             parameterCount = 0;
             namedParameters = ImmutableMap.empty();
             return;
+        }
+
+        if (bracketMask == null && hasBareHash(this.cql)) {
+            // Unmasked, SqlParser would drop a bare '#' and the rest of its line as a MySQL hash comment (see DEFAULT_MASKED_HASH).
+            bracketMask = BracketMask.of(this.cql);
+
+            if (bracketMask == null) {
+                throw new IllegalArgumentException(
+                        "Cannot parse a CQL statement with '#' that contains every candidate mask character (U+E000-U+F8FF and all other usable non-ASCII characters)");
+            }
         }
 
         final List<String> dollarQuotedStrings = new ArrayList<>(0);
@@ -354,7 +374,9 @@ public final class ParsedCql {
                             final String namedParameter = unmaskBrackets(extractIbatisNamedParameter(content), bracketMask);
 
                             if (Strings.isEmpty(namedParameter)) {
-                                throw new IllegalArgumentException("Invalid named parameter: #{" + content + "}. Parameter name cannot be empty.");
+                                // The content is masked text: show '#', '[' and ']' as written, not their mask characters.
+                                throw new IllegalArgumentException(
+                                        "Invalid named parameter: #{" + unmaskBrackets(content, bracketMask) + "}. Parameter name cannot be empty.");
                             }
 
                             if (localNamedParameters == null) {
@@ -400,7 +422,11 @@ public final class ParsedCql {
                         // closes an unspaced map literal is still treated as literal syntax rather than a parameter.
                         // Directly inside [...] or (...) (even one nested in braces, such as the tuple in
                         // "{loc: (:lat, :lon)}") a ':' cannot be a map/UDT separator.
-                        if (prevCurlyDepth == 0 || prevInsideNonLiteralContainer || tokens.followsLiteralValueSeparator()) {
+                        // WHY: nor right after an arithmetic operator ("{f: 1 + :x}", "{'a': -:x}", the second marker of
+                        // "{f: :x - :y}"): an operator needs a right operand, so the ':' token there is a marker, never a
+                        // separator. Cassandra's grammar accepts a bind marker as that operand.
+                        if (prevCurlyDepth == 0 || prevInsideNonLiteralContainer || tokens.followsLiteralValueSeparator()
+                                || tokens.followsArithmeticOperator()) {
                             if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
                             } else {
@@ -560,6 +586,8 @@ public final class ParsedCql {
         private int pendingStart;
         private boolean previousLiteralValueSeparator;
         private boolean lastLiteralValueSeparator;
+        private boolean previousArithmeticOperator;
+        private boolean lastArithmeticOperator;
 
         TokenReader(final List<String> words) {
             this.words = words;
@@ -593,11 +621,23 @@ public final class ParsedCql {
                 lastLiteralValueSeparator = endsWithSeparator;
             }
 
+            previousArithmeticOperator = lastArithmeticOperator;
+
+            if (!isCommentOrSpaceToken(result)) {
+                // Only an exact single-character operator token: SqlParser keeps "+=", "->", "||" etc. as tokens of their own.
+                lastArithmeticOperator = result.length() == 1 && "+-*/%".indexOf(result.charAt(0)) >= 0;
+            }
+
             return result;
         }
 
         boolean followsLiteralValueSeparator() {
             return previousLiteralValueSeparator;
+        }
+
+        /** Returns {@code true} if the previous non-blank, non-comment token is exactly one of {@code + - * / %}. */
+        boolean followsArithmeticOperator() {
+            return previousArithmeticOperator;
         }
     }
 
@@ -750,7 +790,8 @@ public final class ParsedCql {
      * still recognizes as dollar quoted. Backslashes in ordinary quoted literals/identifiers are doubled temporarily
      * because SqlParser recognizes backslash escaping while CQL does not. If {@code bracketMask} is not {@code null},
      * every {@code [} / {@code ]} outside quoted regions, dollar-quoted constants and comments is replaced by its
-     * left / right character. A {@code $$} inside an ordinary quoted region or comment is left untouched, and an
+     * left / right character, and every {@code #} there that does not open a MyBatis <code>#&#123;</code> marker by its
+     * hash character. A {@code $$} inside an ordinary quoted region or comment is left untouched, and an
      * unterminated {@code $$} is left as-is.
      * {@code //} comments must already have been removed (see {@link #removeDoubleSlashComments(String)}).
      */
@@ -816,6 +857,8 @@ public final class ParsedCql {
                 result.append(bracketMask.left);
             } else if (maskBrackets && ch == ']') {
                 result.append(bracketMask.right);
+            } else if (maskBrackets && ch == '#' && (i + 1 >= len || cql.charAt(i + 1) != '{')) {
+                result.append(bracketMask.hash); // not a CQL comment: keep it out of SqlParser's MySQL hash-comment handling
             } else {
                 result.append(ch);
             }
@@ -826,7 +869,7 @@ public final class ParsedCql {
 
     /**
      * Appends a token to {@code result}, reversing {@link #maskCqlStrings(String, List, BracketMask)}: restores
-     * dollar-quoted constants and masked brackets, and removes the extra backslash from every encoded pair
+     * dollar-quoted constants, masked brackets and masked {@code #}, and removes the extra backslash from every encoded pair
      * inside an ordinary quoted region.
      * Placeholder-like text inside an ordinary quoted region, and comment tokens (retained only in "-- Keep comments"
      * mode), are left untouched.
@@ -836,7 +879,7 @@ public final class ParsedCql {
         final boolean maskBrackets = bracketMask != null;
 
         if (isCommentOrSpaceToken(word) || (word.indexOf("$$") < 0 && word.indexOf('\\') < 0
-                && !(maskBrackets && (word.indexOf(bracketMask.left) >= 0 || word.indexOf(bracketMask.right) >= 0)))) {
+                && !(maskBrackets && (word.indexOf(bracketMask.left) >= 0 || word.indexOf(bracketMask.right) >= 0 || word.indexOf(bracketMask.hash) >= 0)))) {
             result.append(word);
             return;
         }
@@ -883,47 +926,70 @@ public final class ParsedCql {
                 result.append('[');
             } else if (maskBrackets && ch == bracketMask.right) {
                 result.append(']');
+            } else if (maskBrackets && ch == bracketMask.hash) {
+                result.append('#');
             } else {
                 result.append(ch);
             }
         }
     }
 
-    /** Replaces the masked bracket characters in {@code text} with {@code [} / {@code ]}; returns it as-is if {@code bracketMask} is {@code null}. */
+    /**
+     * Replaces the masked bracket and hash characters in {@code text} with {@code [} / {@code ]} / {@code #}; returns it
+     * as-is if {@code bracketMask} is {@code null}.
+     */
     private static String unmaskBrackets(final String text, final BracketMask bracketMask) {
-        return bracketMask == null ? text : text.replace(bracketMask.left, '[').replace(bracketMask.right, ']');
+        return bracketMask == null ? text : text.replace(bracketMask.left, '[').replace(bracketMask.right, ']').replace(bracketMask.hash, '#');
     }
 
     /**
-     * A pair of unused non-ASCII characters standing in for {@code [} / {@code ]} during tokenization,
-     * plus the tokenizer that treats them as single-character separators. Private-use characters are preferred.
+     * Returns {@code true} if {@code cql} contains a {@code #} that does not open a MyBatis marker (anywhere, literals and
+     * comments included; {@link #maskCqlStrings(String, List, BracketMask)} masks only those outside them).
+     */
+    private static boolean hasBareHash(final String cql) {
+        for (int i = cql.indexOf('#'); i >= 0; i = cql.indexOf('#', i + 1)) {
+            if (i + 1 >= cql.length() || cql.charAt(i + 1) != '{') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Three unused non-ASCII characters standing in for {@code [}, {@code ]} and a bare {@code #} (one that does not
+     * open a MyBatis marker) during tokenization, plus the tokenizer that treats them as single-character separators.
+     * Private-use characters are preferred.
      */
     private static final class BracketMask {
         final char left;
         final char right;
+        final char hash;
         final SqlParser.Tokenizer tokenizer;
 
-        BracketMask(final char left, final char right) {
+        BracketMask(final char left, final char right, final char hash) {
             this.left = left;
             this.right = right;
+            this.hash = hash;
             // The default separators also include PostgreSQL JSON operators that start with '?' ("?-", "?|", "?&",
             // "?#", "?-|", "?||"). CQL has none of them, and keeping them would glue a bind marker to the next
             // character, so that "a = ?-1" yields the token "?-" and the marker is not counted.
             // CQL's slice operator ".." (for example "m[:from..:to]") is added as a separator: '.' and ':' are not
             // separators, so ":from..:to" would otherwise be ONE token, read as a single marker named "from..:to".
-            this.tokenizer = SqlParser.tokenizer(CQL_TOKENIZER.tokenizerConfig().toBuilder().withSeparator(left).withSeparator(right).build());
+            this.tokenizer = SqlParser
+                    .tokenizer(CQL_TOKENIZER.tokenizerConfig().toBuilder().withSeparator(left).withSeparator(right).withSeparator(hash).build());
         }
 
         /**
          * Returns the cached default mask, or, if the statement already contains one of its characters (anywhere,
-         * including literals and comments), a mask built from the first two usable characters the statement does not
-         * contain, so that a real character is never mistaken for a masked bracket on restore. Private-use characters
+         * including literals and comments), a mask built from the first three usable characters the statement does not
+         * contain, so that a real character is never mistaken for a masked one on restore. Private-use characters
          * are tried first, then any other non-ASCII BMP character that SqlParser gives no meaning of its own (not a
-         * surrogate, whitespace or identifier character). Returns {@code null} if fewer than two usable characters
+         * surrogate, whitespace or identifier character). Returns {@code null} if fewer than three usable characters
          * are absent from the statement.
          */
         static BracketMask of(final String cql) {
-            if (cql.indexOf(DEFAULT_MASKED_LEFT_BRACKET) < 0 && cql.indexOf(DEFAULT_MASKED_RIGHT_BRACKET) < 0) {
+            if (cql.indexOf(DEFAULT_MASKED_LEFT_BRACKET) < 0 && cql.indexOf(DEFAULT_MASKED_RIGHT_BRACKET) < 0 && cql.indexOf(DEFAULT_MASKED_HASH) < 0) {
                 return DEFAULT_BRACKET_MASK;
             }
 
@@ -933,29 +999,22 @@ public final class ParsedCql {
                 used.set(cql.charAt(i));
             }
 
-            char left = 0;
+            final char[] maskChars = new char[3];
+            int found = 0;
 
-            for (int ch = DEFAULT_MASKED_LEFT_BRACKET; ch <= LAST_PRIVATE_USE_CHAR; ch++) {
+            for (int ch = DEFAULT_MASKED_LEFT_BRACKET; ch <= LAST_PRIVATE_USE_CHAR && found < maskChars.length; ch++) {
                 if (!used.get(ch)) {
-                    if (left == 0) {
-                        left = (char) ch;
-                    } else {
-                        return new BracketMask(left, (char) ch);
-                    }
+                    maskChars[found++] = (char) ch;
                 }
             }
 
-            for (int ch = 0x80; ch <= Character.MAX_VALUE; ch++) {
+            for (int ch = 0x80; ch <= Character.MAX_VALUE && found < maskChars.length; ch++) {
                 if ((ch < DEFAULT_MASKED_LEFT_BRACKET || ch > LAST_PRIVATE_USE_CHAR) && !used.get(ch) && isUsableMaskChar((char) ch)) {
-                    if (left == 0) {
-                        left = (char) ch;
-                    } else {
-                        return new BracketMask(left, (char) ch);
-                    }
+                    maskChars[found++] = (char) ch;
                 }
             }
 
-            return null;
+            return found < maskChars.length ? null : new BracketMask(maskChars[0], maskChars[1], maskChars[2]);
         }
 
         // A mask character must stay a lone separator token: SqlParser joins identifier characters into words (and
@@ -1116,7 +1175,8 @@ public final class ParsedCql {
      * @return an immutable parsed result, newly created or retrieved from the cache
      * @throws IllegalArgumentException if {@code cql} is null; if a recognized data operation contains an empty
      *         named placeholder, mixed parameter styles, or a MyBatis placeholder missing its closing brace;
-     *         or if brackets require masking but no unused pair of mask characters is available
+     *         or if brackets, or a {@code #} that does not open a MyBatis marker, require masking but fewer than three
+     *         unused mask characters are available
      */
     public static ParsedCql parse(final String cql) throws IllegalArgumentException {
         N.checkArgNotNull(cql, cs.cql);
@@ -1233,6 +1293,11 @@ public final class ParsedCql {
      * </ul>
      * <p>Inside CQL string literals and quoted identifiers, doubled quotes escape the quote character;
      * backslashes are ordinary characters and are preserved without escaping the following quote.</p>
+     * <p>Only CQL comments ({@code --}, {@code //} and block comments) are removed. CQL has no {@code #} comments, so a
+     * {@code #} that does not open a MyBatis marker is kept as ordinary text, and markers after it on the same line are
+     * still counted: {@code DELETE FROM t WHERE k = ? # AND c = ?} keeps its text and has two parameters (Cassandra
+     * rejects the {@code #} when the statement is prepared). A statement that starts with such a {@code #} is not a
+     * recognized data operation.</p>
      * <p>Statements whose first keyword is not a recognized data operation are not scanned for
      * placeholders; only surrounding whitespace and trailing semicolons are removed.</p>
      *
@@ -1248,14 +1313,20 @@ public final class ParsedCql {
      * {@code #{ userId, jdbcType=BIGINT }} contributes the name {@code userId} to {@link #namedParameters()}.</p>
      *
      * <p><b>Known limitation.</b> Inside braces, a native named marker ({@code :name}) is recognized only when it follows a map/UDT field
-     * separator ({@code {street: :street}}, {@code {street::street}}) or sits directly inside a {@code [...]} or
+     * separator ({@code {street: :street}}, {@code {street::street}}), follows an arithmetic operator
+     * ({@code +}, {@code -}, {@code *}, {@code /} or {@code %}; for example <code>&#123;f: 1 + :x&#125;</code>,
+     * <code>&#123;'a': -:x&#125;</code> or the second marker of <code>&#123;f: :x - :y&#125;</code>), or sits directly
+     * inside a {@code [...]} or
      * {@code (...)} nested in the braces (for example the tuple in {@code {loc: (:lat, :lon)}}). A native named marker written directly after <code>&#123;</code> or after {@code ,} inside braces — for example
      * <code>tags + &#123;:tag&#125;</code> or
      * <code>&#123;:a, :b&#125;</code> — is <i>not</i> rewritten and is <i>not</i> counted: <code>&#123;</code>
-     * does not start a new token, and a named marker after {@code ,} inside braces is taken for a map key. Such a
+     * does not start a new token, and a named marker after {@code ,} inside braces is taken for a map key. The same
+     * applies to a native marker that follows a type hint in a field or map value, such as
+     * <code>&#123;f: (int) :x&#125;</code>: it cannot be told apart from a tuple map key followed by its separator,
+     * as in <code>&#123;(1, 2) :3&#125;</code>. Such a
      * statement reaches the driver with the native marker still in it and will not bind correctly.
-     * Binding a whole collection, for example {@code tags = tags + ?} with a {@code Set} value, avoids this
-     * parser limitation.</p>
+     * Binding a whole collection, for example {@code tags = tags + ?} with a {@code Set} value, or writing the
+     * statement with positional {@code ?} markers avoids this parser limitation.</p>
      *
      * <p>Marker recognition does not verify whether Cassandra accepts a marker in that location. Callers use
      * this text for statement preparation; grammar and server-version compatibility are outside this parser's scope.</p>
@@ -1303,6 +1374,9 @@ public final class ParsedCql {
      *
      * <p>The map is empty for positional-only statements, statements without recognized placeholders,
      * and statement types whose placeholders are not scanned.</p>
+     *
+     * <p>A quoted native marker keeps its quotes: {@code :"userId"} contributes the name {@code "userId"},
+     * double quotes included (the executors look named values up by that exact text).</p>
      *
      * <p>The returned map is unmodifiable; attempts to modify it throw
      * {@link UnsupportedOperationException}. It reflects the mapping computed at construction time.</p>

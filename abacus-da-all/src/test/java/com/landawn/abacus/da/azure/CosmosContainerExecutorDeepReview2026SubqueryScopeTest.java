@@ -48,7 +48,7 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, condition);
 
         assertEquals(
-                "SELECT * FROM item c WHERE (c.id = @p0) AND (EXISTS (SELECT VALUE t FROM t IN c.tags WHERE (t.score > 0) AND IS_NULL(t.name) AND t.value = @p1))",
+                "SELECT * FROM item c WHERE (c.id = @p0) AND (EXISTS (SELECT VALUE t FROM t IN c.tags WHERE (t.score > 0) AND IS_NULL(t.name) AND t[\"value\"] = @p1))",
                 spec.getQueryText());
         assertEquals(List.of("@p0", "@p1"), spec.getParameters().stream().map(parameter -> parameter.getName()).toList());
         assertEquals(List.of("root", "child"), spec.getParameters().stream().map(parameter -> parameter.getValue(String.class)).toList());
@@ -62,7 +62,7 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, condition);
 
         assertEquals(
-                "SELECT * FROM item c WHERE EXISTS (SELECT * FROM c WHERE c.id = ')' AND EXISTS (SELECT value t FROM t IN c.tags WHERE t = 1)) AND NOT c.group",
+                "SELECT * FROM item c WHERE EXISTS (SELECT * FROM c WHERE c.id = ')' AND EXISTS (SELECT value t FROM t IN c.tags WHERE t = 1)) AND NOT c[\"group\"]",
                 spec.getQueryText());
     }
 
@@ -119,14 +119,14 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
 
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = { "(SELECT VALUE 1) = 1 | (SELECT value 1) = 1", "EXISTS (SELECT VALUE c.name) | EXISTS (SELECT value c.name)",
-            "(select * 2) > 1 | (c.select * 2) > 1", "(select + 2) > 1 | (c.select + 2) > 1", "(select IS NULL) | (IS_NULL(c.select))",
-            "(select AND active) | (c.select AND c.active)", "(select[0] = 1) | (c.select[0] = 1)", "(select - 1) > 0 | (c.select - 1) > 0",
+            "(select * 2) > 1 | (c[\"select\"] * 2) > 1", "(select + 2) > 1 | (c[\"select\"] + 2) > 1", "(select IS NULL) | (IS_NULL(c[\"select\"]))",
+            "(select AND active) | (c[\"select\"] AND c.active)", "(select[0] = 1) | (c[\"select\"][0] = 1)", "(select - 1) > 0 | (c[\"select\"] - 1) > 0",
             "EXISTS (SELECT -1) | EXISTS (SELECT -1)", "EXISTS (SELECT [c.id]) | EXISTS (SELECT [c.id])",
             "NOT EXISTS (SELECT (c.id) AS projection) | NOT EXISTS (SELECT (c.id) AS projection)", "exists(SELECT -1) | exists(SELECT -1)" })
     void rawSubqueriesAndSelectPropertiesRemainDistinct(final String condition, final String expected) {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(condition + " AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c[\"group\"]", spec.getQueryText());
     }
 
     @ParameterizedTest
@@ -162,14 +162,14 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
     void nonExistsFromLessProjectionsRetainLocalAliasesAndClauses(final String subquery) {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + subquery + ")) AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + subquery + ")) AND NOT c[\"group\"]", spec.getQueryText());
     }
 
     @Test
     void nonExistsUnarySubqueryCanBeUsedAsScalarOperand() {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("(SELECT -1) = -1 AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE (SELECT -1) = -1 AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE (SELECT -1) = -1 AND NOT c[\"group\"]", spec.getQueryText());
     }
 
     @ParameterizedTest
@@ -179,7 +179,7 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         // is a valid correlated reference, but the same rewrite must never reach the AS alias: "AS c.id" is invalid.
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c[\"group\"]", spec.getQueryText());
         assertFalse(spec.getQueryText().contains("AS c."), spec.getQueryText());
     }
 
@@ -190,7 +190,7 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         // subquery still refers to the outer item, so the Cosmos pass must qualify those names as well.
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c[\"group\"]", spec.getQueryText());
     }
 
     @Test
@@ -208,45 +208,45 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
     }
 
     @ParameterizedTest
-    @CsvSource(delimiter = '|', value = { "(select -1) > 0 | (c.select -1) > 0", "(select [0]) = 1 | (c.select [0]) = 1" })
+    @CsvSource(delimiter = '|', value = { "(select -1) > 0 | (c[\"select\"] -1) > 0", "(select [0]) = 1 | (c[\"select\"] [0]) = 1" })
     void ambiguousFromLessPropertyFormsRemainQualified(final String condition, final String expected) {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(condition + " AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c[\"group\"]", spec.getQueryText());
     }
 
     @ParameterizedTest
-    @CsvSource(delimiter = '|', value = { "(SELECT -1) > 0 | (c.SELECT -1) > 0", "(SELECT [0]) = 1 | (c.SELECT [0]) = 1" })
+    @CsvSource(delimiter = '|', value = { "(SELECT -1) > 0 | (c[\"SELECT\"] -1) > 0", "(SELECT [0]) = 1 | (c[\"SELECT\"] [0]) = 1" })
     void ambiguousUppercaseFormsRemainPropertiesUnderScreamingSnake(final String condition, final String expected) {
         final SqlQuerySpec spec = capture(NamingPolicy.SCREAMING_SNAKE_CASE, Filters.expr(condition + " AND NOT group"));
 
-        assertEquals("SELECT * FROM ITEM c WHERE " + expected + " AND NOT c.GROUP", spec.getQueryText());
+        assertEquals("SELECT * FROM ITEM c WHERE " + expected + " AND NOT c[\"GROUP\"]", spec.getQueryText());
     }
 
     @ParameterizedTest
     @ValueSource(strings = { "+", "-", "*", "/" })
     void fromPropertyFollowedByArithmeticDoesNotStartSubqueryScope(final String operator) {
         final String expression = "(select * from " + operator + " 1) > 0 AND NOT group";
-        final String expected = "(c.select * c.from " + operator + " 1) > 0 AND NOT c.group";
+        final String expected = "(c[\"select\"] * c[\"from\"] " + operator + " 1) > 0 AND NOT c[\"group\"]";
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(expression));
 
         assertEquals("SELECT * FROM item c WHERE " + expected, spec.getQueryText());
     }
 
     @ParameterizedTest
-    @CsvSource(delimiter = '|', value = { "(select * from IN (1, 2)) | (c.select * c.from IN (1, 2))",
-            "(select * from LIKE 'x%') | (c.select * c.from LIKE 'x%')" })
+    @CsvSource(delimiter = '|', value = { "(select * from IN (1, 2)) | (c[\"select\"] * c[\"from\"] IN (1, 2))",
+            "(select * from LIKE 'x%') | (c[\"select\"] * c[\"from\"] LIKE 'x%')" })
     void fromPropertyFollowedByPredicateDoesNotStartSubqueryScope(final String condition, final String expected) {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(condition + " AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE " + expected + " AND NOT c[\"group\"]", spec.getQueryText());
     }
 
     @ParameterizedTest
     @ValueSource(strings = { "[0]", "[ 0 ]", "['x']" })
     void fromPropertySubscriptDoesNotStartSubqueryScope(final String subscript) {
         final String expression = "(select * from " + subscript + ") > 0 AND NOT group";
-        final String expected = "(c.select * c.from " + subscript + ") > 0 AND NOT c.group";
+        final String expected = "(c[\"select\"] * c[\"from\"] " + subscript + ") > 0 AND NOT c[\"group\"]";
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr(expression));
 
         assertEquals("SELECT * FROM item c WHERE " + expected, spec.getQueryText());
@@ -258,7 +258,7 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
     void validFromSourcesStillEnableNonExistsSubqueryScope(final String subquery, final String expectedSubquery) {
         final SqlQuerySpec spec = capture(NamingPolicy.SNAKE_CASE, Filters.expr("IS_DEFINED((" + subquery + ")) AND NOT group"));
 
-        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c.group", spec.getQueryText());
+        assertEquals("SELECT * FROM item c WHERE IS_DEFINED((" + expectedSubquery + ")) AND NOT c[\"group\"]", spec.getQueryText());
     }
 
     // ---- 2026-10-19 sliceE ----

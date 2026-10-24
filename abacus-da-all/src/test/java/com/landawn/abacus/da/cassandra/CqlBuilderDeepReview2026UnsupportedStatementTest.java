@@ -315,4 +315,109 @@ class CqlBuilderDeepReview2026UnsupportedStatementTest {
                 // A column merely named like a direction is not one.
                 () -> assertEquals("SELECT id FROM t GROUP BY descending", PSC.select("id").from("t").append(Filters.groupBy("descending")).build().query()));
     }
+
+    // ---- 2026-10-24 sliceI ----
+
+    /** A LIMIT or ORDER BY clause claimed on an UPDATE/DELETE statement: rejected as the parent rejects GROUP BY there. */
+    private static Executable notOnWrite(final String clause, final Executable call) {
+        return () -> {
+            final IllegalStateException e = assertThrows(IllegalStateException.class, call);
+            assertTrue(e.getMessage().contains("'" + clause + "' is only valid for SELECT statements"), e.getMessage());
+        };
+    }
+
+    /**
+     * CQL has only a plain DISTINCT: distinctOn(...) rendered "SELECT DISTINCT ON (id) ..." and distinctRow() "SELECT
+     * DISTINCTROW ...", which Cassandra 5.0's parser rejects ("no viable alternative at input 'ON'"), and so did a Criteria
+     * carrying either modifier. Plain distinct() (method and Criteria) and a raw selectModifier still render.
+     */
+    @Test
+    void sliceI_distinctOnAndDistinctRowAreRejectedOnEveryPath() {
+        final CqlBuilder closed = PSC.select("id").from("t");
+        closed.build();
+        final CqlBuilder rejected = PSC.select("id").from("t");
+        assertThrows(UnsupportedOperationException.class, () -> rejected.distinctOn("id"));
+        assertThrows(UnsupportedOperationException.class, rejected::distinctRow);
+        assertThrows(IllegalArgumentException.class, () -> rejected.append(Criteria.builder().distinctOn("id").where(Filters.eq("id", 1)).build()));
+
+        assertAll(unsupported("DISTINCT ON", () -> PSC.select("id").from("t").distinctOn("id")),
+                // Before from(), where the parent stages the modifier for appendOperationBeforeFrom.
+                unsupported("DISTINCT ON", () -> PSC.select("id").distinctOn("id")),
+                // A blank list would have been a plain DISTINCT in the parent; it fails all the same.
+                unsupported("DISTINCT ON", () -> PSC.select("id").from("t").distinctOn("")),
+                unsupported("DISTINCT ON", () -> SCCB.select("id").from("t").distinctOn("id, name")),
+                unsupported("DISTINCTROW", () -> PSC.select("id").from("t").distinctRow()), unsupported("DISTINCTROW", () -> PSC.select("id").distinctRow()),
+                invalid("DISTINCT ON", () -> PSC.select("id").from("t").append(Criteria.builder().distinctOn("id").where(Filters.eq("id", 1)).build())),
+                invalid("DISTINCT ON", () -> PSC.select("id").from("t").appendIf(true, Criteria.builder().selectModifier("distinct on (id)").build())),
+                invalid("DISTINCTROW", () -> PSC.select("id").from("t").append(Criteria.builder().distinctRow().build())),
+                invalid("DISTINCTROW", () -> PSC.renderCondition(Criteria.builder().distinctRow().where(Filters.eq("id", 1)).build(), null)),
+                () -> assertThrows(IllegalStateException.class, () -> closed.distinctOn("id")),
+                () -> assertThrows(IllegalStateException.class, closed::distinctRow),
+                () -> assertEquals("SELECT DISTINCT id FROM t", PSC.select("id").from("t").distinct().build().query()),
+                () -> assertEquals("SELECT DISTINCT id FROM t WHERE id = ?",
+                        PSC.select("id").from("t").append(Criteria.builder().distinct().where(Filters.eq("id", 1)).build()).build().query()),
+                () -> assertEquals("SELECT JSON id FROM t", PSC.select("id").from("t").selectModifier("JSON").build().query()),
+                () -> assertEquals("SELECT id FROM t", rejected.build().query()));
+    }
+
+    /**
+     * CQL UPDATE and DELETE end with the WHERE and IF clauses: limit(count), the orderBy(...) methods and an appended
+     * Limit/OrderBy clause (standalone or in a Criteria) rendered "UPDATE t SET a = ? WHERE id = ? LIMIT 5" / "DELETE FROM t
+     * WHERE id = ? ORDER BY a", which Cassandra 5.0's parser rejects ("mismatched input 'LIMIT' expecting EOF"). They now fail
+     * like the parent's GROUP BY on those statements, leave the builder unchanged, and still render on a SELECT.
+     */
+    @Test
+    void sliceI_limitAndOrderByAreRejectedOnUpdateAndDelete() {
+        final Map<String, SortDirection> orders = new LinkedHashMap<>();
+        orders.put("a", SortDirection.DESC);
+        final CqlBuilder update = PSC.update("t").set("a").where(Filters.eq("id", 1));
+        assertThrows(IllegalStateException.class, () -> update.limit(5));
+        assertThrows(IllegalStateException.class, () -> update.append(Criteria.builder().orderBy("a").limit(5).build()));
+        final CqlBuilder delete = PSC.deleteFrom("t");
+        assertThrows(IllegalStateException.class, () -> delete.limit(5));
+        final CqlBuilder closed = PSC.update("t").set("a").where(Filters.eq("id", 1));
+        closed.build();
+
+        assertAll(notOnWrite("LIMIT", () -> PSC.update("t").set("a").where(Filters.eq("id", 1)).limit(5)),
+                notOnWrite("LIMIT", () -> PSC.deleteFrom("t").where(Filters.eq("id", 1)).limit(5)),
+                notOnWrite("LIMIT", () -> PSC.delete("a").from("t").where(Filters.eq("id", 1)).limit(5)),
+                notOnWrite("LIMIT", () -> PSC.deleteFrom("t").where(Filters.eq("id", 1)).ifExists().limit(5)),
+                notOnWrite("LIMIT", () -> SCCB.update("t").set("a", 1).where(Filters.eq("id", 1)).append(Filters.limit(5))),
+                notOnWrite("LIMIT", () -> PSC.deleteFrom("t").where(Filters.eq("id", 1)).appendIf(true, Filters.limit(5))),
+                notOnWrite("LIMIT", () -> PSC.deleteFrom("t").append(Criteria.builder().where(Filters.eq("id", 1)).limit(5).build())),
+                notOnWrite("ORDER BY", () -> PSC.update("t").set("a").where(Filters.eq("id", 1)).orderBy("a")),
+                notOnWrite("ORDER BY", () -> PSC.update("t").set("a").where(Filters.eq("id", 1)).orderBy("a", SortDirection.DESC)),
+                notOnWrite("ORDER BY", () -> PSC.update("t").set("a").where(Filters.eq("id", 1)).orderByDesc("a", "b")),
+                notOnWrite("ORDER BY", () -> PSC.deleteFrom("t").where(Filters.eq("id", 1)).orderBy(Arrays.asList("a", "b"))),
+                notOnWrite("ORDER BY", () -> PSC.deleteFrom("t").where(Filters.eq("id", 1)).orderBy(orders)),
+                notOnWrite("ORDER BY", () -> PSC.deleteFrom("t").where(Filters.eq("id", 1)).append(Filters.orderBy("a"))),
+                notOnWrite("ORDER BY", () -> PSC.update("t").set("a").where(Filters.eq("id", 1)).append(Criteria.builder().orderBy("a").build())),
+                () -> assertThrows(IllegalStateException.class, () -> closed.limit(5)),
+                () -> assertThrows(IllegalStateException.class, () -> closed.orderBy("a")),
+                () -> assertEquals("UPDATE t SET a = ? WHERE id = ? IF EXISTS", update.ifExists().build().query()),
+                () -> assertEquals("DELETE FROM t WHERE id = ?", delete.where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("SELECT id FROM t WHERE id = ? ORDER BY a DESC LIMIT 5",
+                        PSC.select("id").from("t").where(Filters.eq("id", 1)).orderBy("a", SortDirection.DESC).limit(5).build().query()),
+                () -> assertEquals("SELECT id FROM t WHERE id = ? ORDER BY a LIMIT 5",
+                        PSC.select("id").from("t").append(Criteria.builder().where(Filters.eq("id", 1)).orderBy("a").limit(5).build()).build().query()));
+    }
+
+    /**
+     * A bare sub-query (the value of Filters.eq("id", subQuery)) has the EMPTY operator, so its rejection ended in
+     * "sub-queries: " with nothing after it, and an IN sub-query read as "sub-queries: IN", as if IN itself were unsupported.
+     */
+    @Test
+    void sliceI_subQueryRejectionNamesTheRejectedConstruct() {
+        final com.landawn.abacus.query.condition.SubQuery sub = Filters.subQuery(SUB_SELECT);
+
+        assertAll(subQueryMessage("sub-query", () -> PSC.select("id").from("t").where(Filters.eq("id", sub))),
+                subQueryMessage("IN (sub-query)", () -> PSC.select("id").from("t").where(Filters.in("id", sub))),
+                subQueryMessage("NOT IN (sub-query)", () -> PSC.select("id").from("t").where(Filters.notIn("id", sub))),
+                subQueryMessage("NOT IN", () -> PSC.select("id").from("t").where(Filters.notIn("id", Arrays.asList(1, 2)))));
+    }
+
+    private static Executable subQueryMessage(final String rejected, final Executable call) {
+        return () -> assertEquals("Cassandra CQL does not support NOT IN or sub-queries: " + rejected,
+                assertThrows(IllegalArgumentException.class, call).getMessage());
+    }
 }

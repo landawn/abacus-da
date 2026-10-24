@@ -51,7 +51,6 @@ public class CosmosContainerExecutorIT extends TestBase {
     private static final String KEY = "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==";
 
     private static final String EMULATOR_CERT_VALIDATION_DISABLED_PROP = "COSMOS.EMULATOR_SERVER_CERTIFICATE_VALIDATION_DISABLED";
-    private static final String LOCAL_EMULATOR_QUERY_UNSUPPORTED_REASON = "localhost Cosmos DB emulator skips SQL Query tests because the vNext emulator returns HTTP 400 for Query via the Java SDK";
 
     private static final String DATABASE_ID = "abacus_da_test_" + UUID.randomUUID().toString().replace("-", "");
     private static final String CONTAINER_ID = "test_item";
@@ -65,10 +64,12 @@ public class CosmosContainerExecutorIT extends TestBase {
     private static boolean databaseCreated;
 
     /**
-     * Whether the connected endpoint can actually execute the SQL <i>Query</i> operation. The vNext-preview
-     * Linux emulator currently returns {@code 400 BadRequest} for queries via the Java SDK (writes, point
-     * reads and ReadFeed all work), so query-based tests are skipped against it but still run against a full
-     * Azure Cosmos DB account. Determined once by {@link #setUpClass()}.
+     * Whether the connected endpoint can actually execute the SQL <i>Query</i> operation, determined once by
+     * {@link #setUpClass()} with a probe query; query-based tests are skipped when the probe fails.
+     *
+     * <p>Earlier versions skipped every query test on localhost because the vNext emulator answered {@code 400} to them.
+     * Those queries wrote {@code c.value}, and {@code VALUE} is a reserved word in the Cosmos DB grammar, so {@code c.value}
+     * is a syntax error on any endpoint. The queries now use the bracket accessor {@code c["value"]} and the probe decides.</p>
      */
     private static boolean querySupported;
     private static String queryUnsupportedReason;
@@ -96,21 +97,24 @@ public class CosmosContainerExecutorIT extends TestBase {
 
             executor = new CosmosContainerExecutor(container);
 
-            if (isLocalEmulatorEndpoint()) {
-                querySupported = false;
-                queryUnsupportedReason = LOCAL_EMULATOR_QUERY_UNSUPPORTED_REASON;
-                return;
-            }
-
-            // Probe the SQL Query operation once: the vNext-preview emulator answers 400 to queries via the
-            // Java SDK even though writes/point-reads/ReadFeed succeed. This lets query tests skip cleanly
-            // here while still asserting real behavior against a full Azure Cosmos DB account.
+            // Probe the SQL Query operation once, so query tests skip cleanly on an endpoint that cannot run them while
+            // still asserting real behavior everywhere else. The probe filters on the reserved word "value" through the
+            // bracket accessor, as the executor renders it; c.value would be a syntax error (HTTP 400) on any endpoint.
             try {
                 final TestItem probe = itemIn("query-probe-" + UUID.randomUUID(), "query-probe-" + UUID.randomUUID());
                 executor.createItem(probe);
                 // toList() forces the lazy CosmosPagedIterable to actually execute the query (stream().count()
-                // can short-circuit without enumerating), surfacing the emulator's 400 for the Query operation.
-                executor.queryItems("SELECT * FROM c WHERE c.value = '" + probe.value + "'", TestItem.class).stream().toList();
+                // can short-circuit without enumerating), surfacing a 400 for the Query operation. The probe item must
+                // also come back: an endpoint that accepts the query but filters nothing would fail the gated tests
+                // instead of skipping them.
+                final List<TestItem> probeResult = executor.queryItems("SELECT * FROM c WHERE c[\"value\"] = '" + probe.value + "'", TestItem.class)
+                        .stream()
+                        .toList();
+
+                if (probeResult.stream().noneMatch(item -> probe.id.equals(item.id))) {
+                    throw new IllegalStateException("query probe did not return the probe item (" + probeResult.size() + " rows)");
+                }
+
                 querySupported = true;
             } catch (final Exception e) {
                 querySupported = false;
@@ -142,11 +146,6 @@ public class CosmosContainerExecutorIT extends TestBase {
                 System.setProperty(EMULATOR_CERT_VALIDATION_DISABLED_PROP, previousCertificateValidationSetting);
             }
         }
-    }
-
-    private static boolean isLocalEmulatorEndpoint() {
-        final String endpoint = ENDPOINT.toLowerCase();
-        return endpoint.contains("localhost") || endpoint.contains("127.0.0.1") || endpoint.contains("[::1]") || endpoint.contains("://::1");
     }
 
     private static String queryProbeFailureReason(final Exception e) {
@@ -459,7 +458,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         final TestItem item = itemIn(newPartition(), value);
         executor.createItem(item);
 
-        final CosmosPagedIterable<TestItem> response = executor.queryItems("SELECT * FROM c WHERE c.value = '" + value + "'", TestItem.class);
+        final CosmosPagedIterable<TestItem> response = executor.queryItems("SELECT * FROM c WHERE c[\"value\"] = '" + value + "'", TestItem.class);
 
         final List<TestItem> results = response.stream().toList();
         assertEquals(1, results.size());
@@ -474,7 +473,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         executor.createItem(item);
 
         final CosmosQueryRequestOptions options = new CosmosQueryRequestOptions().setMaxBufferedItemCount(10);
-        final CosmosPagedIterable<TestItem> response = executor.queryItems("SELECT * FROM c WHERE c.value = '" + value + "'", options, TestItem.class);
+        final CosmosPagedIterable<TestItem> response = executor.queryItems("SELECT * FROM c WHERE c[\"value\"] = '" + value + "'", options, TestItem.class);
 
         final List<TestItem> results = response.stream().toList();
         assertEquals(1, results.size());
@@ -488,7 +487,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         final TestItem item = itemIn(newPartition(), value);
         executor.createItem(item);
 
-        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c.value = @value", Arrays.asList(new SqlParameter("@value", value)));
+        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c[\"value\"] = @value", Arrays.asList(new SqlParameter("@value", value)));
         final CosmosPagedIterable<TestItem> response = executor.queryItems(querySpec, TestItem.class);
 
         final List<TestItem> results = response.stream().toList();
@@ -503,7 +502,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         final TestItem item = itemIn(newPartition(), value);
         executor.createItem(item);
 
-        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c.value = @value", Arrays.asList(new SqlParameter("@value", value)));
+        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c[\"value\"] = @value", Arrays.asList(new SqlParameter("@value", value)));
         final CosmosQueryRequestOptions options = new CosmosQueryRequestOptions().setMaxBufferedItemCount(10);
         final CosmosPagedIterable<TestItem> response = executor.queryItems(querySpec, options, TestItem.class);
 
@@ -523,7 +522,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         final TestItem item = itemIn(newPartition(), value);
         executor.createItem(item);
 
-        final List<TestItem> result = executor.streamItems("SELECT * FROM c WHERE c.value = '" + value + "'", TestItem.class).toList();
+        final List<TestItem> result = executor.streamItems("SELECT * FROM c WHERE c[\"value\"] = '" + value + "'", TestItem.class).toList();
 
         assertEquals(1, result.size());
         assertEquals(item.id, result.get(0).id);
@@ -537,7 +536,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         executor.createItem(item);
 
         final CosmosQueryRequestOptions options = new CosmosQueryRequestOptions().setMaxBufferedItemCount(10);
-        final List<TestItem> result = executor.streamItems("SELECT * FROM c WHERE c.value = '" + value + "'", options, TestItem.class).toList();
+        final List<TestItem> result = executor.streamItems("SELECT * FROM c WHERE c[\"value\"] = '" + value + "'", options, TestItem.class).toList();
 
         assertEquals(1, result.size());
         assertEquals(item.id, result.get(0).id);
@@ -550,7 +549,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         final TestItem item = itemIn(newPartition(), value);
         executor.createItem(item);
 
-        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c.value = @value", Arrays.asList(new SqlParameter("@value", value)));
+        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c[\"value\"] = @value", Arrays.asList(new SqlParameter("@value", value)));
         final List<TestItem> result = executor.streamItems(querySpec, TestItem.class).toList();
 
         assertEquals(1, result.size());
@@ -564,7 +563,7 @@ public class CosmosContainerExecutorIT extends TestBase {
         final TestItem item = itemIn(newPartition(), value);
         executor.createItem(item);
 
-        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c.value = @value", Arrays.asList(new SqlParameter("@value", value)));
+        final SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c WHERE c[\"value\"] = @value", Arrays.asList(new SqlParameter("@value", value)));
         final CosmosQueryRequestOptions options = new CosmosQueryRequestOptions().setMaxBufferedItemCount(10);
         final List<TestItem> result = executor.streamItems(querySpec, options, TestItem.class).toList();
 
@@ -740,8 +739,8 @@ public class CosmosContainerExecutorIT extends TestBase {
     // ----------------------------------------------------------------------------------------------------
     // Indexed-path queries that also execute on the local vNext emulator
     //
-    // Unlike the {@code assumeQuerySupported()} tests above (which filter/project the non-indexed "value"
-    // field and so 400 on the emulator), these only reference indexed paths: "id" and the partition key
+    // Unlike the {@code assumeQuerySupported()} tests above (which filter on the "value" field and skip when the
+    // query probe fails), these only reference indexed paths: "id" and the partition key
     // "name", and project either via SELECT * or an explicit "id"-only list. That keeps them inside the
     // emulator's query engine's supported surface, so they run for real here AND on full Azure Cosmos DB.
     // They are gated only by assumeCosmosAvailable().

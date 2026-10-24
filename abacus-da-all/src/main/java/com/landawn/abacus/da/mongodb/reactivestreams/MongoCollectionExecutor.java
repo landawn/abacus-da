@@ -97,6 +97,9 @@ import reactor.core.publisher.Mono;
  *   <li><strong>Single-Value Operations:</strong> {@code Mono} for at-most-one result; empty Mono indicates
  *       "no match"</li>
  *   <li><strong>Multi-Value Streams:</strong> {@code Flux} for result sets, backed by a server-side cursor</li>
+ *   <li><strong>No {@code null} Elements:</strong> Reactive Streams forbids {@code null} elements, so a row or value that
+ *       converts to {@code null} is skipped by a {@code Flux} and makes a {@code Mono} complete empty (the blocking
+ *       executor can return {@code null} list elements or a present-but-null value in those cases)</li>
  * </ul>
  *
  * <h3>Thread Safety:</h3>
@@ -720,7 +723,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides a reactive way to retrieve specific fields from a document identified by
      * its ObjectId string, then convert the result to the specified Java type. Field projection helps
-     * reduce network traffic and memory usage by only retrieving necessary fields.</p>
+     * reduce network traffic and memory usage by only retrieving necessary fields. A single-value {@code rowType}
+     * with exactly one selected field receives that field's value, as described by
+     * {@link #findFirst(Collection, Bson, Bson, Class)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -754,7 +759,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides a reactive way to retrieve specific fields from a document identified by
      * its ObjectId, then convert the result to the specified Java type. Field projection reduces
-     * network traffic and memory usage by only retrieving necessary fields.</p>
+     * network traffic and memory usage by only retrieving necessary fields. A single-value {@code rowType}
+     * with exactly one selected field receives that field's value, as described by
+     * {@link #findFirst(Collection, Bson, Bson, Class)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -867,7 +874,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides a reactive way to retrieve specific fields from the first document
      * that matches the given filter criteria, then convert the result to the specified Java type.
-     * Field projection reduces network traffic and memory usage.</p>
+     * Field projection reduces network traffic and memory usage. A single-value {@code rowType} with exactly one
+     * selected field receives that field's value, as described by {@link #findFirst(Collection, Bson, Bson, Class)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1087,7 +1095,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Returns a reactive stream of documents matching the filter with only
      * the specified fields included, then converts each to the target type.
-     * Projection reduces network traffic and memory usage.</p>
+     * Projection reduces network traffic and memory usage. A single-value {@code rowType} with exactly one
+     * selected field receives that field's values, as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1114,7 +1124,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Combines field projection with pagination to return a limited set of documents
      * with only specified fields, starting from an offset. Each document is converted
-     * to the target type.</p>
+     * to the target type. A single-value {@code rowType} with exactly one selected field receives that field's
+     * values, as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1144,7 +1155,9 @@ public final class MongoCollectionExecutor {
      * Lists documents with field projection, sorting, and type conversion.
      *
      * <p>Returns a sorted reactive stream of documents matching the filter with
-     * only specified fields included. Each document is converted to the target type.</p>
+     * only specified fields included. Each document is converted to the target type. A single-value
+     * {@code rowType} with exactly one selected field receives that field's values, as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1859,7 +1872,8 @@ public final class MongoCollectionExecutor {
      * primitive-wrapper convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.).</p>
      *
      * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
-     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * document matches the filter, or when a matching document's named field is absent or BSON null (or
+     * holds a value that converts to {@code null}, such as empty text requested as a number or date).
      * Otherwise it emits the converted value and then completes. Subscribers cannot distinguish "no
      * document matched" from "document matched but value is null" purely from the reactive signal —
      * use the blocking sync API ({@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor}) when
@@ -2175,11 +2189,17 @@ public final class MongoCollectionExecutor {
 
         if (N.isEmpty(selectPropNames)) {
             return query(selectPropNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
-        } else if (selectPropNames.stream().noneMatch(propName -> propName != null && propName.indexOf('.') >= 0)) {
-            return query(selectPropNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(selectPropNames, rowList, rowType));
+        }
+
+        // Snapshot the names now: the projection is built from them when this method is called, but the Dataset columns are
+        // read on every subscription, so a caller that changed its collection in between got columns that no longer matched
+        // the projected fields (a changed name came back as an all-null column).
+        final List<String> propNames = new ArrayList<>(selectPropNames);
+
+        if (propNames.stream().noneMatch(propName -> propName != null && propName.indexOf('.') >= 0)) {
+            return query(propNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(propNames, rowList, rowType));
         } else {
-            return query(selectPropNames, filter, sort, offset, count).collectList()
-                    .map(rowList -> extractDataWithDottedColumns(selectPropNames, rowList, rowType));
+            return query(propNames, filter, sort, offset, count).collectList().map(rowList -> extractDataWithDottedColumns(propNames, rowList, rowType));
         }
     }
 
@@ -3745,7 +3765,9 @@ public final class MongoCollectionExecutor {
      * inserted count). The operation is atomic at the document level but not for the entire batch —
      * by default (ordered=true) the driver stops at the first failing document; pass an unordered
      * {@link BulkWriteOptions} via {@link #bulkInsert(Collection, BulkWriteOptions)} to continue
-     * after errors.</p>
+     * after errors. In both modes a failed insert makes the publisher signal a
+     * {@link com.mongodb.MongoBulkWriteException} instead of emitting a result; its
+     * {@link com.mongodb.MongoBulkWriteException#getWriteResult() getWriteResult()} reports what was applied.</p>
      *
      * <p><b>Generated {@code _id}:</b> the driver populates a generated {@code _id} in place on caller-supplied
      * {@link Document} entries that lack one (when this method is called, before subscription). Converted entries
@@ -3855,7 +3877,9 @@ public final class MongoCollectionExecutor {
      * operations where different types of operations need to be executed together. The
      * default driver behaviour is <i>ordered</i>: execution stops at the first failing model.
      * Use {@link #bulkWrite(List, BulkWriteOptions)} with {@code ordered(false)} to continue
-     * after errors.</p>
+     * after errors. In both modes a failed write makes the publisher signal a
+     * {@link com.mongodb.MongoBulkWriteException} instead of emitting a result; its
+     * {@link com.mongodb.MongoBulkWriteException#getWriteResult() getWriteResult()} reports what was applied.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4919,7 +4943,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>If {@code fieldNames} contains only one distinct field and {@code rowType} is a single-value type,
      * each group key is converted to that type. The null-key group is omitted for every single-value type,
-     * including primitive class tokens such as {@code int.class}, without emitting a primitive default.</p>
+     * including primitive class tokens such as {@code int.class}, without emitting a primitive default.
+     * With two or more distinct fields each row carries one value per field, so a single-value {@code rowType}
+     * cannot hold it: the publisher then signals an {@link IllegalArgumentException}. Exception: dotted fields
+     * under one top-level field (such as {@code "a.b"} and {@code "a.c"}) arrive as the single nested document
+     * {@code {a: {b: ..., c: ...}}}, which is converted as a whole (to its JSON text for {@code String}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

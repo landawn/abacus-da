@@ -68,6 +68,7 @@ import com.landawn.abacus.util.BooleanList;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.ExceptionUtil;
 import com.landawn.abacus.util.HBaseColumn;
+import com.landawn.abacus.util.Holder;
 import com.landawn.abacus.util.IOUtil;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
@@ -75,6 +76,7 @@ import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.Tuple;
 import com.landawn.abacus.util.Tuple.Tuple2;
 import com.landawn.abacus.util.Tuple.Tuple3;
+import com.landawn.abacus.util.u;
 import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.function.Supplier;
 import com.landawn.abacus.util.stream.ObjIteratorEx;
@@ -221,7 +223,11 @@ public final class HBaseExecutor {
     private static final Map<Class<?>, Method> classRowKeySetMethodPool = new ConcurrentHashMap<>();
 
     private static final Map<Class<?>, Map<NamingPolicy, Map<String, Tuple3<String, String, Boolean>>>> classFamilyColumnNamePool = new ConcurrentHashMap<>();
-    private static final Map<Class<?>, Tuple2<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>>> classFamilyColumnFieldNamePool = new ConcurrentHashMap<>();
+    // (family -> qualifier -> property, flattened-nested-bean qualifier -> property, family -> qualifier -> sole writing property
+    // or CONTESTED_CELL_TP); see getFamilyColumnFieldNameMap.
+    private static final Map<Class<?>, Tuple3<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>, Map<String, Map<String, Tuple2<String, Boolean>>>>> classFamilyColumnFieldNamePool = new ConcurrentHashMap<>();
+    // Marks (by identity) a cell in _3 that several properties write, or whose one writer would not read it back.
+    private static final Tuple2<String, Boolean> CONTESTED_CELL_TP = Tuple.of("", Boolean.FALSE);
 
     private final Admin admin;
 
@@ -540,8 +546,13 @@ public final class HBaseExecutor {
         });
     }
 
-    private static Tuple2<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>> getFamilyColumnFieldNameMap(final Class<?> entityClass) {
-        Tuple2<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>> familyColumnFieldNameMapTP = classFamilyColumnFieldNamePool
+    // _1: family -> qualifier -> (property, has @Column); _2: qualifier -> property, for this class flattened as a nested bean;
+    // _3: family -> qualifier -> the only property that writes that cell (see the end of the method). toValue consults _3 only
+    // for a non-empty qualifier without an entry in _1, and never counts a _3 entry as a member of the family when it searches
+    // the family's nested beans, so a _3 entry cannot change how any other cell is routed.
+    private static Tuple3<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>, Map<String, Map<String, Tuple2<String, Boolean>>>> getFamilyColumnFieldNameMap(
+            final Class<?> entityClass) {
+        Tuple3<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>, Map<String, Map<String, Tuple2<String, Boolean>>>> familyColumnFieldNameMapTP = classFamilyColumnFieldNamePool
                 .get(entityClass);
 
         if (familyColumnFieldNameMapTP == null) {
@@ -549,16 +560,20 @@ public final class HBaseExecutor {
             final ColumnFamily defaultColumnFamily = entityInfo.getAnnotation(ColumnFamily.class);
             final String defaultColumnFamilyName = hasColumnFamilyValue(defaultColumnFamily) ? getAnnotatedColumnFamily(defaultColumnFamily) : null;
 
-            familyColumnFieldNameMapTP = Tuple.of(new HashMap<>(), new HashMap<>(entityInfo.propInfoList.size()));
+            familyColumnFieldNameMapTP = Tuple.of(new HashMap<>(), new HashMap<>(entityInfo.propInfoList.size()), new HashMap<>());
 
-            final Tuple2<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>> finalFamilyColumnFieldNameMapTP = familyColumnFieldNameMapTP;
+            final Tuple3<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>, Map<String, Map<String, Tuple2<String, Boolean>>>> finalFamilyColumnFieldNameMapTP = familyColumnFieldNameMapTP;
+            final List<Tuple2<String, Tuple2<String, Boolean>>> familyVariantClaims = new ArrayList<>();
+            final Map<String, Tuple2<String, Boolean>> propColumnFieldTPs = new HashMap<>(entityInfo.propInfoList.size());
 
             for (final PropInfo propInfo : entityInfo.propInfoList) {
                 List<String> columnFamilyNames = null;
+                List<String> claimedFamilyNameVariants = N.emptyList();
                 List<String> columnNames = null;
                 boolean hasColumnAnnotation = false;
 
                 final ColumnFamily propColumnFamilyAnno = propInfo.getAnnotation(ColumnFamily.class);
+                final boolean hasFixedColumnFamily = hasColumnFamilyValue(propColumnFamilyAnno) || Strings.isNotEmpty(defaultColumnFamilyName);
 
                 if (hasColumnFamilyValue(propColumnFamilyAnno)) {
                     columnFamilyNames = N.asList(getAnnotatedColumnFamily(propColumnFamilyAnno));
@@ -568,24 +583,34 @@ public final class HBaseExecutor {
                     // A naming-policy variant must not hijack a name an earlier property already registered, but the
                     // property's own (CAMEL_CASE) name is always kept: dropping it would silently lose this property's
                     // cells whenever an earlier property claimed the same name (e.g. an explicit @ColumnFamily/@Column).
-                    columnFamilyNames = Stream.of(NamingPolicy.values())
-                            .map(it -> formatName(propInfo.name, it))
+                    final List<String> familyNameVariants = Stream.of(NamingPolicy.values()).map(it -> formatName(propInfo.name, it)).toList();
+                    final List<String> unclaimedFamilyNames = Stream.of(familyNameVariants)
                             .filter(it -> it.equals(propInfo.name) || !finalFamilyColumnFieldNameMapTP._1.containsKey(it))
                             .toList();
+
+                    columnFamilyNames = unclaimedFamilyNames;
+                    claimedFamilyNameVariants = Stream.of(familyNameVariants).filter(it -> !unclaimedFamilyNames.contains(it)).toList();
                 }
 
                 if (propInfo.columnName.isPresent()) {
                     columnNames = N.asList(propInfo.columnName.get());
                     hasColumnAnnotation = true;
                 } else {
+                    // A qualifier variant is a real write coordinate only in a fixed (annotated or class-default) family: there
+                    // AnyPut writes formatName(name, policy) as the qualifier; elsewhere it writes the empty qualifier. So in a
+                    // fixed family the variant is checked against that family below, not dropped because another family uses
+                    // the same name: dropping it made a SNAKE_CASE mapper lose a cell it wrote itself.
                     columnNames = Stream.of(NamingPolicy.values())
                             .map(it -> formatName(propInfo.name, it))
-                            .filter(it -> it.equals(propInfo.name) || !finalFamilyColumnFieldNameMapTP._2.containsKey(it))
+                            .filter(it -> hasFixedColumnFamily || it.equals(propInfo.name) || !finalFamilyColumnFieldNameMapTP._2.containsKey(it))
                             .transform(s -> propInfo.type.isBean() || (Strings.isEmpty(defaultColumnFamilyName) && !hasColumnFamilyValue(propColumnFamilyAnno))
                                     ? s.append(EMPTY_QUALIFIER)
                                     : s)
                             .toList();
                 }
+
+                final Tuple2<String, Boolean> columnFieldTP = Tuple.of(propInfo.name, hasColumnAnnotation);
+                propColumnFieldTPs.put(propInfo.name, columnFieldTP);
 
                 for (final String columnFamilyName : columnFamilyNames) {
                     Map<String, Tuple2<String, Boolean>> columnFieldMap = familyColumnFieldNameMapTP._1.get(columnFamilyName);
@@ -596,19 +621,82 @@ public final class HBaseExecutor {
                     }
 
                     for (final String columnName : columnNames) {
-                        final Tuple2<String, Boolean> columnFieldTP = Tuple.of(propInfo.name, hasColumnAnnotation);
-
                         if (columnName.isEmpty() && propInfo.type.isBean() && !hasColumnAnnotation) {
                             // A nested bean's empty qualifier is only a fallback; it must not displace the real owner.
                             columnFieldMap.putIfAbsent(columnName, columnFieldTP);
+                        } else if (hasFixedColumnFamily && !hasColumnAnnotation && !columnName.equals(propInfo.name)
+                                && (columnFieldMap.containsKey(columnName) || (finalFamilyColumnFieldNameMapTP._2.containsKey(columnName)
+                                        && isNestedBeanQualifier(entityInfo, defaultColumnFamilyName, columnFamilyName, columnName)))) {
+                            // A qualifier variant never displaces a qualifier another property registered in this family. A variant
+                            // that only another family uses (formerly always dropped) is kept, unless a flattened nested bean of this
+                            // family may be written with the same qualifier: such a cell is still routed to the nested bean, as before.
+                            continue;
                         } else {
                             columnFieldMap.put(columnName, columnFieldTP);
                         }
                     }
                 }
 
+                // An unannotated scalar is written to (formatName(name, policy), empty qualifier). When an earlier property
+                // already registered that family name, the variant family was dropped as a whole and a mapper using that
+                // policy lost the cell it wrote itself. Claim just that coordinate (after all properties are registered, below).
+                if (!hasColumnAnnotation && !propInfo.type.isBean()) {
+                    for (final String columnFamilyName : claimedFamilyNameVariants) {
+                        familyVariantClaims.add(Tuple.of(columnFamilyName, columnFieldTP));
+                    }
+                }
+
+                // This map resolves the qualifiers of a FLATTENED nested bean, whose properties all share one family on write,
+                // so here a qualifier variant still must not hijack a name registered by ANY earlier property.
                 for (final String columnName : columnNames) {
-                    familyColumnFieldNameMapTP._2.put(columnName, propInfo.name);
+                    if (!hasFixedColumnFamily || hasColumnAnnotation || columnName.isEmpty() || columnName.equals(propInfo.name)
+                            || !familyColumnFieldNameMapTP._2.containsKey(columnName)) {
+                        familyColumnFieldNameMapTP._2.put(columnName, propInfo.name);
+                    }
+                }
+            }
+
+            // The claimed coordinate is taken when it is free, or held by a nested bean's empty-qualifier fallback (which skips
+            // an empty qualifier anyway) only if that bean is the family's sole nested bean and keeps another entry there: once
+            // the fallback is a scalar, toValue finds a nested bean only through its other entries (findNestedBeanOwner), so taking it
+            // otherwise lost the whole bean or routed its cells to another nested bean of the family. Done after the loop so
+            // a later property cannot change the entries this decision is based on.
+            for (final Tuple2<String, Tuple2<String, Boolean>> claim : familyVariantClaims) {
+                final Map<String, Tuple2<String, Boolean>> columnFieldMap = familyColumnFieldNameMapTP._1.get(claim._1);
+                final Tuple2<String, Boolean> existing = columnFieldMap.get(EMPTY_QUALIFIER);
+
+                if (existing == null || isSoleRoutableNestedBeanFallback(entityInfo, columnFieldMap, existing)) {
+                    columnFieldMap.put(EMPTY_QUALIFIER, claim._2);
+                }
+            }
+
+            // WHY: a @Column property and a flattened nested bean without a fixed family are written to (formatName(name, policy),
+            // the @Column name or each nested qualifier); under a policy whose family variant an earlier property had registered,
+            // the variant was dropped as a whole and the property lost its own cells, as the unannotated scalar above did. More
+            // generally, a cell with no entry of its own reached a nested bean of its family only through the family's fallback,
+            // which could pick a bean that never writes it. So every non-empty qualifier that has no entry in its family and is
+            // written there by exactly one property, under any naming policy (as AnyPut.create writes), is routed to that
+            // property (_3); a nested bean only when the qualifier reads back into the nested property that writes it. Any
+            // other written cell (two or more properties write it, under the same or different policies, or its one writer
+            // would not read it back) is marked CONTESTED_CELL_TP and keeps the routing it had (see toValue). Done after every
+            // other registration.
+            for (final Map.Entry<String, Map<String, List<PropInfo>>> familyEntry : getCellWriterMap(entityInfo, defaultColumnFamilyName).entrySet()) {
+                final String columnFamilyName = familyEntry.getKey();
+                final Map<String, Tuple2<String, Boolean>> columnFieldMap = familyColumnFieldNameMapTP._1.get(columnFamilyName);
+
+                for (final Map.Entry<String, List<PropInfo>> qualifierEntry : familyEntry.getValue().entrySet()) {
+                    final String qualifier = qualifierEntry.getKey();
+
+                    if (qualifier.isEmpty() || columnFieldMap == null || columnFieldMap.containsKey(qualifier)) {
+                        continue;
+                    }
+
+                    final PropInfo writer = qualifierEntry.getValue().size() == 1 ? qualifierEntry.getValue().get(0) : null;
+                    final boolean isSoleWriter = writer != null
+                            && (!isFlattenedNestedBean(writer) || readsBackIntoWriter(writer, defaultColumnFamilyName, columnFamilyName, qualifier));
+
+                    familyColumnFieldNameMapTP._3.computeIfAbsent(columnFamilyName, k -> new HashMap<>())
+                            .put(qualifier, isSoleWriter ? propColumnFieldTPs.get(writer.name) : CONTESTED_CELL_TP);
                 }
             }
 
@@ -627,6 +715,251 @@ public final class HBaseExecutor {
      */
     static boolean hasColumnFamilyValue(final ColumnFamily columnFamily) {
         return columnFamily != null && Strings.isNotEmpty(columnFamily.value());
+    }
+
+    private static boolean isNestedBeanFallback(final BeanInfo entityInfo, final Tuple2<String, Boolean> columnFieldTP) {
+        final PropInfo propInfo = columnFieldTP._2 ? null : entityInfo.getPropInfo(columnFieldTP._1);
+
+        return propInfo != null && propInfo.type.isBean();
+    }
+
+    // Whether fallbackTP is a nested bean's empty-qualifier fallback that toValue still reaches through another entry of the
+    // family (columnFieldMap), with no other nested bean in the family competing for its qualifiers in toValue's search.
+    private static boolean isSoleRoutableNestedBeanFallback(final BeanInfo entityInfo, final Map<String, Tuple2<String, Boolean>> columnFieldMap,
+            final Tuple2<String, Boolean> fallbackTP) {
+        if (!isNestedBeanFallback(entityInfo, fallbackTP)) {
+            return false;
+        }
+
+        boolean hasOtherEntry = false;
+
+        for (final Map.Entry<String, Tuple2<String, Boolean>> entry : columnFieldMap.entrySet()) {
+            final Tuple2<String, Boolean> columnFieldTP = entry.getValue();
+
+            if (entry.getKey().isEmpty()) {
+                continue;
+            } else if (columnFieldTP._1.equals(fallbackTP._1)) {
+                hasOtherEntry = true;
+            } else if (!columnFieldTP._2) {
+                final PropInfo propInfo = entityInfo.getPropInfo(columnFieldTP._1);
+
+                if (propInfo != null && propInfo.jsonXmlType.isBean()) {
+                    return false;
+                }
+            }
+        }
+
+        return hasOtherEntry;
+    }
+
+    // Whether a nested bean of entityInfo that is flattened into columnFamilyName may write qualifier under some naming
+    // policy. Reads only the bean metadata (never getFamilyColumnFieldNameMap), so a self-referencing bean cannot recurse.
+    private static boolean isNestedBeanQualifier(final BeanInfo entityInfo, final String defaultColumnFamilyName, final String columnFamilyName,
+            final String qualifier) {
+        for (final PropInfo propInfo : entityInfo.propInfoList) {
+            if (!propInfo.jsonXmlType.isBean() || propInfo.columnName.isPresent()) {
+                continue;
+            }
+
+            final ColumnFamily propColumnFamilyAnno = propInfo.getAnnotation(ColumnFamily.class);
+            boolean inFamily = false;
+
+            if (hasColumnFamilyValue(propColumnFamilyAnno)) {
+                inFamily = propColumnFamilyAnno.value().equals(columnFamilyName);
+            } else if (Strings.isNotEmpty(defaultColumnFamilyName)) {
+                inFamily = defaultColumnFamilyName.equals(columnFamilyName);
+            } else {
+                for (final NamingPolicy namingPolicy : NamingPolicy.values()) {
+                    inFamily = inFamily || formatName(propInfo.name, namingPolicy).equals(columnFamilyName);
+                }
+            }
+
+            if (inFamily) {
+                for (final PropInfo nestedPropInfo : ParserUtil.getBeanInfo(propInfo.jsonXmlType.javaType()).propInfoList) {
+                    if (nestedPropInfo.columnName.isPresent()) {
+                        if (nestedPropInfo.columnName.get().equals(qualifier)) {
+                            return true;
+                        }
+                    } else {
+                        for (final NamingPolicy namingPolicy : NamingPolicy.values()) {
+                            if (formatName(nestedPropInfo.name, namingPolicy).equals(qualifier)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // Whether AnyPut.create flattens propInfo: a bean-typed property without @Column, written as one cell per nested property.
+    private static boolean isFlattenedNestedBean(final PropInfo propInfo) {
+        return propInfo.jsonXmlType.isBean() && !propInfo.columnName.isPresent();
+    }
+
+    // The column family AnyPut.create writes propInfo to under namingPolicy.
+    private static String getWrittenColumnFamily(final PropInfo propInfo, final String defaultColumnFamilyName, final NamingPolicy namingPolicy) {
+        final ColumnFamily propColumnFamilyAnno = propInfo.getAnnotation(ColumnFamily.class);
+
+        return hasColumnFamilyValue(propColumnFamilyAnno) ? propColumnFamilyAnno.value()
+                : Strings.isNotEmpty(defaultColumnFamilyName) ? defaultColumnFamilyName : formatName(propInfo.name, namingPolicy);
+    }
+
+    // family -> qualifier -> the properties of entityInfo that AnyPut.create writes that cell for under some naming policy (each
+    // once, in declaration order). Mirrors AnyPut.create's choice of family and qualifier; reads only the bean metadata. The
+    // row-key property, which AnyPut.create skips, is listed too (it may change through registerRowKeyProperty): toValue treats
+    // a cell listed only for it as written by no property.
+    private static Map<String, Map<String, List<PropInfo>>> getCellWriterMap(final BeanInfo entityInfo, final String defaultColumnFamilyName) {
+        final Map<String, Map<String, List<PropInfo>>> cellWriterMap = new HashMap<>();
+
+        for (final PropInfo propInfo : entityInfo.propInfoList) {
+            final ColumnFamily propColumnFamilyAnno = propInfo.getAnnotation(ColumnFamily.class);
+            final boolean hasFixedColumnFamily = hasColumnFamilyValue(propColumnFamilyAnno) || Strings.isNotEmpty(defaultColumnFamilyName);
+            final List<PropInfo> nestedPropInfos = isFlattenedNestedBean(propInfo) ? ParserUtil.getBeanInfo(propInfo.jsonXmlType.javaType()).propInfoList
+                    : null;
+
+            for (final NamingPolicy namingPolicy : NamingPolicy.values()) {
+                final Map<String, List<PropInfo>> qualifierWriterMap = cellWriterMap
+                        .computeIfAbsent(getWrittenColumnFamily(propInfo, defaultColumnFamilyName, namingPolicy), k -> new HashMap<>());
+
+                if (nestedPropInfos != null) {
+                    for (final PropInfo nestedPropInfo : nestedPropInfos) {
+                        addCellWriter(qualifierWriterMap,
+                                nestedPropInfo.columnName.isPresent() ? nestedPropInfo.columnName.get() : formatName(nestedPropInfo.name, namingPolicy),
+                                propInfo);
+                    }
+                } else {
+                    addCellWriter(qualifierWriterMap, propInfo.columnName.isPresent() ? propInfo.columnName.get()
+                            : hasFixedColumnFamily ? formatName(propInfo.name, namingPolicy) : EMPTY_QUALIFIER, propInfo);
+                }
+            }
+        }
+
+        return cellWriterMap;
+    }
+
+    private static void addCellWriter(final Map<String, List<PropInfo>> qualifierWriterMap, final String qualifier, final PropInfo propInfo) {
+        final List<PropInfo> writers = qualifierWriterMap.computeIfAbsent(qualifier, k -> new ArrayList<>(1));
+
+        if (!writers.contains(propInfo)) {
+            writers.add(propInfo);
+        }
+    }
+
+    // Whether a cell (columnFamilyName, qualifier) that the flattened nested bean propInfo writes reads back into the nested
+    // property that writes it: exactly one nested property writes that qualifier under the policies that put propInfo in
+    // that family, and the nested bean's qualifier map resolves the qualifier to it, as toValue resolves it.
+    private static boolean readsBackIntoWriter(final PropInfo propInfo, final String defaultColumnFamilyName, final String columnFamilyName,
+            final String qualifier) {
+        final BeanInfo nestedBeanInfo = ParserUtil.getBeanInfo(propInfo.jsonXmlType.javaType());
+        PropInfo nestedWriter = null;
+
+        for (final NamingPolicy namingPolicy : NamingPolicy.values()) {
+            if (getWrittenColumnFamily(propInfo, defaultColumnFamilyName, namingPolicy).equals(columnFamilyName)) {
+                for (final PropInfo nestedPropInfo : nestedBeanInfo.propInfoList) {
+                    if (qualifier
+                            .equals(nestedPropInfo.columnName.isPresent() ? nestedPropInfo.columnName.get() : formatName(nestedPropInfo.name, namingPolicy))) {
+                        if (nestedWriter != null && !nestedWriter.name.equals(nestedPropInfo.name)) {
+                            return false;
+                        }
+
+                        nestedWriter = nestedPropInfo;
+                    }
+                }
+            }
+        }
+
+        final PropInfo readPropInfo = nestedWriter == null ? null
+                : nestedBeanInfo.getPropInfo(getNestedColumnFieldNameMap(nestedBeanInfo).getOrDefault(qualifier, qualifier));
+
+        return readPropInfo != null && readPropInfo.name.equals(nestedWriter.name);
+    }
+
+    // The qualifier -> property map (_2) that getFamilyColumnFieldNameMap builds for nestedBeanInfo, computed the same way
+    // from the bean metadata alone, so a self-referencing nested bean cannot recurse into getFamilyColumnFieldNameMap.
+    private static Map<String, String> getNestedColumnFieldNameMap(final BeanInfo nestedBeanInfo) {
+        final ColumnFamily defaultColumnFamily = nestedBeanInfo.getAnnotation(ColumnFamily.class);
+        final String defaultColumnFamilyName = hasColumnFamilyValue(defaultColumnFamily) ? getAnnotatedColumnFamily(defaultColumnFamily) : null;
+        final Map<String, String> columnFieldNameMap = new HashMap<>(nestedBeanInfo.propInfoList.size());
+
+        for (final PropInfo propInfo : nestedBeanInfo.propInfoList) {
+            final ColumnFamily propColumnFamilyAnno = propInfo.getAnnotation(ColumnFamily.class);
+            final boolean hasFixedColumnFamily = hasColumnFamilyValue(propColumnFamilyAnno) || Strings.isNotEmpty(defaultColumnFamilyName);
+            final boolean hasColumnAnnotation = propInfo.columnName.isPresent();
+            final List<String> columnNames = new ArrayList<>();
+
+            if (hasColumnAnnotation) {
+                columnNames.add(propInfo.columnName.get());
+            } else {
+                for (final NamingPolicy namingPolicy : NamingPolicy.values()) {
+                    final String columnName = formatName(propInfo.name, namingPolicy);
+
+                    if (hasFixedColumnFamily || columnName.equals(propInfo.name) || !columnFieldNameMap.containsKey(columnName)) {
+                        columnNames.add(columnName);
+                    }
+                }
+
+                if (propInfo.type.isBean() || (Strings.isEmpty(defaultColumnFamilyName) && !hasColumnFamilyValue(propColumnFamilyAnno))) {
+                    columnNames.add(EMPTY_QUALIFIER);
+                }
+            }
+
+            for (final String columnName : columnNames) {
+                if (!hasFixedColumnFamily || hasColumnAnnotation || columnName.isEmpty() || columnName.equals(propInfo.name)
+                        || !columnFieldNameMap.containsKey(columnName)) {
+                    columnFieldNameMap.put(columnName, propInfo.name);
+                }
+            }
+        }
+
+        return columnFieldNameMap;
+    }
+
+    // The flattened nested-bean properties that hold an entry (other than a @Column one) in a family's map, in declaration order.
+    private static List<Tuple2<String, Boolean>> getNestedBeanTPs(final BeanInfo entityInfo, final Map<String, Tuple2<String, Boolean>> columnFieldMap) {
+        final Map<String, Tuple2<String, Boolean>> propNameTPMap = new HashMap<>();
+
+        for (final Tuple2<String, Boolean> columnFieldTP : columnFieldMap.values()) {
+            if (!columnFieldTP._2) {
+                propNameTPMap.putIfAbsent(columnFieldTP._1, columnFieldTP);
+            }
+        }
+
+        final List<Tuple2<String, Boolean>> nestedBeanTPs = new ArrayList<>();
+
+        for (final PropInfo propInfo : entityInfo.propInfoList) {
+            final Tuple2<String, Boolean> columnFieldTP = propNameTPMap.get(propInfo.name);
+
+            if (columnFieldTP != null && propInfo.jsonXmlType.isBean()) {
+                nestedBeanTPs.add(columnFieldTP);
+            }
+        }
+
+        return nestedBeanTPs;
+    }
+
+    // The nested bean of a family that receives a qualifier that has no entry of its own and that no property writes: the first
+    // one (in declaration order) with a nested property of exactly that name or @Column name, else the first one whose qualifier
+    // map knows it as a naming-policy variant, else null. (A written cell is routed by _3 or, when contested, as it always was.)
+    private static Tuple2<String, Boolean> findNestedBeanOwner(final BeanInfo entityInfo, final List<Tuple2<String, Boolean>> nestedBeanTPs,
+            final String qualifier) {
+        for (final Tuple2<String, Boolean> nestedBeanTP : nestedBeanTPs) {
+            for (final PropInfo nestedPropInfo : ParserUtil.getBeanInfo(entityInfo.getPropInfo(nestedBeanTP._1).jsonXmlType.javaType()).propInfoList) {
+                if (qualifier.equals(nestedPropInfo.columnName.isPresent() ? nestedPropInfo.columnName.get() : nestedPropInfo.name)) {
+                    return nestedBeanTP;
+                }
+            }
+        }
+
+        for (final Tuple2<String, Boolean> nestedBeanTP : nestedBeanTPs) {
+            if (getFamilyColumnFieldNameMap(entityInfo.getPropInfo(nestedBeanTP._1).jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                return nestedBeanTP;
+            }
+        }
+
+        return null;
     }
 
     private static String getAnnotatedColumnFamily(final ColumnFamily defaultColumnFamilyAnno) {
@@ -820,10 +1153,23 @@ public final class HBaseExecutor {
      * cells are written into the instance that field already holds, which needs no setter; when that field holds
      * {@code null} the whole family is skipped and the rest of the row is still read. A read-only nested bean mapped
      * as a single {@code @Column} cell is skipped like any other read-only property. A cell whose column maps to the
-     * row-key property is ignored too: that property always receives the key of the row. An empty qualifier maps a
+     * row-key property is ignored too: that property always receives the key of the row. A property without a cell, such
+     * as one that was {@code null} or an empty value wrapper (empty {@code Optional}/{@code Nullable}/{@code OptionalInt}
+     * and the like, a {@code Holder} of {@code null}) when {@link AnyPut#create(Object)} wrote the row, is not assigned and
+     * keeps the value a new instance has. An empty qualifier maps a
      * scalar property stored directly in its family; it does not select a property inside a
      * flattened nested bean. Bean properties declared as {@link HBaseColumn}, {@code Collection<HBaseColumn>}, or
-     * {@code Map<?, HBaseColumn>} are populated cell-by-cell with versioned values.</p>
+     * {@code Map<?, HBaseColumn>} are populated cell-by-cell with versioned values (a single {@code HBaseColumn} gets the
+     * newest cell; a map is keyed by each cell's timestamp, as a {@code Long}, whatever key type it declares).</p>
+     *
+     * <p>A cell whose qualifier has no mapping of its own in its family (such as a flattened nested property's) is read into
+     * the only property that {@link AnyPut#create(Object, NamingPolicy)} writes that cell for under any naming policy. A cell
+     * that several properties can write (under the same or different naming policies) is ambiguous: the value it holds belongs
+     * to whichever of them was written to it, so it is routed as in earlier versions, to the family's first nested bean when
+     * that bean knows the qualifier, else to another nested bean of the family that knows it (in no specified order), and
+     * only one of the writers can read it back. A cell that no property writes goes to the first declared nested bean with
+     * a nested property of exactly that name or {@code @Column} name, else to the first declared one that has the qualifier
+     * as a naming-policy variant of a nested property.</p>
      *
      * <p>For single-value target types the {@link Result} must contain exactly one cell,
      * whose value is decoded into {@code T} — via {@link Type#valueOf(String)} for text-decoded
@@ -1019,6 +1365,9 @@ public final class HBaseExecutor {
             Map<String, Tuple2<String, Boolean>> familyTPMap = null;
             Tuple2<String, Boolean> familyTP = null;
             Set<String> assignedSingleVersionColumns = null;
+            Map<String, Map<String, Tuple2<String, Boolean>>> familySoleWriterTPMap = null;
+            Map<String, List<Tuple2<String, Boolean>>> familyNestedBeanTPs = null;
+            boolean isContestedCell = false;
 
             Map<String, Type<?>> columnValueTypeMap = null;
             Collection<HBaseColumn<?>> columnColl = null;
@@ -1083,6 +1432,28 @@ public final class HBaseExecutor {
                 }
 
                 familyTP = familyTPMap.get(qualifier);
+                isContestedCell = false;
+
+                if (familyTP == null) {
+                    // A cell that exactly one property writes (see getFamilyColumnFieldNameMap): it goes to that property.
+                    if (familySoleWriterTPMap == null) {
+                        familySoleWriterTPMap = getFamilyColumnFieldNameMap(type.javaType())._3;
+                    }
+
+                    final Map<String, Tuple2<String, Boolean>> soleWriterTPMap = familySoleWriterTPMap.get(family);
+
+                    familyTP = soleWriterTPMap == null ? null : soleWriterTPMap.get(qualifier);
+
+                    if (familyTP == CONTESTED_CELL_TP) {
+                        isContestedCell = true;
+                        familyTP = null;
+                    } else if (familyTP != null && rowKeySetMethod != null && rowKeySetMethod.equals(entityInfo.getPropInfo(familyTP._1).setMethod)) {
+                        // WHY: getCellWriterMap lists the row-key property like any other, but AnyPut.create never writes it (and
+                        // the row key ignores mapped cells below), so a cell listed only for the row key is written by no property:
+                        // route it as such instead of dropping it.
+                        familyTP = null;
+                    }
+                }
 
                 if (familyTP == null) {
                     familyTP = familyTPMap.get(EMPTY_QUALIFIER);
@@ -1100,22 +1471,50 @@ public final class HBaseExecutor {
                         // nested field names are the qualifiers; routing a foreign qualifier into a scalar or
                         // versioned property would overwrite its real (empty-qualifier) cell value, so never use a
                         // non-bean fallback. The fallback may also be held by a scalar property sharing this family,
-                        // so search the family's other nested-bean properties for the owner of the qualifier.
-                        if (!isBeanFallback || !getFamilyColumnFieldNameMap(fallbackPropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
-                            final Tuple2<String, Boolean> fallbackTP = familyTP;
+                        // so search the family's nested-bean properties for the owner of the qualifier.
+                        // WHY: in a contested cell (several properties write it, possibly under different naming policies)
+                        // the stored value belongs to whichever property was written to it, which depends on the policy and
+                        // the write order, not on the qualifier; any rule that moved such a cell to another property traded one
+                        // correct read for another. So a contested cell keeps exactly the routing it always had (the bean
+                        // fallback when it knows the qualifier, else the first bean found in the family map's iteration order).
+                        // Only a cell that no property writes uses the deterministic search (findNestedBeanOwner).
+                        if (isContestedCell) {
+                            if (!isBeanFallback || !getFamilyColumnFieldNameMap(fallbackPropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                                final Tuple2<String, Boolean> fallbackTP = familyTP;
 
-                            if (!isBeanFallback) {
-                                familyTP = null;
+                                if (!isBeanFallback) {
+                                    familyTP = null;
+                                }
+
+                                for (final Tuple2<String, Boolean> candidateTP : familyTPMap.values()) {
+                                    final PropInfo candidatePropInfo = candidateTP == fallbackTP || candidateTP._2 ? null
+                                            : entityInfo.getPropInfo(candidateTP._1);
+
+                                    if (candidatePropInfo != null && candidatePropInfo.jsonXmlType.isBean()
+                                            && getFamilyColumnFieldNameMap(candidatePropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                                        familyTP = candidateTP;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            if (familyNestedBeanTPs == null) {
+                                familyNestedBeanTPs = new HashMap<>();
                             }
 
-                            for (final Tuple2<String, Boolean> candidateTP : familyTPMap.values()) {
-                                final PropInfo candidatePropInfo = candidateTP == fallbackTP || candidateTP._2 ? null : entityInfo.getPropInfo(candidateTP._1);
+                            List<Tuple2<String, Boolean>> nestedBeanTPs = familyNestedBeanTPs.get(family);
 
-                                if (candidatePropInfo != null && candidatePropInfo.jsonXmlType.isBean()
-                                        && getFamilyColumnFieldNameMap(candidatePropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
-                                    familyTP = candidateTP;
-                                    break;
-                                }
+                            if (nestedBeanTPs == null) {
+                                nestedBeanTPs = getNestedBeanTPs(entityInfo, familyTPMap);
+                                familyNestedBeanTPs.put(family, nestedBeanTPs);
+                            }
+
+                            final Tuple2<String, Boolean> ownerTP = findNestedBeanOwner(entityInfo, nestedBeanTPs, qualifier);
+
+                            if (ownerTP != null) {
+                                familyTP = ownerTP;
+                            } else if (!isBeanFallback) {
+                                familyTP = null;
                             }
                         }
                     }
@@ -1614,7 +2013,12 @@ public final class HBaseExecutor {
      * A {@code null} {@code namingPolicy} is treated as {@link NamingPolicy#CAMEL_CASE}.
      * The policy is applied when entities are written ({@link HBaseMapper#put(Object)} and
      * {@link HBaseMapper#put(Collection)}); when reading, cells named under any supported
-     * naming policy are recognized, so a mapper can read rows written with a different policy.</p>
+     * naming policy are recognized, so a mapper can read rows written with a different policy. A name that
+     * several properties produce under different policies is ambiguous: a property's own name or explicit
+     * {@code @ColumnFamily}/{@code @Column} name wins over another property's policy variant of it. A cell that only one
+     * property writes, under any policy, is read back into that property unless its name is also mapped to another property
+     * of that family; a cell that several properties can write reads back into only one of them (see
+     * {@link HBaseExecutor#toEntity(Result, Class)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2221,7 +2625,7 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
-     * @param family the name of the column family to scan
+     * @param family the name of the column family to scan; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @return a lazy stream of HBase Results from the scan operation
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see #scan(String, Scan)
@@ -2247,7 +2651,7 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
-     * @param family the name of the column family
+     * @param family the name of the column family; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @param qualifier the column qualifier
      * @return a lazy stream of HBase Results from the scan operation
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
@@ -2272,7 +2676,7 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
-     * @param family the column family as a byte array
+     * @param family the column family as a byte array; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @return a lazy stream of HBase Results from the scan operation
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see #scan(String, Scan)
@@ -2297,7 +2701,7 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
-     * @param family the column family as a byte array
+     * @param family the column family as a byte array; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @param qualifier the column qualifier as a byte array
      * @return a lazy stream of HBase Results from the scan operation
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
@@ -2476,7 +2880,7 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
-     * @param family the name of the column family to scan
+     * @param family the name of the column family to scan; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
      * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
@@ -2505,7 +2909,7 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
-     * @param family the name of the column family
+     * @param family the name of the column family; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @param qualifier the column qualifier
      * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
@@ -2534,7 +2938,7 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
-     * @param family the column family as a byte array
+     * @param family the column family as a byte array; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
      * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
@@ -2563,7 +2967,7 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
-     * @param family the column family as a byte array
+     * @param family the column family as a byte array; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
      * @param qualifier the column qualifier as a byte array
      * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
@@ -3658,7 +4062,8 @@ public final class HBaseExecutor {
      * row-key call sites self-describing at the call site.</p>
      *
      * @param rowKey the row key value; may be {@code null}
-     * @return the bytes for the row key, or {@code null} if {@code rowKey} is {@code null}
+     * @return the bytes for the row key, or {@code null} if {@code rowKey} is {@code null} or an empty value wrapper
+     *         (see {@link #isEmptyValueWrapper(Object)})
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #toValueBytes(Object)
      */
@@ -3677,11 +4082,12 @@ public final class HBaseExecutor {
      *       bytes (the source buffer's position is not mutated)</li>
      *   <li>{@link String} &rarr; UTF-8 bytes via {@link Bytes#toBytes(String)}</li>
      *   <li>Any other type &rarr; converted to a {@link String} via {@code N.stringOf(value)}
-     *       and then to UTF-8 bytes</li>
+     *       and then to UTF-8 bytes; a value whose string form is {@code null}, such as an empty
+     *       wrapper (see {@link #isEmptyValueWrapper(Object)}), &rarr; {@code null}, like a {@code null} value</li>
      * </ul>
      *
      * @param value the value to convert; may be {@code null}
-     * @return the byte representation, or {@code null} if {@code value} is {@code null}
+     * @return the byte representation, or {@code null} if {@code value} is {@code null} or its string form is {@code null}
      * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
      */
     static byte[] toValueBytes(final Object value) throws RuntimeException {
@@ -3697,8 +4103,62 @@ public final class HBaseExecutor {
         } else if (value instanceof String) {
             return Bytes.toBytes((String) value);
         } else {
-            return Bytes.toBytes(N.stringOf(value));
+            // N.stringOf returns null for an empty wrapper (empty Optional/Nullable/OptionalInt..., Holder of null), and
+            // Bytes.toBytes(null) threw NullPointerException: such a value is stored like a null value instead.
+            final String str = N.stringOf(value);
+
+            return str == null ? null : Bytes.toBytes(str); // NOSONAR
         }
+    }
+
+    /**
+     * Tests whether {@code value} is a value wrapper that holds no value: an empty JDK {@link java.util.Optional},
+     * {@link java.util.OptionalInt}, {@link java.util.OptionalLong} or {@link java.util.OptionalDouble}; an empty abacus
+     * {@code u.Optional} or primitive {@code u.OptionalXxx}; a {@code u.Nullable} that is empty or holds {@code null}; or a
+     * {@link com.landawn.abacus.util.Holder} holding {@code null}. Their string form ({@code N.stringOf}) is {@code null},
+     * so {@link #toValueBytes(Object)} converts them to {@code null}, and entity-to-{@link Put} conversion skips a property
+     * holding one, as it skips a {@code null} property: an empty cell would read back as a present empty string.
+     *
+     * @param value the value to test; may be {@code null}
+     * @return {@code true} if {@code value} is one of the wrappers above and holds no value; {@code false} otherwise,
+     *         including for {@code null}
+     */
+    static boolean isEmptyValueWrapper(final Object value) {
+        if (value == null) {
+            return false;
+        } else if (value instanceof java.util.Optional<?> optional) {
+            return optional.isEmpty();
+        } else if (value instanceof java.util.OptionalInt optional) {
+            return optional.isEmpty();
+        } else if (value instanceof java.util.OptionalLong optional) {
+            return optional.isEmpty();
+        } else if (value instanceof java.util.OptionalDouble optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.Optional<?> optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.Nullable<?> nullable) {
+            return nullable.isNull();
+        } else if (value instanceof u.OptionalInt optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.OptionalLong optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.OptionalDouble optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.OptionalBoolean optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.OptionalChar optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.OptionalByte optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.OptionalShort optional) {
+            return optional.isEmpty();
+        } else if (value instanceof u.OptionalFloat optional) {
+            return optional.isEmpty();
+        } else if (value instanceof Holder<?> holder) {
+            return holder.isNull();
+        }
+
+        return false;
     }
 
     /**
@@ -3891,7 +4351,8 @@ public final class HBaseExecutor {
          * {@link HBaseExecutor#mapper(Class, String, NamingPolicy)} rather than constructed
          * directly. The entity class must be a JavaBean class with exactly one ID property
          * ({@code @Id}-annotated or, when no property is annotated, a conventionally typed
-         * property named {@code id}), which is used as the row key.</p>
+         * property named {@code id}), which is used as the row key unless another property was registered
+         * through the deprecated {@link HBaseExecutor#registerRowKeyProperty(Class, String)}.</p>
          *
          * @param targetEntityClass the entity class this mapper handles
          * @param hbaseExecutor the executor that performs the underlying HBase operations
@@ -4026,8 +4487,12 @@ public final class HBaseExecutor {
          * Stores an entity in the table.
          *
          * <p>The row key is extracted from the entity's ID property ({@code @Id}-annotated or, when no
-         * property is annotated, a conventionally typed property named {@code id}), and the entity's
-         * other properties are mapped to HBase columns according to the configured naming policy.</p>
+         * property is annotated, a conventionally typed property named {@code id}), or from the property registered for the
+         * entity's class through the deprecated {@link HBaseExecutor#registerRowKeyProperty(Class, String)}, which takes
+         * precedence; the entity's other properties are mapped to HBase columns according to the configured naming policy.
+         * A property whose value is {@code null} or an empty value wrapper (an empty {@code Optional}, {@code OptionalInt},
+         * {@code Nullable} and the like, or a {@code Holder} of {@code null}) is not written, so reading the row back leaves it
+         * at the value a new instance has (see {@link AnyPut#create(Object, NamingPolicy)}).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4053,6 +4518,9 @@ public final class HBaseExecutor {
 
         /**
          * Stores multiple entities in the table in a batch operation.
+         *
+         * <p>Each entity is mapped as by {@link #put(Object)}: a property whose value is {@code null} or an empty value
+         * wrapper is not written.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4084,8 +4552,10 @@ public final class HBaseExecutor {
         /**
          * Deletes an entity from the table.
          *
-         * <p>The row key is read from the entity's ID property ({@code @Id}-annotated or, when no
-         * property is annotated, a conventionally typed property named {@code id}).</p>
+         * <p>The row key is read from the same property {@link #put(Object)} writes it from: the entity's ID property
+         * ({@code @Id}-annotated or, when no property is annotated, a conventionally typed property named {@code id}), or the
+         * property registered for the entity's class through the deprecated
+         * {@link HBaseExecutor#registerRowKeyProperty(Class, String)}, which takes precedence.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4102,9 +4572,22 @@ public final class HBaseExecutor {
          * @throws RuntimeException if reading an entity's row-key property or converting its value to bytes fails
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
          */
-        @SuppressWarnings("unchecked")
         public void delete(final T entityToDelete) throws IllegalArgumentException, RuntimeException, UncheckedIOException {
-            deleteByRowKey((K) Beans.getPropValue(entityToDelete, rowKeyPropName));
+            deleteByRowKey(getRowKey(entityToDelete));
+        }
+
+        // Reads the row key from the property that put(entity) writes it from (AnyPut.create): a property registered through
+        // registerRowKeyProperty takes precedence over the ID property there, so it must here too, or delete(entity) would
+        // remove a different row than the one put(entity) wrote.
+        @SuppressWarnings({ "unchecked", "deprecation" })
+        private K getRowKey(final T entity) throws IllegalArgumentException {
+            N.checkArgNotNull(entity, cs.entity);
+
+            final Method rowKeySetMethod = classRowKeySetMethodPool.get(entity.getClass());
+            final String propName = rowKeySetMethod == null || rowKeySetMethod == ClassUtil.SENTINEL_METHOD ? rowKeyPropName
+                    : Beans.getPropNameByMethod(rowKeySetMethod);
+
+            return (K) Beans.getPropValue(entity, propName);
         }
 
         /**
@@ -4124,9 +4607,8 @@ public final class HBaseExecutor {
          * @throws RuntimeException if reading an entity's row-key property or converting its value to bytes fails
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
          */
-        @SuppressWarnings("unchecked")
         public void delete(final Collection<? extends T> entitiesToDelete) throws IllegalArgumentException, RuntimeException, UncheckedIOException {
-            deleteByRowKey(N.map(entitiesToDelete, entity -> (K) Beans.getPropValue(entity, rowKeyPropName)));
+            deleteByRowKey(N.map(entitiesToDelete, entity -> getRowKey(entity)));
         }
 
         /**
@@ -4277,7 +4759,7 @@ public final class HBaseExecutor {
          * }
          * }</pre>
          *
-         * @param family the name of the column family to scan
+         * @param family the name of the column family to scan; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
          * @return a lazy stream of entity objects
          * @see Stream
          */
@@ -4295,7 +4777,7 @@ public final class HBaseExecutor {
          * }
          * }</pre>
          *
-         * @param family the name of the column family
+         * @param family the name of the column family; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
          * @param qualifier the column qualifier
          * @return a lazy stream of entity objects
          * @see Stream
@@ -4314,7 +4796,7 @@ public final class HBaseExecutor {
          * }
          * }</pre>
          *
-         * @param family the column family as a byte array
+         * @param family the column family as a byte array; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
          * @return a lazy stream of entity objects
          * @see Stream
          */
@@ -4332,7 +4814,7 @@ public final class HBaseExecutor {
          * }
          * }</pre>
          *
-         * @param family the column family as a byte array
+         * @param family the column family as a byte array; a {@code null} family is accepted here, but HBase cannot serialize it, so consuming the stream fails
          * @param qualifier the column qualifier as a byte array
          * @return a lazy stream of entity objects
          * @see Stream

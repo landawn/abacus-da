@@ -624,7 +624,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param family the column-family name; converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param qualifier the column-qualifier name; converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param value the value whose encoded bytes will be appended; converted via
-     *              {@link HBaseExecutor#toValueBytes(Object)}
+     *              {@link HBaseExecutor#toValueBytes(Object)}; {@code null}, or a value with no string form
+     *              such as an empty {@code Optional}, is stored like {@code null}, so no bytes are appended
      * @return this AnyAppend instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code family} is null or empty (validated by the underlying {@link Append}), or the encoded family
      *         exceeds 127 bytes or the cell exceeds HBase's maximum size

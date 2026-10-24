@@ -196,7 +196,7 @@ public final class AnyRowMutations implements Row {
      * <pre>{@code
      * byte[] rowKey = Bytes.toBytes("user123");
      * AnyRowMutations mutations = AnyRowMutations.of(rowKey);
-     * mutations.getRow();                  // returns the same bytes as rowKey
+     * mutations.getRow();                  // returns a copy of rowKey (equal bytes, not rowKey itself)
      * mutations.val().getMutations();      // returns an empty list (no mutations yet)
      *
      * // Edge: a null byte[] row key is rejected by the underlying RowMutations
@@ -220,7 +220,7 @@ public final class AnyRowMutations implements Row {
      * <pre>{@code
      * byte[] rowKey = Bytes.toBytes("user123");
      * AnyRowMutations mutations = AnyRowMutations.of(rowKey, 5);
-     * mutations.getRow();                  // returns the same bytes as rowKey
+     * mutations.getRow();                  // returns a copy of rowKey (equal bytes, not rowKey itself)
      * mutations.val().getMutations();      // returns an empty list (capacity is only a hint)
      *
      * // Edge: capacity is purely a sizing hint, so even a negative value is accepted

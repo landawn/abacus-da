@@ -996,7 +996,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking find operation with field projection and sorting for the first document
      * matching the filter criteria. The sort parameter determines which document is considered "first" when multiple
-     * documents match the filter. Only the specified fields are retrieved, improving performance.</p>
+     * documents match the filter. Only the specified fields are retrieved, improving performance.
+     * When exactly one field is selected for a scalar {@code rowType}, that named field is converted directly;
+     * a matched document that lacks the field completes the future with {@link Optional#empty()} rather than with
+     * MongoDB's implicitly projected {@code _id} converted to {@code rowType}. Result types that can directly hold a
+     * {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected document.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1286,7 +1290,11 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously retrieves a sorted, paginated list with field projection matching the filter.
      *
      * <p>This method combines all find operation features: filtering, projection, sorting, and pagination
-     * in a single non-blocking operation. This is the most comprehensive list retrieval method.</p>
+     * in a single non-blocking operation. This is the most comprehensive list retrieval method.
+     * When exactly one field is selected into a scalar {@code rowType}, that field's value is extracted directly;
+     * a dotted path such as {@code address.city} resolves the nested value, and a document that lacks the field
+     * yields a {@code null} element instead of its converted {@code _id}. Result types that can directly hold a
+     * {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2574,6 +2582,11 @@ public final class AsyncMongoCollectionExecutor {
      * <p>Returns a sorted Stream containing only the specified fields from matching documents,
      * ideal for ordered data processing.</p>
      *
+     * <p>When exactly one field is selected into a single-value {@code rowType}, that field's value is extracted
+     * directly (a dotted path such as {@code address.city} resolves the nested value), and a document that lacks
+     * the field yields a {@code null} element instead of its converted {@code _id}. Result types that can directly
+     * hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.stream(Arrays.asList("name", "highScore"), Filters.exists("highScore"),
@@ -2614,6 +2627,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>Complete stream method combining field projection, sorting, and pagination
      * for comprehensive control over streamed data.</p>
+     *
+     * <p>When exactly one field is selected into a single-value {@code rowType}, that field's value is extracted
+     * directly (a dotted path such as {@code address.city} resolves the nested value), and a document that lacks
+     * the field yields a {@code null} element instead of its converted {@code _id}. Result types that can directly
+     * hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3014,15 +3032,19 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * List<Product> products = loadProductsFromCsv();
      * InsertManyOptions options = new InsertManyOptions()
-     *     .ordered(false)  // Continue on errors
+     *     .ordered(false)  // attempt every document even after one fails
      *     .bypassDocumentValidation(true);
      *
      * async.insertMany(products, options)
      *      .thenRunAsync(result -> System.out.println("Bulk product import completed: " + result.getInsertedIds()));
+     * // the callback runs only if every insert succeeded; otherwise the future fails with MongoBulkWriteException
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code insertMany} operation fails while converting documents or executing
-     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null document.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null document. With
+     * {@code ordered(false)} the remaining documents are still attempted after a failure, but any failed insert still completes the future
+     * exceptionally with a {@link com.mongodb.MongoBulkWriteException} (its {@code getWriteErrors()} lists the failures and its
+     * {@code getWriteResult()} counts the documents inserted); no {@link InsertManyResult} is delivered.</p>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
      * @param options the options to apply to the insert operation (null uses defaults)
@@ -3917,10 +3939,14 @@ public final class AsyncMongoCollectionExecutor {
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false).bypassDocumentValidation(true);
      * async.bulkInsert(documents, options)
      *      .thenRunAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " documents (unordered)"));
+     * // the callback runs only if every insert succeeded; otherwise the future fails with MongoBulkWriteException
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code bulkInsert} operation fails while converting documents or executing
-     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code entities} contains a null document.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code entities} contains a null document. Unordered
+     * execution only keeps attempting the remaining entries after a failure: any failed insert still completes the future exceptionally
+     * with a {@link com.mongodb.MongoBulkWriteException} (its {@code getWriteErrors()} lists the failures and its {@code getWriteResult()}
+     * counts the inserted documents); no {@link BulkWriteResult} is delivered.</p>
      *
      * @param entities the collection of documents to insert
      * @param options the options to apply to the bulk insert operation (null uses defaults)
@@ -3991,10 +4017,14 @@ public final class AsyncMongoCollectionExecutor {
      *     System.out.println("Inserted: " + result.getInsertedCount());
      *     System.out.println("Deleted: " + result.getDeletedCount());
      * });
+     * // the callback runs only if every write succeeded; otherwise the future fails with MongoBulkWriteException
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code bulkWrite} operation fails while converting documents or executing
-     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code requests} contains a null write model.</p>
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code requests} contains a null write model. With
+     * {@code ordered(false)} the remaining operations are still attempted after a failure, but any failed write still completes the future
+     * exceptionally with a {@link com.mongodb.MongoBulkWriteException} (its {@code getWriteErrors()} lists the failures and its
+     * {@code getWriteResult()} counts the applied writes); no {@link BulkWriteResult} is delivered.</p>
      *
      * @param requests the list of write operations to perform
      * @param options the options to apply to the bulk write operation (null uses defaults)
@@ -5056,13 +5086,20 @@ public final class AsyncMongoCollectionExecutor {
     private <T> ContinuableFuture<Stream<T>> executeStream(final Callable<Stream<T>> command) {
         final Executor executor = asyncExecutor.getExecutor();
         final CloseOnCancelFuture<T> future = new CloseOnCancelFuture<>();
+        // Wrap before submitting: ContinuableFuture.wrap reads abacus-common's shared default executor, which throws
+        // IllegalStateException once that pool's JVM shutdown hook has run. Thrown after submission, that failure left
+        // the already-running operation (an open cursor, or an aggregate's $out/$merge write) with no future to cancel
+        // it or to deliver and close its stream. wrap only stores the reference; the delegate is read later.
+        final ContinuableFuture<Stream<T>> wrapped = ContinuableFuture.wrap(future);
+
         future.setDelegate(asyncExecutor.execute(() -> {
             final Stream<T> stream = command.call();
             future.onResult(stream);
             return stream;
         }));
 
-        return ContinuableFuture.wrap(future).thenUse(executor);
+        // thenUse must follow setDelegate: its delay stage asks the wrapped future isDone() when it is created.
+        return wrapped.thenUse(executor);
     }
 
     private static final class CloseOnCancelFuture<T> implements Future<Stream<T>> {

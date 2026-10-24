@@ -1045,6 +1045,8 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
             target.addAll(rows);
             return target;
         }).when(findIterable).into(org.mockito.ArgumentMatchers.any());
+        // 2026-10-24 sliceT: the dotted query fetches through iterator() (MongoDBBase.fetchAll), so stub it too.
+        MongoIterableStubs.stubRows(findIterable, rows);
 
         final MongoCollectionMapper<DottedEntity> entityMapper = new MongoCollectionMapper<>(
                 new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), DottedEntity.class);
@@ -1376,6 +1378,127 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         Assertions.assertNotNull(result);
         verify(mockCollExecutor).replaceOne(objectId, replacement);
     }
+
+    // ---- 2026-10-24 sliceS ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testGroupByAndCountRowShapesPerMappedType_sliceS() {
+        // Pins the groupByAndCount contract documented on both mapper overloads: a Document mapper receives the raw
+        // {_id: key, count: n} group documents, while a single-value mapper cannot hold a key-plus-count row and fails
+        // with IllegalArgumentException once the stream is consumed (the call itself succeeds).
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+        final MongoCollectionExecutor executor = new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class));
+        final List<List<?>> pipelines = new java.util.ArrayList<>();
+
+        when(collection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenAnswer(invocation -> {
+            final List<?> pipeline = invocation.getArgument(0);
+            pipelines.add(pipeline);
+            final com.mongodb.client.AggregateIterable<Document> iterable = mock(com.mongodb.client.AggregateIterable.class);
+            // A $project stage after $group turns {_id: key, count: n} into {category: key, count: n}, as the server does.
+            MongoIterableStubs.stubRows(iterable, pipeline.size() == 1 ? Arrays.asList(new Document("_id", "a").append("count", 2))
+                    : Arrays.asList(new Document("category", "a").append("count", 2)));
+            return iterable;
+        });
+
+        final MongoCollectionMapper<Document> documentMapper = new MongoCollectionMapper<>(executor, Document.class);
+        final MongoCollectionMapper<String> stringMapper = new MongoCollectionMapper<>(executor, String.class);
+
+        Assertions.assertAll(
+                () -> Assertions.assertEquals(Arrays.asList(new Document("_id", "a").append("count", 2)), documentMapper.groupByAndCount("category").toList()),
+                () -> Assertions.assertEquals(1, pipelines.get(0).size()), () -> {
+                    final Stream<String> stream = stringMapper.groupByAndCount("category");
+                    Assertions.assertThrows(IllegalArgumentException.class, stream::toList);
+                }, () -> {
+                    final Stream<String> stream = stringMapper.groupByAndCount(Arrays.asList("category"));
+                    Assertions.assertThrows(IllegalArgumentException.class, stream::toList);
+                });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testSingleValueRowsForBsonProjectionAndMultiFieldGroupBy_sliceS() {
+        // Pins the single-value-T rules documented on the mapper: a Bson-projection read converts the sole non-_id field,
+        // and an _id-only document (projected field absent) has its _id converted, except that list() turns it into null
+        // when another returned document has the field; groupBy over two distinct fields cannot fill a single-value T.
+        final Document withField = new Document("_id", 7).append("n", 1);
+        final Document idOnly = new Document("_id", 8);
+        final Document otherIdOnly = new Document("_id", 9);
+        final org.bson.conversions.Bson projection = new Document("n", 1);
+        final Document filter = new Document();
+
+        final MongoCollectionMapper<String> mixed = stringMapperFinding(Arrays.asList(withField, idOnly));
+        final MongoCollectionMapper<String> idsOnly = stringMapperFinding(Arrays.asList(idOnly, otherIdOnly));
+
+        final com.mongodb.client.MongoCollection<Document> groupCollection = mock(com.mongodb.client.MongoCollection.class);
+        final com.mongodb.client.AggregateIterable<Document> groupRows = mock(com.mongodb.client.AggregateIterable.class);
+        MongoIterableStubs.stubRows(groupRows, Arrays.asList(new Document("a", "x").append("b", "y")));
+        when(groupCollection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenReturn(groupRows);
+        final MongoCollectionMapper<String> groupMapper = new MongoCollectionMapper<>(
+                new MongoCollectionExecutor(groupCollection, mock(com.landawn.abacus.util.AsyncExecutor.class)), String.class);
+
+        Assertions.assertAll(() -> Assertions.assertEquals(Optional.of("8"), stringMapperFinding(Arrays.asList(idOnly)).findFirst(projection, filter, null)),
+                () -> Assertions.assertEquals(Arrays.asList("1", "8"), mixed.stream(projection, filter, null).toList()),
+                () -> Assertions.assertEquals(Arrays.asList("1", "8"), mixed.stream(projection, filter, null, 0, 10).toList()),
+                () -> Assertions.assertEquals(Arrays.asList("1", null), mixed.list(projection, filter, null)),
+                () -> Assertions.assertEquals(Arrays.asList("1", null), mixed.list(projection, filter, null, 0, 10)),
+                () -> Assertions.assertEquals(Arrays.asList("8", "9"), idsOnly.list(projection, filter, null)), () -> {
+                    final Stream<String> stream = groupMapper.groupBy(Arrays.asList("a", "b"));
+                    Assertions.assertThrows(IllegalArgumentException.class, stream::toList);
+                });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static MongoCollectionMapper<String> stringMapperFinding(final List<Document> rows) {
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+        final com.mongodb.client.FindIterable<Document> findIterable = mock(com.mongodb.client.FindIterable.class);
+        when(collection.find(org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class))).thenReturn(findIterable);
+        when(findIterable.projection(org.mockito.ArgumentMatchers.any())).thenReturn(findIterable);
+        when(findIterable.sort(org.mockito.ArgumentMatchers.any())).thenReturn(findIterable);
+        when(findIterable.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findIterable);
+        when(findIterable.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findIterable);
+        when(findIterable.first()).thenReturn(rows.get(0));
+        MongoIterableStubs.stubRows(findIterable, rows);
+
+        return new MongoCollectionMapper<>(new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), String.class);
+    }
+
+    // ---- 2026-10-24 verify4 ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testMultiFieldGroupByUnderOneTopLevelFieldConvertsTheNestedDocument_verify4() {
+        // Pins the exception documented on MongoCollectionExecutor.groupBy(Collection, Class) and MongoCollectionMapper.groupBy(Collection):
+        // dotted group fields under one top-level field come back (live-verified) as the single nested field {address: {city, zip}},
+        // which a single-value type converts as a whole (String -> its JSON text) instead of failing; fields under two top-level
+        // fields still fail with IllegalArgumentException once the stream is consumed.
+        final Document nested = new Document("address", new Document("city", "Paris").append("zip", "75"));
+        final Document twoFields = new Document("address", new Document("city", "Rome")).append("g", "y");
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+
+        when(collection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenAnswer(invocation -> {
+            final String pipeline = String.valueOf(invocation.getArgument(0, List.class));
+            final com.mongodb.client.AggregateIterable<Document> iterable = mock(com.mongodb.client.AggregateIterable.class);
+            MongoIterableStubs.stubRows(iterable, Arrays.asList(pipeline.contains("zip") ? nested : twoFields));
+            return iterable;
+        });
+
+        final MongoCollectionExecutor executor = new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class));
+        final MongoCollectionMapper<String> mapper = new MongoCollectionMapper<>(executor, String.class);
+        final List<String> sameParent = Arrays.asList("address.city", "address.zip");
+
+        Assertions.assertAll(
+                () -> Assertions.assertEquals(Arrays.asList("{\"city\": \"Paris\", \"zip\": \"75\"}"), executor.groupBy(sameParent, String.class).toList()),
+                () -> Assertions.assertEquals(Arrays.asList("{\"city\": \"Paris\", \"zip\": \"75\"}"), mapper.groupBy(sameParent).toList()), () -> {
+                    final Stream<String> stream = executor.groupBy(Arrays.asList("address.city", "g"), String.class);
+                    Assertions.assertThrows(IllegalArgumentException.class, stream::toList);
+                }, () -> {
+                    final Stream<String> stream = mapper.groupBy(Arrays.asList("address.city", "g"));
+                    Assertions.assertThrows(IllegalArgumentException.class, stream::toList);
+                });
+    }
+
+    // ---- end 2026-10-24 verify4 ----
 
     public static class DottedEntity {
         private String id;

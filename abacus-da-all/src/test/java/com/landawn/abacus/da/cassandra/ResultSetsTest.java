@@ -65,4 +65,45 @@ class ResultSetsTest {
         org.junit.jupiter.api.Assertions.assertAll(() -> org.junit.jupiter.api.Assertions.assertEquals(List.of(r1, r2, r3), rows),
                 () -> assertTrue(rows.add(r1)), () -> assertTrue(none.isEmpty()), () -> assertTrue(none.add(r1)));
     }
+
+    // ---- 2026-10-24 sliceG ----
+
+    /** A one-row first page whose next page's future fails with {@code failure}. */
+    private static AsyncResultSet sliceGPageThenFailure(final Throwable failure) {
+        final AsyncResultSet first = mock(AsyncResultSet.class);
+        when(first.currentPage()).thenReturn(List.of(mock(Row.class)));
+        when(first.hasMorePages()).thenReturn(true);
+        final CompletableFuture<AsyncResultSet> failed = new CompletableFuture<>();
+        failed.completeExceptionally(failure);
+        when(first.fetchNextPage()).thenReturn(failed);
+        return first;
+    }
+
+    /**
+     * A later page whose future fails with an Error must surface that Error itself, as the driver's synchronous
+     * MultiPageResultSet does (and as a RuntimeException cause already did); it used to be wrapped in a plain
+     * RuntimeException. A checked cause is still converted to a runtime exception.
+     */
+    @Test
+    void laterPageErrorIsRethrownAsIsLikeTheDriversSyncResultSet_sliceG() {
+        final AssertionError error = new AssertionError("page failed");
+        final OutOfMemoryError oom = new OutOfMemoryError("page failed");
+        final IllegalStateException runtime = new IllegalStateException("page failed");
+        final java.io.IOException checked = new java.io.IOException("page failed");
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(
+                        () -> assertSame(error,
+                                org.junit.jupiter.api.Assertions.assertThrows(AssertionError.class, () -> ResultSets.wrap(sliceGPageThenFailure(error)).all())),
+                        () -> {
+                            final java.util.Iterator<Row> iter = ResultSets.wrap(sliceGPageThenFailure(oom)).iterator();
+                            iter.next(); // the first page's row is still delivered
+                            assertSame(oom, org.junit.jupiter.api.Assertions.assertThrows(OutOfMemoryError.class, iter::hasNext));
+                        },
+                        () -> assertSame(runtime,
+                                org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                                        () -> ResultSets.wrap(sliceGPageThenFailure(runtime)).all())),
+                        () -> assertSame(checked, org.junit.jupiter.api.Assertions.assertThrows(com.landawn.abacus.exception.UncheckedIOException.class,
+                                () -> ResultSets.wrap(sliceGPageThenFailure(checked)).all()).getCause()));
+    }
 }

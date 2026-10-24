@@ -385,7 +385,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
      * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
-     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
+     * results on an application thread. This failure occurs during result consumption, after the future completes.
+     * Likewise, a failure to fetch a later page (for example a read timeout) is thrown as is by the consuming call
+     * ({@code iterator().hasNext()}, {@code all()}, ...) instead of being reported by the future.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -429,7 +431,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
      * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
-     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
+     * results on an application thread. This failure occurs during result consumption, after the future completes.
+     * Likewise, a failure to fetch a later page (for example a read timeout) is thrown as is by the consuming call
+     * ({@code iterator().hasNext()}, {@code all()}, ...) instead of being reported by the future.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -474,7 +478,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
      * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
-     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
+     * results on an application thread. This failure occurs during result consumption, after the future completes.
+     * Likewise, a failure to fetch a later page (for example a read timeout) is thrown as is by the consuming call
+     * ({@code iterator().hasNext()}, {@code all()}, ...) instead of being reported by the future.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -517,7 +523,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * <p>Consuming the returned {@code ResultSet} can block when another page is needed. If consumption
      * requires another page on a driver thread, it throws {@link IllegalStateException}; consume paged
-     * results on an application thread. This failure occurs during result consumption, after the future completes.</p>
+     * results on an application thread. This failure occurs during result consumption, after the future completes.
+     * Likewise, a failure to fetch a later page (for example a read timeout) is thrown as is by the consuming call
+     * ({@code iterator().hasNext()}, {@code all()}, ...) instead of being reported by the future.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

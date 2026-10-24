@@ -889,4 +889,333 @@ public class AnyPutTest extends TestBase {
 
         assertThrows(NullPointerException.class, () -> AnyPut.of(source));
     }
+
+    // ---- 2026-10-24 sliceO ----
+
+    /**
+     * create(entity) skips a property holding an empty value wrapper (empty Optional/OptionalLong/u.Optional, u.Nullable
+     * holding null, Holder of null) like a null one, at the top level and in a flattened nested bean, and an HBaseColumn
+     * (alone, in a versioned List or Map) whose value is an empty wrapper writes no cell. On HEAD it threw
+     * NullPointerException (N.stringOf of an empty wrapper is null). Present wrappers and a null HBaseColumn value are
+     * written as before.
+     */
+    @Test
+    public void testCreate_emptyValueWrappersAreSkippedLikeNull_sliceO() {
+        final EmptyWrapperNested nested = new EmptyWrapperNested();
+        nested.setCity("c");
+        nested.setZip(java.util.Optional.empty());
+        nested.setFloor(com.landawn.abacus.util.u.Nullable.empty());
+        nested.setTag(com.landawn.abacus.util.HBaseColumn.valueOf(com.landawn.abacus.util.u.Optional.<String> empty(), 11L));
+        nested.setLabel(com.landawn.abacus.util.HBaseColumn.valueOf(com.landawn.abacus.util.u.Optional.of("L"), 12L));
+
+        final java.util.Map<Long, com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Nullable<String>>> byVersion = new java.util.LinkedHashMap<>();
+        byVersion.put(8L, com.landawn.abacus.util.HBaseColumn.valueOf(com.landawn.abacus.util.u.Nullable.<String> empty(), 8L));
+        byVersion.put(9L, com.landawn.abacus.util.HBaseColumn.valueOf(com.landawn.abacus.util.u.Nullable.of("v9"), 9L));
+
+        final EmptyWrapperEntity entity = new EmptyWrapperEntity();
+        entity.setId("w1");
+        entity.setName("n");
+        entity.setJdkOptional(java.util.Optional.empty());
+        entity.setJdkOptionalLong(java.util.OptionalLong.empty());
+        entity.setOptional(com.landawn.abacus.util.u.Optional.empty());
+        entity.setNullable(com.landawn.abacus.util.u.Nullable.of((String) null));
+        entity.setHolder(com.landawn.abacus.util.Holder.of(null));
+        entity.setPresentOptional(java.util.Optional.of("x"));
+        entity.setVersioned(com.landawn.abacus.util.HBaseColumn.valueOf(java.util.Optional.<String> empty(), 5L));
+        entity.setVersions(Arrays.asList(com.landawn.abacus.util.HBaseColumn.valueOf(java.util.Optional.<String> empty(), 6L),
+                com.landawn.abacus.util.HBaseColumn.valueOf(java.util.Optional.of("v7"), 7L)));
+        entity.setByVersion(byVersion);
+        entity.setNullValueColumn(com.landawn.abacus.util.HBaseColumn.valueOf(null, 10L));
+        entity.setNested(nested);
+
+        final AnyPut put = AnyPut.create(entity);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(7, put.size(), "only the present values get a cell"),
+                () -> assertTrue(put.has("cf", "name", "n")), () -> assertTrue(put.has("cf", "presentOptional", "x")),
+                () -> assertFalse(put.has("cf", "jdkOptional")), () -> assertFalse(put.has("cf", "jdkOptionalLong")),
+                () -> assertFalse(put.has("cf", "optional")), () -> assertFalse(put.has("cf", "nullable")), () -> assertFalse(put.has("cf", "holder")),
+                () -> assertFalse(put.has("cf", "versioned")),
+                () -> assertEquals(Arrays.asList(7L), put.get("cf", "versions").stream().map(Cell::getTimestamp).toList()),
+                () -> assertTrue(put.has("cf", "versions", 7L, "v7")),
+                () -> assertEquals(Arrays.asList(9L), put.get("cf", "byVersion").stream().map(Cell::getTimestamp).toList()),
+                () -> assertTrue(put.has("cf", "byVersion", 9L, "v9")),
+                // a null HBaseColumn value is still written as an empty cell
+                () -> assertEquals(0, put.get("cf", "nullValueColumn").getFirst().getValueLength()),
+                () -> assertEquals(10L, put.get("cf", "nullValueColumn").getFirst().getTimestamp()), () -> assertTrue(put.has("nf", "city", "c")),
+                () -> assertFalse(put.has("nf", "zip")), () -> assertFalse(put.has("nf", "floor")), () -> assertFalse(put.has("nf", "tag")),
+                () -> assertTrue(put.has("nf", "label", 12L, "L")));
+    }
+
+    @ColumnFamily("cf")
+    public static class EmptyWrapperEntity {
+        @Id
+        private String id;
+        private String name;
+        private java.util.Optional<String> jdkOptional;
+        private java.util.OptionalLong jdkOptionalLong;
+        private com.landawn.abacus.util.u.Optional<String> optional;
+        private com.landawn.abacus.util.u.Nullable<String> nullable;
+        private com.landawn.abacus.util.Holder<String> holder;
+        private java.util.Optional<String> presentOptional;
+        private com.landawn.abacus.util.HBaseColumn<java.util.Optional<String>> versioned;
+        private List<com.landawn.abacus.util.HBaseColumn<java.util.Optional<String>>> versions;
+        private java.util.Map<Long, com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Nullable<String>>> byVersion;
+        private com.landawn.abacus.util.HBaseColumn<String> nullValueColumn;
+        @ColumnFamily("nf")
+        private EmptyWrapperNested nested;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public java.util.Optional<String> getJdkOptional() {
+            return jdkOptional;
+        }
+
+        public void setJdkOptional(final java.util.Optional<String> jdkOptional) {
+            this.jdkOptional = jdkOptional;
+        }
+
+        public java.util.OptionalLong getJdkOptionalLong() {
+            return jdkOptionalLong;
+        }
+
+        public void setJdkOptionalLong(final java.util.OptionalLong jdkOptionalLong) {
+            this.jdkOptionalLong = jdkOptionalLong;
+        }
+
+        public com.landawn.abacus.util.u.Optional<String> getOptional() {
+            return optional;
+        }
+
+        public void setOptional(final com.landawn.abacus.util.u.Optional<String> optional) {
+            this.optional = optional;
+        }
+
+        public com.landawn.abacus.util.u.Nullable<String> getNullable() {
+            return nullable;
+        }
+
+        public void setNullable(final com.landawn.abacus.util.u.Nullable<String> nullable) {
+            this.nullable = nullable;
+        }
+
+        public com.landawn.abacus.util.Holder<String> getHolder() {
+            return holder;
+        }
+
+        public void setHolder(final com.landawn.abacus.util.Holder<String> holder) {
+            this.holder = holder;
+        }
+
+        public java.util.Optional<String> getPresentOptional() {
+            return presentOptional;
+        }
+
+        public void setPresentOptional(final java.util.Optional<String> presentOptional) {
+            this.presentOptional = presentOptional;
+        }
+
+        public com.landawn.abacus.util.HBaseColumn<java.util.Optional<String>> getVersioned() {
+            return versioned;
+        }
+
+        public void setVersioned(final com.landawn.abacus.util.HBaseColumn<java.util.Optional<String>> versioned) {
+            this.versioned = versioned;
+        }
+
+        public List<com.landawn.abacus.util.HBaseColumn<java.util.Optional<String>>> getVersions() {
+            return versions;
+        }
+
+        public void setVersions(final List<com.landawn.abacus.util.HBaseColumn<java.util.Optional<String>>> versions) {
+            this.versions = versions;
+        }
+
+        public java.util.Map<Long, com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Nullable<String>>> getByVersion() {
+            return byVersion;
+        }
+
+        public void setByVersion(final java.util.Map<Long, com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Nullable<String>>> byVersion) {
+            this.byVersion = byVersion;
+        }
+
+        public com.landawn.abacus.util.HBaseColumn<String> getNullValueColumn() {
+            return nullValueColumn;
+        }
+
+        public void setNullValueColumn(final com.landawn.abacus.util.HBaseColumn<String> nullValueColumn) {
+            this.nullValueColumn = nullValueColumn;
+        }
+
+        public EmptyWrapperNested getNested() {
+            return nested;
+        }
+
+        public void setNested(final EmptyWrapperNested nested) {
+            this.nested = nested;
+        }
+    }
+
+    public static class EmptyWrapperNested {
+        private String city;
+        private java.util.Optional<String> zip;
+        private com.landawn.abacus.util.u.Nullable<Integer> floor;
+        private com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Optional<String>> tag;
+        private com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Optional<String>> label;
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+
+        public java.util.Optional<String> getZip() {
+            return zip;
+        }
+
+        public void setZip(final java.util.Optional<String> zip) {
+            this.zip = zip;
+        }
+
+        public com.landawn.abacus.util.u.Nullable<Integer> getFloor() {
+            return floor;
+        }
+
+        public void setFloor(final com.landawn.abacus.util.u.Nullable<Integer> floor) {
+            this.floor = floor;
+        }
+
+        public com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Optional<String>> getTag() {
+            return tag;
+        }
+
+        public void setTag(final com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Optional<String>> tag) {
+            this.tag = tag;
+        }
+
+        public com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Optional<String>> getLabel() {
+            return label;
+        }
+
+        public void setLabel(final com.landawn.abacus.util.HBaseColumn<com.landawn.abacus.util.u.Optional<String>> label) {
+            this.label = label;
+        }
+    }
+
+    // ---- 2026-10-24 apply-hbase ----
+
+    private static final String OPERATION_MESSAGE = "Pass the Put or AnyPut directly";
+
+    /** The HBase operations and Any* wrappers that are not entities; the Put carries an operation id (its bean "row key"). */
+    private static List<Object> operationsAndWrappers() {
+        final byte[] row = Bytes.toBytes("r1");
+        final Put putWithId = new Put(row);
+        putWithId.setId("op-1");
+
+        return Arrays.asList(new Put(row), putWithId, new org.apache.hadoop.hbase.client.Get(row), new org.apache.hadoop.hbase.client.Delete(row),
+                new org.apache.hadoop.hbase.client.Increment(row), new org.apache.hadoop.hbase.client.Append(row), new org.apache.hadoop.hbase.client.Scan(),
+                new org.apache.hadoop.hbase.client.RowMutations(row), AnyPut.of("r1"), AnyDelete.of("r1"), AnyGet.of("r1"), AnyScan.create(),
+                AnyIncrement.of("r1"), AnyAppend.of("r1"), AnyRowMutations.of("r1"));
+    }
+
+    /**
+     * Item 10a: a single-entity create(...) used to map a native Put (or any operation) and an AnyPut/Any* wrapper as a bean whose
+     * row key is the operation id: "row key property value is null", or with setId("op-1") a garbage Put whose cells were the
+     * operation's durability/familyCellMap/clusterIds/priority. It now rejects them with an IllegalArgumentException that says to
+     * pass the Put/AnyPut directly (all four single-entity overloads).
+     */
+    @Test
+    public void testCreate_singleEntity_rejectsHBaseOperationsAndAnyWrappers_applyHbase() {
+        org.junit.jupiter.api.Assertions.assertAll(operationsAndWrappers().stream()
+                .flatMap(op -> java.util.stream.Stream.<org.junit.jupiter.api.function.Executable> of( //
+                        () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> AnyPut.create(op)).getMessage().contains(OPERATION_MESSAGE),
+                                op.getClass().getName()),
+                        () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> AnyPut.create(op, NamingPolicy.SNAKE_CASE)).getMessage()
+                                .contains(OPERATION_MESSAGE), op.getClass().getName()),
+                        () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> AnyPut.create(op, Arrays.asList("id"))).getMessage()
+                                .contains(OPERATION_MESSAGE), op.getClass().getName()),
+                        () -> assertTrue(assertThrows(IllegalArgumentException.class,
+                                () -> AnyPut.create(op, (java.util.Collection<String>) null, NamingPolicy.CAMEL_CASE)).getMessage().contains(OPERATION_MESSAGE),
+                                op.getClass().getName()))));
+    }
+
+    /**
+     * Item 10a: the collection factories and toPut pass a native Put element through unchanged (wrapped, not copied, like an
+     * AnyPut element; no naming policy or property selection applied), keep the element order, and reject any other operation
+     * or Any* wrapper element with the same message. They used to bean-map a Put element (IAE "row key ... null").
+     */
+    @Test
+    public void testCollectionFactories_passNativePutThroughAndRejectOtherOperations_applyHbase() {
+        final Put nativePut = new Put(Bytes.toBytes("p1")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        nativePut.setId("op-1");
+        nativePut.setDurability(Durability.SKIP_WAL);
+        final AnyPut anyPut = AnyPut.of("a1").addColumn("cf", "q", "v");
+        final List<Object> mixed = Arrays.asList(new SimpleUser("u1", "n", "e"), nativePut, anyPut);
+
+        final List<java.util.function.Function<List<?>, List<AnyPut>>> factories = Arrays.asList(AnyPut::create, l -> AnyPut.create(l, NamingPolicy.SNAKE_CASE),
+                l -> AnyPut.create(l, Arrays.asList("name")), l -> AnyPut.create(l, Arrays.asList("name"), NamingPolicy.SNAKE_CASE));
+        final List<java.util.function.Function<List<?>, List<Put>>> toPuts = Arrays.asList(AnyPut::toPut, l -> AnyPut.toPut(l, NamingPolicy.SNAKE_CASE));
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(java.util.stream.Stream.concat(factories.stream().map(factory -> (org.junit.jupiter.api.function.Executable) () -> {
+                    final List<AnyPut> puts = factory.apply(mixed);
+
+                    assertEquals(3, puts.size());
+                    assertArrayEquals(Bytes.toBytes("u1"), puts.get(0).getRow());
+                    assertSame(nativePut, puts.get(1).val());
+                    assertEquals(Durability.SKIP_WAL, puts.get(1).getDurability());
+                    assertEquals(1, puts.get(1).size());
+                    assertSame(anyPut, puts.get(2));
+
+                    for (final Object op : operationsAndWrappers()) {
+                        if (!(op instanceof Put) && !(op instanceof AnyPut)) {
+                            assertTrue(assertThrows(IllegalArgumentException.class, () -> factory.apply(Arrays.asList(op))).getMessage()
+                                    .contains(OPERATION_MESSAGE), op.getClass().getName());
+                        }
+                    }
+                }), toPuts.stream().map(toPut -> (org.junit.jupiter.api.function.Executable) () -> {
+                    final List<Put> puts = toPut.apply(mixed);
+
+                    assertEquals(3, puts.size());
+                    assertArrayEquals(Bytes.toBytes("u1"), puts.get(0).getRow());
+                    assertSame(nativePut, puts.get(1));
+                    assertSame(anyPut.val(), puts.get(2));
+
+                    for (final Object op : operationsAndWrappers()) {
+                        if (!(op instanceof Put) && !(op instanceof AnyPut)) {
+                            assertTrue(
+                                    assertThrows(IllegalArgumentException.class, () -> toPut.apply(Arrays.asList(op))).getMessage().contains(OPERATION_MESSAGE),
+                                    op.getClass().getName());
+                        }
+                    }
+                })));
+    }
+
+    /** Item 10a guard: ordinary entities are still mapped by every factory (the rejection is only for operations). */
+    @Test
+    public void testCreate_entitiesStillMapped_applyHbase() {
+        final SimpleUser user = new SimpleUser("u1", "n", "e");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(AnyPut.create(user).has("info", "name", "n")),
+                () -> assertTrue(AnyPut.create(user, NamingPolicy.SNAKE_CASE).has("info", "name", "n")),
+                () -> assertTrue(AnyPut.create(user, Arrays.asList("email")).has("info", "email", "e")),
+                () -> assertFalse(AnyPut.create(user, Arrays.asList("email"), NamingPolicy.CAMEL_CASE).has("info", "name")),
+                () -> assertTrue(AnyPut.create(Arrays.asList(user)).get(0).has("info", "name", "n")),
+                () -> assertTrue(AnyPut.toPut(Arrays.asList(user)).get(0).has(Bytes.toBytes("info"), Bytes.toBytes("name"))));
+    }
 }

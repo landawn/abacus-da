@@ -509,7 +509,10 @@ public final class MongoDB extends MongoDBBase {
     }
 
     /**
-     * Converts a decoded scalar for reactive result mapping, including readable binary buffers.
+     * Converts a decoded scalar for reactive result mapping, including readable binary buffers. This bridge delegates
+     * to {@link MongoDBBase#convertBsonValue(Object, Class)}, so a {@link java.util.Date} requested as
+     * {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC, as the
+     * driver's codecs write those types.
      *
      * @param <T> the requested value type
      * @param value the decoded field value, possibly null

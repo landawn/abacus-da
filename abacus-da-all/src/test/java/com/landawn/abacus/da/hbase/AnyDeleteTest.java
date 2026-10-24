@@ -467,4 +467,172 @@ public class AnyDeleteTest extends TestBase {
         AnyDelete delete = AnyDelete.of("row");
         assertSame(delete.val(), delete.val());
     }
+
+    // ---- 2026-10-24 sliceP ----
+
+    /**
+     * Pins the {@code @param family} docs of every addFamily/addFamilyVersion/addColumn/addColumns overload: a null family is
+     * accepted and queued here; a single delete then fails with NullPointerException while HBase builds the request
+     * (ProtobufUtil.toMutation(DELETE, delete), as RequestConverter.buildMutateRequest does), while a batch delete carries
+     * no column data in the proto (RequestConverter.buildNoDataRegionAction) and the client's default KeyValueCodec writes
+     * the tombstone with an empty family.
+     */
+    @Test
+    public void testNullFamily_singleDeleteFailsWhenRequestIsBuilt_batchSendsEmptyFamily_sliceP() throws Exception {
+        final byte[] q = Bytes.toBytes("q");
+        final List<java.util.function.Supplier<AnyDelete>> overloads = Arrays.asList( //
+                () -> AnyDelete.of("row").addFamily((String) null), //
+                () -> AnyDelete.of("row").addFamily((String) null, 5L), //
+                () -> AnyDelete.of("row").addFamily((byte[]) null), //
+                () -> AnyDelete.of("row").addFamily((byte[]) null, 5L), //
+                () -> AnyDelete.of("row").addFamilyVersion((String) null, 5L), //
+                () -> AnyDelete.of("row").addFamilyVersion((byte[]) null, 5L), //
+                () -> AnyDelete.of("row").addColumn((String) null, "q"), //
+                () -> AnyDelete.of("row").addColumn((String) null, "q", 5L), //
+                () -> AnyDelete.of("row").addColumn((byte[]) null, q), //
+                () -> AnyDelete.of("row").addColumn((byte[]) null, q, 5L), //
+                () -> AnyDelete.of("row").addColumns((String) null, "q"), //
+                () -> AnyDelete.of("row").addColumns((String) null, "q", 5L), //
+                () -> AnyDelete.of("row").addColumns((byte[]) null, q), //
+                () -> AnyDelete.of("row").addColumns((byte[]) null, q, 5L));
+
+        org.junit.jupiter.api.Assertions.assertAll(overloads.stream().map(overload -> (org.junit.jupiter.api.function.Executable) () -> {
+            assertEquals(1, overload.get().size());
+            assertThrows(NullPointerException.class, () -> org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil
+                    .toMutation(org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto.MutationType.DELETE, overload.get().val()));
+            final Cell sent = encodeAsBatchCellBlock(overload.get().val());
+            assertEquals(0, sent.getFamilyLength());
+            assertArrayEquals(Bytes.toBytes("row"), org.apache.hadoop.hbase.CellUtil.cloneRow(sent));
+        }));
+
+        // control: a real family builds into one column of the request
+        assertEquals(1,
+                org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil
+                        .toMutation(org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto.MutationType.DELETE,
+                                AnyDelete.of("row").addFamily("cf").val())
+                        .getColumnValueCount());
+    }
+
+    /** Encodes the single tombstone of {@code delete} the way a batch delete sends it and decodes it back. */
+    private static Cell encodeAsBatchCellBlock(final Delete delete) throws java.io.IOException {
+        final org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto proto = org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil
+                .toMutationNoData(org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto.MutationType.DELETE, delete);
+        assertEquals(1, proto.getAssociatedCellCount());
+        assertEquals(0, proto.getColumnValueCount());
+
+        final org.apache.hadoop.hbase.codec.Codec codec = new org.apache.hadoop.hbase.codec.KeyValueCodec();
+        final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        final org.apache.hadoop.hbase.codec.Codec.Encoder encoder = codec.getEncoder(out);
+        final org.apache.hadoop.hbase.CellScanner cells = delete.cellScanner();
+        while (cells.advance()) {
+            encoder.write(cells.current());
+        }
+        encoder.flush();
+
+        final org.apache.hadoop.hbase.codec.Codec.Decoder decoder = codec.getDecoder(new java.io.ByteArrayInputStream(out.toByteArray()));
+        assertTrue(decoder.advance());
+        final Cell decoded = decoder.current();
+        assertFalse(decoder.advance());
+        return decoded;
+    }
+
+    /**
+     * Pins the of(rowKey, timestamp, familyMap) {@code @param timestamp} doc: a negative default timestamp is accepted, but
+     * the no-timestamp addFamily/addColumn/addColumns overloads then reject it; explicit-timestamp overloads still work.
+     */
+    @Test
+    public void testNegativeDefaultTimestamp_rejectedByNoTimestampAdders_sliceP() {
+        final java.util.function.Supplier<AnyDelete> negative = () -> AnyDelete.of("row", -1L, new TreeMap<byte[], List<Cell>>(Bytes.BYTES_COMPARATOR));
+        final byte[] cf = Bytes.toBytes("cf");
+        final byte[] q = Bytes.toBytes("q");
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals(-1L, negative.get().getTimestamp()),
+                () -> assertThrows(IllegalArgumentException.class, () -> negative.get().addFamily("cf")),
+                () -> assertThrows(IllegalArgumentException.class, () -> negative.get().addFamily(cf)),
+                () -> assertThrows(IllegalArgumentException.class, () -> negative.get().addColumn("cf", "q")),
+                () -> assertThrows(IllegalArgumentException.class, () -> negative.get().addColumn(cf, q)),
+                () -> assertThrows(IllegalArgumentException.class, () -> negative.get().addColumns("cf", "q")),
+                () -> assertThrows(IllegalArgumentException.class, () -> negative.get().addColumns(cf, q)),
+                () -> assertEquals(1, negative.get().addFamily("cf", 5L).size()), () -> assertEquals(1, negative.get().addColumn("cf", "q", 5L).size()),
+                () -> assertEquals(1, negative.get().addColumns(cf, q, 5L).size()), () -> assertEquals(1, negative.get().addFamilyVersion("cf", 5L).size()));
+    }
+
+    // ---- 2026-10-24 apply-hbase ----
+
+    /** Every add* overload, called with {@code family}; the byte[] and String forms of the same family. */
+    private static List<java.util.function.Consumer<AnyDelete>> addersFor(final String family) {
+        final byte[] f = Bytes.toBytes(family);
+        final byte[] q = Bytes.toBytes("q");
+
+        return Arrays.asList(d -> d.addFamily(family), d -> d.addFamily(family, 5L), d -> d.addFamily(f), d -> d.addFamily(f, 5L),
+                d -> d.addFamilyVersion(family, 5L), d -> d.addFamilyVersion(f, 5L), d -> d.addColumn(family, "q"), d -> d.addColumn(family, "q", 5L),
+                d -> d.addColumn(f, q), d -> d.addColumn(f, q, 5L), d -> d.addColumns(family, "q"), d -> d.addColumns(family, "q", 5L), d -> d.addColumns(f, q),
+                d -> d.addColumns(f, q, 5L));
+    }
+
+    /**
+     * Item 10b: HBase's Delete creates the family's cell list before it builds the delete marker, so an add* that fails on a
+     * family over 127 bytes used to leave an EMPTY cell list behind (isEmpty() false, size() 0); a delete sent anyway decoded to a
+     * whole-row delete on the server. A failed add* now removes the entry it created and rethrows the original exception, for
+     * every overload, on an empty delete and on one that already targets another family.
+     */
+    @Test
+    public void testFailedAdd_removesTheEmptyFamilyEntryItCreated_applyHbase() {
+        final String tooLong = "f".repeat(128);
+        final byte[] tooLongBytes = Bytes.toBytes(tooLong);
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(addersFor(tooLong).stream().flatMap(adder -> java.util.stream.Stream.<org.junit.jupiter.api.function.Executable> of(() -> {
+                    final AnyDelete empty = AnyDelete.of("row");
+                    final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> adder.accept(empty));
+
+                    assertTrue(e.getMessage().contains("Family"), e.getMessage());
+                    assertTrue(empty.isEmpty());
+                    assertEquals(0, empty.numFamilies());
+                    assertFalse(empty.getFamilyCellMap().containsKey(tooLongBytes));
+                }, () -> {
+                    final AnyDelete delete = AnyDelete.of("row").addColumn("cf", "q");
+
+                    assertThrows(IllegalArgumentException.class, () -> adder.accept(delete));
+                    assertEquals(1, delete.numFamilies());
+                    assertEquals(1, delete.size());
+                    assertFalse(delete.getFamilyCellMap().containsKey(tooLongBytes));
+
+                    // what the server receives is still the one-column delete, not a whole-row delete
+                    final Delete decoded = org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil.toDelete(org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil
+                            .toMutation(org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto.MutationType.DELETE, delete.val()));
+                    assertEquals(1, decoded.size());
+                })));
+    }
+
+    /**
+     * Item 10b guard: an entry that existed before the failed call is never touched (here an empty cell list that the caller's
+     * family map already held), and successful adds after a failed one behave as before.
+     */
+    @Test
+    public void testFailedAdd_keepsPreExistingEntries_andLaterAddsWork_applyHbase() {
+        final String tooLong = "f".repeat(128);
+        final byte[] tooLongBytes = Bytes.toBytes(tooLong);
+
+        org.junit.jupiter.api.Assertions.assertAll(addersFor(tooLong).stream().map(adder -> (org.junit.jupiter.api.function.Executable) () -> {
+            final NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+            final List<Cell> preExisting = new java.util.ArrayList<>();
+            familyMap.put(tooLongBytes, preExisting);
+            final AnyDelete delete = AnyDelete.of("row", 7L, familyMap);
+
+            assertThrows(IllegalArgumentException.class, () -> adder.accept(delete));
+            assertSame(preExisting, delete.getFamilyCellMap().get(tooLongBytes));
+        }));
+
+        org.junit.jupiter.api.Assertions.assertAll(addersFor("cf").stream().map(adder -> (org.junit.jupiter.api.function.Executable) () -> {
+            final AnyDelete delete = AnyDelete.of("row");
+
+            assertThrows(IllegalArgumentException.class, () -> addersFor(tooLong).get(0).accept(delete));
+            adder.accept(delete);
+            assertEquals(1, delete.numFamilies());
+            assertEquals(1, delete.size());
+            assertTrue(delete.getFamilyCellMap().containsKey(Bytes.toBytes("cf")));
+        }));
+    }
 }

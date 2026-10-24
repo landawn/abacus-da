@@ -1359,7 +1359,11 @@ public final class MongoCollectionExecutor {
             final List<T> result = new ArrayList<>();
             RuntimeException failure = null;
 
-            try (MongoCursor<Document> cursor = findIterable.iterator()) {
+            // Closed with the interrupt status cleared (see MongoDBBase.closeCursor): an async cancel(true) otherwise leaves
+            // the server cursor open until its idle timeout.
+            try (MongoDBBase.CursorScope<Document> scope = new MongoDBBase.CursorScope<>(findIterable.iterator())) {
+                final MongoCursor<Document> cursor = scope.cursor;
+
                 while (cursor.hasNext()) {
                     final Document row = cursor.next();
 
@@ -1395,8 +1399,9 @@ public final class MongoCollectionExecutor {
      * the result set is expected to be manageable in size.</p>
      *
      * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted. A document
-     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} when
-     * another returned document has the projected field, but its converted {@code _id} when none does. Use
+     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
+     * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
+     * returned document has the projected field, but its converted {@code _id} when none does. Use
      * {@link #list(Collection, Bson, Bson, Class)} to always get {@code null} for a missing field.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1435,8 +1440,9 @@ public final class MongoCollectionExecutor {
      * array slicing, and conditional inclusions that are not available with simple field name collections.</p>
      *
      * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted. A document
-     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} when
-     * another returned document has the projected field, but its converted {@code _id} when none does. Use
+     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
+     * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
+     * returned document has the projected field, but its converted {@code _id} when none does. Use
      * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2391,7 +2397,9 @@ public final class MongoCollectionExecutor {
         // A dotted name such as "address.city" is a valid projection, but MongoDB returns it nested
         // ({address: {city: ...}}) while Dataset columns are read by flat map key or bean property name,
         // so its column came back all null. Resolve dotted columns from the returned documents instead.
-        final List<Document> rowList = findIterable.into(new ArrayList<>());
+        // Not findIterable.into(...): the driver closes that cursor itself, skipping killCursors on an interrupted thread
+        // (an async cancel(true)), so the server cursor stayed open until its idle timeout. See MongoDBBase.closeCursor.
+        final List<Document> rowList = MongoDBBase.fetchAll(findIterable);
         final Dataset dataset = MongoDBBase.extractData(selectPropNames, rowList, rowType);
 
         if (rowList.isEmpty()) {
@@ -3457,7 +3465,7 @@ public final class MongoCollectionExecutor {
      *
      * // Insert with unordered execution (faster for large batches):
      * InsertManyOptions options = new InsertManyOptions().ordered(false);
-     * InsertManyResult result = executor.insertMany(users, options); // users inserted unordered (continues past individual failures)
+     * InsertManyResult result = executor.insertMany(users, options); // every user is attempted; if any insert fails, the call still throws MongoBulkWriteException
      * }</pre>
      *
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
@@ -4473,7 +4481,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false);
-     * BulkWriteResult result = executor.bulkInsert(entities, options); // unordered keeps going past individual failures
+     * BulkWriteResult result = executor.bulkInsert(entities, options); // every entity is attempted; any failed insert still throws MongoBulkWriteException
      * }</pre>
      *
      * @param entities collection of entities to insert
@@ -4519,7 +4527,9 @@ public final class MongoCollectionExecutor {
      * observe state where some operations in the batch have been applied and others have not. By
      * default ({@code ordered = true}) the server stops on the first failure; pass
      * {@link BulkWriteOptions#ordered(boolean) ordered(false)} via the other overload to continue past
-     * individual failures.</p>
+     * individual failures. In both modes a failed write makes the call throw {@link MongoBulkWriteException}
+     * instead of returning a result; its {@link MongoBulkWriteException#getWriteResult() getWriteResult()} reports
+     * what was applied.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4560,7 +4570,7 @@ public final class MongoCollectionExecutor {
      * BulkWriteOptions options = new BulkWriteOptions()
      *     .ordered(false)
      *     .bypassDocumentValidation(true);
-     * BulkWriteResult result = executor.bulkWrite(operations, options); // returns BulkWriteResult; unordered execution continues past failures
+     * BulkWriteResult result = executor.bulkWrite(operations, options); // every operation is attempted; any failed write still throws MongoBulkWriteException
      * }</pre>
      *
      * @param requests list of write operations to execute
@@ -5416,7 +5426,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>If {@code fieldNames} contains only one distinct field and {@code rowType} is a single-value type,
      * each group key is converted to that type. The null-key group is omitted for a primitive class token
-     * (such as {@code int.class}) and emitted as {@code null} for a wrapper or reference single-value type.</p>
+     * (such as {@code int.class}) and emitted as {@code null} for a wrapper or reference single-value type.
+     * With two or more distinct fields each row carries one value per field, so a single-value {@code rowType}
+     * cannot hold it: consuming the stream then fails with {@link IllegalArgumentException}. Exception: dotted fields
+     * under one top-level field (such as {@code "a.b"} and {@code "a.c"}) arrive as the single nested document
+     * {@code {a: {b: ..., c: ...}}}, which is converted as a whole (to its JSON text for {@code String}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -5558,6 +5572,10 @@ public final class MongoCollectionExecutor {
      * result that field is present with the value {@code null} &mdash; inside {@code _id} for {@link Document} rows, as a
      * top-level field or property for Map, bean and {@code Object} rows &mdash; and a dotted path such as {@code "a.b"}
      * appears as the nested document {@code {a: {b: <value>}}}.</p>
+     *
+     * <p>Because each non-{@link Document} row carries the count as well as the group fields, a single-value
+     * {@code rowType} (such as {@code Long.class}) cannot hold it: consuming the stream then fails with
+     * {@link IllegalArgumentException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -1103,4 +1103,37 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
         assertEquals(Arrays.asList(9), single.getColumn("a.b.c"));
         assertEquals(Arrays.asList("renamed"), single.getColumn("name"));
     }
+
+    // ---- 2026-10-24 sliceU ----
+
+    @Test
+    public void testQueryDatasetKeepsSelectNamesAsOfTheCallWhenTheCallerChangesThemBeforeSubscribing() {
+        // The projection is built when query(...) is called, but the Dataset columns were read from the caller's collection on
+        // each subscription: changing the collection in between gave columns that no longer matched the projected fields.
+        final Bson filter = new Document("status", "active");
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("department", "eng").append("address", new Document("city", "Paris")),
+                new Document("_id", 2).append("department", "ops"));
+
+        final List<String> dottedNames = new java.util.ArrayList<>(Arrays.asList("department", "address.city"));
+        final Mono<Dataset> dotted = executor.query(dottedNames, filter, Map.class);
+        dottedNames.set(1, "address.zip");
+        dottedNames.add("extra");
+
+        final java.util.Set<String> plainNames = new java.util.LinkedHashSet<>(Arrays.asList("department"));
+        final Mono<Dataset> plain = executor.query(plainNames, filter, GroupRow.class);
+        plainNames.add("status");
+
+        final Dataset dottedResult = dotted.block();
+        final Dataset dottedAgain = dotted.block();
+        final Dataset plainResult = plain.block();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(Arrays.asList("department", "address.city"), dottedResult.columnNames()),
+                () -> assertEquals(Arrays.asList("Paris", null), dottedResult.getColumn("address.city")),
+                () -> assertEquals(Arrays.asList("department", "address.city"), dottedAgain.columnNames()),
+                () -> assertEquals(Arrays.asList("Paris", null), dottedAgain.getColumn("address.city")),
+                () -> assertEquals(Arrays.asList("department"), plainResult.columnNames()),
+                () -> assertEquals(Arrays.asList("eng", "ops"), plainResult.getColumn("department")));
+    }
 }

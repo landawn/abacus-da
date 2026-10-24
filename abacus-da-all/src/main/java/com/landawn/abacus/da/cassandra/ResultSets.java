@@ -77,10 +77,11 @@ final class ResultSets {
      * known to the driver; it does not guarantee that all rows have already been iterated.</li>
      * <li>{@link ResultSet#getAvailableWithoutFetching()} returns the number of rows left in the
      * current page ({@link AsyncResultSet#remaining()}); it never triggers a fetch.</li>
-     * <li>Checked exceptions raised while fetching the next page (e.g.
-     * {@link java.util.concurrent.ExecutionException} or {@link InterruptedException}) are
-     * converted into runtime exceptions via {@link com.landawn.abacus.util.ExceptionUtil}.
-     * If the wait is interrupted, the current thread's interrupt status is restored first.</li>
+     * <li>A failed next-page future is unwrapped from its {@link java.util.concurrent.ExecutionException}:
+     * a {@link RuntimeException} or {@link Error} cause (for example the driver's timeout exception) is
+     * rethrown as is, and a checked cause is converted into a runtime exception via
+     * {@link com.landawn.abacus.util.ExceptionUtil}. If the wait is interrupted, the
+     * current thread's interrupt status is restored and an {@link UncheckedInterruptedException} is thrown.</li>
      * <li>Consuming the result on a driver thread throws {@link IllegalStateException} when another page
      * is required. Rows already available in the current page can be consumed without triggering this check.</li>
      * </ul>
@@ -137,7 +138,10 @@ final class ResultSets {
                         Thread.currentThread().interrupt();
                         throw ExceptionUtil.toRuntimeException(e, true);
                     } catch (final ExecutionException e) {
-                        throw ExceptionUtil.toRuntimeException(e, true);
+                        // WHY: rethrow an Error cause as is, like the driver's synchronous MultiPageResultSet
+                        // (CompletableFutures.getUninterruptibly) and like a first-page Error, which the async facade reports as
+                        // the ExecutionException cause; toRuntimeException(e, true) wrapped it in a plain RuntimeException.
+                        throw ExceptionUtil.toRuntimeException(e, true, true);
                     }
 
                     currentRows = N.iterate(currentResultSet.currentPage());

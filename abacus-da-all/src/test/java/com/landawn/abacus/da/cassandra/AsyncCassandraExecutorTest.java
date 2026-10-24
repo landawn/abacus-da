@@ -1079,4 +1079,72 @@ public class AsyncCassandraExecutorTest extends TestBase {
                 () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning(1L).queryForSingleValue(Boolean.class, query)),
                 () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning("yes").queryForSingleValue(Boolean.class, query)));
     }
+
+    // ---- 2026-10-24 sliceG ----
+
+    /**
+     * A real v4 executor over a mocked session. Each execution returns a first page holding one row (v = 1) whose next page's
+     * future fails with {@code failure}; with {@code failFirstPage} the execution future itself fails with it instead.
+     */
+    private static AsyncCassandraExecutor sliceGAsyncFailingWith(final Throwable failure, final boolean failFirstPage) {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement prepared = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        final ColumnDefinitions noVariables = mock(ColumnDefinitions.class);
+        when(noVariables.size()).thenReturn(0);
+        when(prepared.getVariableDefinitions()).thenReturn(noVariables);
+        when(prepared.bind()).thenReturn(mock(BoundStatement.class));
+        when(session.prepare(anyString())).thenReturn(prepared);
+        final ColumnDefinitions columns = sliceOColumns();
+        when(session.executeAsync(any(Statement.class))).thenAnswer(inv -> {
+            final CompletableFuture<AsyncResultSet> failed = new CompletableFuture<>();
+            failed.completeExceptionally(failure);
+
+            if (failFirstPage) {
+                return failed;
+            }
+
+            final Iterator<Row> rows = Arrays.asList(sliceORow(columns, 1L)).iterator();
+            final AsyncResultSet first = mock(AsyncResultSet.class);
+            when(first.getColumnDefinitions()).thenReturn(columns);
+            when(first.currentPage()).thenReturn(() -> rows);
+            when(first.hasMorePages()).thenReturn(true);
+            when(first.fetchNextPage()).thenReturn(failed);
+            return CompletableFuture.completedFuture(first);
+        });
+
+        return new CassandraExecutor(session).async();
+    }
+
+    /**
+     * An Error failing a later page must reach the caller as itself, as a first-page Error and a later-page RuntimeException
+     * already did (and as the sync executor over the driver's MultiPageResultSet does): get() reports it as the
+     * ExecutionException cause and a stream's terminal operation throws it. It used to arrive wrapped in a plain
+     * RuntimeException.
+     */
+    @Test
+    public void testSliceG_laterPageErrorReachesTheCallerUnwrapped() throws Exception {
+        final AssertionError error = new AssertionError("page failed");
+        final String query = "SELECT v FROM t";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final ContinuableFuture<java.util.List<Long>> list = sliceGAsyncFailingWith(error, false).list(Long.class, query);
+            assertSame(error, assertThrows(java.util.concurrent.ExecutionException.class, list::get).getCause());
+            assertSame(error, assertThrows(java.util.concurrent.ExecutionException.class, list::get).getCause()); // replayed
+        }, () -> assertSame(error,
+                assertThrows(java.util.concurrent.ExecutionException.class, () -> sliceGAsyncFailingWith(error, false).query(query).get()).getCause()), () -> {
+                    final Stream<Long> stream = sliceGAsyncFailingWith(error, false).stream(Long.class, query).get(); // the first page arrived
+                    assertSame(error, assertThrows(AssertionError.class, stream::toList));
+                }, () -> {
+                    final ResultSet rs = sliceGAsyncFailingWith(error, false).execute(query).get();
+                    assertEquals(1L, rs.iterator().next().getObject(0));
+                    assertSame(error, assertThrows(AssertionError.class, rs::all));
+                },
+                // control: the same Error failing the first page is the ExecutionException cause
+                () -> assertSame(error,
+                        assertThrows(java.util.concurrent.ExecutionException.class, () -> sliceGAsyncFailingWith(error, true).list(Long.class, query).get())
+                                .getCause()));
+    }
 }

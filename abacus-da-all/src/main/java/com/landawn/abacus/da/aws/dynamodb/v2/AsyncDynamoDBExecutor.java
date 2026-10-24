@@ -15,6 +15,7 @@
 package com.landawn.abacus.da.aws.dynamodb.v2;
 
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.addRows;
+import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.checkDatasetRowType;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.createRowMapper;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.extractData;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.getAttrName;
@@ -114,8 +115,10 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * {@link DynamoDbAsyncClient} dispatches its asynchronous responses on: by default the SDK's
  * future-completion thread pool ({@code sdk-async-response-*} threads), or the executor configured via
  * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}. The auto-paginating
- * {@code list}/{@code query}/{@code stream}/{@code scan} methods instead deliver their result on the
- * common {@code ForkJoinPool} (see the threading notes on those methods). For stream and scan,
+ * {@code list}/{@code query}/{@code stream}/{@code scan} methods instead deliver their result on
+ * {@code CompletableFuture}'s default asynchronous executor (see the threading notes on those methods): the
+ * common {@code ForkJoinPool}, or a new thread for every task when the common pool's parallelism is below two,
+ * which is the default on a host with one or two available processors. For stream and scan,
  * only the lazy stream is delivered there; its page fetches block the thread that consumes it.
  * Continuations attached with
  * {@code thenApply}/{@code thenAccept} therefore run on the completing pool — push CPU-heavy or
@@ -613,7 +616,8 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert the result to. Must not be null.
      * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
      *         for reference types when the item does not exist (a primitive {@code targetClass} yields
-     *         its default value such as {@code 0} or {@code false}); completes exceptionally with a
+     *         its default value such as {@code 0} or {@code false}, and an {@code Optional}, {@code Nullable} or
+     *         {@code Holder} class an empty wrapper); completes exceptionally with a
      *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK or result-conversion exception
      *         on failure
      * @throws IllegalArgumentException if {@code targetClass} is null
@@ -665,7 +669,8 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert the result to. Must not be null.
      * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
      *         for reference types when the item does not exist (a primitive {@code targetClass} yields
-     *         its default value such as {@code 0} or {@code false}); completes exceptionally with a
+     *         its default value such as {@code 0} or {@code false}, and an {@code Optional}, {@code Nullable} or
+     *         {@code Holder} class an empty wrapper); completes exceptionally with a
      *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK or result-conversion exception
      *         on failure
      * @throws IllegalArgumentException if {@code targetClass} is null
@@ -731,7 +736,8 @@ public final class AsyncDynamoDBExecutor {
      *                    {@code Map.class} and primitive-wrapper types are also supported). Must not be null.
      * @return a {@code CompletableFuture} that completes with the item converted to {@code T}
      *         (or {@code null} for reference types when the item does not exist; a primitive
-     *         {@code targetClass} yields its default value such as {@code 0} or {@code false}),
+     *         {@code targetClass} yields its default value such as {@code 0} or {@code false}, and an
+     *         {@code Optional}, {@code Nullable} or {@code Holder} class an empty wrapper),
      *         or completes exceptionally with the underlying SDK or result-conversion exception wrapped in
      *         {@link java.util.concurrent.CompletionException}
      * @throws IllegalArgumentException if {@code getItemRequest} or {@code targetClass} is null — the null argument is rejected before
@@ -1745,8 +1751,9 @@ public final class AsyncDynamoDBExecutor {
      * });
      * }</pre>
      *
-     * <p><b>Threading note:</b> same as {@link #list(QueryRequest, Class)}: response conversion runs in the common
-     * {@link java.util.concurrent.ForkJoinPool}, and completing the returned future early (for example with
+     * <p><b>Threading note:</b> same as {@link #list(QueryRequest, Class)}: response conversion runs on {@code CompletableFuture}'s
+     * default asynchronous executor (normally the common {@link java.util.concurrent.ForkJoinPool}; see the class documentation),
+     * and completing the returned future early (for example with
      * {@code cancel(...)} or {@code orTimeout(...)}) stops the pagination: no page after the one in flight is requested.</p>
      *
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
@@ -1796,9 +1803,9 @@ public final class AsyncDynamoDBExecutor {
      * });
      * }</pre>
      *
-     * <p><b>Threading note:</b> response conversion runs in the common
-     * {@link java.util.concurrent.ForkJoinPool}. Auto-pagination composes the asynchronous page
-     * requests without blocking a worker thread. Completing the returned future early (for example with
+     * <p><b>Threading note:</b> response conversion runs on {@code CompletableFuture}'s default asynchronous executor
+     * (normally the common {@link java.util.concurrent.ForkJoinPool}; see the class documentation). Auto-pagination composes the
+     * asynchronous page requests without blocking a worker thread. Completing the returned future early (for example with
      * {@code cancel(...)} or {@code orTimeout(...)}) stops the pagination: no page after the one in flight is requested.
      * Every page is converted with the same row mapper straight into the result list, exactly as the synchronous
      * {@link DynamoDBExecutor#list(QueryRequest, Class)} converts its pages, so the two return identical rows for the
@@ -1930,9 +1937,9 @@ public final class AsyncDynamoDBExecutor {
      *     });
      * }</pre>
      *
-     * <p><b>Threading note:</b> response conversion runs in the common
-     * {@link java.util.concurrent.ForkJoinPool}. Auto-pagination composes the asynchronous page
-     * requests without blocking a worker thread. Completing the returned future early (for example with
+     * <p><b>Threading note:</b> response conversion runs on {@code CompletableFuture}'s default asynchronous executor
+     * (normally the common {@link java.util.concurrent.ForkJoinPool}; see the class documentation). Auto-pagination composes the
+     * asynchronous page requests without blocking a worker thread. Completing the returned future early (for example with
      * {@code cancel(...)} or {@code orTimeout(...)}) stops the pagination: no page after the one in flight is requested.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
@@ -1981,21 +1988,27 @@ public final class AsyncDynamoDBExecutor {
      * request, all pages are fetched and concatenated into the returned Dataset; if it was set,
      * only the single page returned by DynamoDB is materialized.</p>
      *
-     * <p><b>Threading note:</b> response conversion runs in the common
-     * {@link java.util.concurrent.ForkJoinPool}. Auto-pagination composes the asynchronous page
-     * requests without blocking a worker thread. Completing the returned future early (for example with
+     * <p><b>Threading note:</b> response conversion runs on {@code CompletableFuture}'s default asynchronous executor
+     * (normally the common {@link java.util.concurrent.ForkJoinPool}; see the class documentation). Auto-pagination composes the
+     * asynchronous page requests without blocking a worker thread. Completing the returned future early (for example with
      * {@code cancel(...)} or {@code orTimeout(...)}) stops the pagination: no page after the one in flight is requested.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the row type for the Dataset; must not be null. Pass a {@link Map} subtype
-     *                    (e.g. {@code Map.class}) to keep rows as raw maps of attribute name → value.
+     *                    (e.g. {@code Map.class}) to keep rows as raw maps of attribute name → value, or a bean class to map
+     *                    each item to an entity whose properties are the columns. No other row type (an array, a collection
+     *                    or a single-value type) can be turned into a Dataset, so this method throws for it before any request
+     *                    is sent
      * @return a CompletableFuture that completes with a {@link Dataset} containing the query
      *         results (possibly empty)
-     * @throws IllegalArgumentException if queryRequest or targetClass is null
+     * @throws IllegalArgumentException if queryRequest or targetClass is null, or targetClass is neither a {@link Map} type nor a
+     *         bean class (thrown by this call, before any request is sent, even if the query would match nothing)
      */
     public CompletableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) throws IllegalArgumentException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
+        // Fail at the call, like the other argument checks: N.newDataset would reject the row type only after every page was read.
+        checkDatasetRowType(targetClass);
 
         // A separate result future lets the page chain stop once the caller completes it (see listAllPages).
         final CompletableFuture<Dataset> resultFuture = new CompletableFuture<>();
@@ -2103,6 +2116,9 @@ public final class AsyncDynamoDBExecutor {
      * <ul>
      * <li>Pages are fetched as the stream is consumed</li>
      * <li>Each page requires a network call to DynamoDB</li>
+     * <li>An {@code exclusiveStartKey} set on the request is only where the stream starts: it then follows
+     *     {@code lastEvaluatedKey} through the last page (unlike {@link #list(QueryRequest, Class)}, which returns just that
+     *     one page), and {@code limit} is the page size, not a cap on the streamed items</li>
      * <li>Stream can be interrupted at any point</li>
      * <li>Ideal for processing large datasets incrementally</li>
      * </ul>
@@ -2135,8 +2151,9 @@ public final class AsyncDynamoDBExecutor {
      * });
      * }</pre>
      *
-     * <p><b>Threading note:</b> the {@code CompletableFuture} completes (almost immediately) on the
-     * common {@link java.util.concurrent.ForkJoinPool}; the wrapped iterator then performs each
+     * <p><b>Threading note:</b> the {@code CompletableFuture} completes (almost immediately) on {@code CompletableFuture}'s
+     * default asynchronous executor (normally the common {@link java.util.concurrent.ForkJoinPool}; see the class
+     * documentation); the wrapped iterator then performs each
      * page fetch synchronously inside the consumer's thread via a blocking
      * {@code dynamoDBClient.query(...).get()}, so terminal operations on the returned stream block
      * the consuming thread. If a page request fails, the stream operation throws the request's
@@ -2179,7 +2196,9 @@ public final class AsyncDynamoDBExecutor {
                             Thread.currentThread().interrupt();
                             throw ExceptionUtil.toRuntimeException(e, true);
                         } catch (final ExecutionException e) {
-                            throw ExceptionUtil.toRuntimeException(e, true);
+                            // throwIfItIsError = true: an Error failing the page future (AssertionError, OutOfMemoryError...) is
+                            // rethrown as is, as the sync executor's stream surfaces it; the 2-arg overload wraps it in a RuntimeException.
+                            throw ExceptionUtil.toRuntimeException(e, true, true);
                         }
 
                         if (queryResult.hasItems() && !queryResult.items().isEmpty()) {
@@ -2283,7 +2302,7 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param scanFilter map of attribute names to filter conditions
+     * @param scanFilter map of attribute names to filter conditions, or null for no filter
      * @return a CompletableFuture containing a Stream of filtered items
      * @throws IllegalArgumentException if tableName is null
      */
@@ -2326,7 +2345,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
-     * @param scanFilter map of attribute names to filter conditions
+     * @param scanFilter map of attribute names to filter conditions, or null for no filter
      * @return a CompletableFuture containing a Stream of filtered items with specified attributes
      * @throws IllegalArgumentException if tableName is null
      */
@@ -2448,7 +2467,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type of objects in the stream
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param scanFilter map of attribute names to filter conditions
+     * @param scanFilter map of attribute names to filter conditions, or null for no filter
      * @param targetClass the class to convert results to. Must not be null.
      * @return a CompletableFuture containing a Stream of typed objects
      * @throws IllegalArgumentException if tableName or targetClass is null
@@ -2489,7 +2508,7 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type of objects in the stream
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
-     * @param scanFilter map of attribute names to filter conditions
+     * @param scanFilter map of attribute names to filter conditions, or null for no filter
      * @param targetClass the class to convert results to. Must not be null.
      * @return a CompletableFuture containing a Stream of typed objects
      * @throws IllegalArgumentException if tableName or targetClass is null
@@ -2515,6 +2534,10 @@ public final class AsyncDynamoDBExecutor {
      * and converts results to instances of the specified target class. This allows for type-safe
      * processing of large datasets while maintaining memory efficiency through streaming.</p>
      *
+     * <p><b>Pagination:</b> an {@code exclusiveStartKey} set on the request is only where the scan starts: the stream then
+     * follows {@code lastEvaluatedKey} through the last page, and {@code limit} is the page size, not a cap on the streamed
+     * items (use {@code Stream.limit(...)} to stop early).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ScanRequest scanRequest = ScanRequest.builder()
@@ -2533,8 +2556,9 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * <p><b>Threading note:</b> identical to {@link #stream(QueryRequest, Class)} — the returned
-     * {@code CompletableFuture} completes immediately on {@link java.util.concurrent.ForkJoinPool}
-     * with a lazy {@link Stream}; each subsequent page is fetched synchronously inside the consuming
+     * {@code CompletableFuture} completes almost immediately on {@code CompletableFuture}'s default asynchronous executor
+     * (normally the common {@link java.util.concurrent.ForkJoinPool}) with a lazy {@link Stream}; each page is fetched
+     * synchronously inside the consuming
      * thread, so terminal operations block. If a page request fails, the stream operation throws the
      * request's failure (typically an {@code SdkException}) unwrapped from the page future. If a page
      * wait is interrupted, the stream operation fails with a runtime exception and the consumer
@@ -2575,7 +2599,8 @@ public final class AsyncDynamoDBExecutor {
                             Thread.currentThread().interrupt();
                             throw ExceptionUtil.toRuntimeException(e, true);
                         } catch (final ExecutionException e) {
-                            throw ExceptionUtil.toRuntimeException(e, true);
+                            // throwIfItIsError = true: rethrow an Error failing the page future as is (see the query iterator above).
+                            throw ExceptionUtil.toRuntimeException(e, true, true);
                         }
 
                         if (scanResult.hasItems() && !scanResult.items().isEmpty()) {
@@ -3609,7 +3634,7 @@ public final class AsyncDynamoDBExecutor {
          *     });
          * }</pre>
          *
-         * @param scanFilter map of attribute names to filter conditions
+         * @param scanFilter map of attribute names to filter conditions, or null for no filter
          * @return a CompletableFuture containing a Stream of entities matching the filter
          */
         public CompletableFuture<Stream<T>> scan(final Map<String, Condition> scanFilter) {
@@ -3637,7 +3662,7 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
-         * @param scanFilter map of attribute names to filter conditions
+         * @param scanFilter map of attribute names to filter conditions, or null for no filter
          * @return a CompletableFuture containing a Stream of filtered entities
          */
         public CompletableFuture<Stream<T>> scan(final List<String> attributesToGet, final Map<String, Condition> scanFilter) {

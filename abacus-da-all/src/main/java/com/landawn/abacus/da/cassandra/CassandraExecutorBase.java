@@ -33,6 +33,8 @@ import java.util.function.Function;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.DuplicateResultException;
+import com.landawn.abacus.parser.ParserUtil;
+import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
@@ -96,7 +98,8 @@ import com.landawn.abacus.util.stream.Stream;
  *     custom user codecs).</li>
  * <li><strong>Entity-to-CQL mapping:</strong> entity properties are mapped to columns through the
  *     configured {@link NamingPolicy} (see below). Primary-key columns are discovered through
- *     {@code @Id} annotations or {@link #registerKeys(Class, Collection)}.</li>
+ *     {@code @Id} annotations or {@link #registerKeys(Class, Collection)}, or else by convention from a
+ *     property named {@code id} (see {@link #getKeyNames(Class)}).</li>
  * </ul>
  *
  * <h2>Generic Type Parameters</h2>
@@ -380,14 +383,17 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method returns the list of property names that comprise the primary key for
      * the given entity class. It first checks for manually registered keys, then falls back
-     * to introspecting the class for {@code @Id} annotations.</p>
+     * to introspecting the class for {@code @Id} annotations ({@code @Id}/{@code @ReadOnlyId}, or a JPA
+     * {@code @Id}). When no property is annotated, a property named exactly {@code id} whose type is
+     * {@code int}/{@code Integer}, {@code long}/{@code Long}, {@code String}, {@code java.sql.Timestamp} or
+     * {@code UUID} is the key by convention.</p>
      *
      * <p>The returned key names are used internally by CRUD operations to construct
      * appropriate WHERE clauses for database operations.</p>
      *
      * @param entityClass the entity class
-     * @return an immutable list of property names that form the primary key (empty if neither
-     *         registration nor {@code @Id} annotations are present)
+     * @return an immutable list of property names that form the primary key (empty if no key is
+     *         registered, annotated, or found by the {@code id} convention)
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not a bean class
      */
     protected static ImmutableList<String> getKeyNames(final Class<?> entityClass) throws IllegalArgumentException {
@@ -415,8 +421,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * property name is part of the primary key.</p>
      *
      * @param entityClass the entity class
-     * @return an immutable set of property names that form the primary key (empty if neither
-     *         registration nor {@code @Id} annotations are present)
+     * @return an immutable set of property names that form the primary key (empty if no key is
+     *         registered, annotated, or found by the {@code id} convention)
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not a bean class
      * @see #getKeyNames(Class)
      */
@@ -919,8 +925,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Inserts an entity into the database.
      *
      * <p>This method generates an INSERT statement based on the entity's properties
-     * and executes it. All non-null properties of the entity will be included in
-     * the INSERT statement.</p>
+     * and executes it. All non-null insertable properties of the entity will be included in
+     * the INSERT statement, primary-key properties too, also when a key value is {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3083,13 +3089,18 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <li><strong>Entity class:</strong> A POJO with getter/setter methods matching column names</li>
      * <li><strong>{@code Map.class}:</strong> Results mapped to a {@code Map<String, Object>}</li>
      * <li><strong>Collection class:</strong> Results mapped to {@code List}, {@code Set}, ...</li>
-     * <li><strong>Array class:</strong> Results mapped to {@code Object[]} or typed arrays</li>
+     * <li><strong>Array class:</strong> Results mapped to {@code Object[]} or typed object arrays such as {@code String[]},
+     *     one element per column; a primitive array class such as {@code long[]} is a single-value type, filled from a
+     *     one-column row's value</li>
      * </ul>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
      * query produces no rows. When a row is found, the mapped value is returned as a <i>present</i>
      * {@code Optional}. Because {@code Optional} cannot carry a {@code null} payload, the mapped value
-     * itself must be non-null.</p>
+     * itself must be non-null. For a single-value {@code targetClass}, a {@code NULL} column maps to the default
+     * value of that type: the primitive default for a primitive class token (for example, {@code int.class} yields
+     * {@code Optional.of(0)}), an empty value for {@code Optional}, {@code Nullable}, {@code OptionalInt} and similar
+     * types, and {@code null} for a wrapper or other reference type, which causes the {@link NullPointerException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3104,8 +3115,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the type to map the result row to
-     * @param targetClass an entity class with getter/setter methods, {@code Map.class}, a collection, or
-     *        an array class (must not be {@code null})
+     * @param targetClass an entity class with getter/setter methods, {@code Map.class}, a collection, an object
+     *        array class, or a single-value type (including a primitive array class) (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
@@ -3555,6 +3566,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Prepares an INSERT statement for the given entity.
      *
+     * <p>Every insertable property with a non-{@code null} value is written, primary-key properties included, also when
+     * a key value is {@code 0}. A {@link Map} entity (an {@code @Entity}-annotated {@code Map} subclass) supplies its entries
+     * as the columns.</p>
+     *
      * @param entity the entity to insert
      * @return the prepared statement with parameters
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not a supported bean, or exposes no insertable properties
@@ -3564,6 +3579,30 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
+
+        if (entity instanceof Map || !Beans.isBeanClass(targetClass)) {
+            // WHY: Beans.isBeanClass accepts an @Entity-annotated Map subclass, whose getters insertPropsOf would read (a bogus
+            // "empty" column from isEmpty(), the entries lost). The builder's insert(entity) writes a Map's entries and rejects any
+            // other non-bean, with its own messages, as before; only bean entities need insertPropsOf's zero-key rule.
+            return prepareInsertThroughBuilder(entity, targetClass);
+        }
+
+        final Map<String, Object> props = insertPropsOf(entity, targetClass);
+
+        if (props.isEmpty()) {
+            throw new IllegalArgumentException("No insertable property value specified in entity of class: " + ClassUtil.getCanonicalClassName(targetClass));
+        }
+
+        return prepareInsert(targetClass, props);
+    }
+
+    /**
+     * Prepares an INSERT statement for a {@link Map} or non-bean {@code entity} through the naming policy's
+     * {@code insert(entity)} and {@code into(targetClass)}.
+     *
+     * @throws IllegalArgumentException if the builder rejects {@code entity} or {@code targetClass}, or no column is staged
+     */
+    private SP prepareInsertThroughBuilder(final Object entity, final Class<?> targetClass) throws IllegalArgumentException {
         final CqlBuilder cqlBuilder;
 
         switch (namingPolicy) {
@@ -3587,9 +3626,37 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
             return buildCql(cqlBuilder, builder -> builder.into(targetClass));
         } catch (final IllegalStateException e) {
             // A freshly created INSERT builder only fails into() with IllegalStateException when no column was
-            // staged, i.e. the entity has no non-null insertable property: report the documented argument error.
+            // staged: report the documented argument error.
             throw new IllegalArgumentException("No insertable property value specified in entity of class: " + ClassUtil.getCanonicalClassName(targetClass), e);
         }
+    }
+
+    /**
+     * Returns the non-{@code null} values of the insertable properties of {@code entity}, keyed by property name in
+     * declaration order. A key property holding {@code 0} is included too (only a {@code null} value is left out).
+     *
+     * @throws IllegalArgumentException if {@code entityClass} is not a bean class
+     * @throws RuntimeException if reading an insertable entity property invokes a failing getter or cannot access the property
+     */
+    private static Map<String, Object> insertPropsOf(final Object entity, final Class<?> entityClass) throws IllegalArgumentException, RuntimeException {
+        // WHY: the parent abacus-query builder's insert(entity) (parseInsertEntity) leaves the id properties (@Id, or a conventional "id") out when every key
+        // value is null or numerically zero, the SQL convention for a database-generated id. Cassandra never generates a key and rejects an INSERT that
+        // lacks a primary-key column ("Some partition key parts are missing"), so an entity whose key is a legitimate 0 could
+        // not be inserted at all. QueryUtil.insertPropNames(Class, null) lists the insertable properties with the key ones.
+        final Collection<String> propNames = QueryUtil.insertPropNames(entityClass, null);
+        final BeanInfo beanInfo = ParserUtil.getBeanInfo(entityClass);
+        final Map<String, Object> props = N.newLinkedHashMap(propNames.size());
+        Object propValue = null;
+
+        for (final String propName : propNames) {
+            propValue = beanInfo.getPropValue(entity, propName);
+
+            if (propValue != null) {
+                props.put(propName, propValue);
+            }
+        }
+
+        return props;
     }
 
     /**

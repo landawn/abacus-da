@@ -230,7 +230,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object for the delete operation
      * @param timestamp the default timestamp for subsequently added columns/families; unlike the
-     *                  other constructors, a negative value is not rejected here
+     *                  other constructors, a negative value is not rejected here, but the
+     *                  no-timestamp {@code addFamily}, {@code addColumn} and {@code addColumns}
+     *                  overloads then throw {@code IllegalArgumentException}
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -441,7 +443,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object for the delete operation, automatically converted to bytes
      * @param timestamp the default timestamp for subsequently added columns/families; unlike the
-     *                  other factories, a negative value is not rejected here
+     *                  other factories, a negative value is not rejected here, but the no-timestamp
+     *                  {@code addFamily}, {@code addColumn} and {@code addColumns} overloads then
+     *                  throw {@code IllegalArgumentException}
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists;
      *                  retained by reference
      * @return a new AnyDelete instance with the specified configuration
@@ -627,15 +631,20 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the name of the column family to delete; encoded via
-     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
+     *               accepted here, but a single delete then fails with a {@code NullPointerException}
+     *               while HBase builds the request; a batch delete sends it as an empty family with
+     *               the client's default {@code KeyValueCodec})
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addFamily(String, long)
      * @see #addFamilyVersion(String, long)
      */
     public AnyDelete addFamily(final String family) throws IllegalArgumentException {
-        delete.addFamily(toFamilyQualifierBytes(family));
-        return this;
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return addDeleteMarker(familyBytes, () -> delete.addFamily(familyBytes));
     }
 
     /**
@@ -658,17 +667,21 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the name of the column family to delete; encoded via
-     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
+     *               accepted here, but a single delete then fails with a {@code NullPointerException}
+     *               while HBase builds the request; a batch delete sends it as an empty family with
+     *               the client's default {@code KeyValueCodec})
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addFamily(String)
      * @see #addFamilyVersion(String, long)
      */
     public AnyDelete addFamily(final String family, final long timestamp) throws IllegalArgumentException {
-        delete.addFamily(toFamilyQualifierBytes(family), timestamp);
-        return this;
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return addDeleteMarker(familyBytes, () -> delete.addFamily(familyBytes, timestamp));
     }
 
     /**
@@ -690,15 +703,18 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                       .addFamily(Bytes.toBytes("cf2"));   // numFamilies() == 2
      * }</pre>
      *
-     * @param family the column family name as a byte array
+     * @param family the column family name as a byte array (a {@code null} array is accepted here,
+     *               but a single delete then fails with a {@code NullPointerException} while HBase
+     *               builds the request; a batch delete sends it as an empty family with the client's
+     *               default {@code KeyValueCodec})
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addFamily(String)
      * @see #addFamily(byte[], long)
      */
     public AnyDelete addFamily(final byte[] family) throws IllegalArgumentException {
-        delete.addFamily(family);
-        return this;
+        return addDeleteMarker(family, () -> delete.addFamily(family));
     }
 
     /**
@@ -718,17 +734,19 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete.of("user123").addFamily(familyBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name as a byte array
+     * @param family the column family name as a byte array (a {@code null} array is accepted here,
+     *               but a single delete then fails with a {@code NullPointerException} while HBase
+     *               builds the request; a batch delete sends it as an empty family with the client's
+     *               default {@code KeyValueCodec})
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addFamily(byte[])
      * @see #addFamilyVersion(byte[], long)
      */
     public AnyDelete addFamily(final byte[] family, final long timestamp) throws IllegalArgumentException {
-        delete.addFamily(family, timestamp);
-        return this;
+        return addDeleteMarker(family, () -> delete.addFamily(family, timestamp));
     }
 
     /**
@@ -750,17 +768,22 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete.of("user123").addFamilyVersion("snapshots", -1L);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the name of the column family
+     * @param family the name of the column family; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
+     *               accepted here, but a single delete then fails with a {@code NullPointerException}
+     *               while HBase builds the request; a batch delete sends it as an empty family with
+     *               the client's default {@code KeyValueCodec})
      * @param timestamp the exact timestamp of the cells to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
      */
     public AnyDelete addFamilyVersion(final String family, final long timestamp) throws IllegalArgumentException {
-        delete.addFamilyVersion(toFamilyQualifierBytes(family), timestamp);
-        return this;
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return addDeleteMarker(familyBytes, () -> delete.addFamilyVersion(familyBytes, timestamp));
     }
 
     /**
@@ -781,17 +804,19 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete.of("user123").addFamilyVersion(familyBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name as a byte array
+     * @param family the column family name as a byte array (a {@code null} array is accepted here,
+     *               but a single delete then fails with a {@code NullPointerException} while HBase
+     *               builds the request; a batch delete sends it as an empty family with the client's
+     *               default {@code KeyValueCodec})
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addFamilyVersion(String, long)
      * @see #addFamily(byte[], long)
      */
     public AnyDelete addFamilyVersion(final byte[] family, final long timestamp) throws IllegalArgumentException {
-        delete.addFamilyVersion(family, timestamp);
-        return this;
+        return addDeleteMarker(family, () -> delete.addFamilyVersion(family, timestamp));
     }
 
     /**
@@ -817,17 +842,23 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the column family name; encoded via
-     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
+     *               accepted here, but a single delete then fails with a {@code NullPointerException}
+     *               while HBase builds the request; a batch delete sends it as an empty family with
+     *               the client's default {@code KeyValueCodec})
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(String, String, long)
      * @see #addColumns(String, String)
      */
     public AnyDelete addColumn(final String family, final String qualifier) throws IllegalArgumentException {
-        delete.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier));
-        return this;
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+        final byte[] qualifierBytes = toFamilyQualifierBytes(qualifier);
+
+        return addDeleteMarker(familyBytes, () -> delete.addColumn(familyBytes, qualifierBytes));
     }
 
     /**
@@ -848,19 +879,24 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the column family name; encoded via
-     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
+     *               accepted here, but a single delete then fails with a {@code NullPointerException}
+     *               while HBase builds the request; a batch delete sends it as an empty family with
+     *               the client's default {@code KeyValueCodec})
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(String, String)
      * @see #addColumns(String, String, long)
      */
     public AnyDelete addColumn(final String family, final String qualifier, final long timestamp) throws IllegalArgumentException {
-        delete.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), timestamp);
-        return this;
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+        final byte[] qualifierBytes = toFamilyQualifierBytes(qualifier);
+
+        return addDeleteMarker(familyBytes, () -> delete.addColumn(familyBytes, qualifierBytes, timestamp));
     }
 
     /**
@@ -884,16 +920,19 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete single = AnyDelete.of("user123").addColumn(familyBytes, qualifierBytes);   // single-version tombstone
      * }</pre>
      *
-     * @param family the column family name as a byte array
+     * @param family the column family name as a byte array (a {@code null} array is accepted here,
+     *               but a single delete then fails with a {@code NullPointerException} while HBase
+     *               builds the request; a batch delete sends it as an empty family with the client's
+     *               default {@code KeyValueCodec})
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(byte[], byte[], long)
      * @see #addColumns(byte[], byte[])
      */
     public AnyDelete addColumn(final byte[] family, final byte[] qualifier) throws IllegalArgumentException {
-        delete.addColumn(family, qualifier);
-        return this;
+        return addDeleteMarker(family, () -> delete.addColumn(family, qualifier));
     }
 
     /**
@@ -914,18 +953,20 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete.of("user123").addColumn(familyBytes, qualifierBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name as a byte array
+     * @param family the column family name as a byte array (a {@code null} array is accepted here,
+     *               but a single delete then fails with a {@code NullPointerException} while HBase
+     *               builds the request; a batch delete sends it as an empty family with the client's
+     *               default {@code KeyValueCodec})
      * @param qualifier the column qualifier name as a byte array
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(byte[], byte[])
      * @see #addColumns(byte[], byte[], long)
      */
     public AnyDelete addColumn(final byte[] family, final byte[] qualifier, final long timestamp) throws IllegalArgumentException {
-        delete.addColumn(family, qualifier, timestamp);
-        return this;
+        return addDeleteMarker(family, () -> delete.addColumn(family, qualifier, timestamp));
     }
 
     /**
@@ -949,17 +990,23 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the column family name; encoded via
-     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
+     *               accepted here, but a single delete then fails with a {@code NullPointerException}
+     *               while HBase builds the request; a batch delete sends it as an empty family with
+     *               the client's default {@code KeyValueCodec})
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumns(String, String, long)
      * @see #addColumn(String, String)
      */
     public AnyDelete addColumns(final String family, final String qualifier) throws IllegalArgumentException {
-        delete.addColumns(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier));
-        return this;
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+        final byte[] qualifierBytes = toFamilyQualifierBytes(qualifier);
+
+        return addDeleteMarker(familyBytes, () -> delete.addColumns(familyBytes, qualifierBytes));
     }
 
     /**
@@ -980,19 +1027,24 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the column family name; encoded via
-     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)} (a {@code null} family is
+     *               accepted here, but a single delete then fails with a {@code NullPointerException}
+     *               while HBase builds the request; a batch delete sends it as an empty family with
+     *               the client's default {@code KeyValueCodec})
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumns(String, String)
      * @see #addColumn(String, String, long)
      */
     public AnyDelete addColumns(final String family, final String qualifier, final long timestamp) throws IllegalArgumentException {
-        delete.addColumns(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), timestamp);
-        return this;
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+        final byte[] qualifierBytes = toFamilyQualifierBytes(qualifier);
+
+        return addDeleteMarker(familyBytes, () -> delete.addColumns(familyBytes, qualifierBytes, timestamp));
     }
 
     /**
@@ -1014,16 +1066,19 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete allVersions = AnyDelete.of("user123").addColumns(familyBytes, qualifierBytes);   // all-versions tombstone
      * }</pre>
      *
-     * @param family the column family name as a byte array
+     * @param family the column family name as a byte array (a {@code null} array is accepted here,
+     *               but a single delete then fails with a {@code NullPointerException} while HBase
+     *               builds the request; a batch delete sends it as an empty family with the client's
+     *               default {@code KeyValueCodec})
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumns(byte[], byte[], long)
      * @see #addColumn(byte[], byte[])
      */
     public AnyDelete addColumns(final byte[] family, final byte[] qualifier) throws IllegalArgumentException {
-        delete.addColumns(family, qualifier);
-        return this;
+        return addDeleteMarker(family, () -> delete.addColumns(family, qualifier));
     }
 
     /**
@@ -1044,17 +1099,45 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete.of("user123").addColumns(familyBytes, qualifierBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name as a byte array
+     * @param family the column family name as a byte array (a {@code null} array is accepted here,
+     *               but a single delete then fails with a {@code NullPointerException} while HBase
+     *               builds the request; a batch delete sends it as an empty family with the client's
+     *               default {@code KeyValueCodec})
      * @param qualifier the column qualifier name as a byte array
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumns(byte[], byte[])
      * @see #addColumn(byte[], byte[], long)
      */
     public AnyDelete addColumns(final byte[] family, final byte[] qualifier, final long timestamp) throws IllegalArgumentException {
-        delete.addColumns(family, qualifier, timestamp);
+        return addDeleteMarker(family, () -> delete.addColumns(family, qualifier, timestamp));
+    }
+
+    // WHY: HBase's Delete puts the family's (new, empty) cell list into its family map BEFORE it builds the delete marker, so an
+    // add that then fails (a family over 127 bytes, an oversized row or qualifier...) leaves an EMPTY cell list behind: isEmpty()
+    // turns false while size() stays 0, and a caller that catches the exception and still sends this delete gets a delete the
+    // server decodes as a whole-row delete. Remove the family entry this call created, if it is still empty, and rethrow the
+    // original exception; an entry that existed before the call is never touched.
+    private AnyDelete addDeleteMarker(final byte[] family, final Runnable adder) {
+        final NavigableMap<byte[], List<Cell>> familyCellMap = delete.getFamilyCellMap();
+        final boolean familyExisted = familyCellMap.containsKey(family);
+
+        try {
+            adder.run();
+        } catch (final RuntimeException e) {
+            if (!familyExisted) {
+                final List<Cell> cells = familyCellMap.get(family);
+
+                if (cells != null && cells.isEmpty()) {
+                    familyCellMap.remove(family);
+                }
+            }
+
+            throw e;
+        }
+
         return this;
     }
 

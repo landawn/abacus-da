@@ -881,7 +881,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * <ul>
      * <li><b>null</b> → AttributeValue with NULL=true using fromNul(true)</li>
-     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) → N (Number) using fromN()</li>
+     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) → N (Number) using fromN(). A finite number whose text
+     *     is not a decimal number, such as an abacus {@code Fraction} ({@code "3/4"}), → S holding that text, from which a
+     *     {@code Fraction} property or value reads back</li>
      * <li><b>Boolean</b> → BOOL using fromBool()</li>
      * <li><b>byte[]</b> → B (Binary) using fromB() with SdkBytes</li>
      * <li><b>ByteBuffer</b> → B (Binary) using fromB() with SdkBytes, copying the buffer's remaining bytes (position to limit)</li>
@@ -936,7 +938,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
                 // Check the rendered text rather than only Double/Float values: other numeric types (MutableDouble,
                 // MutableFloat, DoubleAdder) also render a non-finite value as NaN/Infinity, which DynamoDB rejects.
                 N.checkArgument(!isNonFiniteNumberText(text), "DynamoDB numbers must be finite: %s", value);
-                return AttributeValue.fromN(text);
+                // A number type whose text is not a decimal literal (abacus Fraction renders "3/4") would be an N value that
+                // DynamoDB rejects. Keep the text as S: lossless, and it reads back through the type's own valueOf.
+                return isDecimalNumberText(text) ? AttributeValue.fromN(text) : AttributeValue.fromS(text);
             } else if (type.isBoolean()) {
                 return AttributeValue.fromBool((Boolean) value);
             } else if (value instanceof byte[]) {
@@ -1564,7 +1568,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * <p>Each attribute is mapped to a property whose name matches the attribute name (or whose
      * {@code @Column} alias matches it). Attribute names containing a {@code '.'} are treated as
-     * nested-property paths (e.g. {@code "address.city"}). Attributes that do not correspond to any
+     * nested-property paths (e.g. {@code "address.city"}), whose values are converted as for the last property of the path
+     * named directly. Attributes that do not correspond to any
      * declared property are silently ignored, as are attributes of read-only (getter-only) properties, whose
      * computed values {@link #toItem(Object)} writes but which cannot be assigned.</p>
      *
@@ -1801,6 +1806,17 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      */
     protected static String getAttrName(final PropInfo propInfo, final NamingPolicy namingPolicy) {
         return DynamoDBExecutorBase.getAttrName(propInfo, namingPolicy);
+    }
+
+    /**
+     * Checks the row type of {@code query(QueryRequest, Class)} before any request is sent; bridge for
+     * {@link AsyncDynamoDBExecutor}'s static import, delegating to the shared implementation.
+     *
+     * @param targetClass the requested row type; {@code null} passes
+     * @throws IllegalArgumentException if {@code targetClass} is not {@code null} and is neither a {@link Map} type nor a bean class
+     */
+    protected static void checkDatasetRowType(final Class<?> targetClass) throws IllegalArgumentException {
+        DynamoDBExecutorBase.checkDatasetRowType(targetClass);
     }
 
     /**
@@ -2191,8 +2207,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param queryResult the QueryResponse containing the items to convert. Must not be {@code null}.
      * @return a Dataset containing the items from this single response page, never {@code null};
-     *         empty when the response carries no items
-     * @throws IllegalArgumentException if {@code queryResult} is {@code null}
+     *         empty when the response carries no items, and also when none of its items has any attribute, because a Dataset
+     *         without columns has no rows
+     * @throws IllegalArgumentException if {@code queryResult} is {@code null}, or an attribute value has no supported DynamoDB type
      * @see #extractData(QueryResponse, int, int)
      */
     public static Dataset extractData(final QueryResponse queryResult) throws IllegalArgumentException {
@@ -2222,8 +2239,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @param queryResult the QueryResponse containing the items to convert. Must not be {@code null}.
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
-     * @return a Dataset containing the sliced page, never null
-     * @throws IllegalArgumentException if {@code queryResult} is {@code null}, or {@code offset} or {@code count} is negative
+     * @return a Dataset containing the sliced page, never null; empty also when none of the selected items has any attribute,
+     *         because a Dataset without columns has no rows
+     * @throws IllegalArgumentException if {@code queryResult} is {@code null}, {@code offset} or {@code count} is negative, or a selected
+     *         attribute value has no supported DynamoDB type
      */
     public static Dataset extractData(final QueryResponse queryResult, final int offset, final int count) throws IllegalArgumentException {
         N.checkArgNotNull(queryResult, cs.queryResult);
@@ -2252,8 +2271,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param scanResult the ScanResponse containing the items to convert. Must not be {@code null}.
      * @return a Dataset containing the items from this single response page, never {@code null};
-     *         empty when the response carries no items
-     * @throws IllegalArgumentException if {@code scanResult} is {@code null}
+     *         empty when the response carries no items, and also when none of its items has any attribute, because a Dataset
+     *         without columns has no rows
+     * @throws IllegalArgumentException if {@code scanResult} is {@code null}, or an attribute value has no supported DynamoDB type
      * @see #extractData(ScanResponse, int, int)
      */
     public static Dataset extractData(final ScanResponse scanResult) throws IllegalArgumentException {
@@ -2282,8 +2302,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @param scanResult the ScanResponse containing the items to convert. Must not be {@code null}.
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
-     * @return a Dataset containing the sliced page, never null
-     * @throws IllegalArgumentException if {@code scanResult} is {@code null}, or {@code offset} or {@code count} is negative
+     * @return a Dataset containing the sliced page, never null; empty also when none of the selected items has any attribute,
+     *         because a Dataset without columns has no rows
+     * @throws IllegalArgumentException if {@code scanResult} is {@code null}, {@code offset} or {@code count} is negative, or a selected
+     *         attribute value has no supported DynamoDB type
      */
     public static Dataset extractData(final ScanResponse scanResult, final int offset, final int count) throws IllegalArgumentException {
         N.checkArgNotNull(scanResult, cs.scanResult);
@@ -2295,7 +2317,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * Extracts a Dataset from a List of DynamoDB items (Maps).
      *
      * <p>This method extracts the items from the provided list and converts them to a Dataset.
-     * If the list is empty, it returns an empty Dataset.</p>
+     * If the list is empty, it returns an empty Dataset. The columns are the attribute names of the selected items in order
+     * of first appearance; an item lacking an attribute gets {@code null} there. When no selected item has any attribute the
+     * result is empty, because a Dataset without columns has no rows.</p>
      *
      * @param items the List of DynamoDB items (Maps) to convert
      * @param offset the starting index within {@code items} (0-based)
@@ -2501,17 +2525,21 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * // Read straight into a Map
      * Map<String, Object> m = executor.getItem("Users", key, Clazz.ofMap(String.class, Object.class));
      *
-     * // Missing item: reference target -> null, primitive target -> default value
+     * // Missing item: the default value of the target type (null for a bean or Map, 0 for int, an empty Optional)
      * User none = executor.getItem("Users", asKey("id", "missing"), User.class); // null
      * int n = executor.getItem("Counters", asKey("id", "missing"), int.class);   // 0
+     * Optional<?> o = executor.getItem("Counters", asKey("id", "missing"), Optional.class); // Optional.empty()
      * }</pre>
      *
      * @param <T> the type of the entity to convert to
      * @param tableName the name of the DynamoDB table to retrieve from. Must not be null or empty.
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param targetClass the class of the entity to convert to. Must not be null.
-     * @return an instance of the target class representing the item, or {@code null} for reference types when the item doesn't exist
-     *         (a primitive {@code targetClass} yields its default value such as {@code 0} or {@code false})
+     * @return an instance of the target class representing the item, or the default value of {@code targetClass} when the item doesn't
+     *         exist: {@code null} for a bean, {@code Map}, collection, array or other reference type, the default such as {@code 0} or
+     *         {@code false} for a primitive, and an empty value for an {@code Optional}-like wrapper (JDK {@code Optional} and
+     *         {@code OptionalInt}/{@code OptionalLong}/{@code OptionalDouble}, Abacus {@code Optional} and {@code Nullable}) or a
+     *         {@link Holder} holding {@code null}
      * @throws IllegalArgumentException if {@code targetClass} is null, or a returned item cannot be converted to {@code targetClass}
      * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
      *         validation)
@@ -2555,8 +2583,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @param targetClass the class of the entity to convert to. Must not be null.
-     * @return an instance of the target class representing the item, or {@code null} for reference types when the item doesn't exist
-     *         (a primitive {@code targetClass} yields its default value such as {@code 0} or {@code false})
+     * @return an instance of the target class representing the item, or the default value of {@code targetClass} when the item doesn't
+     *         exist: {@code null} for a bean, {@code Map}, collection, array or other reference type, the default such as {@code 0} or
+     *         {@code false} for a primitive, and an empty value for an {@code Optional}-like wrapper (JDK {@code Optional} and
+     *         {@code OptionalInt}/{@code OptionalLong}/{@code OptionalDouble}, Abacus {@code Optional} and {@code Nullable}) or a
+     *         {@link Holder} holding {@code null}
      * @throws IllegalArgumentException if {@code targetClass} is null, or a returned item cannot be converted to {@code targetClass}
      * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
      *         validation)
@@ -2591,9 +2622,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @param <T> the type of the entity to convert to
      * @param getItemRequest the complete request with all parameters. Must not be null.
      * @param targetClass the class to convert the result to. Must not be null.
-     * @return an instance of {@code targetClass} containing the item data, or {@code null} for
-     *         reference types when the item doesn't exist (primitive {@code targetClass} returns its
-     *         default value such as {@code 0} or {@code false})
+     * @return an instance of {@code targetClass} containing the item data, or the default value of {@code targetClass} when the item
+     *         doesn't exist: {@code null} for a bean, {@code Map}, collection, array or other reference type, the default such as
+     *         {@code 0} or {@code false} for a primitive, and an empty value for an {@code Optional}-like wrapper (JDK {@code Optional}
+     *         and {@code OptionalInt}/{@code OptionalLong}/{@code OptionalDouble}, Abacus {@code Optional} and {@code Nullable}) or a
+     *         {@link Holder} holding {@code null}
      * @throws IllegalArgumentException if {@code getItemRequest} or {@code targetClass} is null, or the returned item cannot be converted to
      *         {@code targetClass}
      * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
@@ -3581,7 +3614,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @return a Dataset containing the items retrieved by the query, never {@code null}; empty when
-     *         the query matches nothing
+     *         the query matches nothing, and also when no returned item has any attribute (for example a projection of
+     *         attributes the items lack), because a Dataset without columns has no rows
      * @throws IllegalArgumentException if queryRequest is null
      * @throws SdkException if the SDK cannot send the query request or DynamoDB rejects it because of credentials, table/key data, conditions,
      *         or service limits
@@ -3614,10 +3648,15 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @param targetClass the row type to convert each item to; must not be null. Pass a {@link Map} subtype
-     *                     (e.g. {@code Map.class}) to keep rows as raw attribute maps instead of mapped entities.
-     * @return a Dataset built from the query results. Never null.
-     * @throws IllegalArgumentException if {@code queryRequest} or {@code targetClass} is null, or a returned item cannot be converted to
-     *         {@code targetClass}
+     *                     (e.g. {@code Map.class}) to keep rows as raw attribute maps instead of mapped entities. Any other
+     *                     type must be a bean class, whose properties become the columns: an array, collection or single-value
+     *                     type is rejected before the query request is sent, because such rows have no column names (use
+     *                     {@link #list(QueryRequest, Class)} for them).
+     * @return a Dataset built from the query results. Never null. For a {@link Map} type it is empty also when no returned item has
+     *         any attribute, because a Dataset without columns has no rows.
+     * @throws IllegalArgumentException if {@code queryRequest} or {@code targetClass} is null, {@code targetClass} is neither a
+     *         {@link Map} type nor a bean class (checked before any request is sent, even if the query would match nothing), or a
+     *         returned item cannot be converted to {@code targetClass}
      * @throws SdkException if the SDK cannot send the query request or DynamoDB rejects it because of credentials, table/key data, conditions,
      *         or service limits
      * @throws RuntimeException if a returned attribute cannot be converted to the requested result type, or a result bean or container cannot be
@@ -3626,6 +3665,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) throws IllegalArgumentException, SdkException, RuntimeException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
         N.checkArgNotNull(targetClass, cs.targetClass);
+        // Fail before the first request: N.newDataset would reject the row type only after every page was read.
+        checkDatasetRowType(targetClass);
 
         if (Map.class.isAssignableFrom(targetClass)) {
             final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
@@ -3681,7 +3722,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * <p>This method performs a query operation using AWS SDK v2 and returns the results as a lazy
      * stream of entities of the specified target class. The stream transparently follows
      * {@code lastEvaluatedKey}, issuing additional Query calls on demand until DynamoDB stops
-     * returning a continuation key, so it is suitable for arbitrarily large result sets.</p>
+     * returning a continuation key, so it is suitable for arbitrarily large result sets. Unlike
+     * {@link #list(QueryRequest, Class)} and {@link #query(QueryRequest, Class)}, which return a single page when the request
+     * sets {@code exclusiveStartKey}, the stream only starts from that key and still continues to the last page; a
+     * {@code limit} on the request is the page size, not a cap on the streamed rows (use {@code Stream.limit} for that).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3970,7 +4014,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * <p>The returned stream transparently follows {@code lastEvaluatedKey}, issuing additional Scan
      * calls on demand until DynamoDB stops returning a continuation key, so it is suitable for full
-     * table traversals of arbitrary size.</p>
+     * table traversals of arbitrary size. An {@code exclusiveStartKey} on the request is only the starting point (the stream
+     * still continues to the last page), and a {@code limit} is the page size, not a cap on the streamed rows.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4865,7 +4910,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
          * adults.forEach(System.out::println);
          * }</pre>
          *
-         * @param scanFilter map of attribute names to conditions for filtering results
+         * @param scanFilter map of attribute names to conditions for filtering results, or null for no filter
          * @return a Stream of entities matching the filter conditions; fetching or converting items can fail during stream traversal
          */
         public Stream<T> scan(final Map<String, Condition> scanFilter) {
@@ -4887,7 +4932,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
          * }</pre>
          *
          * @param attributesToGet list of attribute names to retrieve; null or empty to get all attributes
-         * @param scanFilter map of attribute names to conditions for filtering results
+         * @param scanFilter map of attribute names to conditions for filtering results, or null for no filter
          * @return a Stream of entities matching the filter with only specified attributes; fetching or converting items can fail during
          *         stream traversal
          */

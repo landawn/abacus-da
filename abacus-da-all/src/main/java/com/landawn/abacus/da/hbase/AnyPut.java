@@ -27,7 +27,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.client.Operation;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Row;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
 import com.landawn.abacus.da.cs;
@@ -165,7 +167,17 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * <li><strong>Collections / Maps</strong>: {@code Collection<HBaseColumn>} and
  *     {@code Map<Long, HBaseColumn>} properties are expanded into one cell per element, each at
  *     its own version, enabling multi-version storage.</li>
- * <li><strong>Null values</strong>: Properties whose value is {@code null} are skipped.</li>
+ * <li><strong>Null values</strong>: Properties whose value is {@code null}, or an empty value wrapper (an empty {@code Optional}
+ *     or primitive {@code OptionalXxx}, a {@code Nullable} that is empty or holds {@code null}, a {@code Holder} holding {@code null}),
+ *     are skipped, so no cell is written for them; an empty cell would read back as a present empty string for a {@code String}
+ *     element. Likewise an {@link HBaseColumn} (alone or in a versioned collection or map) whose value is such an empty wrapper
+ *     writes no cell; one whose value is {@code null} is written as an empty cell.</li>
+ * <li><strong>Operations are not entities</strong>: the single-entity {@code create} methods reject an HBase operation (an
+ *     {@link org.apache.hadoop.hbase.client.Operation} or {@link org.apache.hadoop.hbase.client.Row}, such as a {@link Put} or
+ *     {@code Get}) and every {@code Any*} wrapper ({@code AnyPut}, {@code AnyDelete}, ...) with an {@link IllegalArgumentException};
+ *     pass a {@code Put} or {@code AnyPut} directly instead (for example to {@link #of(Put)} or {@link HBaseExecutor#put(String, Put)}).
+ *     The collection factories and {@link #toPut(Collection)} pass a {@code Put} or {@code AnyPut} element through unchanged and
+ *     reject any other operation element.</li>
  * </ul>
  *
  * <h3>Performance Considerations:</h3>
@@ -320,6 +332,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     AnyPut(final Put putToCopy) throws IllegalArgumentException, NullPointerException {
         super(new Put(N.checkArgNotNull(putToCopy, cs.putToCopy)));
         put = (Put) mutation;
+    }
+
+    /**
+     * Wraps {@code putToWrap} itself, without copying it (unlike {@link #AnyPut(Put)}). Backs the collection factories,
+     * which pass a native {@link Put} element through unchanged.
+     *
+     * @param putToWrap the Put to wrap; must not be {@code null}
+     * @param wrapOnly unused marker that tells this constructor apart from the copying one
+     */
+    private AnyPut(final Put putToWrap, @SuppressWarnings("unused") final Void wrapOnly) {
+        super(putToWrap);
+        put = putToWrap;
     }
 
     /**
@@ -671,9 +695,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * property — annotated with {@code @Id}/{@code @ReadOnlyId}, a conventionally typed property named
      * {@code id} when nothing is annotated, or registered via
      * {@link HBaseExecutor#registerRowKeyProperty(Class, String)} — whose value becomes the HBase
-     * row key. Properties whose value is {@code null} are skipped. See the class-level "Entity
+     * row key. Properties whose value is {@code null} or an empty {@code Optional}/{@code Nullable}/{@code Holder} are
+     * skipped. See the class-level "Entity
      * Mapping Rules" section for full details, including how nested beans, {@link HBaseColumn}
      * values, and {@code Collection}/{@code Map} of {@link HBaseColumn} are mapped.</p>
+     *
+     * <p>An HBase operation is not an entity: a {@link Put} (or any other
+     * {@link org.apache.hadoop.hbase.client.Operation} or {@link org.apache.hadoop.hbase.client.Row}) or an {@code Any*} wrapper
+     * such as an {@code AnyPut} is rejected; pass the {@code Put} or {@code AnyPut} directly instead.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -703,14 +732,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * // Edge: a null entity is rejected.
      * AnyPut.create((Object) null);          // throws IllegalArgumentException
+     *
+     * // Edge: an HBase operation is not mapped as a bean; pass it directly instead.
+     * AnyPut.create(new Put(Bytes.toBytes("user123")));   // throws IllegalArgumentException
+     * AnyPut.create(AnyPut.of("user123"));                // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entity the Java object to convert to a put operation; must not be null and must
-     *               have a row-key property
+     * @param entity the Java object to convert to a put operation; must not be null, must
+     *               have a row-key property, and must not be an HBase operation or an {@code Any*} wrapper
      * @return a new AnyPut populated from the entity
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, an entity to convert is not a bean or has missing, multiple or
-     *         unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is negative, or an encoded
-     *         column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entity} is {@code null} or an HBase operation ({@code Operation}/{@code Row}) or {@code Any*}
+     *         wrapper, an entity to convert is not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null,
+     *         empty or exceeds 32,767 bytes, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Object, NamingPolicy)
@@ -742,14 +775,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * // Edge: a null entity is rejected.
      * AnyPut.create((Object) null, NamingPolicy.CAMEL_CASE);    // throws IllegalArgumentException
+     *
+     * // Edge: an HBase operation or Any* wrapper is not mapped as a bean.
+     * AnyPut.create(AnyPut.of("user123"), NamingPolicy.SNAKE_CASE);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entity the Java object to convert to a put operation; must not be null
+     * @param entity the Java object to convert to a put operation; must not be null, and must not be an HBase operation
+     *               ({@code Operation}/{@code Row}, such as a {@code Put}) or an {@code Any*} wrapper
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a new AnyPut instance with data from the entity
-     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, an entity to convert is not a bean or has
-     *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
-     *         negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, {@code entity} is an HBase operation or
+     *         {@code Any*} wrapper, an entity to convert is not a bean or has missing, multiple or unsupported row-key properties, its row-key
+     *         value is null, empty or exceeds 32,767 bytes, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Object)
@@ -758,6 +795,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     public static AnyPut create(final Object entity, final NamingPolicy namingPolicy) throws IllegalArgumentException, NullPointerException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, cs.namingPolicy);
+        checkNotOperation(entity);
 
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(entity.getClass());
 
@@ -770,7 +808,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <p>This batch factory method converts multiple entities to put operations in a single call,
      * using the default camelCase naming policy. This is more convenient than calling
      * {@code create(Object)} in a loop. Any AnyPut instances in the collection are passed through
-     * unchanged, while other objects are converted using entity mapping.</p>
+     * unchanged, a native {@link Put} element is wrapped (not copied) in a new AnyPut whose {@link #val()} is that Put, and
+     * other objects are converted using entity mapping; any other HBase operation or {@code Any*} wrapper element is rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -778,18 +817,26 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * List<AnyPut> puts = AnyPut.create(users);
      * int count = puts.size();   // 3
      *
+     * // A native Put element is passed through: the AnyPut wraps that same Put.
+     * Put nativePut = new Put(Bytes.toBytes("user4")).addColumn(Bytes.toBytes("info"), Bytes.toBytes("name"), Bytes.toBytes("Dan"));
+     * boolean same = AnyPut.create(List.of(nativePut)).get(0).val() == nativePut;   // true
+     *
      * // Edge: an empty collection yields an empty list.
      * List<AnyPut> none = AnyPut.create(Collections.emptyList());   // size() == 0
      *
      * // Edge: a null collection is rejected.
      * AnyPut.create((Collection<?>) null);   // throws IllegalArgumentException
+     *
+     * // Edge: an operation other than a Put is not an entity.
+     * AnyPut.create(List.of(AnyDelete.of("user1")));   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
      * @return a list of AnyPut instances, one for each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
-     *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
-     *         negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an element is an HBase operation
+     *         ({@code Operation}/{@code Row}) or {@code Any*} wrapper other than a {@code Put} or {@code AnyPut}, an entity to convert is not a
+     *         bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
+     *         column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Collection, NamingPolicy)
@@ -805,7 +852,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         final List<AnyPut> anyPuts = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
-            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : create(entity));
+            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : entity instanceof Put put ? wrap(put) : create(entity));
         }
 
         return anyPuts;
@@ -816,7 +863,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>This batch factory method converts multiple entities to put operations with custom naming
      * policy. Useful for bulk operations where property names need to follow a specific convention
-     * like SNAKE_CASE or UPPER_CAMEL_CASE.</p>
+     * like SNAKE_CASE or UPPER_CAMEL_CASE. An {@code AnyPut} element is passed through unchanged, and a native {@link Put}
+     * element is wrapped (not copied) in a new AnyPut; the naming policy is not applied to either. Any other HBase operation or
+     * {@code Any*} wrapper element is rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -834,9 +883,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entities the collection of Java objects to convert; must not be null
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of AnyPut instances, one for each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
-     *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
-     *         column version is negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an element is an
+     *         HBase operation ({@code Operation}/{@code Row}) or {@code Any*} wrapper other than a {@code Put} or {@code AnyPut}, an entity to
+     *         convert is not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds
+     *         32,767 bytes, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Collection)
@@ -854,7 +904,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         final List<AnyPut> anyPuts = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
-            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : create(entity, namingPolicy));
+            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : entity instanceof Put put ? wrap(put) : create(entity, namingPolicy));
         }
 
         return anyPuts;
@@ -882,14 +932,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * // Edge: a null entity is rejected.
      * AnyPut.create((Object) null, Arrays.asList("name"));  // throws IllegalArgumentException
+     *
+     * // Edge: an HBase operation or Any* wrapper is not mapped as a bean.
+     * AnyPut.create(AnyPut.of("user123"), Arrays.asList("name"));   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entity the Java object to convert; must not be null
+     * @param entity the Java object to convert; must not be null, and must not be an HBase operation ({@code Operation}/{@code Row},
+     *               such as a {@code Put}) or an {@code Any*} wrapper
      * @param selectPropNames the property names to include in the put; if null, all properties are included
      * @return a new AnyPut instance with only the selected properties
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, an entity to convert is not a bean or has missing, multiple or
-     *         unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property does not exist, a
-     *         column version is negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entity} is {@code null} or an HBase operation or {@code Any*} wrapper, an entity to convert is
+     *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
+     *         selected property does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Object, Collection, NamingPolicy)
@@ -919,13 +973,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.create(user, Arrays.asList("name"), (NamingPolicy) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entity the Java object to convert; must not be null
+     * @param entity the Java object to convert; must not be null, and must not be an HBase operation ({@code Operation}/{@code Row},
+     *               such as a {@code Put}) or an {@code Any*} wrapper
      * @param selectPropNames the property names to include; if null, all properties are included
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a new AnyPut instance with only the selected properties
-     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, an entity to convert is not a bean or has
-     *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property
-     *         does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, {@code entity} is an HBase operation or
+     *         {@code Any*} wrapper, an entity to convert is not a bean or has missing, multiple or unsupported row-key properties, its row-key
+     *         value is null, empty or exceeds 32,767 bytes, a selected property does not exist, a column version is negative, or an encoded column
+     *         family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Object, Collection)
@@ -935,6 +991,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
             throws IllegalArgumentException, NullPointerException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, cs.namingPolicy);
+        checkNotOperation(entity);
 
         if (selectPropNames == null) {
             return create(entity, namingPolicy);
@@ -959,7 +1016,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>This batch selective factory method creates put operations for multiple entities, including
      * only the specified properties from each. This is efficient for partial bulk updates where you
-     * want to update the same set of properties across many entities.</p>
+     * want to update the same set of properties across many entities. An {@code AnyPut} element is
+     * passed through unchanged, and a native {@link Put} element is wrapped (not copied) in a new AnyPut;
+     * {@code selectPropNames} is not applied to either. Any other HBase operation or {@code Any*} wrapper element is rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -977,9 +1036,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entities the collection of Java objects to convert; must not be null
      * @param selectPropNames the property names to include from each entity; if null, all properties are included
      * @return a list of AnyPut instances with only the selected properties from each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
-     *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a selected property
-     *         does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an element is an HBase operation
+     *         ({@code Operation}/{@code Row}) or {@code Any*} wrapper other than a {@code Put} or {@code AnyPut}, an entity to convert is not a
+     *         bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
+     *         selected property does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Collection, Collection, NamingPolicy)
@@ -996,7 +1056,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         final List<AnyPut> anyPuts = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
-            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : create(entity, selectPropNames));
+            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : entity instanceof Put put ? wrap(put) : create(entity, selectPropNames));
         }
 
         return anyPuts;
@@ -1007,7 +1067,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>This comprehensive batch factory method combines selective property inclusion, multiple entities,
      * and custom naming policy, providing maximum flexibility for bulk partial updates with specific
-     * naming conventions.</p>
+     * naming conventions. An {@code AnyPut} element is passed through unchanged, and a native {@link Put} element is wrapped
+     * (not copied) in a new AnyPut; neither {@code selectPropNames} nor the naming policy is applied to either. Any other HBase
+     * operation or {@code Any*} wrapper element is rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1024,9 +1086,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param selectPropNames the property names to include from each entity; if null, all properties included
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of AnyPut instances with selected properties from each entity
-     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
-     *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
-     *         selected property does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an element is an
+     *         HBase operation ({@code Operation}/{@code Row}) or {@code Any*} wrapper other than a {@code Put} or {@code AnyPut}, an entity to
+     *         convert is not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds
+     *         32,767 bytes, a selected property does not exist, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Collection, Collection)
@@ -1044,10 +1107,27 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         final List<AnyPut> anyPuts = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
-            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : create(entity, selectPropNames, namingPolicy));
+            anyPuts.add(entity instanceof AnyPut anyPut ? anyPut : entity instanceof Put put ? wrap(put) : create(entity, selectPropNames, namingPolicy));
         }
 
         return anyPuts;
+    }
+
+    // Wraps a native Put element of a collection factory without copying it, as an AnyPut element is passed through.
+    private static AnyPut wrap(final Put put) {
+        return new AnyPut(put, (Void) null);
+    }
+
+    // WHY: an HBase operation (Put, Get, Delete, Increment, Append, Scan, RowMutations...) and every Any* wrapper look like beans
+    // to the property introspection, whose row key would be the operation id (getId()/setId()): mapping one failed with a
+    // misleading "row key property value is null" error, or, with an operation id set, built a garbage Put whose cells were
+    // its durability, familyCellMap, clusterIds, priority... An operation is never an entity, so reject it with a clear message.
+    private static void checkNotOperation(final Object entity) throws IllegalArgumentException {
+        if (entity instanceof Operation || entity instanceof Row || entity instanceof AnyOperation) {
+            throw new IllegalArgumentException("Cannot map " + ClassUtil.getCanonicalClassName(entity.getClass())
+                    + " as an entity: AnyPut.create maps the properties of an entity bean, not an HBase operation. Pass the Put or AnyPut directly"
+                    + " (for example to AnyPut.of(Put) or HBaseExecutor.put) instead");
+        }
     }
 
     /**
@@ -1105,7 +1185,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
             propValue = propInfo.getPropValue(entity);
 
-            if (propValue == null) {
+            // An empty Optional/Nullable/Holder is skipped like null: it has no string form, and the empty cell it would
+            // become reads back as a PRESENT empty string for a String element (Optional.of(""), Nullable.of(""), Holder.of("")).
+            if (propValue == null || HBaseExecutor.isEmptyValueWrapper(propValue)) {
                 continue;
             }
 
@@ -1128,7 +1210,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
                     propValue = columnPropInfo.getPropValue(propEntity);
 
-                    if (propValue == null) {
+                    // Skipped like null, as at the top level (see the comment there).
+                    if (propValue == null || HBaseExecutor.isEmptyValueWrapper(propValue)) {
                         continue;
                     }
 
@@ -1138,20 +1221,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
                         columnMap = (Map<Long, HBaseColumn<?>>) propValue;
 
                         for (final HBaseColumn<?> e : columnMap.values()) {
-                            anyPut.addColumn(tp._1, propEntityTP._2, e.version(), e.value());
-
+                            addVersionedColumn(anyPut, tp._1, propEntityTP._2, e);
                         }
                     } else if (columnPropInfo.jsonXmlType.isCollection()
                             && columnPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
                         columnColl = (Collection<HBaseColumn<?>>) propValue;
 
                         for (final HBaseColumn<?> e : columnColl) {
-                            anyPut.addColumn(tp._1, propEntityTP._2, e.version(), e.value());
-
+                            addVersionedColumn(anyPut, tp._1, propEntityTP._2, e);
                         }
                     } else if (columnPropInfo.jsonXmlType.javaType().equals(HBaseColumn.class)) {
                         column = (HBaseColumn<?>) propValue;
-                        anyPut.addColumn(tp._1, propEntityTP._2, column.version(), column.value());
+                        addVersionedColumn(anyPut, tp._1, propEntityTP._2, column);
                     } else {
                         anyPut.addColumn(tp._1, propEntityTP._2, propValue);
                     }
@@ -1160,25 +1241,45 @@ public final class AnyPut extends AnyMutation<AnyPut> {
                 columnMap = (Map<Long, HBaseColumn<?>>) propValue;
 
                 for (final HBaseColumn<?> e : columnMap.values()) {
-                    anyPut.addColumn(tp._1, columnName, e.version(), e.value());
-
+                    addVersionedColumn(anyPut, tp._1, columnName, e);
                 }
             } else if (propInfo.jsonXmlType.isCollection() && propInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
                 columnColl = (Collection<HBaseColumn<?>>) propValue;
 
                 for (final HBaseColumn<?> e : columnColl) {
-                    anyPut.addColumn(tp._1, columnName, e.version(), e.value());
-
+                    addVersionedColumn(anyPut, tp._1, columnName, e);
                 }
             } else if (propInfo.jsonXmlType.javaType().equals(HBaseColumn.class)) {
                 column = (HBaseColumn<?>) propValue;
-                anyPut.addColumn(tp._1, columnName, column.version(), column.value());
+                addVersionedColumn(anyPut, tp._1, columnName, column);
             } else {
                 anyPut.addColumn(tp._1, columnName, propValue);
             }
         }
 
         return anyPut;
+    }
+
+    /**
+     * Queues one versioned cell for {@code column}, unless its value is an empty value wrapper.
+     *
+     * @param anyPut the put to add the cell to
+     * @param family the column family
+     * @param qualifier the column qualifier
+     * @param column the versioned value
+     * @throws NullPointerException if {@code column} is {@code null}
+     * @throws IllegalArgumentException if a cell is queued and {@code column}'s version is negative
+     */
+    private static void addVersionedColumn(final AnyPut anyPut, final String family, final String qualifier, final HBaseColumn<?> column)
+            throws NullPointerException, IllegalArgumentException {
+        final Object value = column.value();
+
+        // Same rule as for a property holding the wrapper directly: an empty cell would read back as a present "" for a
+        // String element, so this version writes no cell (the element type is not known from the value, so every empty
+        // wrapper is skipped, as at the property level). A null value is still written as an empty cell, as before.
+        if (!HBaseExecutor.isEmptyValueWrapper(value)) {
+            anyPut.addColumn(family, qualifier, column.version(), value);
+        }
     }
 
     /**
@@ -1243,7 +1344,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *               default {@code KeyValueCodec} — a custom {@code hbase.client.rpc.codec} may differ)
      * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param value the value to store; automatically converted to bytes ({@code null} is permitted
-     *              and stored as an empty value)
+     *              and stored as an empty value; a value with no string form, such as an empty
+     *              {@code Optional}, is stored like {@code null})
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
@@ -1287,7 +1389,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *               default {@code KeyValueCodec} — a custom {@code hbase.client.rpc.codec} may differ)
      * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
-     * @param value the value to store; automatically converted to bytes ({@code null} is permitted)
+     * @param value the value to store; automatically converted to bytes ({@code null} is permitted and
+     *              stored as an empty value; a value with no string form, such as an empty {@code Optional},
+     *              is stored like {@code null})
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code ts} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
      *         maximum size
@@ -1607,7 +1711,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <p>This utility method converts a mixed collection of Java entity objects and AnyPut
      * instances to native HBase Put objects suitable for batch operations. Entity objects
      * are automatically converted using the default camelCase naming policy, while
-     * AnyPut instances have their underlying Put objects extracted. This is useful for
+     * AnyPut instances have their underlying Put objects extracted and native Put elements are returned as they are. Any other
+     * HBase operation or {@code Any*} wrapper element is rejected. This is useful for
      * batch put operations with the native HBase client API.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1617,10 +1722,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * mixed.add(new User("user2", "Jane", "ja@x"));                     // Entity
      * AnyPut anyPut = AnyPut.of("user3").addColumn("info", "name", "Bob");
      * mixed.add(anyPut);                                                // AnyPut
+     * Put nativePut = new Put(Bytes.toBytes("user4")).addColumn(Bytes.toBytes("info"), Bytes.toBytes("name"), Bytes.toBytes("Dan"));
+     * mixed.add(nativePut);                                             // Put
      *
      * List<Put> puts = AnyPut.toPut(mixed);
-     * int count = puts.size();                         // 3
+     * int count = puts.size();                         // 4
      * boolean sameRef = puts.get(2) == anyPut.val();   // true: AnyPut.val() returned directly
+     * boolean samePut = puts.get(3) == nativePut;      // true: a Put element is returned as is
      * table.put(puts);                                 // Batch put with native HBase API
      *
      * // Edge: an empty collection yields an empty list.
@@ -1630,11 +1738,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.toPut(null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements
+     * @param entities the collection of entities, AnyPut and/or Put instances to convert; must not be null and must not contain null elements
      * @return a list of native HBase Put objects, in iteration order of {@code entities}
-     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an entity to convert is not a bean or has
-     *         missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a column version is
-     *         negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entities} or one of its elements is {@code null}, an element is an HBase operation
+     *         ({@code Operation}/{@code Row}) or {@code Any*} wrapper other than a {@code Put} or {@code AnyPut}, an entity to convert is not a
+     *         bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
+     *         column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #toPut(Collection, NamingPolicy)
@@ -1651,7 +1760,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         final List<Put> puts = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
-            puts.add(entity instanceof AnyPut anyPut ? anyPut.val() : AnyPut.create(entity).val());
+            puts.add(entity instanceof AnyPut anyPut ? anyPut.val() : entity instanceof Put put ? put : AnyPut.create(entity).val());
         }
 
         return puts;
@@ -1662,7 +1771,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>This utility method performs the same conversion as {@link #toPut(Collection)} but allows
      * specifying a custom naming policy for entity-to-column name conversion. This is useful when
-     * working with entities that need specific naming conventions like SNAKE_CASE or UPPER_CAMEL_CASE.</p>
+     * working with entities that need specific naming conventions like SNAKE_CASE or UPPER_CAMEL_CASE. AnyPut and native Put
+     * elements are passed through as by {@link #toPut(Collection)}; the naming policy is not applied to them.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1680,12 +1790,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.toPut(users, (NamingPolicy) null);      // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements
+     * @param entities the collection of entities, AnyPut and/or Put instances to convert; must not be null and must not contain null elements
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of native HBase Put objects, in iteration order of {@code entities}
-     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an entity to convert is
-     *         not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds 32,767 bytes, a
-     *         column version is negative, or an encoded column family exceeds 127 bytes
+     * @throws IllegalArgumentException if {@code entities} or one of its elements or {@code namingPolicy} is {@code null}, an element is an
+     *         HBase operation ({@code Operation}/{@code Row}) or {@code Any*} wrapper other than a {@code Put} or {@code AnyPut}, an entity to
+     *         convert is not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null, empty or exceeds
+     *         32,767 bytes, a column version is negative, or an encoded column family exceeds 127 bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #toPut(Collection)
@@ -1704,7 +1815,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         final List<Put> puts = new ArrayList<>(entities.size());
 
         for (final Object entity : entities) {
-            puts.add(entity instanceof AnyPut anyPut ? anyPut.val() : AnyPut.create(entity, namingPolicy).val());
+            puts.add(entity instanceof AnyPut anyPut ? anyPut.val() : entity instanceof Put put ? put : AnyPut.create(entity, namingPolicy).val());
         }
 
         return puts;

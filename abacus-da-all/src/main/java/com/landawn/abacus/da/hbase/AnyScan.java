@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.NavigableSet;
 
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.client.Cursor;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Scan;
@@ -129,13 +130,14 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * {@link #withStartRow(Object)}.</p>
      *
      * @param startRow row to start scanner at or after; converted via {@link HBaseExecutor#toRowKeyBytes(Object)}
+     *                 ({@code null} is stored as the empty, unbounded row)
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
     @Deprecated
     AnyScan(final Object startRow) throws IllegalArgumentException, RuntimeException {
-        super(new Scan(toRowKeyBytes(startRow)));
+        super(new Scan(toRowBoundBytes(startRow, HConstants.EMPTY_START_ROW)));
         scan = (Scan) query;
     }
 
@@ -143,15 +145,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Constructs a new AnyScan for the range of rows specified. Package-private; callers should use
      * {@link #create()} chained with {@link #withStartRow(Object)} and {@link #withStopRow(Object)}.
      *
-     * @param startRow row to start scanner at or after (inclusive)
-     * @param stopRow row to stop scanner before (exclusive)
+     * @param startRow row to start scanner at or after (inclusive); {@code null} is stored as the empty, unbounded row
+     * @param stopRow row to stop scanner before (exclusive); {@code null} is stored as the empty, unbounded row
      * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow}, {@code stopRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).withStopRow(stopRow)} instead.
      */
     @Deprecated
     AnyScan(final Object startRow, final Object stopRow) throws IllegalArgumentException, RuntimeException {
-        super(new Scan(toRowKeyBytes(startRow), toRowKeyBytes(stopRow)));
+        super(new Scan(toRowBoundBytes(startRow, HConstants.EMPTY_START_ROW), toRowBoundBytes(stopRow, HConstants.EMPTY_END_ROW)));
         scan = (Scan) query;
     }
 
@@ -160,7 +162,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * callers should use {@link #create()} chained with {@link #withStartRow(Object)} and
      * {@link AnyQuery#setFilter(Filter)}.
      *
-     * @param startRow row to start scanner at or after
+     * @param startRow row to start scanner at or after; {@code null} is stored as the empty, unbounded row
      * @param filter the {@link Filter} to apply to the scan
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
@@ -168,7 +170,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      */
     @Deprecated
     AnyScan(final Object startRow, final Filter filter) throws IllegalArgumentException, RuntimeException {
-        super(new Scan(toRowKeyBytes(startRow), filter));
+        super(new Scan(toRowBoundBytes(startRow, HConstants.EMPTY_START_ROW), filter));
         scan = (Scan) query;
     }
 
@@ -203,6 +205,18 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      */
     AnyScan(final Get get) throws IllegalArgumentException, ArrayIndexOutOfBoundsException, NullPointerException {
         this(new Scan(N.checkArgNotNull(get, cs.get)));
+    }
+
+    // A null row bound must not reach the wrapped Scan: HBase's sync scanner treats only the EMPTY array as
+    // unbounded (ConnectionUtils.isEmptyStartRow/isEmptyStopRow use Bytes.equals(row, EMPTY), false for null).
+    // A null stop row ended a forward scan after its first region, a null start row made a reversed scan read
+    // only the first region, and an exclusive null start row threw NullPointerException when the scanner opened.
+    // Store the empty row instead, as Scan's defaults and setStartStopRowForPrefixScan(null) do. The same holds for a
+    // row that converts to null bytes, i.e. an empty value wrapper such as Optional.empty() (see toRowKeyBytes).
+    private static byte[] toRowBoundBytes(final Object row, final byte[] emptyRow) throws RuntimeException {
+        final byte[] rowBytes = row == null ? null : toRowKeyBytes(row);
+
+        return rowBytes == null ? emptyRow : rowBytes;
     }
 
     /**
@@ -295,16 +309,16 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan scan = AnyScan.of("user_001");
      * byte[] start = scan.getStartRow();   // returns the bytes of "user_001"
      *
-     * // A null start row is tolerated: the resulting scan has a null start row.
+     * // A null start row is tolerated: it is stored as the empty (unbounded) row.
      * AnyScan nullStart = AnyScan.of((Object) null);   // no exception
-     * byte[] sr = nullStart.getStartRow();             // returns null
+     * int nullLen = nullStart.getStartRow().length;    // returns 0
      *
      * // An empty byte[] start row is also tolerated.
      * AnyScan emptyStart = AnyScan.of(new byte[0]);    // no exception
      * int len = emptyStart.getStartRow().length;       // returns 0
      * }</pre>
      *
-     * @param startRow row to start scanner at or after
+     * @param startRow row to start scanner at or after; {@code null} is stored as the empty, unbounded row
      * @return a new AnyScan instance configured with the specified start row
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
@@ -333,13 +347,13 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * // Edge: equal start and stop rows make a single-row scan (stop row inclusive).
      * boolean single = AnyScan.of("a", "a").isGetScan();   // returns true
      *
-     * // A null start row is tolerated; the resulting start row is null.
+     * // A null start or stop row is tolerated; it is stored as the empty (unbounded) row.
      * AnyScan nullStart = AnyScan.of((Object) null, "z");   // no exception
-     * byte[] sr = nullStart.getStartRow();                  // returns null
+     * int len = nullStart.getStartRow().length;             // returns 0
      * }</pre>
      *
-     * @param startRow row to start scanner at or after (inclusive)
-     * @param stopRow row to stop scanner before (exclusive)
+     * @param startRow row to start scanner at or after (inclusive); {@code null} is stored as the empty, unbounded row
+     * @param stopRow row to stop scanner before (exclusive); {@code null} is stored as the empty, unbounded row
      * @return a new AnyScan instance configured with the specified start and stop rows
      * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow}, {@code stopRow} to bytes invokes a failing string conversion
@@ -362,7 +376,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Filter f = scan.getFilter();         // returns the same filter instance
      * }</pre>
      *
-     * @param startRow row to start scanner at or after
+     * @param startRow row to start scanner at or after; {@code null} is stored as the empty, unbounded row
      * @param filter the filter to apply to the scan
      * @return a new AnyScan instance configured with the specified start row and filter
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
@@ -972,7 +986,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * byte[] sr = scan.getStartRow();    // returns the bytes of "a"
      * }</pre>
      *
-     * @return the start row key as a byte array; empty or {@code null} for an unbounded start
+     * @return the start row key as a byte array; empty for an unbounded start ({@code null} only if a
+     *         {@code null} row was set directly on the wrapped {@link Scan})
      * @see #withStartRow(Object)
      * @see #includeStartRow()
      */
@@ -999,9 +1014,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * int len = empty.getStartRow().length;                         // returns 0
      * }</pre>
      *
-     * @param startRow the row key to start scanning from (inclusive); may be {@code null}, which
-     *                 leaves the scan with an open lower bound ({@link #getStartRow()} then returns
-     *                 {@code null})
+     * @param startRow the row key to start scanning from (inclusive); may be {@code null}, which is
+     *                 stored as the empty row and leaves the scan with an open lower bound
+     *                 ({@link #getStartRow()} then returns an empty array)
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
@@ -1009,7 +1024,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #includeStartRow()
      */
     public AnyScan withStartRow(final Object startRow) throws IllegalArgumentException, RuntimeException {
-        scan.withStartRow(toRowKeyBytes(startRow));
+        scan.withStartRow(toRowBoundBytes(startRow, HConstants.EMPTY_START_ROW));
 
         return this;
     }
@@ -1030,8 +1045,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * boolean incl = scan.includeStartRow();                             // returns false (exclusive)
      * }</pre>
      *
-     * @param startRow the row key to start scanning from; may be {@code null}, which leaves the
-     *                 scan with an open lower bound
+     * @param startRow the row key to start scanning from; may be {@code null}, which is stored as the
+     *                 empty row and leaves the scan with an open lower bound
      * @param inclusive {@code true} to include the start row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
@@ -1040,7 +1055,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #includeStartRow()
      */
     public AnyScan withStartRow(final Object startRow, final boolean inclusive) throws IllegalArgumentException, RuntimeException {
-        scan.withStartRow(toRowKeyBytes(startRow), inclusive);
+        scan.withStartRow(toRowBoundBytes(startRow, HConstants.EMPTY_START_ROW), inclusive);
 
         return this;
     }
@@ -1087,7 +1102,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * byte[] sr = scan.getStopRow();    // returns the bytes of "z"
      * }</pre>
      *
-     * @return the stop row key as a byte array; empty or {@code null} for an unbounded stop
+     * @return the stop row key as a byte array; empty for an unbounded stop ({@code null} only if a
+     *         {@code null} row was set directly on the wrapped {@link Scan})
      * @see #withStopRow(Object)
      * @see #includeStopRow()
      */
@@ -1109,9 +1125,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * boolean incl = scan.includeStopRow();                      // returns false (exclusive)
      * }</pre>
      *
-     * @param stopRow the row key to stop scanning before (exclusive); may be {@code null}, which
-     *                leaves the scan with an open upper bound ({@link #getStopRow()} then returns
-     *                {@code null})
+     * @param stopRow the row key to stop scanning before (exclusive); may be {@code null}, which is
+     *                stored as the empty row and leaves the scan with an open upper bound
+     *                ({@link #getStopRow()} then returns an empty array)
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code stopRow} to bytes invokes a failing string conversion
@@ -1119,7 +1135,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #includeStopRow()
      */
     public AnyScan withStopRow(final Object stopRow) throws IllegalArgumentException, RuntimeException {
-        scan.withStopRow(toRowKeyBytes(stopRow));
+        scan.withStopRow(toRowBoundBytes(stopRow, HConstants.EMPTY_END_ROW));
 
         return this;
     }
@@ -1140,8 +1156,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * boolean incl = scan.includeStopRow();                            // returns true (inclusive)
      * }</pre>
      *
-     * @param stopRow the row key to stop scanning at; may be {@code null}, which leaves the scan
-     *                with an open upper bound
+     * @param stopRow the row key to stop scanning at; may be {@code null}, which is stored as the
+     *                empty row and leaves the scan with an open upper bound
      * @param inclusive {@code true} to include the stop row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
@@ -1150,7 +1166,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @see #includeStopRow()
      */
     public AnyScan withStopRow(final Object stopRow, final boolean inclusive) throws IllegalArgumentException, RuntimeException {
-        scan.withStopRow(toRowKeyBytes(stopRow), inclusive);
+        scan.withStopRow(toRowBoundBytes(stopRow, HConstants.EMPTY_END_ROW), inclusive);
 
         return this;
     }

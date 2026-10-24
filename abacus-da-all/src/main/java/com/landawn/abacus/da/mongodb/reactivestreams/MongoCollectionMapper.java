@@ -85,6 +85,11 @@ import reactor.core.publisher.Mono;
  *       built, that is, before subscription.</li>
  *   <li><strong>Back-pressure support:</strong> Streaming {@code Flux} operations propagate
  *       Reactive Streams {@code Subscription.request(n)} demand to the driver.</li>
+ *   <li><strong>No {@code null} elements:</strong> Reactive Streams forbids {@code null} elements, so a row or value that
+ *       converts to {@code null} (for example a missing field read into a single-value {@code T} such as {@code String})
+ *       is skipped by a {@code Flux} and makes a {@code Mono} complete empty; the blocking
+ *       {@link com.landawn.abacus.da.mongodb.MongoCollectionMapper} can return {@code null} list elements or a
+ *       present-but-null value in those cases.</li>
  *   <li><strong>Error propagation:</strong> Database errors are signalled via
  *       {@code Subscriber.onError}; argument validation and write-value conversion can fail
  *       synchronously while the publisher is being built.</li>
@@ -568,6 +573,10 @@ public final class MongoCollectionMapper<T> {
      * its ObjectId string, then convert the result to the mapped entity type. Field projection helps
      * reduce network traffic and memory usage by only retrieving necessary fields.</p>
      *
+     * <p>For a single-value {@code T} (such as {@code String}) with exactly one selected field, the emitted value is that
+     * field's value converted to {@code T} (a dotted path such as {@code "address.city"} is resolved); when the matched
+     * document's value is missing or {@code null}, the {@code Mono} completes empty, as if no document had matched.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: fetch only the listed fields (plus _id); other fields stay at their default values.
@@ -607,8 +616,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method provides a reactive way to retrieve specific fields from a document identified by
      * its ObjectId, then convert the result to the mapped entity type. Field projection reduces
-     * network traffic and memory usage by only retrieving necessary fields.</p>
-     * 
+     * network traffic and memory usage by only retrieving necessary fields. A single-value {@code T} with exactly
+     * one selected field receives that field's value, as described by {@link #get(String, Collection)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: typed id + projection -> partially populated entity.
@@ -699,6 +709,11 @@ public final class MongoCollectionMapper<T> {
      * that matches the given filter criteria, then convert the result to the mapped entity type.
      * Field projection reduces network traffic and memory usage.</p>
      *
+     * <p>For a single-value {@code T} (such as {@code String}) with exactly one selected field, the emitted value is that
+     * field's value converted to {@code T} (a dotted path such as {@code "address.city"} is resolved); when the first
+     * matched document's value is missing or {@code null}, the {@code Mono} completes empty, as if no document had
+     * matched.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: first match, only the listed fields populated.
@@ -740,7 +755,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method provides a reactive way to retrieve specific fields from the first document
      * that matches the given filter criteria with custom sorting, then convert the result to the
-     * mapped entity type. Field projection and sorting help optimize query performance.</p>
+     * mapped entity type. Field projection and sorting help optimize query performance. A single-value {@code T}
+     * with exactly one selected field receives that field's value, as described by
+     * {@link #findFirst(Collection, Bson)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -785,6 +802,12 @@ public final class MongoCollectionMapper<T> {
      * <p>This method provides a reactive way to retrieve documents with advanced BSON projection
      * that matches the given filter criteria with custom sorting, then convert the result to the
      * mapped entity type. This overload allows for complex projection expressions.</p>
+     *
+     * <p>For a single-value {@code T} (such as {@code String}), the document's sole non-{@code _id} field is converted,
+     * and a {@code null} value completes the {@code Mono} empty (a primitive class token such as {@code int.class} emits
+     * its default, such as {@code 0}, instead). A matched document that has only its {@code _id} (for
+     * example because it lacks the projected field) has its {@code _id} converted instead; use
+     * {@link #findFirst(Collection, Bson, Bson)} to complete empty in that case.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -920,6 +943,10 @@ public final class MongoCollectionMapper<T> {
      * in the result. This is useful for optimizing network traffic and memory usage when only
      * certain fields are needed.</p>
      *
+     * <p>For a single-value {@code T} (such as {@code String}) with exactly one selected field, each emission is that
+     * field's value converted to {@code T} (a dotted path such as {@code "address.city"} is resolved); a document whose
+     * value is missing or {@code null} is not emitted, because Reactive Streams forbids {@code null} elements.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: stream entities with only name/email (plus _id) populated.
@@ -957,8 +984,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Combines field projection with pagination to retrieve a subset of documents with only
      * specific fields populated. This provides maximum control over the query results for
-     * efficient data retrieval.</p>
-     * 
+     * efficient data retrieval. A single-value {@code T} with exactly one selected field receives that field's
+     * values, as described by {@link #list(Collection, Bson)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: projected first page — skip 0, take up to 50.
@@ -996,8 +1024,10 @@ public final class MongoCollectionMapper<T> {
      * Lists entities with specified fields and sorting.
      *
      * <p>Retrieves documents matching the filter criteria with specified field projection and
-     * sorting order. The results are streamed in the order defined by the sort specification.</p>
-     * 
+     * sorting order. The results are streamed in the order defined by the sort specification. A single-value
+     * {@code T} with exactly one selected field receives that field's values, as described by
+     * {@link #list(Collection, Bson)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: newest-first ordering via a descending sort on createdAt.
@@ -1036,8 +1066,10 @@ public final class MongoCollectionMapper<T> {
      * Lists entities with full control over projection, filtering, sorting, and pagination.
      *
      * <p>Provides complete control over the query execution including field selection, filtering,
-     * sorting, and pagination. This is the most flexible list method for complex query requirements.</p>
-     * 
+     * sorting, and pagination. This is the most flexible list method for complex query requirements. A
+     * single-value {@code T} with exactly one selected field receives that field's values, as described by
+     * {@link #list(Collection, Bson)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: top-10 leaderboard — descending score, first page.
@@ -1079,7 +1111,13 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Uses a MongoDB projection document to control which fields are included or excluded
      * in the results. This provides fine-grained control over field inclusion/exclusion patterns.</p>
-     * 
+     *
+     * <p>For a single-value {@code T} (such as {@code String}), each document's sole non-{@code _id} field is converted,
+     * and a document whose value is {@code null} is not emitted (for a primitive class token such as {@code int.class}
+     * its default, such as {@code 0}, is emitted instead). A document that has only its {@code _id} (for example
+     * because it lacks the projected field) has its {@code _id} converted instead; exclude {@code _id} from the
+     * projection, or use {@link #list(Collection, Bson, Bson)}, to skip such documents.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: include name/email, drop _id; null sort means natural order (sort is optional here).
@@ -1120,8 +1158,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Combines BSON projection with filtering, sorting, and pagination for maximum query
      * flexibility. This method is ideal for complex queries requiring precise control over
-     * all aspects of the result set.</p>
-     * 
+     * all aspects of the result set. A single-value {@code T} receives each document's sole non-{@code _id} field (or
+     * the {@code _id} of a document that lacks the projected field), as described by {@link #list(Bson, Bson, Bson)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: projected, sorted first page of up to 100.
@@ -1718,7 +1757,8 @@ public final class MongoCollectionMapper<T> {
      * {@link MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)}.</p>
      *
      * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
-     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * document matches the filter, or when a matching document's named field is absent or BSON null (or
+     * holds a value that converts to {@code null}, such as empty text requested as a number or date).
      * Otherwise it emits the converted value and then completes. Subscribers cannot distinguish "no
      * document matched" from "document matched but value is null" purely from the reactive signal —
      * use the blocking sync API when that distinction is required. Exception: for a <i>primitive</i>
@@ -3809,7 +3849,11 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>If {@code fieldNames} contains only one distinct field and the mapper has a single-value row type,
      * each group key is converted to that type. The null-key group is omitted, including for a primitive
-     * class token such as {@code int.class}, without emitting a primitive default.</p>
+     * class token such as {@code int.class}, without emitting a primitive default. With two or more distinct
+     * fields each row carries one value per field, so a single-value {@code T} cannot hold it: the publisher
+     * then signals an {@link IllegalArgumentException}. Exception: dotted fields under one top-level field (such
+     * as {@code "a.b"} and {@code "a.c"}) arrive as the single nested document {@code {a: {b: ..., c: ...}}},
+     * which is converted as a whole (to its JSON text for {@code String}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -122,11 +122,16 @@ import com.mongodb.client.result.UpdateResult;
  *   <li>{@link #bulkWrite(List)} and {@link #bulkWrite(List, BulkWriteOptions)} send all
  *       {@link WriteModel}s in a single bulk-write call to the server. Each individual write is
  *       atomic on its target document, but the bulk as a whole is <strong>not</strong> atomic
- *       across documents — it is not a transaction. Use a session-bound transaction at the
- *       executor level if cross-document atomicity is required.</li>
+ *       across documents — it is not a transaction. Neither this class nor {@link MongoCollectionExecutor}
+ *       has {@code ClientSession}-taking overloads, so if cross-document atomicity is required, run the
+ *       writes in a driver transaction on {@link #collectionExecutor()}{@code .coll()} with a
+ *       {@code ClientSession} started from the owning {@code MongoClient}.</li>
  *   <li>With {@code ordered = true} (the driver default), the server stops at the first failing
  *       operation; earlier successful operations remain applied. With {@code ordered = false},
- *       all operations are attempted and errors are reported in the bulk result.</li>
+ *       all operations are attempted. In both modes a failed write makes the call throw
+ *       {@link MongoBulkWriteException} instead of returning a result: its
+ *       {@link MongoBulkWriteException#getWriteErrors() getWriteErrors()} lists the failed operations and
+ *       {@link MongoBulkWriteException#getWriteResult() getWriteResult()} counts the writes that were applied.</li>
  *   <li>{@link #insertMany(Collection)} has the same per-document atomicity guarantees as
  *       {@code bulkWrite} with insert models.</li>
  * </ul>
@@ -832,6 +837,11 @@ public final class MongoCollectionMapper<T> {
      * computed fields, array slicing, and conditional inclusions. This is the most flexible
      * findFirst variant for complex projection requirements.</p>
      *
+     * <p>For a single-value {@code T} (such as {@code String}), the document's sole non-{@code _id} field is
+     * converted; a matched document that has only its {@code _id} (for example because it lacks the projected
+     * field) has its {@code _id} converted instead. Use {@link #findFirst(Collection, Bson, Bson)} to get
+     * {@link Optional#empty()} in that case.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Article> mapper = mongoDB.collectionMapper(Article.class);
@@ -1107,6 +1117,12 @@ public final class MongoCollectionMapper<T> {
      * more advanced projection capabilities such as computed fields, subdocument selection,
      * and MongoDB aggregation-style projections. All matching entities are returned in sorted order.</p>
      *
+     * <p>For a single-value {@code T} (such as {@code String}), each document's sole non-{@code _id} field is
+     * converted. A document that has only its {@code _id} (for example because it lacks the projected field)
+     * yields {@code null} (the primitive default, such as {@code 0}, for a primitive class token such as
+     * {@code int.class}) when another returned document has the projected field, but its converted {@code _id}
+     * when none does. Use {@link #list(Collection, Bson, Bson)} to always get {@code null} for a missing field.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
@@ -1147,6 +1163,13 @@ public final class MongoCollectionMapper<T> {
      * <p>This method provides maximum querying flexibility using BSON-based projection with
      * pagination support. It enables advanced field transformations, computed fields, and
      * subdocument selections while efficiently handling large result sets through pagination.</p>
+     *
+     * <p>For a single-value {@code T} (such as {@code String}), each document's sole non-{@code _id} field is
+     * converted. A document that has only its {@code _id} (for example because it lacks the projected field)
+     * yields {@code null} (the primitive default, such as {@code 0}, for a primitive class token such as
+     * {@code int.class}) when another returned document has the projected field, but its converted {@code _id}
+     * when none does. Use {@link #list(Collection, Bson, Bson, int, int)} to always get {@code null} for a missing
+     * field.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2318,7 +2341,12 @@ public final class MongoCollectionMapper<T> {
      * <p>This method uses BSON-based projection for advanced field selection and transformation
      * combined with sorting. BSON projection allows for computed fields, subdocument selection,
      * and complex transformations during the streaming process.</p>
-     * 
+     *
+     * <p>For a single-value {@code T} (such as {@code String}), each document's sole non-{@code _id} field is
+     * converted; a document that has only its {@code _id} (for example because it lacks the projected field) has
+     * its {@code _id} converted instead. Use {@link #stream(Collection, Bson, Bson)} to get {@code null} for a
+     * missing field.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
@@ -2364,7 +2392,12 @@ public final class MongoCollectionMapper<T> {
      * <p>This method provides maximum streaming flexibility using BSON-based projection with
      * pagination and sorting. It enables the most sophisticated data processing scenarios
      * with computed fields, complex transformations, and precise data windowing.</p>
-     * 
+     *
+     * <p>For a single-value {@code T} (such as {@code String}), each document's sole non-{@code _id} field is
+     * converted; a document that has only its {@code _id} (for example because it lacks the projected field) has
+     * its {@code _id} converted instead. Use {@link #stream(Collection, Bson, Bson, int, int)} to get {@code null}
+     * for a missing field.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Analytics> mapper = mongoDB.collectionMapper(Analytics.class);
@@ -4004,7 +4037,11 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>If {@code fieldNames} contains only one distinct field and the mapper has a single-value row type,
      * each group key is converted to that type. A primitive class token (such as {@code int.class}) omits the
-     * null-key group; a wrapper or reference single-value type receives a {@code null} element.</p>
+     * null-key group; a wrapper or reference single-value type receives a {@code null} element. With two or more
+     * distinct fields each row carries one value per field, so a single-value {@code T} cannot hold it: consuming
+     * the returned stream then fails with {@link IllegalArgumentException}. Exception: dotted fields under one top-level
+     * field (such as {@code "a.b"} and {@code "a.c"}) arrive as the single nested document {@code {a: {b: ..., c: ...}}},
+     * which is converted as a whole (to its JSON text for {@code String}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4046,6 +4083,11 @@ public final class MongoCollectionMapper<T> {
      * declares a matching property. This is useful for generating summary statistics and understanding
      * data distribution.</p>
      *
+     * <p>A {@link Document} {@code T} receives the raw {@code {_id: <key>, count: <n>}} group documents; other Map, bean and
+     * {@code Object} types receive {@code {<fieldName>: <key>, count: <n>}} rows. Because each row carries both the group
+     * key and its count, a single-value {@code T} (such as {@code String}) cannot hold it: consuming the returned stream
+     * then fails with {@link IllegalArgumentException}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // One entity per "status" group, each carrying its member count:
@@ -4084,7 +4126,9 @@ public final class MongoCollectionMapper<T> {
      * <p>This method groups entities by multiple field values and includes the count of entities
      * in each group. The count surfaces under a {@code count} field on the entity and is only readable
      * if the entity declares a matching property. This enables multi-dimensional analysis with count
-     * statistics for complex data aggregation scenarios.</p>
+     * statistics for complex data aggregation scenarios. As with {@link #groupByAndCount(String)}, a single-value
+     * {@code T} (such as {@code String}) cannot hold a key-plus-count row, even for a single field: consuming the
+     * returned stream then fails with {@link IllegalArgumentException}.</p>
      *
      * <p>Documents that lack one of the group fields and documents holding {@code null} in it form one group. In the
      * result that field is present with the value {@code null} &mdash; inside {@code _id} when {@code T} is

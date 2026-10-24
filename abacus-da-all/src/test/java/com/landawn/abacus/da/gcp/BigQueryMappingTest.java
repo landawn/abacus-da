@@ -1652,4 +1652,249 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
         assertEquals(Arrays.asList((Boolean) null), BigQueryExecutor.toList(mockTableResult, Boolean.class));
         assertEquals(Arrays.asList(Boolean.FALSE), BigQueryExecutor.toList(mockTableResult, boolean.class));
     }
+
+    // ---- 2026-10-24 sliceL ----
+
+    private static final com.google.cloud.Date SLICEL_JAN_2 = com.google.cloud.Date.fromYearMonthDay(2024, 1, 2);
+    private static final com.google.cloud.Date SLICEL_MAR_4 = com.google.cloud.Date.fromYearMonthDay(2024, 3, 4);
+
+    private static SliceLGoogleDateBean sliceLGoogleDateEntity(final Field field, final FieldValue cell) {
+        final FieldList fields = FieldList.of(field);
+
+        return BigQueryExecutor.toEntity(fields, FieldValueList.of(Arrays.asList(cell), fields), SliceLGoogleDateBean.class);
+    }
+
+    // The client's shape of a REPEATED DATE cell: a schema-less FieldValueList with the REPEATED attribute.
+    private static FieldValue sliceLRepeatedDates() {
+        return FieldValue.of(FieldValue.Attribute.REPEATED, FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-01-02"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-03-04"))));
+    }
+
+    /**
+     * The executor binds a {@code com.google.cloud.Date} as a native DATE parameter, so a DATE cell must read back into one.
+     * abacus-common has no conversion to that class: a bean property, a single-value read and a typed array row failed with
+     * "Conversion returned java.lang.String for com.google.cloud.Date", a {@code com.google.cloud.Date[]} property with a
+     * ParsingException, and a {@code List<com.google.cloud.Date>} property silently held the String cell texts
+     * (ClassCastException on element access).
+     */
+    @Test
+    public void testDateCellReadsIntoGoogleCloudDate_sliceL() throws Exception {
+        final Field repeatedField = Field.newBuilder("days", StandardSQLTypeName.DATE).setMode(Field.Mode.REPEATED).build();
+        final Field repeatedArrayField = Field.newBuilder("dayArray", StandardSQLTypeName.DATE).setMode(Field.Mode.REPEATED).build();
+        final QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT v FROM t").build();
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(
+                        () -> assertEquals(SLICEL_JAN_2,
+                                sliceLGoogleDateEntity(Field.of("day", StandardSQLTypeName.DATE), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-01-02"))
+                                        .getDay(),
+                                "bean property"),
+                        () -> assertNull(
+                                sliceLGoogleDateEntity(Field.of("day", StandardSQLTypeName.DATE), FieldValue.of(FieldValue.Attribute.PRIMITIVE, null)).getDay(),
+                                "NULL cell"),
+                        () -> assertEquals(Arrays.asList(SLICEL_JAN_2, SLICEL_MAR_4), sliceLGoogleDateEntity(repeatedField, sliceLRepeatedDates()).getDays(),
+                                "List<com.google.cloud.Date> property elements"),
+                        () -> org.junit.jupiter.api.Assertions.assertArrayEquals(new com.google.cloud.Date[] { SLICEL_JAN_2, SLICEL_MAR_4 },
+                                sliceLGoogleDateEntity(repeatedArrayField, sliceLRepeatedDates()).getDayArray(), "com.google.cloud.Date[] property"),
+                        () -> {
+                            final FieldList fields = FieldList.of(Field.of("day", StandardSQLTypeName.DATE));
+                            final List<FieldValueList> rows = Arrays
+                                    .asList(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-01-02")), fields));
+                            final TableResult tableResult = mock(TableResult.class);
+                            when(tableResult.getSchema()).thenReturn(Schema.of(fields));
+                            when(tableResult.getTotalRows()).thenReturn(1L);
+                            when(tableResult.iterateAll()).thenReturn(rows);
+
+                            assertEquals(Arrays.asList(SLICEL_JAN_2), BigQueryExecutor.extractData(tableResult, SliceLGoogleDateBean.class).getColumn("day"),
+                                    "bean-class Dataset column");
+                        }, () -> {
+                            stubSingleBqCell(StandardSQLTypeName.DATE, "2024-01-02");
+                            assertEquals(SLICEL_JAN_2, executor.queryForSingleValue(com.google.cloud.Date.class, "SELECT v FROM t").orElse(null),
+                                    "queryForSingleValue");
+                            assertEquals(SLICEL_JAN_2, executor.queryForSingleNonNull(com.google.cloud.Date.class, "SELECT v FROM t").get(),
+                                    "queryForSingleNonNull");
+                            assertEquals(Arrays.asList(SLICEL_JAN_2), BigQueryExecutor.toList(mockTableResult, com.google.cloud.Date.class), "toList");
+                            assertEquals(Arrays.asList(SLICEL_JAN_2), executor.stream(com.google.cloud.Date.class, cfg).toList(), "stream");
+                            org.junit.jupiter.api.Assertions.assertArrayEquals(new com.google.cloud.Date[] { SLICEL_JAN_2 },
+                                    BigQueryExecutor.toList(mockTableResult, com.google.cloud.Date[].class).get(0), "typed array row");
+                        },
+                        // The cell text is exactly what the same value binds as: the write and read sides agree.
+                        () -> assertEquals("2024-01-02", BigQueryExecutor.buildQueryParameterValue(SLICEL_JAN_2).get(0).getValue(), "DATE parameter text"));
+    }
+
+    /**
+     * Pins the class Javadoc's advice for a table or column name that is a GoogleSQL reserved keyword: generated names are
+     * not quoted (only the AS aliases are), and a backtick-quoted {@code @Table}/{@code @Column} name is emitted verbatim in
+     * every generated statement, including a property name inside a raw {@code Filters.expr}.
+     */
+    @Test
+    public void testReservedKeywordNamesNeedBacktickQuotedAnnotations_sliceL() throws Exception {
+        when(mockTableResult.getSchema()).thenReturn(null);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.list(SliceLKeywordOrder.class,
+                com.landawn.abacus.query.Filters.and(com.landawn.abacus.query.Filters.eq("from", 1), com.landawn.abacus.query.Filters.expr("from > 0")));
+        assertEquals("SELECT `from` AS `from`, name AS `name` FROM `order` WHERE (`from` = ?) AND (`from` > 0)", captureGeneratedSql());
+
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        final SliceLKeywordOrder order = new SliceLKeywordOrder();
+        order.setFrom(1);
+        order.setName("a");
+        executor.insert(order);
+        assertEquals("INSERT INTO `order` (`from`, name) VALUES (?, ?)", captureGeneratedSql());
+
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        executor.update(order, N.asSet("from"));
+        assertEquals("UPDATE `order` SET name = ? WHERE `from` = ?", captureGeneratedSql());
+
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        executor.delete(SliceLKeywordOrder.class, com.landawn.abacus.query.Filters.eq("from", 1));
+        assertEquals("DELETE FROM `order` WHERE `from` = ?", captureGeneratedSql());
+
+        // Without the annotations, the keyword names are emitted bare (a syntax error in BigQuery).
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        executor.list(SliceLBareKeywordOrder.class, com.landawn.abacus.query.Filters.eq("from", 1));
+        assertEquals("SELECT from AS `from` FROM order WHERE from = ?", captureGeneratedSql());
+    }
+
+    /**
+     * Pins the class Javadoc's zone rule: a TIMESTAMP read into a local or zoned java.time target is the instant in the JVM
+     * default time zone (the expected values are derived from that zone, so the test holds in any zone).
+     */
+    @Test
+    public void testTimestampIntoLocalAndZonedJavaTimeTargetsUsesJvmDefaultZone_sliceL() throws Exception {
+        final java.time.Instant instant = java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L);
+        final java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        final java.time.ZonedDateTime zoned = java.time.ZonedDateTime.ofInstant(instant, zone);
+        final FieldList fields = FieldList.of(Field.of("zoned", StandardSQLTypeName.TIMESTAMP), Field.of("offset", StandardSQLTypeName.TIMESTAMP),
+                Field.of("localDateTime", StandardSQLTypeName.TIMESTAMP), Field.of("localDate", StandardSQLTypeName.TIMESTAMP),
+                Field.of("localTime", StandardSQLTypeName.TIMESTAMP));
+        final FieldValue cell = FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1718900000.123456");
+        final SliceLZoneBean bean = BigQueryExecutor.toEntity(fields, FieldValueList.of(Arrays.asList(cell, cell, cell, cell, cell), fields),
+                SliceLZoneBean.class);
+
+        stubSingleBqCell(StandardSQLTypeName.TIMESTAMP, "1718900000.123456");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(zoned, bean.getZoned()),
+                () -> assertEquals(java.time.OffsetDateTime.ofInstant(instant, zone), bean.getOffset()),
+                () -> assertEquals(zoned.toLocalDateTime(), bean.getLocalDateTime()), () -> assertEquals(zoned.toLocalDate(), bean.getLocalDate()),
+                () -> assertEquals(zoned.toLocalTime(), bean.getLocalTime()),
+                () -> assertEquals(zoned, executor.queryForSingleValue(java.time.ZonedDateTime.class, "SELECT v FROM t").orElse(null)),
+                () -> assertEquals(java.time.OffsetDateTime.ofInstant(instant, zone),
+                        executor.queryForSingleValue(java.time.OffsetDateTime.class, "SELECT v FROM t").orElse(null)));
+    }
+
+    public static class SliceLZoneBean {
+        private java.time.ZonedDateTime zoned;
+        private java.time.OffsetDateTime offset;
+        private java.time.LocalDateTime localDateTime;
+        private java.time.LocalDate localDate;
+        private java.time.LocalTime localTime;
+
+        public java.time.ZonedDateTime getZoned() {
+            return zoned;
+        }
+
+        public void setZoned(final java.time.ZonedDateTime zoned) {
+            this.zoned = zoned;
+        }
+
+        public java.time.OffsetDateTime getOffset() {
+            return offset;
+        }
+
+        public void setOffset(final java.time.OffsetDateTime offset) {
+            this.offset = offset;
+        }
+
+        public java.time.LocalDateTime getLocalDateTime() {
+            return localDateTime;
+        }
+
+        public void setLocalDateTime(final java.time.LocalDateTime localDateTime) {
+            this.localDateTime = localDateTime;
+        }
+
+        public java.time.LocalDate getLocalDate() {
+            return localDate;
+        }
+
+        public void setLocalDate(final java.time.LocalDate localDate) {
+            this.localDate = localDate;
+        }
+
+        public java.time.LocalTime getLocalTime() {
+            return localTime;
+        }
+
+        public void setLocalTime(final java.time.LocalTime localTime) {
+            this.localTime = localTime;
+        }
+    }
+
+    public static class SliceLGoogleDateBean {
+        private com.google.cloud.Date day;
+        private List<com.google.cloud.Date> days;
+        private com.google.cloud.Date[] dayArray;
+
+        public com.google.cloud.Date getDay() {
+            return day;
+        }
+
+        public void setDay(final com.google.cloud.Date day) {
+            this.day = day;
+        }
+
+        public List<com.google.cloud.Date> getDays() {
+            return days;
+        }
+
+        public void setDays(final List<com.google.cloud.Date> days) {
+            this.days = days;
+        }
+
+        public com.google.cloud.Date[] getDayArray() {
+            return dayArray;
+        }
+
+        public void setDayArray(final com.google.cloud.Date[] dayArray) {
+            this.dayArray = dayArray;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("`order`")
+    public static class SliceLKeywordOrder {
+        @com.landawn.abacus.annotation.Column("`from`")
+        private int from;
+        private String name;
+
+        public int getFrom() {
+            return from;
+        }
+
+        public void setFrom(final int from) {
+            this.from = from;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("order")
+    public static class SliceLBareKeywordOrder {
+        private int from;
+
+        public int getFrom() {
+            return from;
+        }
+
+        public void setFrom(final int from) {
+            this.from = from;
+        }
+    }
 }
