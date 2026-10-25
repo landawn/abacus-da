@@ -123,8 +123,8 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
             final CosmosContainerExecutor current = new CosmosContainerExecutor(mockCosmosContainer, policy);
             final List<String> queries = captureConditionQueries(current, Filters.expr("active AND order OR NOT group"));
             final String table = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "TEST_ITEM" : policy == NamingPolicy.CAMEL_CASE ? "testItem" : "test_item";
-            final String predicate = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "c.ACTIVE AND c.ORDER OR NOT c.GROUP"
-                    : "c.active AND c.order OR NOT c.group";
+            final String predicate = policy == NamingPolicy.SCREAMING_SNAKE_CASE ? "c.ACTIVE AND c[\"ORDER\"] OR NOT c[\"GROUP\"]"
+                    : "c.active AND c[\"order\"] OR NOT c[\"group\"]";
 
             assertEquals("SELECT * FROM " + table + " c WHERE " + predicate, queries.get(0), policy.toString());
         }
@@ -535,14 +535,14 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         // The whole-token "IS NOT NULL" form is unaffected.
         executor.streamItems(Filters.expr("group IS NOT NULL"), TestItem.class).toList();
 
-        assertEquals("SELECT * FROM test_item c WHERE c.score = 1 or IS_NULL(c.group)", specCaptor.getAllValues().get(0).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.score) or IS_NULL(c.group)", specCaptor.getAllValues().get(1).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score = 1 or IS_NULL(c[\"group\"])", specCaptor.getAllValues().get(0).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.score) or IS_NULL(c[\"group\"])", specCaptor.getAllValues().get(1).getQueryText());
         // The query builder normalizes the identifier-like "And" token to lower case before the Cosmos
         // rewrite runs; the point of the assertion is that the boundary is still recognized.
-        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.score) and IS_NULL(c.group)", specCaptor.getAllValues().get(2).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(c.group)", specCaptor.getAllValues().get(3).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE c.score > 1 AND NOT IS_NULL(c.group)", specCaptor.getAllValues().get(4).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(c.group)", specCaptor.getAllValues().get(5).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.score) and IS_NULL(c[\"group\"])", specCaptor.getAllValues().get(2).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(c[\"group\"])", specCaptor.getAllValues().get(3).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score > 1 AND NOT IS_NULL(c[\"group\"])", specCaptor.getAllValues().get(4).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(c[\"group\"])", specCaptor.getAllValues().get(5).getQueryText());
     }
 
     /** queryItems/streamItems hand back a lazy iterable/stream, so a null query must fail at the call site. */
@@ -702,7 +702,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
         executor.streamItems(Filters.expr("IIF(flag, value IS NULL, false)"), TestItem.class).toList();
 
-        assertEquals("SELECT * FROM test_item c WHERE IIF(c.flag, IS_NULL(c.value), false)", specCaptor.getValue().getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IIF(c.flag, IS_NULL(c[\"value\"]), false)", specCaptor.getValue().getQueryText());
     }
 
     @Test
@@ -928,8 +928,8 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         final List<String> queries = captureConditionQueries(executor, Filters.expr("active AND order"), Filters.expr("active OR group"),
                 Filters.expr("NOT having"));
 
-        assertEquals("SELECT * FROM test_item c WHERE c.active AND c.order", queries.get(0));
-        assertEquals("SELECT * FROM test_item c WHERE c.active OR c.group", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND c[\"order\"]", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.active OR c[\"group\"]", queries.get(1));
         assertEquals("SELECT * FROM test_item c WHERE NOT c.having", queries.get(2));
     }
 
@@ -939,10 +939,10 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         final List<String> queries = captureConditionQueries(executor, Filters.expr("active And order"), Filters.expr("Not group"),
                 Filters.expr("order AND group OR NOT having"), Filters.expr("active AND NOT (order OR group)"));
 
-        assertEquals("SELECT * FROM test_item c WHERE c.active and c.order", queries.get(0));
-        assertEquals("SELECT * FROM test_item c WHERE not c.group", queries.get(1));
-        assertEquals("SELECT * FROM test_item c WHERE c.order AND c.group OR NOT c.having", queries.get(2));
-        assertEquals("SELECT * FROM test_item c WHERE c.active AND NOT (c.order OR c.group)", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE c.active and c[\"order\"]", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE not c[\"group\"]", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] AND c[\"group\"] OR NOT c.having", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND NOT (c[\"order\"] OR c[\"group\"])", queries.get(3));
     }
 
     @Test
@@ -962,16 +962,17 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         executor.streamItems(Filters.expr("order AND active"), TestItem.class).toList();
         executor.streamItems(Filters.expr("value is null"), TestItem.class).toList();
 
-        assertEquals("SELECT * FROM test_item c WHERE c.order = @p0", specCaptor.getAllValues().get(0).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.group)", specCaptor.getAllValues().get(1).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE c.score > c.order", specCaptor.getAllValues().get(2).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE c.order NOT IN (1, 2)", specCaptor.getAllValues().get(3).getQueryText());
+        // Reserved-word property names use the bracket accessor (c.order is a Cosmos DB syntax error).
+        assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] = @p0", specCaptor.getAllValues().get(0).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c[\"group\"])", specCaptor.getAllValues().get(1).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score > c[\"order\"]", specCaptor.getAllValues().get(2).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] NOT IN (1, 2)", specCaptor.getAllValues().get(3).getQueryText());
         assertEquals("SELECT * FROM test_item c WHERE c.c = @p0", specCaptor.getAllValues().get(4).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE c.score = c.in", specCaptor.getAllValues().get(5).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"in\"]", specCaptor.getAllValues().get(5).getQueryText());
         assertEquals("SELECT * FROM test_item c WHERE c.score = null", specCaptor.getAllValues().get(6).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE IS_DEFINED(c.order)", specCaptor.getAllValues().get(7).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE c.order AND c.active", specCaptor.getAllValues().get(8).getQueryText());
-        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.value)", specCaptor.getAllValues().get(9).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_DEFINED(c[\"order\"])", specCaptor.getAllValues().get(7).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] AND c.active", specCaptor.getAllValues().get(8).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c[\"value\"])", specCaptor.getAllValues().get(9).getQueryText());
     }
 
     /** Regression: the coalesce operator creates operand positions on both sides without changing literal semantics. */
@@ -981,10 +982,10 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
                 Filters.expr("(order ?? group) ?? having"), Filters.expr("active AND (order ?? false) OR (group ?? having)"),
                 Filters.expr("null ?? undefined ?? true ?? false"));
 
-        assertEquals("SELECT * FROM test_item c WHERE c.order ?? false", queries.get(0));
-        assertEquals("SELECT * FROM test_item c WHERE c.active ?? c.group", queries.get(1));
-        assertEquals("SELECT * FROM test_item c WHERE (c.order ?? c.group) ?? c.having", queries.get(2));
-        assertEquals("SELECT * FROM test_item c WHERE c.active AND (c.order ?? false) OR (c.group ?? c.having)", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] ?? false", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.active ?? c[\"group\"]", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE (c[\"order\"] ?? c[\"group\"]) ?? c.having", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND (c[\"order\"] ?? false) OR (c[\"group\"] ?? c.having)", queries.get(3));
         assertEquals("SELECT * FROM test_item c WHERE null ?? undefined ?? true ?? false", queries.get(4));
     }
 
@@ -994,9 +995,9 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         final List<String> queries = captureConditionQueries(executor, Filters.expr("score BETWEEN order AND group"),
                 Filters.expr("score NOT BETWEEN order AND group"), Filters.expr("score Between order And group"), Filters.expr("score BETWEEN 1 AND 10"));
 
-        assertEquals("SELECT * FROM test_item c WHERE c.score BETWEEN c.order AND c.group", queries.get(0));
-        assertEquals("SELECT * FROM test_item c WHERE c.score NOT BETWEEN c.order AND c.group", queries.get(1));
-        assertEquals("SELECT * FROM test_item c WHERE c.score between c.order and c.group", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.score BETWEEN c[\"order\"] AND c[\"group\"]", queries.get(0));
+        assertEquals("SELECT * FROM test_item c WHERE c.score NOT BETWEEN c[\"order\"] AND c[\"group\"]", queries.get(1));
+        assertEquals("SELECT * FROM test_item c WHERE c.score between c[\"order\"] and c[\"group\"]", queries.get(2));
         assertEquals("SELECT * FROM test_item c WHERE c.score BETWEEN 1 AND 10", queries.get(3));
     }
 
@@ -1020,8 +1021,8 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
                 "SELECT * FROM test_item c WHERE c.name NOT LIKE 'a!_' escape '!'", //
                 "SELECT * FROM test_item c WHERE (c.name LIKE 'a!%' escape '!') OR (c.id LIKE 'b!_%' escape '!')", //
                 "SELECT * FROM test_item c WHERE (c.id = @p0) AND (c.name LIKE 'a!%' escape '!')", //
-                "SELECT * FROM test_item c WHERE c.name = c.escape", //
-                "SELECT * FROM test_item c WHERE c.escape LIKE 'a%'"), queries);
+                "SELECT * FROM test_item c WHERE c.name = c[\"escape\"]", //
+                "SELECT * FROM test_item c WHERE c[\"escape\"] LIKE 'a%'"), queries);
     }
 
     /** Regression: the {@code ESCAPE} keyword of a raw Cosmos {@code LIKE ... ESCAPE '!'} predicate was alias-qualified as {@code c.escape}. */
@@ -1034,11 +1035,11 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         // SNAKE_CASE lower-cases the keyword token; Cosmos DB keywords are case-insensitive.
         assertEquals("SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape '!'", queries.get(0));
         assertEquals("SELECT * FROM test_item c WHERE c.name NOT LIKE 'a!_' escape '!' AND c.id = '1'", queries.get(1));
-        // A property that is merely named "escape" is still qualified.
-        assertEquals("SELECT * FROM test_item c WHERE c.escape = @p0", queries.get(2));
-        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.escape)", queries.get(3));
-        assertEquals("SELECT * FROM test_item c WHERE IS_DEFINED(c.escape) AND c.id = c.escape", queries.get(4));
-        assertEquals("SELECT * FROM test_item c WHERE c.id = '1' AND NOT c.escape", queries.get(5));
+        // A property that is merely named "escape" is still qualified (with the bracket accessor, as ESCAPE is a reserved word).
+        assertEquals("SELECT * FROM test_item c WHERE c[\"escape\"] = @p0", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c[\"escape\"])", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE IS_DEFINED(c[\"escape\"]) AND c.id = c[\"escape\"]", queries.get(4));
+        assertEquals("SELECT * FROM test_item c WHERE c.id = '1' AND NOT c[\"escape\"]", queries.get(5));
     }
 
     /** The ESCAPE keyword rule with extra whitespace or a double-quoted escape literal, next to a bound parameter, and under every naming policy. */
@@ -1056,13 +1057,13 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
         assertEquals("SELECT * FROM TEST_ITEM c WHERE c.NAME LIKE 'a!%' ESCAPE '!'", screaming.get(0));
         assertEquals("SELECT * FROM TEST_ITEM c WHERE c.NAME LIKE 'a!%' ESCAPE '!'", screaming.get(1));
-        assertEquals("SELECT * FROM TEST_ITEM c WHERE c.ESCAPE = @p0", screaming.get(2));
+        assertEquals("SELECT * FROM TEST_ITEM c WHERE c[\"ESCAPE\"] = @p0", screaming.get(2));
 
         final List<String> camel = captureConditionQueries(new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.CAMEL_CASE),
                 Filters.expr("name LIKE 'a!%' ESCAPE '!'"), Filters.expr("escape = 'x'"));
 
         assertEquals("SELECT * FROM testItem c WHERE c.name LIKE 'a!%' escape '!'", camel.get(0));
-        assertEquals("SELECT * FROM testItem c WHERE c.escape = 'x'", camel.get(1));
+        assertEquals("SELECT * FROM testItem c WHERE c[\"escape\"] = 'x'", camel.get(1));
     }
 
     /**
@@ -1093,8 +1094,8 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
         assertEquals("SELECT * FROM test_item c WHERE c.active AND true OR NOT false", queries.get(0));
         assertEquals("SELECT * FROM test_item c WHERE c.active AND null OR undefined", queries.get(1));
-        assertEquals("SELECT * FROM test_item c WHERE c.order NOT IN (1, 2) AND NOT IS_NULL(c.group)", queries.get(2));
-        assertEquals("SELECT * FROM test_item c WHERE c.active AND c.order", queries.get(3));
+        assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] NOT IN (1, 2) AND NOT IS_NULL(c[\"group\"])", queries.get(2));
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND c[\"order\"]", queries.get(3));
         assertEquals("SELECT * FROM test_item c WHERE c.name = 'AND order OR group NOT having' AND c.active", queries.get(4));
     }
 
@@ -1213,8 +1214,288 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         final List<String> queries = captureConditionQueries(executor, Filters.expr("udf.tax(price) > 1"), Filters.expr("udf.x IS NULL"));
 
         assertEquals("SELECT * FROM test_item c WHERE udf.tax(c.price) > 1", queries.get(0));
-        // Without a call, "udf" is an ordinary property path.
-        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.udf.x)", queries.get(1));
+        // Without a call, "udf" is an ordinary property path (written with the bracket accessor, as udf is a reserved word).
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c[\"udf\"].x)", queries.get(1));
+    }
+
+    // ---- 2026-10-24 sliceE ----
+
+    /**
+     * Regression: a property named like a Cosmos DB reserved word was rendered in dot notation ({@code c.value}, {@code c.desc}),
+     * which the Cosmos DB grammar rejects (its identifier token excludes keywords and non-ASCII characters; the query reference
+     * requires bracket notation for such a name), so the query failed with a syntax error. Covers mapped properties in conditions
+     * and projections under every naming policy, unmapped names and nested path segments in raw expressions, and what stays in dot
+     * notation: a function name after {@code udf.}, quoted text, names that merely contain a keyword, and the upper-case spelling
+     * of a case-sensitive literal.
+     */
+    @Test
+    public void testReservedWordPropertyNamesUseBracketAccessor_sliceE() {
+        final CosmosContainerExecutor screaming = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE);
+        final CosmosContainerExecutor camel = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.CAMEL_CASE);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT * FROM reserved_word_item c WHERE (c[\"value\"] = @p0) AND (IS_NULL(c[\"desc\"])) AND (c.label = @p1)",
+                        captureQuery_sliceE(executor, null, Filters.and(Filters.eq("value", 1), Filters.isNull("desc"), Filters.eq("label", "x")),
+                                ReservedWordItem.class)),
+                () -> assertEquals(
+                        "SELECT VALUE { \"id\": c.id, \"value\": c[\"value\"], \"desc\": c[\"desc\"] } FROM reserved_word_item c WHERE c[\"value\"] > @p0",
+                        captureQuery_sliceE(executor, List.of("id", "value", "desc"), Filters.gt("value", 1), ReservedWordItem.class)),
+                () -> assertEquals("SELECT VALUE { \"value\": c[\"VALUE\"] } FROM RESERVED_WORD_ITEM c WHERE NOT IS_NULL(c[\"DESC\"])",
+                        captureQuery_sliceE(screaming, List.of("value"), Filters.isNotNull("desc"), ReservedWordItem.class)),
+                () -> assertEquals("SELECT * FROM reservedWordItem c WHERE c[\"value\"] BETWEEN @p0 AND @p1",
+                        captureQuery_sliceE(camel, null, Filters.between("value", 1, 2), ReservedWordItem.class)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.tags[0][\"order\"] = 1 AND c.meta[\"top\"] > 2 AND c[\"rank\"] < 3",
+                        captureQuery_sliceE(executor, null, Filters.expr("tags[0].order = 1 AND meta.top > 2 AND rank < 3"), TestItem.class)),
+                // A name outside the grammar's ASCII identifier token needs the bracket accessor too.
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.meta[\"prénom\"] = 'x' AND c.tags[0][\"a$b\"] = 1",
+                        captureQuery_sliceE(executor, null, Filters.expr("meta.prénom = 'x' AND tags[0].a$b = 1"), TestItem.class)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE udf.like(c.name) AND c.name = 'c.value' AND c.values = 1 AND c.topic = 2",
+                        captureQuery_sliceE(executor, null, Filters.expr("udf.like(name) AND name = 'c.value' AND values = 1 AND topic = 2"), TestItem.class)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.NULL = @p0",
+                        captureQuery_sliceE(screaming, null, Filters.eq("null", 1), TestItem.class)));
+    }
+
+    /**
+     * Regression: the FROM source was the entity's table name, which Cosmos DB ignores but parses as an identifier path. A
+     * reserved-word name ({@code FROM order c} for an entity {@code Order}) was a syntax error for every Condition-based query, and a
+     * dotted {@code @Table} name ({@code FROM sales.orders c}) iterated the {@code orders} property of each item instead of the items.
+     * Such a source is dropped ({@code FROM c}); a plain, non-reserved name is kept.
+     */
+    @Test
+    public void testReservedOrNonIdentifierTableNamesAreDroppedFromTheFromClause_sliceE() {
+        final CosmosContainerExecutor screaming = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT * FROM c WHERE c.id = @p0", captureQuery_sliceE(executor, null, Filters.eq("id", "1"), Order.class)),
+                () -> assertEquals("SELECT * FROM c", captureQuery_sliceE(executor, null, null, Order.class)),
+                () -> assertEquals("SELECT * FROM c WHERE c.ID = @p0", captureQuery_sliceE(screaming, null, Filters.eq("id", "1"), Order.class)),
+                () -> assertEquals("SELECT VALUE { \"id\": c.id } FROM c WHERE c.id = @p0",
+                        captureQuery_sliceE(executor, List.of("id"), Filters.eq("id", "1"), Value.class)),
+                () -> assertEquals("SELECT * FROM c WHERE c.id = @p0", captureQuery_sliceE(executor, null, Filters.eq("id", "1"), DottedTableItem.class)),
+                () -> assertEquals("SELECT * FROM c WHERE c.id = @p0", captureQuery_sliceE(executor, null, Filters.eq("id", "1"), DashedTableItem.class)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.id = @p0", captureQuery_sliceE(executor, null, Filters.eq("id", "1"), TestItem.class)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c", captureQuery_sliceE(screaming, null, null, TestItem.class)));
+    }
+
+    /**
+     * Regression: the IS NULL operand scan recognized AND/OR/NOT only between spaces, so a keyword glued to a closing parenthesis or
+     * literal, or to the opening parenthesis of its operand, let the scan run on to WHERE: {@code (score = 1)AND name IS NULL} became
+     * {@code IS_NULL((c.score = 1)AND c.name)}, which Cosmos DB evaluates as false for every item (no rows, no error). Identifiers that
+     * merely start or end with those letters remain part of the operand.
+     */
+    @Test
+    public void testIsNullOperandScanStopsAtGluedLogicalKeywords_sliceE() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("(score = 1)AND name IS NULL"),
+                Filters.expr("(score = 1)or name IS NOT NULL"), Filters.expr("score = 'a'AND name IS NULL"), Filters.expr("IS_DEFINED(score)AND name IS NULL"),
+                Filters.expr("NOT(name) IS NULL"), Filters.expr("score = 1 AND NOT(name) IS NOT NULL"), Filters.expr("band IS NULL AND notes IS NULL"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE (c.score = 1)AND IS_NULL(c.name)", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.score = 1)or NOT IS_NULL(c.name)", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 'a'AND IS_NULL(c.name)", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE IS_DEFINED(c.score)AND IS_NULL(c.name)", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL((c.name))", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 1 AND NOT NOT IS_NULL((c.name))", queries.get(5)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.band) AND IS_NULL(c.notes)", queries.get(6)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> String captureQuery_sliceE(final CosmosContainerExecutor cosmosExecutor, final Collection<String> selectPropNames,
+            final com.landawn.abacus.query.condition.Condition condition, final Class<T> targetClass) {
+        final CosmosPagedIterable<T> rows = mock(CosmosPagedIterable.class);
+        when(rows.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(targetClass))).thenReturn(rows);
+
+        cosmosExecutor.streamItems(selectPropNames, condition, targetClass).toList();
+
+        return specCaptor.getValue().getQueryText();
+    }
+
+    // ---- 2026-10-24 verify6 ----
+
+    /**
+     * Regression: the bracket-accessor rewrite skipped a property name that starts with {@code $} (as in the common JSON
+     * {@code $type}), so {@code c.$type} stayed in dot notation although {@code $} is not part of the Cosmos DB grammar's identifier
+     * token (no {@code $} token exists at all), and the query failed with a syntax error. A {@code $} inside a name was already
+     * bracketed.
+     */
+    @Test
+    public void testDollarLeadingPropertyNamesUseBracketAccessor_verify6() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("c.$type = 'x'"), Filters.expr("tags[0].$type IS NULL"),
+                Filters.expr("name = 'c.$type' AND c.$ = 1"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c[\"$type\"] = 'x'", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.tags[0][\"$type\"])", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.name = 'c.$type' AND c[\"$\"] = 1", queries.get(2)));
+    }
+
+    // ---- 2026-10-24 r2 sliceE ----
+
+    /**
+     * Regression: AND, OR and BETWEEN followed by a sign, a decimal point or a bracket were read as arithmetic on a property named
+     * like the keyword, so {@code score BETWEEN -1 AND 1} became {@code c.score c["BETWEEN"] -1 AND 1} and
+     * {@code score > 1 AND -score < 0} became {@code c.score > 1 c["AND"] -c.score < 0}, which Cosmos DB rejects; an IS NULL operand
+     * after such an AND swallowed the whole preceding predicate. After a complete operand those words are the keyword; a property
+     * named like one is still qualified where an operand is expected.
+     */
+    @Test
+    public void testLogicalKeywordBeforeSignedOrLiteralOperandIsNotQualified_r2sliceE() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("score BETWEEN -1 AND 1"), Filters.expr("score NOT BETWEEN -1 AND +1"),
+                Filters.expr("score > 1 AND -score < 0"), Filters.expr("score = 1 or .5 < score"), Filters.expr("score = 1 AND [1, 2] = tags"),
+                Filters.expr("score = 1 AND -score IS NULL"), Filters.expr("score = order AND -score < 0"), Filters.expr("(score)OR -1 > score"),
+                Filters.expr("order - 1 > 0 AND between - 1 > 0"), Filters.expr("score = value AND -score < 0 OR score = in OR -1 > score"));
+        final List<String> screaming = captureConditionQueries(new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE),
+                Filters.expr("score BETWEEN -1 AND 1"), Filters.expr("score > 1 and -score < 0"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.score BETWEEN -1 AND 1", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score NOT BETWEEN -1 AND +1", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score > 1 AND -c.score < 0", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 1 or .5 < c.score", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 1 AND [1, 2] = c.tags", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 1 AND IS_NULL(-c.score)", queries.get(5)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"order\"] AND -c.score < 0", queries.get(6)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.score)OR -1 > c.score", queries.get(7)),
+                // Where an operand is expected, a keyword-named property followed by arithmetic is still a property.
+                () -> assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] - 1 > 0 AND c[\"between\"] - 1 > 0", queries.get(8)),
+                // A keyword-named property (value, in) also completes the operand before AND/OR.
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"value\"] AND -c.score < 0 OR c.score = c[\"in\"] OR -1 > c.score",
+                        queries.get(9)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.SCORE BETWEEN -1 AND 1", screaming.get(0)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.SCORE > 1 AND -c.SCORE < 0", screaming.get(1)));
+    }
+
+    /**
+     * Regression: NOT before a sign or decimal literal was read as a property named NOT ({@code NOT -score > 0} became
+     * {@code c["NOT"] -c.score > 0}), valid arithmetic on a missing property that silently matches nothing. A path or comparison on a
+     * property named {@code not} is still qualified.
+     */
+    @Test
+    public void testUnaryNotBeforeSignedOperandIsNotQualified_r2sliceE() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("NOT -score > 0"), Filters.expr("score > 1 AND not +score > 5"),
+                Filters.expr("NOT .5 > score"), Filters.expr("NOT -score IS NULL"), Filters.expr("not.x = 1 AND not = 2"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE NOT -c.score > 0", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score > 1 AND not +c.score > 5", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE NOT .5 > c.score", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(-c.score)", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c[\"not\"].x = 1 AND c[\"not\"] = 2", queries.get(4)));
+    }
+
+    /** Pins the subquery-as-SQL-text form the Condition-based streamItems Javadoc recommends: its {@code ?} is bound as a parameter. */
+    @Test
+    public void testSubqueryTextWithParametersIsBound_r2sliceE() {
+        assertEquals("SELECT * FROM test_item c WHERE EXISTS (SELECT VALUE 1 FROM t IN c.tags WHERE t = @p0) [x]",
+                renderQueryOrFailure_coverageDC(Filters.exists(Filters.subQuery("SELECT VALUE 1 FROM t IN c.tags WHERE t = ?", List.of("x")))));
+    }
+
+    // ---- 2026-10-24 r2verify2 ----
+
+    /**
+     * Regression of the NOT-before-sign rule above: right after an operator, a property named {@code not} followed by a sign
+     * ({@code score = not - 1}) was read as the logical keyword ({@code c.score = not - 1}, NOT of a number: always undefined, so the
+     * query silently matched nothing) instead of {@code c.score = c["not"] - 1}. At the start of an operand NOT stays the keyword.
+     */
+    @Test
+    public void testPropertyNamedNotAfterOperatorBeforeSignIsQualified_r2verify2() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("score = not - 1"), Filters.expr("score > not + .5"),
+                Filters.expr("score * not - 1 > 0 AND NOT -score > 0"), Filters.expr("-not - 1 > 0"), Filters.expr("score || not - 1 = 'x'"),
+                Filters.expr("(score ?? not - 1) > 0"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] - 1", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score > c[\"not\"] + .5", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score * c[\"not\"] - 1 > 0 AND NOT -c.score > 0", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE -c[\"not\"] - 1 > 0", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score || c[\"not\"] - 1 = 'x'", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.score ?? c[\"not\"] - 1) > 0", queries.get(5)));
+    }
+
+    public static class ReservedWordItem {
+        private String id;
+        private int value;
+        private String desc;
+        private String label;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public int getValue() {
+            return value;
+        }
+
+        public void setValue(final int value) {
+            this.value = value;
+        }
+
+        public String getDesc() {
+            return desc;
+        }
+
+        public void setDesc(final String desc) {
+            this.desc = desc;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(final String label) {
+            this.label = label;
+        }
+    }
+
+    public static class Order {
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
+
+    public static class Value {
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("sales.orders")
+    public static class DottedTableItem {
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("my-orders")
+    public static class DashedTableItem {
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
     }
 
     private void testStreamItemsWithConditionAndNamingPolicy(NamingPolicy namingPolicy) {

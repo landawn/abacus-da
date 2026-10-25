@@ -1149,4 +1149,142 @@ public class ParsedCqlTest extends TestBase {
             throw new ExceptionInInitializerError(new IllegalStateException("Shutdown in progress"));
         })));
     }
+
+    // ---- 2026-10-24 sliceJ ----
+
+    @Test
+    public void testNamedParameters_QuotedNativeMarker_keepsQuotes() {
+        // Pins the namedParameters() Javadoc: a quoted native marker contributes its name with the double quotes.
+        assertAll(() -> assertIbatisParsed("SELECT * FROM t WHERE a = :\"userId\"", "SELECT * FROM t WHERE a = ?", "\"userId\""),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: :\"Q\"} WHERE k = :k", "UPDATE t SET u = {f: ?} WHERE k = ?", "\"Q\"", "k"));
+    }
+
+    @Test
+    public void testParse_NativeMarkerAfterTypeHintInsideBraces_isKnownLimitation() {
+        // Pins the "Known limitation" paragraph of parameterizedCql(): inside braces a native marker after a type hint is
+        // left verbatim and uncounted, while the positional and MyBatis forms of the same statement bind it. (2026-10-24
+        // apply-cql: a marker after an arithmetic operator is now rewritten, see the apply-cql block below.)
+        assertAll(() -> assertIbatisParsed("UPDATE t SET u = {f: (int) :x} WHERE k = :k", "UPDATE t SET u = {f: (int) :x} WHERE k = ?", "k"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: 1 + #{x}} WHERE k = #{k}", "UPDATE t SET u = {f: 1 + ?} WHERE k = ?", "x", "k"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: (int) #{x}} WHERE k = #{k}", "UPDATE t SET u = {f: (int) ?} WHERE k = ?", "x", "k"),
+                () -> assertEquals(2, ParsedCql.parse("UPDATE t SET u = {f: (int) ?} WHERE k = ?").parameterCount()));
+    }
+
+    @Test
+    public void testParse_BareHashIsNotAComment() {
+        // Regression: SqlParser read a '#' that does not open "#{" as a MySQL hash comment and dropped the rest of the line,
+        // so invalid CQL silently became a wider statement ("DELETE FROM t WHERE k = ? # AND c = ?" -> "... WHERE k = ?",
+        // one parameter). CQL has no '#' comments: the text is kept and the markers after it count, as Cassandra sees them.
+        assertAll(() -> {
+            final ParsedCql parsed = ParsedCql.parse("DELETE FROM t WHERE k = ? # AND c = ?");
+            assertEquals("DELETE FROM t WHERE k = ? # AND c = ?", parsed.parameterizedCql());
+            assertEquals(2, parsed.parameterCount());
+            assertTrue(parsed.namedParameters().isEmpty());
+        }, () -> assertIbatisParsed("DELETE FROM t WHERE k = :k #AND c = :c\n IF EXISTS", "DELETE FROM t WHERE k = ? #AND c = ? IF EXISTS", "k", "c"),
+                () -> assertIbatisParsed("UPDATE t SET l = l + [:a] WHERE k = :k # AND c = :c", "UPDATE t SET l = l + [?] WHERE k = ? # AND c = ?", "a", "k",
+                        "c"),
+                () -> assertIbatisParsed("SELECT * FROM t WHERE a = #{a} # AND b = #{b}", "SELECT * FROM t WHERE a = ? # AND b = ?", "a", "b"),
+                // A statement starting with '#' is not a recognized data operation (it used to be read as a comment line).
+                () -> {
+                    final ParsedCql parsed = ParsedCql.parse("# note\nSELECT * FROM t WHERE a = :a");
+                    assertEquals("# note\nSELECT * FROM t WHERE a = :a", parsed.parameterizedCql());
+                    assertEquals(0, parsed.parameterCount());
+                },
+                // Pins: MyBatis markers, and '#' inside literals and comments, are unchanged.
+                () -> assertIbatisParsed("SELECT * FROM t WHERE a = #{a} AND b = #{ b }", "SELECT * FROM t WHERE a = ? AND b = ?", "a", "b"),
+                () -> assertIbatisParsed("UPDATE t SET m = {#{k}:#{v}} WHERE id = #{id}", "UPDATE t SET m = {?:?} WHERE id = ?", "k", "v", "id"),
+                () -> assertIbatisParsed("SELECT * FROM t WHERE a = '#' AND b = $$#$$ AND c = \"#\" AND d = :d -- # x\n AND e = :e /* # */",
+                        "SELECT * FROM t WHERE a = '#' AND b = $$#$$ AND c = \"#\" AND d = ? AND e = ?", "d", "e"),
+                () -> assertEquals("SELECT * FROM t WHERE a = '#' AND b = ?", ParsedCql.parse("SELECT * FROM t WHERE a = '#' AND b = ?").parameterizedCql()));
+    }
+
+    @Test
+    public void testParse_BareHashWithEveryMaskCandidatePresent_throws() {
+        // Like brackets, a bare '#' that cannot be masked is rejected rather than read as a comment; DDL needs no mask.
+        final StringBuilder sb = new StringBuilder();
+
+        for (int ch = 0x80; ch <= Character.MAX_VALUE; ch++) {
+            if (!Character.isSurrogate((char) ch)) {
+                sb.append((char) ch);
+            }
+        }
+
+        final String comment = " /* " + sb + " */";
+        assertAll(() -> assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("DELETE FROM t WHERE k = ? # AND c = ?" + comment)),
+                () -> assertEquals(1, ParsedCql.parse("SELECT * FROM t WHERE a = #{a}" + comment).parameterCount()),
+                () -> assertEquals("CREATE TABLE t (k int PRIMARY KEY) # x" + comment,
+                        ParsedCql.parse("CREATE TABLE t (k int PRIMARY KEY) # x" + comment).parameterizedCql()));
+    }
+
+    // ---- 2026-10-24 verify3 ----
+
+    @Test
+    public void testParse_EmptyIbatisNameMessage_showsMaskedCharactersAsWritten() {
+        // Regression: the empty-name message printed the marker content with the private-use mask characters standing in
+        // for '#' (U+E002) and '[' / ']' (U+E000 / U+E001) instead of the characters the caller wrote.
+        assertAll(
+                () -> assertEquals("Invalid named parameter: #{ , b#c}. Parameter name cannot be empty.",
+                        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM t WHERE a = #{ , b#c}")).getMessage()),
+                () -> assertEquals("Invalid named parameter: #{,x[0]}. Parameter name cannot be empty.",
+                        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM t WHERE a = #{,x[0]}")).getMessage()),
+                () -> assertEquals("Invalid named parameter: #{,b}. Parameter name cannot be empty.",
+                        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM t WHERE a = #{,b} AND l = [?]")).getMessage()));
+    }
+
+    // ---- 2026-10-24 apply-cql ----
+
+    @Test
+    public void testParse_NativeMarkerAfterArithmeticOperatorInsideBraces_isRewritten() {
+        // Regression: inside braces a ':name' token was a marker only after a field separator or directly inside [...] / (...),
+        // so a marker that is the operand of + - * / % in a UDT field or map value ("{f: 1 + :x}", "{'a': -:x}", the second
+        // marker of "{f: :x - :y}") reached the driver verbatim and uncounted. Cassandra 5.0's grammar accepts '?' there.
+        assertAll(() -> assertIbatisParsed("UPDATE t SET u = {f: 1 + :x} WHERE k = :k", "UPDATE t SET u = {f: 1 + ?} WHERE k = ?", "x", "k"),
+                () -> assertIbatisParsed("UPDATE t SET m = {'a': -:x} WHERE k = :k", "UPDATE t SET m = {'a': -?} WHERE k = ?", "x", "k"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: :x - :y} WHERE k = :k", "UPDATE t SET u = {f: ? - ?} WHERE k = ?", "x", "y", "k"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: 2 * :x, g: :y / :z, h: 7 % :w} WHERE k = :k",
+                        "UPDATE t SET u = {f: 2 * ?, g: ? / ?, h: 7 % ?} WHERE k = ?", "x", "y", "z", "w", "k"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f:2*:x,g:1-:y} WHERE k = :k", "UPDATE t SET u = {f:2*?,g:1-?} WHERE k = ?", "x", "y", "k"),
+                () -> assertIbatisParsed("INSERT INTO t (k, m) VALUES (:k, {1: 1 + :v})", "INSERT INTO t (k, m) VALUES (?, {1: 1 + ?})", "k", "v"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: 1 + /* c */ :x} WHERE k = :k", "UPDATE t SET u = {f: 1 + ?} WHERE k = ?", "x", "k"),
+                // The three marker styles of the same statement now give the same parameterized CQL.
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET u = {f: 1 + ?, g: -?} WHERE k = ?").parameterizedCql(),
+                        ParsedCql.parse("UPDATE t SET u = {f: 1 + :x, g: -:y} WHERE k = :k").parameterizedCql()),
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET u = {f: 1 + #{x}, g: -#{y}} WHERE k = #{k}").parameterizedCql(),
+                        ParsedCql.parse("UPDATE t SET u = {f: 1 + :x, g: -:y} WHERE k = :k").parameterizedCql()),
+                // Being a marker position, it gets the same checks as a marker elsewhere: empty name and mixed styles are rejected.
+                () -> assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET u = {f: 1 + :} WHERE k = :k")),
+                () -> assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("UPDATE t SET u = {f: 1 + :x} WHERE k = ?")),
+                // Pins: a negative number, an operator inside a string, and a type hint are unchanged.
+                () -> assertIbatisParsed("UPDATE t SET m = {'a': -1, '+': :v} WHERE k = :k", "UPDATE t SET m = {'a': -1, '+': ?} WHERE k = ?", "v", "k"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: (int) :x} WHERE k = :k", "UPDATE t SET u = {f: (int) :x} WHERE k = ?", "k"));
+    }
+
+    // ---- 2026-10-24 r2 sliceJ ----
+
+    @Test
+    public void testParse_NativeMapKeyMarkerAfterArithmeticOperator_keepsGluedSeparator() {
+        // Regression: after an arithmetic operator inside braces a ':name' token may be a map KEY, and SqlParser glues the
+        // key/value separator (and an unspaced value) to it. The name ran to the end of the token, so the valid
+        // "{-:k: 1}" became the marker "k:" and the invalid CQL "{-? 1}" ("{1 * :k:2, 3: 4}" -> "k:2" and "{1 * ?, 3: 4}");
+        // with a glued value marker ("{-:k::v}") the key stayed a native marker in the CQL, uncounted.
+        assertAll(() -> assertIbatisParsed("UPDATE t SET m = {-:k: 1} WHERE id = :id", "UPDATE t SET m = {-?: 1} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {1 + :k: 'v'} WHERE id = :id", "UPDATE t SET m = {1 + ?: 'v'} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {1 * :k:2, 3: 4} WHERE id = :id", "UPDATE t SET m = {1 * ?:2, 3: 4} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k: :v} WHERE id = :id", "UPDATE t SET m = {-?: ?} WHERE id = ?", "k", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k:-:v} WHERE id = :id", "UPDATE t SET m = {-?:-?} WHERE id = ?", "k", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k::v, 2 % :j::w} WHERE id = :id", "UPDATE t SET m = {-?:?, 2 % ?:?} WHERE id = ?", "k", "v", "j",
+                        "w", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k:{-:j:1}} WHERE id = :id", "UPDATE t SET m = {-?:{-?:1}} WHERE id = ?", "k", "j", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {{-:k}: 1} WHERE id = :id", "UPDATE t SET m = {{-?}: 1} WHERE id = ?", "k", "id"),
+                // The three marker styles of the same statement give the same parameterized CQL.
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET m = {-?: 1, 1 + ?:?} WHERE id = ?").parameterizedCql(),
+                        ParsedCql.parse("UPDATE t SET m = {-:k: 1, 1 + :j::v} WHERE id = :id").parameterizedCql()),
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET m = {-#{k}: 1, 1 + #{j}:#{v}} WHERE id = #{id}").parameterizedCql(),
+                        ParsedCql.parse("UPDATE t SET m = {-:k: 1, 1 + :j::v} WHERE id = :id").parameterizedCql()),
+                // Pins: a quoted key name, a spaced separator, a value after a field separator and markers outside braces are unchanged.
+                () -> assertIbatisParsed("UPDATE t SET m = {-:\"K\": 1} WHERE id = :id", "UPDATE t SET m = {-?: 1} WHERE id = ?", "\"K\"", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k : 1} WHERE id = :id", "UPDATE t SET m = {-? : 1} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: :x, g::y} WHERE id = :id", "UPDATE t SET u = {f: ?, g:?} WHERE id = ?", "x", "y", "id"),
+                () -> assertIbatisParsed("UPDATE t SET c = c - :x WHERE id = :id", "UPDATE t SET c = c - ? WHERE id = ?", "x", "id"));
+    }
 }

@@ -43,7 +43,7 @@ class CosmosConditionSyntaxTest {
                 Arguments.of("c[\"a\\\"b\"] IS NULL", "IS_NULL(c[\"a\\\"b\"])"),
                 Arguments.of("COALESCE(c['x'], c['y']) IS NULL", "IS_NULL(COALESCE(c['x'], c['y']))"),
                 Arguments.of("name = 'O''Brien' AND c['a b'] IS NULL", "c.name = 'O''Brien' AND IS_NULL(c['a b'])"),
-                Arguments.of("name = \"a\\\"b\" AND value IS NULL", "c.name = \"a\\\"b\" AND IS_NULL(c.value)"),
+                Arguments.of("name = \"a\\\"b\" AND value IS NULL", "c.name = \"a\\\"b\" AND IS_NULL(c[\"value\"])"),
                 Arguments.of("'literal' IS NULL", "IS_NULL('literal')"),
                 Arguments.of("c[0] IS NULL OR c[1] IS NOT NULL", "IS_NULL(c[0]) OR NOT IS_NULL(c[1])"));
     }

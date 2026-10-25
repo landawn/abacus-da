@@ -752,4 +752,577 @@ public class CqlBuilderTest extends TestBase {
                 // Predefined dialects are unaffected.
                 () -> assertEquals("SELECT first_name AS \"firstName\" FROM t", PSC.select("firstName").from("t").build().query()));
     }
+
+    // ---- 2026-10-24 sliceI ----
+
+    /**
+     * Raw CQL quoted a driver duration ('1h30m'), and Cassandra accepts a quoted constant only for text, ascii, inet, date,
+     * time and timestamp columns: "Invalid STRING constant (1h30m) for "d" of type duration" (Cassandra 5.0
+     * Constants.Literal). The duration constant is the bare text of the driver value; a zero duration, whose toString() is
+     * "", renders 0s. Both driver generations' duration classes are recognized; parameterized builders bind the value.
+     */
+    @Test
+    public void test_sliceI_rawDriverDurationLiteralsAreBare() {
+        final com.datastax.oss.driver.api.core.data.CqlDuration v4 = com.datastax.oss.driver.api.core.data.CqlDuration.from("1h30m");
+        final com.datastax.oss.driver.api.core.data.CqlDuration negative = com.datastax.oss.driver.api.core.data.CqlDuration.newInstance(-14, -3,
+                -5_000_000_123L);
+        final com.datastax.oss.driver.api.core.data.CqlDuration zero = com.datastax.oss.driver.api.core.data.CqlDuration.newInstance(0, 0, 0);
+        final com.datastax.driver.core.Duration v3 = com.datastax.driver.core.Duration.from("2d4h");
+        final com.datastax.driver.core.Duration v3Zero = com.datastax.driver.core.Duration.newInstance(0, 0, 0);
+        final java.util.Map<String, Object> props = new java.util.LinkedHashMap<>();
+        props.put("id", 1);
+        props.put("d", v4);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("UPDATE t SET d = 1h30m WHERE id = 1", SCCB.update("t").set("d", v4).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET d = -1y2mo3d5s123ns WHERE id = 1",
+                        SCCB.update("t").set("d", negative).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET d = 0s WHERE id = 1", SCCB.update("t").set("d", zero).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET d = 2d4h WHERE id = 1", SCCB.update("t").set("d", v3).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET d = 0s WHERE id = 1", SCCB.update("t").set("d", v3Zero).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("INSERT INTO t (id, d) VALUES (1, 1h30m)", SCCB.insert(props).into("t").build().query()),
+                () -> assertEquals("BEGIN BATCH INSERT INTO t (id, d) VALUES (1, 1h30m); APPLY BATCH",
+                        SCCB.batchInsert(N.asList(props)).into("t").build().query()),
+                () -> assertEquals("DELETE FROM t WHERE id = 1 IF d = 1h30m",
+                        SCCB.deleteFrom("t").where(Filters.eq("id", 1)).onlyIf(Filters.eq("d", v4)).build().query()),
+                () -> {
+                    final String cql = ACCB.update("t").set("d", v3).where(Filters.eq("id", 1)).build().query();
+                    assertTrue(cql.contains(" = 2d4h "), cql);
+                }, () -> {
+                    final SP sp = PSC.update("t").set("d", v4).where(Filters.eq("id", 1)).build();
+                    assertEquals("UPDATE t SET d = ? WHERE id = ?", sp.query());
+                    org.junit.jupiter.api.Assertions.assertSame(v4, sp.parameters().get(0));
+                });
+    }
+
+    /** Bean with a primitive {@code @Id} key; 0 is a real Cassandra key value. */
+    public static class ZeroKeyUser {
+        @com.landawn.abacus.annotation.Id
+        private long id;
+        private String name;
+        private String email;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(final String email) {
+            this.email = email;
+        }
+    }
+
+    /** Bean whose key is the conventional property named {@code id} (no annotation). */
+    public static class ConventionalKeyUser {
+        private long id;
+        private String name;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    /** Bean with a composite {@code @Id} key. */
+    public static class CompositeKeyUser {
+        @com.landawn.abacus.annotation.Id
+        private int a;
+        @com.landawn.abacus.annotation.Id
+        private Integer b;
+        private String name;
+
+        public int getA() {
+            return a;
+        }
+
+        public void setA(final int a) {
+            this.a = a;
+        }
+
+        public Integer getB() {
+            return b;
+        }
+
+        public void setB(final Integer b) {
+            this.b = b;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    /**
+     * The parent builder applies the SQL generated-key convention to entity INSERTs: when every id property (@Id, or a
+     * property named id) is null or numerically zero it is left out, so insert(entity) and batchInsert(entities) rendered
+     * "INSERT INTO t (name) VALUES (?)" for a key of 0, which Cassandra rejects ("Some partition key parts are missing").
+     * Cassandra never generates keys: a zero key is kept now, a null one is still left out, and nothing else changes.
+     */
+    @Test
+    public void test_sliceI_zeroKeyIsKeptInEntityInserts() {
+        final ZeroKeyUser zero = new ZeroKeyUser();
+        zero.setName("n");
+        final ZeroKeyUser five = new ZeroKeyUser();
+        five.setId(5);
+        five.setName("m");
+        final ConventionalKeyUser conventional = new ConventionalKeyUser();
+        conventional.setName("n");
+        final CompositeKeyUser compositeZero = new CompositeKeyUser();
+        compositeZero.setB(0);
+        compositeZero.setName("n");
+        final CompositeKeyUser compositeNull = new CompositeKeyUser();
+        compositeNull.setName("n");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final SP sp = PSC.insert(zero).into("t").build();
+            assertEquals("INSERT INTO t (id, name) VALUES (?, ?)", sp.query());
+            assertEquals(N.asList(0L, "n"), sp.parameters());
+        }, () -> assertEquals("INSERT INTO t (id, name) VALUES (:id, :name)", NSC.insert(zero).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (ID, NAME) VALUES (?, ?)", PAC.insert(zero).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (id, name) VALUES (0, 'n')", SCCB.insert(zero).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (id, name) VALUES (?, ?)", PSC.insert(zero, N.asSet("email")).into("t").build().query()),
+                // An explicitly excluded key and a null property are still left out.
+                () -> assertEquals("INSERT INTO t (name) VALUES (?)", PSC.insert(zero, N.asSet("id")).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (id, name) VALUES (?, ?)", PSC.insert(conventional).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (a, b, name) VALUES (?, ?, ?)", PSC.insert(compositeZero).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (a, name) VALUES (?, ?)", PSC.insert(compositeNull).into("t").build().query()),
+                () -> assertEquals("INSERT INTO zero_key_user (id, name) VALUES (?, ?)", PSC.insert(zero).into(ZeroKeyUser.class).build().query()), () -> {
+                    final SP sp = PSC.batchInsert(N.asList(zero, zero)).into("t").build();
+                    assertEquals("BEGIN BATCH INSERT INTO t (id, name) VALUES (?, ?); INSERT INTO t (id, name) VALUES (?, ?); APPLY BATCH", sp.query());
+                    assertEquals(N.asList(0L, "n", 0L, "n"), sp.parameters());
+                },
+                () -> assertEquals(
+                        "BEGIN BATCH INSERT INTO t (id, name) VALUES (:id_0, :name_0); INSERT INTO t (id, name) VALUES (:id_1, :name_1); APPLY BATCH",
+                        NSC.batchInsert(N.asList(zero, five)).into("t").build().query()),
+                () -> assertEquals("BEGIN BATCH INSERT INTO t (a, b, name) VALUES (?, ?, ?); APPLY BATCH",
+                        PSC.batchInsert(N.asList(compositeZero)).into("t").build().query()),
+                // A column null in every row (email, b) is still dropped.
+                () -> assertEquals("BEGIN BATCH INSERT INTO t (a, name) VALUES (?, ?); INSERT INTO t (a, name) VALUES (?, ?); APPLY BATCH",
+                        PSC.batchInsert(N.asList(compositeNull, null, compositeNull)).into("t").build().query()),
+                () -> assertEquals("BEGIN BATCH INSERT INTO t (id, name) VALUES (?, ?); APPLY BATCH",
+                        PSC.batchInsert(N.asList(five)).into("t").build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(N.asList(zero, conventional))),
+                () -> assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(N.asList((Object) null, null))));
+    }
+
+    /** Entity mapped to reserved CQL keywords through quoted {@code @Table}/{@code @Column} names (the documented workaround). */
+    @com.landawn.abacus.annotation.Table("\"order\"")
+    public static class QuotedKeywordOrder {
+        @com.landawn.abacus.annotation.Id
+        private long id;
+        @com.landawn.abacus.annotation.Column("\"desc\"")
+        private String desc;
+        private String group;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public String getDesc() {
+            return desc;
+        }
+
+        public void setDesc(final String desc) {
+            this.desc = desc;
+        }
+
+        public String getGroup() {
+            return group;
+        }
+
+        public void setGroup(final String group) {
+            this.group = group;
+        }
+    }
+
+    /**
+     * Pins the class Javadoc on reserved keywords: a quoted @Table/@Column or explicit name is rendered verbatim by every
+     * naming policy, and a non-reserved keyword such as group stays unquoted (each output below parses with Cassandra 5.0's
+     * CQL grammar). (2026-10-24 apply-cql: an unquoted reserved name is now quoted by the builder, see the apply-cql block.)
+     */
+    @Test
+    public void test_sliceI_quotedNamesWorkAroundReservedKeywords() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT id AS \"id\", \"desc\" AS \"desc\", group AS \"group\" FROM \"order\" WHERE \"desc\" = ?",
+                        PSC.selectFrom(QuotedKeywordOrder.class).where(Filters.eq("desc", "x")).build().query()),
+                () -> assertEquals("SELECT ID AS \"id\", \"desc\" AS \"desc\", GROUP AS \"group\" FROM \"order\" WHERE \"desc\" = ?",
+                        PAC.selectFrom(QuotedKeywordOrder.class).where(Filters.eq("desc", "x")).build().query()),
+                () -> assertEquals("INSERT INTO \"order\" (id, \"desc\", group) VALUES (?, ?, ?)", PSC.insertInto(QuotedKeywordOrder.class).build().query()),
+                () -> assertEquals("UPDATE \"order\" SET \"desc\" = ?, group = ? WHERE id = ?",
+                        PSC.update(QuotedKeywordOrder.class).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE \"order\" SET \"desc\" = ? WHERE id = ? IF \"desc\" = ?",
+                        PSC.update("\"order\"").set("\"desc\"").where(Filters.eq("id", 1)).onlyIf(Filters.eq("\"desc\"", "y")).build().query()),
+                // 2026-10-24 apply-cql: an unquoted reserved name is quoted by the builder (it used to stay bare: "SELECT desc FROM t").
+                () -> assertEquals("SELECT \"desc\" FROM t", PSC.select("desc").from("t").build().query()));
+    }
+
+    // ---- 2026-10-24 apply-cql ----
+
+    /** Entity whose class-derived table name ({@code order}) and two columns ({@code desc}, {@code @Column("token")}) are reserved CQL keywords. */
+    public static class Order {
+        @com.landawn.abacus.annotation.Id
+        private long id;
+        private String desc;
+        private String group;
+        @com.landawn.abacus.annotation.Column("token")
+        private String tok;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public String getDesc() {
+            return desc;
+        }
+
+        public void setDesc(final String desc) {
+            this.desc = desc;
+        }
+
+        public String getGroup() {
+            return group;
+        }
+
+        public void setGroup(final String group) {
+            this.group = group;
+        }
+
+        public String getTok() {
+            return tok;
+        }
+
+        public void setTok(final String tok) {
+            this.tok = tok;
+        }
+    }
+
+    /**
+     * Regression: a reserved CQL keyword used as a column or table name (desc, order, select, from, limit, token, ...) was
+     * rendered unquoted, which Cassandra rejects ("no viable alternative at input 'desc'"). The builder now renders it as the
+     * quoted lower-case name, under every naming policy, for entity-derived and caller-supplied names, in every clause
+     * (each quoted output below parses with Cassandra 5.0's CQL grammar; with named markers, after ParsedCql's rewrite).
+     */
+    @Test
+    @SuppressWarnings("deprecation")
+    public void test_applyCql_reservedKeywordNamesAreQuoted() {
+        final Order order = new Order();
+        order.setId(1);
+        order.setDesc("d");
+        order.setGroup("g");
+        order.setTok("t");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                // Entity-derived names (property, @Column and class-derived table name). The parent keeps an entity's full
+                // select list in a static cache (fullSelectPartsPool) shared with abacus-query's own SQL builders; for an entity
+                // with a reserved-keyword column this builder neither reads nor fills it. So the SQL builder still renders (and
+                // caches) the unquoted text, and a selectFrom after that cache was filled is still quoted (assertAll runs in order).
+                () -> assertEquals("SELECT id AS \"id\", \"desc\" AS \"desc\", group AS \"group\", \"token\" AS \"tok\" FROM \"order\"",
+                        PSC.selectFrom(Order.class).build().query()),
+                () -> assertEquals("SELECT id AS \"id\", desc AS \"desc\", group AS \"group\", token AS \"tok\" FROM order",
+                        com.landawn.abacus.query.Dsl.PSC.selectFrom(Order.class).build().query()),
+                () -> assertEquals("SELECT id AS \"id\", \"desc\" AS \"desc\", group AS \"group\", \"token\" AS \"tok\" FROM \"order\"",
+                        PSC.selectFrom(Order.class).build().query()),
+                () -> assertEquals("SELECT ID AS \"id\", \"desc\" AS \"desc\", GROUP AS \"group\", \"token\" AS \"tok\" FROM \"order\" WHERE \"desc\" = ?",
+                        PAC.selectFrom(Order.class).where(Filters.eq("desc", 1)).build().query()),
+                () -> assertEquals("SELECT id, \"desc\", group, \"token\" FROM \"order\" WHERE \"token\" = ? ORDER BY \"desc\" DESC",
+                        PSB.selectFrom(Order.class).where(Filters.eq("tok", 1)).orderBy("desc", com.landawn.abacus.query.SortDirection.DESC).build().query()),
+                () -> assertEquals("INSERT INTO \"order\" (id, \"desc\", group, \"token\") VALUES (?, ?, ?, ?)", PSC.insertInto(Order.class).build().query()),
+                () -> assertEquals("INSERT INTO \"order\" (id, \"desc\", group, \"token\") VALUES (?, ?, ?, ?)",
+                        ParsedCql.parse(NSC.insert(order).into(Order.class).build().query()).parameterizedCql()),
+                () -> assertEquals("UPDATE \"order\" SET \"desc\" = ?, group = ?, \"token\" = ? WHERE id = ? IF \"desc\" = ?",
+                        PSC.update(Order.class).where(Filters.eq("id", 1)).onlyIf(Filters.eq("desc", "x")).build().query()),
+                () -> assertEquals("DELETE FROM \"order\" WHERE \"desc\" = ?", PSC.deleteFrom(Order.class).where(Filters.eq("desc", 1)).build().query()),
+                () -> assertEquals("DELETE \"desc\" FROM \"order\" WHERE id = ?",
+                        PSC.delete("desc").from(Order.class).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("BEGIN BATCH INSERT INTO \"order\" (id, \"desc\", group, \"token\") VALUES (1, 'd', 'g', 't'); APPLY BATCH",
+                        SCCB.batchInsert(N.asList(order)).into(Order.class).build().query()),
+                () -> assertEquals("SELECT count(*) FROM \"order\" WHERE \"desc\" IN (?, ?)",
+                        PSC.count(Order.class).where(Filters.in("desc", N.asList(1, 2))).build().query()),
+                // Caller-supplied names, in any case, and each reserved part of a dotted name; function calls and aliases unchanged.
+                () -> assertEquals(
+                        "SELECT \"desc\", token(id), a.\"desc\" AS \"a.desc\" FROM \"select\" WHERE \"limit\" IN (?, ?) AND token(id) > ? ORDER BY \"desc\" DESC",
+                        PSC.select("desc", "token(id)", "a.desc")
+                                .from("select")
+                                .where(Filters.and(Filters.in("limit", N.asList(1, 2)), Filters.gt("token(id)", 3)))
+                                .orderBy("desc", com.landawn.abacus.query.SortDirection.DESC)
+                                .build()
+                                .query()),
+                () -> assertEquals("UPDATE \"order\" SET \"desc\" = ? WHERE ID = ? IF \"token\" = ?",
+                        PAC.update("ORDER").set("DESC").where(Filters.eq("id", 1)).onlyIf(Filters.eq("Token", 2)).build().query()),
+                () -> assertEquals("SELECT \"desc\" FROM ks.\"order\"", PSB.select("Desc").from("ks.order").build().query()),
+                () -> assertEquals("INSERT INTO ks.\"order\" (\"desc\", group) VALUES (?, ?)",
+                        ParsedCql.parse(NSC.insert("desc", "group").into("ks.\"order\"").build().query()).parameterizedCql()),
+                () -> assertEquals("DELETE FROM \"from\" WHERE \"where\" = ?", PSC.deleteFrom("from").where(Filters.eq("where", 1)).build().query()),
+                () -> assertEquals("SELECT id FROM t GROUP BY \"desc\" ORDER BY \"limit\"",
+                        PLC.select("id").from("t").groupBy("desc").orderBy("limit").build().query()),
+                () -> assertEquals("SELECT \"desc\" AS d FROM t", PSC.select("desc AS d").from("t").build().query()),
+                () -> assertEquals("\"order\" = ? AND value = ?",
+                        PSC.renderCondition(Filters.and(Filters.eq("order", 1), Filters.eq("value", 2)), null).build().query()),
+                // Pins (unchanged): raw expression text, an alias, a function argument, non-reserved keywords, quoted names,
+                // the literal keywords NULL/NaN, expressions, a Criteria's sort list (raw text) and names merely containing a keyword.
+                () -> assertEquals("SELECT id FROM t WHERE desc = 1", PSC.select("id").from("t").where(Filters.expr("desc = 1")).build().query()),
+                () -> assertEquals("SELECT writetime(desc), id AS desc FROM t", PSC.select("writetime(desc)", "id AS desc").from("t").build().query()),
+                () -> assertEquals("SELECT group, value, key, ttl, \"desc\", \"Order\", NULL, nan FROM \"select\"",
+                        PSC.select("group", "value", "key", "ttl", "\"desc\"", "\"Order\"", "NULL", "nan").from("\"select\"").build().query()),
+                () -> assertEquals("SELECT desc + 1, count(*), * FROM t", PSC.select("desc + 1", "count(*)", "*").from("t").build().query()),
+                () -> assertEquals(
+                        "SELECT id AS \"id\", \"desc\" AS \"desc\", group AS \"group\", \"token\" AS \"tok\" FROM \"order\" WHERE \"desc\" = ? ORDER BY desc",
+                        PSC.selectFrom(Order.class)
+                                .append(com.landawn.abacus.query.condition.Criteria.builder().where(Filters.eq("desc", 1)).orderBy("desc").build())
+                                .build()
+                                .query()),
+                () -> assertEquals("SELECT id FROM t WHERE descx = ? ORDER BY desc_x",
+                        PSC.select("id").from("t").where(Filters.eq("descx", 1)).orderBy("desc_x").build().query()),
+                () -> assertEquals("SELECT id, first_name AS \"firstName\", last_name AS \"lastName\" FROM account",
+                        PSC.select("id", "firstName", "lastName").from("account").build().query()));
+    }
+
+    /**
+     * Regression: NaN and infinite floating-point values inlined by a raw-CQL builder threw the parent's
+     * "NaN/Infinity has no portable SQL literal" IAE, although CQL has the constants NaN, Infinity and -Infinity, which
+     * Cassandra 5.0 accepts for double and float columns. Every floating-point holder whose text is one of them is rendered
+     * the same way; finite and BigDecimal values, and bound (parameterized) values, are unchanged.
+     */
+    @Test
+    @SuppressWarnings("deprecation")
+    public void test_applyCql_nonFiniteFloatingPointRawLiterals() {
+        final java.util.concurrent.atomic.DoubleAdder adder = new java.util.concurrent.atomic.DoubleAdder();
+        adder.add(Double.POSITIVE_INFINITY);
+        final java.util.concurrent.atomic.DoubleAccumulator accumulator = new java.util.concurrent.atomic.DoubleAccumulator(Double::sum, Double.NaN);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("INSERT INTO t (x) VALUES (NaN)", SCCB.insert(N.asMap("x", Double.NaN)).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (x) VALUES (Infinity)", SCCB.insert(N.asMap("x", Double.POSITIVE_INFINITY)).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (x) VALUES (-Infinity)", SCCB.insert(N.asMap("x", Double.NEGATIVE_INFINITY)).into("t").build().query()),
+                () -> assertEquals("UPDATE t SET X = NaN, Y = -Infinity WHERE K = 1",
+                        ACCB.update("t").set(N.asMap("x", Float.NaN, "y", Float.NEGATIVE_INFINITY)).where(Filters.eq("k", 1)).build().query()),
+                () -> assertEquals("SELECT k FROM t WHERE x = Infinity",
+                        LCCB.select("k").from("t").where(Filters.eq("x", Float.POSITIVE_INFINITY)).build().query()),
+                () -> assertEquals("SELECT k FROM t WHERE x IN (NaN, -Infinity, 1)",
+                        SCCB.select("k").from("t").where(Filters.in("x", N.asList(Double.NaN, Double.NEGATIVE_INFINITY, 1))).build().query()),
+                () -> assertEquals("UPDATE t SET y = 1 WHERE k = 1 IF x = NaN",
+                        SCCB.update("t").set(N.asMap("y", 1)).where(Filters.eq("k", 1)).onlyIf(Filters.eq("x", Double.NaN)).build().query()),
+                () -> assertEquals("BEGIN BATCH INSERT INTO t (x) VALUES (NaN); INSERT INTO t (x) VALUES (2.5); APPLY BATCH",
+                        SCCB.batchInsert(N.asList(N.asMap("x", Double.NaN), N.asMap("x", 2.5))).into("t").build().query()),
+                // Floating-point holders, judged by their text (and doubleValue()).
+                () -> assertEquals("INSERT INTO t (x) VALUES (NaN)",
+                        SCCB.insert(N.asMap("x", com.landawn.abacus.util.MutableDouble.of(Double.NaN))).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (x) VALUES (-Infinity)",
+                        SCCB.insert(N.asMap("x", com.landawn.abacus.util.MutableFloat.of(Float.NEGATIVE_INFINITY))).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (x) VALUES (Infinity)", SCCB.insert(N.asMap("x", adder)).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (x) VALUES (NaN)", SCCB.insert(N.asMap("x", accumulator)).into("t").build().query()),
+                () -> assertEquals("INSERT INTO t (x) VALUES (Infinity)",
+                        SCCB.insert(N.asMap("x", new com.google.common.util.concurrent.AtomicDouble(Double.POSITIVE_INFINITY))).into("t").build().query()),
+                // Pins: finite values, a BigDecimal beyond the double range, and bound values are unchanged.
+                () -> assertEquals("INSERT INTO t (a, b, c) VALUES (1.5, -0.0, 1E+400)",
+                        SCCB.insert(N.asMap("a", 1.5, "b", -0.0, "c", new java.math.BigDecimal("1e400"))).into("t").build().query()),
+                () -> {
+                    final SP sp = PSC.insert(N.asMap("x", Double.NaN)).into("t").build();
+                    assertEquals("INSERT INTO t (x) VALUES (?)", sp.query());
+                    assertTrue(Double.isNaN((Double) sp.parameters().get(0)));
+                });
+    }
+
+    /** Entity whose only reserved-keyword column is the unquoted field of a quoted UDT column ({@code "Addr".desc}). */
+    public static class QuotedUdtField {
+        @com.landawn.abacus.annotation.Id
+        private long id;
+        @com.landawn.abacus.annotation.Column("\"Addr\".desc")
+        private String d;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public String getD() {
+            return d;
+        }
+
+        public void setD(final String d) {
+            this.d = d;
+        }
+    }
+
+    /**
+     * Regression (verify of apply-cql): a column reference whose dotted chain has a quoted part kept a reserved unquoted part
+     * bare ({@code order."x"}, {@code "Order".desc}), although a table reference of the same shape was quoted
+     * ({@code "order"."x"}) and the class Javadoc quotes "each part of a dotted name". Quoted parts stay as written.
+     */
+    @Test
+    public void test_vapplyCql_reservedPartNextToQuotedPartIsQuoted() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT id FROM t WHERE \"order\".\"x\" = ? AND \"Order\".\"desc\" = ?",
+                        PSB.select("id").from("t").where(Filters.and(Filters.eq("order.\"x\"", 1), Filters.eq("\"Order\".desc", 2))).build().query()),
+                () -> assertEquals("UPDATE t SET \"order\".\"x\" = ? WHERE \"a\"\"b\".\"limit\" = ?",
+                        PSC.update("t").set("order.\"x\"").where(Filters.eq("\"a\"\"b\".limit", 1)).build().query()),
+                // With the implicit alias (the item text, its quotes doubled) of a non-NO_CHANGE naming policy.
+                () -> assertEquals("SELECT \"Order\".\"desc\" AS \"\"\"Order\"\".desc\" FROM t", PSC.select("\"Order\".desc").from("t").build().query()),
+                // An entity column: selectFrom's full select list must not fall back to the parent's unquoted shared-cache text.
+                () -> assertEquals("SELECT id AS \"id\", \"Addr\".\"desc\" AS \"d\" FROM quoted_udt_field WHERE \"Addr\".\"desc\" = ?",
+                        PSC.selectFrom(QuotedUdtField.class).where(Filters.eq("d", 1)).build().query()),
+                // Pins (unchanged): quoted parts, also a quoted reserved name, and non-reserved unquoted parts.
+                () -> assertEquals("SELECT id FROM t WHERE \"desc\".x = ? AND \"Order\".value = ? AND \"order\" = ?",
+                        PSB.select("id")
+                                .from("t")
+                                .where(Filters.and(Filters.eq("\"desc\".x", 1), Filters.eq("\"Order\".value", 2), Filters.eq("\"order\"", 3)))
+                                .build()
+                                .query()));
+    }
+
+    // ---- 2026-10-24 r2 sliceI ----
+
+    /**
+     * Regression: a raw (SCCB/ACCB/LCCB) builder inlined a LocalTime as LocalTime.toString(), which leaves out zero seconds
+     * ('09:00', midnight '00:00'); Cassandra 5.0's time literal requires hh:mm:ss[.fffffffff] and rejected it ("Unable to
+     * coerce '09:00' to a formatted time (long)"). Every inlining path (SET, WHERE, IN, INSERT, batch INSERT) now keeps the
+     * seconds; times that already had seconds or a fraction, java.sql.Time and bound values are unchanged.
+     */
+    @SuppressWarnings("deprecation")
+    @Test
+    public void test_r2sliceI_rawLocalTimeLiteralAlwaysCarriesSeconds() {
+        org.junit.jupiter.api.Assertions
+                .assertAll(
+                        () -> assertEquals("UPDATE t SET opens_at = '09:00:00' WHERE id = 1",
+                                SCCB.update("t").set("opensAt", java.time.LocalTime.of(9, 0)).where(Filters.eq("id", 1)).build().query()),
+                        () -> assertEquals("SELECT id FROM t WHERE at IN ('00:00:00', '23:59:00')",
+                                SCCB.select("id")
+                                        .from("t")
+                                        .where(Filters.in("at", N.asList(java.time.LocalTime.MIDNIGHT, java.time.LocalTime.of(23, 59))))
+                                        .build()
+                                        .query()),
+                        () -> assertEquals("INSERT INTO t (id, at) VALUES (1, '12:00:00')",
+                                SCCB.insert(N.asMap("id", 1, "at", java.time.LocalTime.NOON)).into("t").build().query()),
+                        () -> assertEquals("BEGIN BATCH INSERT INTO t (at) VALUES ('08:00:00'); APPLY BATCH",
+                                SCCB.batchInsert(N.asList(N.asMap("at", java.time.LocalTime.of(8, 0)))).into("t").build().query()),
+                        () -> assertEquals("UPDATE t SET AT = '07:15:00' WHERE ID = 1",
+                                ACCB.update("t").set("at", java.time.LocalTime.of(7, 15)).where(Filters.eq("id", 1)).build().query()),
+                        // Pins (unchanged): seconds or a fraction already present, java.sql.Time, and a bound LocalTime.
+                        () -> assertEquals("INSERT INTO t (a, b, c, d) VALUES ('09:30:05', '09:30:00.000001', '09:00:00.500', '12:00:00')",
+                                SCCB.insert(N.asMap("a", java.time.LocalTime.of(9, 30, 5), "b", java.time.LocalTime.of(9, 30, 0, 1000), "c",
+                                        java.time.LocalTime.of(9, 0, 0, 500_000_000), "d", java.sql.Time.valueOf("12:00:00"))).into("t").build().query()),
+                        () -> {
+                            final SP sp = PSC.update("t").set("at", java.time.LocalTime.of(9, 0)).where(Filters.eq("id", 1)).build();
+                            assertEquals("UPDATE t SET at = ? WHERE id = ?", sp.query());
+                            assertEquals(N.asList(java.time.LocalTime.of(9, 0), 1), sp.parameters());
+                        });
+    }
+
+    /** An {@code @Entity}-annotated Map subclass, which {@code Beans.isBeanClass} accepts like an entity bean. */
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table("map_rows")
+    public static class R2sliceIMapEntity extends java.util.LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        static R2sliceIMapEntity of(final Object id, final Object name) {
+            final R2sliceIMapEntity row = new R2sliceIMapEntity();
+            row.put("id", id);
+            row.put("name", name);
+            return row;
+        }
+    }
+
+    /**
+     * Pin (cross-cutting alert, unchanged): every entity-taking entry point (insert, insert with exclusions, batchInsert,
+     * set(entity), set(entity, excluded)) reads an {@code @Entity}-annotated Map subclass as a map of its entries, keeping a
+     * zero key, instead of as a bean (whose only "property" would be the Map's {@code isEmpty} getter).
+     */
+    @Test
+    public void test_r2sliceI_entityAnnotatedMapSubclassIsReadAsItsEntries() {
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final SP sp = PSC.insert(R2sliceIMapEntity.of(0, "a")).into("t").build();
+            assertEquals("INSERT INTO t (id, name) VALUES (?, ?)", sp.query());
+            assertEquals(N.asList(0, "a"), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.insert(R2sliceIMapEntity.of(0, "a"), N.asSet("name")).into(R2sliceIMapEntity.class).build();
+            assertEquals("INSERT INTO map_rows (id) VALUES (?)", sp.query());
+            assertEquals(N.asList(0), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.batchInsert(N.asList(R2sliceIMapEntity.of(0, "a"), R2sliceIMapEntity.of(1, "b"))).into("t").build();
+            assertEquals("BEGIN BATCH INSERT INTO t (id, name) VALUES (?, ?); INSERT INTO t (id, name) VALUES (?, ?); APPLY BATCH", sp.query());
+            assertEquals(N.asList(0, "a", 1, "b"), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.update("t").set(R2sliceIMapEntity.of(0, "a")).where(Filters.eq("id", 0)).build();
+            assertEquals("UPDATE t SET id = ?, name = ? WHERE id = ?", sp.query());
+            assertEquals(N.asList(0, "a", 0), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.update("t").set(R2sliceIMapEntity.of(0, "a"), N.asSet("id")).where(Filters.eq("id", 0)).build();
+            assertEquals("UPDATE t SET name = ? WHERE id = ?", sp.query());
+            assertEquals(N.asList("a", 0), sp.parameters());
+        });
+    }
+
+    /**
+     * Pin for the class Javadoc: the inherited groupByAsc(...)/groupByDesc(...) shortcuts delegate to the GROUP BY overloads
+     * that take a SortDirection, so they fail with the same UnsupportedOperationException (CQL GROUP BY has no ASC/DESC),
+     * and a closed builder still reports IllegalStateException first.
+     */
+    @Test
+    public void test_r2sliceI_groupByAscAndDescShortcutsAreUnsupported() {
+        final com.landawn.abacus.da.cassandra.CqlBuilder closed = PSC.select("a").from("t");
+        closed.build();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByAsc("a")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByAsc("a", "b")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByAsc(N.asList("a"))),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByDesc("a")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByDesc("a", "b")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByDesc(N.asList("a"))),
+                () -> assertThrows(IllegalStateException.class, () -> closed.groupByAsc("a")),
+                () -> assertThrows(IllegalStateException.class, () -> closed.groupByDesc("a", "b")));
+    }
+
+    /**
+     * Pin for the class Javadoc: a named-parameter DSL names the marker of a reserved-keyword column after it ({@code :desc}),
+     * which Cassandra's parser rejects; ParsedCql, through which the executors prepare CQL text, turns it into {@code ?}.
+     */
+    @Test
+    public void test_r2sliceI_namedMarkerOfReservedKeywordColumnIsRewrittenByParsedCql() {
+        final String cql = NSC.update("t").set("desc").where(Filters.eq("order", 1)).build().query();
+
+        assertEquals("UPDATE t SET \"desc\" = :desc WHERE \"order\" = :order", cql);
+        assertEquals("UPDATE t SET \"desc\" = ? WHERE \"order\" = ?", ParsedCql.parse(cql).parameterizedCql());
+        assertEquals("UPDATE t SET \"desc\" = ? WHERE \"order\" = ?", PSC.update("t").set("desc").where(Filters.eq("order", 1)).build().query());
+    }
 }

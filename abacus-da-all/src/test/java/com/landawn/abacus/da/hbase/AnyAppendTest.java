@@ -360,4 +360,20 @@ public class AnyAppendTest extends TestBase {
         assertArrayEquals(Bytes.toBytes("user123"), append.getRow());
         assertArrayEquals(Bytes.toBytes("user123"), append.val().getRow());
     }
+
+    // ---- 2026-10-24 r2 sliceO ----
+
+    /**
+     * of(Object) with an empty value wrapper (no row-key bytes) failed with a NullPointerException on row.length inside
+     * Append(byte[]); it now throws IllegalArgumentException, as the sliced of(Object, int, int) already did (guard).
+     */
+    @Test
+    public void testOf_emptyValueWrapperRowKey_throwsIllegalArgumentException_r2sliceO() {
+        final Object emptyOptional = java.util.Optional.empty();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyAppend.of(emptyOptional)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyAppend.of(com.landawn.abacus.util.u.Nullable.of((String) null))),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyAppend.of(emptyOptional, 0, 1)),
+                () -> assertArrayEquals(Bytes.toBytes("k"), AnyAppend.of(java.util.Optional.of("k")).getRow()));
+    }
 }

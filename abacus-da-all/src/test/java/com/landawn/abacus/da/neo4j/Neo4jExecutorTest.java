@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
@@ -105,7 +106,8 @@ public class Neo4jExecutorTest extends TestBase {
     @Test
     public void testCount() {
         List<Filter> filters = Arrays.asList(new Filter("name", ComparisonOperator.EQUALS, "John"));
-        when(mockSession.count(Person.class, filters)).thenReturn(7L);
+        // a plain list reaches the session as a Filters object of copies of its filters (2026-10-24 apply-neo4j)
+        when(mockSession.count(eq(Person.class), isA(Filters.class))).thenReturn(7L);
         assertEquals(7L, executor.count(Person.class, filters));
     }
 

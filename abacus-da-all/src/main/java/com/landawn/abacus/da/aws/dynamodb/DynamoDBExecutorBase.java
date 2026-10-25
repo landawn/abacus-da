@@ -42,8 +42,10 @@ import com.landawn.abacus.parser.ParserUtil.PropInfo;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.BiMap;
+import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.Clazz;
 import com.landawn.abacus.util.Fn;
+import com.landawn.abacus.util.Fraction;
 import com.landawn.abacus.util.Holder;
 import com.landawn.abacus.util.Immutable;
 import com.landawn.abacus.util.ImmutableBiMap;
@@ -120,7 +122,8 @@ public abstract class DynamoDBExecutorBase {
      * <p>JSON reads apply property formats, skip every SERIALIZE_ONLY property, and ignore unmatched dotted
      * names. Item and direct bean mapping assign SERIALIZE_ONLY properties that have a write path (a writable field or
      * a setter), skip read-only properties ({@code PropInfo.isReadOnlyProperty}, including getter-only properties of an
-     * {@code @AccessFieldByMethod} bean), and resolve dotted paths. A read-only property is skipped in every context,
+     * {@code @AccessFieldByMethod} bean), and resolve dotted paths, converting their values as for the last property of the
+     * path named directly. A read-only property is skipped in every context,
      * whatever its declared direction: a read-only property can carry an explicit {@code DESERIALIZE_ONLY} only on an
      * {@code @AccessFieldByMethod} field without a setter, and such a property is skipped too, by item and direct mapping and
      * by a JSON-context element of {@code L}, since {@code isReadOnlyProperty} is tested before the direction. Only a bean parsed from the JSON
@@ -136,12 +139,23 @@ public abstract class DynamoDBExecutorBase {
      * @param valueDecoder decodes each raw value of {@code item} into its native Java value
      * @param context the conversion rules used by the enclosing value
      * @return the finished bean, or {@code null} for a {@code null} item
+     * @throws IllegalArgumentException if {@code item} is non-null and {@code targetType} is a {@link Map} type (an entity-annotated
+     *         {@code Map} subclass included)
      * @throws RuntimeException if decoding, conversion, bean construction, or property assignment fails
      */
     protected static <T, V> T toEntity(final Map<String, V> item, final Type<T> targetType, final Function<? super V, ?> valueDecoder,
             final MappingContext context) {
         if (item == null) {
             return null;
+        }
+
+        if (Map.class.isAssignableFrom(targetType.javaType())) {
+            // Beans.isBeanClass (and so ParserUtil.getBeanInfo) also accepts an @Entity-annotated Map subclass, whose only bean
+            // properties are its Map accessors: every attribute was silently dropped and an empty map returned. Reject every Map
+            // type with the exception getBeanInfo throws for a plain one. The row readers (readRow, list, query) fill a Map row
+            // type with the item's attributes instead; internal callers only pass bean types here.
+            throw new IllegalArgumentException(
+                    "Not a bean class: " + ClassUtil.getCanonicalClassName(targetType.javaType()) + " - Map implementations are never treated as beans");
         }
 
         final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetType.javaType());
@@ -169,7 +183,13 @@ public abstract class DynamoDBExecutorBase {
 
             if (propInfo == null) {
                 if (!jsonRead && propName.indexOf(SK._PERIOD) > 0) { //NOSONAR
-                    entityInfo.setPropValue(entity, propName, valueDecoder.apply(propValue), true);
+                    final Object rawValue = valueDecoder.apply(propValue);
+                    // Convert a dotted path's value as the same property is converted at top level. The dependency's path
+                    // setter only applies its raw conversion: an SDK v1 buffer became "" or null, an SDK v2 byte[] for a
+                    // ByteBuffer an empty write-mode buffer, and typed containers, wrappers and enum codes skipped the item
+                    // rules. Paths it ignores (unresolvable, or ending at a read-only property) still pass the value unchanged.
+                    final PropInfo leafPropInfo = writableLeafOfPath(entityInfo, propName);
+                    entityInfo.setPropValue(entity, propName, leafPropInfo == null ? rawValue : readPropertyValue(leafPropInfo, rawValue, context), true);
                 }
 
                 continue;
@@ -208,42 +228,68 @@ public abstract class DynamoDBExecutorBase {
                 // A JSON bean reads its other native values with the rules of its nested values, so a value of another shape is
                 // converted or rejected as the JSON reader did, instead of being stored as the wrong element type.
                 propInfo.setPropValue(entity, convertContainerElement(rawValue, propType, context));
-            } else if (context == MappingContext.MAPPED_BEAN
-                    || isGenericWrapper(propType) && (rawValue != null || context == MappingContext.ITEM && propType.javaType() == Holder.class)) {
-                final Object converted = convertContainerElement(rawValue, propType, context);
-
-                if (context == MappingContext.ITEM && rawValue instanceof String && wrappedBinary(converted) instanceof final ByteBuffer buffer) {
-                    // toItem writes an item's wrapped buffer back as binary from its readable bytes. Base64 text decodes to a buffer
-                    // positioned after its bytes, so flip it as for a bare ByteBuffer; otherwise a read-modify-write stores an empty value.
-                    buffer.flip();
-                }
-
-                propInfo.setPropValue(entity, converted);
-            } else if ((rawValue instanceof Collection && (propType.isCollection() || propType.isObjectArray()))
-                    || (rawValue instanceof Map && propType.isMap())) {
-                propInfo.setPropValue(entity, convertNativeContainer(rawValue, propType, context));
-            } else if (rawValue instanceof String && !propInfo.clazz.isInstance(rawValue) && isParameterizedValueType(propType)) {
-                // Text for a parameterized type, or for an array of one, is read with the complete type. Raw-class conversion
-                // parsed "[1, 2]" into a Pair<Long, Long> or an Optional<Long>[] with Integer contents.
-                propInfo.setPropValue(entity, readJsonText((String) rawValue, propType));
-            } else if (rawValue != null && !(rawValue instanceof String) && isItemShapeMismatch(rawValue, propType)) {
-                // A native value of another shape for a typed container, an object array, or another parameterized type (an M
-                // attribute for a List<Long>, a BOOL or B attribute for a Long[]): raw-class conversion would store it unconverted.
-                propInfo.setPropValue(entity, convertMismatchedValue(rawValue, propType, context));
-            } else if (rawValue instanceof Map && propType.isBean()) {
-                propInfo.setPropValue(entity, convertContainerElement(rawValue, propType, context));
-            } else if (rawValue == null || propInfo.clazz.isAssignableFrom(rawValue.getClass())) {
-                propInfo.setPropValue(entity, rawValue);
-            } else if (rawValue instanceof String && propType.javaType().isEnum()) {
-                // Use the property's enum representation: a CODE enum accepts both the constant names that toItem
-                // writes and numeric codes, instead of the raw enum class reading a numeric code as an ordinal.
-                propInfo.setPropValue(entity, propType.valueOf((String) rawValue));
             } else {
-                propInfo.setPropValue(entity, convertValue(rawValue, propInfo.clazz));
+                propInfo.setPropValue(entity, readPropertyValue(propInfo, rawValue, context));
             }
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    /**
+     * Converts a decoded value to the value assigned to a bean property by item and direct bean mapping (and to a {@code null}
+     * value in JSON context), for a property named directly or by a dotted path.
+     */
+    private static Object readPropertyValue(final PropInfo propInfo, final Object rawValue, final MappingContext context) {
+        final Type<?> propType = propInfo.jsonXmlType;
+
+        if (context == MappingContext.MAPPED_BEAN
+                || isGenericWrapper(propType) && (rawValue != null || context == MappingContext.ITEM && propType.javaType() == Holder.class)) {
+            final Object converted = convertContainerElement(rawValue, propType, context);
+
+            if (context == MappingContext.ITEM && rawValue instanceof String && wrappedBinary(converted) instanceof final ByteBuffer buffer) {
+                // toItem writes an item's wrapped buffer back as binary from its readable bytes. Base64 text decodes to a buffer
+                // positioned after its bytes, so flip it as for a bare ByteBuffer; otherwise a read-modify-write stores an empty value.
+                buffer.flip();
+            }
+
+            return converted;
+        } else if ((rawValue instanceof Collection && (propType.isCollection() || propType.isObjectArray())) || (rawValue instanceof Map && propType.isMap())) {
+            return convertNativeContainer(rawValue, propType, context);
+        } else if (rawValue instanceof String && !propInfo.clazz.isInstance(rawValue) && isParameterizedValueType(propType)) {
+            // Text for a parameterized type, or for an array of one, is read with the complete type. Raw-class conversion
+            // parsed "[1, 2]" into a Pair<Long, Long> or an Optional<Long>[] with Integer contents.
+            return readJsonText((String) rawValue, propType);
+        } else if (rawValue != null && !(rawValue instanceof String) && isItemShapeMismatch(rawValue, propType)) {
+            // A native value of another shape for a typed container, an object array, or another parameterized type (an M
+            // attribute for a List<Long>, a BOOL or B attribute for a Long[]): raw-class conversion would store it unconverted.
+            return convertMismatchedValue(rawValue, propType, context);
+        } else if (rawValue instanceof Map && propType.isBean()) {
+            return convertContainerElement(rawValue, propType, context);
+        } else if (rawValue == null || propInfo.clazz.isAssignableFrom(rawValue.getClass())) {
+            return rawValue;
+        } else if (rawValue instanceof String && propType.javaType().isEnum()) {
+            // Use the property's enum representation: a CODE enum accepts both the constant names that toItem
+            // writes and numeric codes, instead of the raw enum class reading a numeric code as an ordinal.
+            return propType.valueOf((String) rawValue);
+        } else {
+            return convertValue(rawValue, propInfo.clazz);
+        }
+    }
+
+    /**
+     * Returns the last property of a dotted path, or {@code null} when the dependency's path setter ignores the path: no
+     * property chain matches it, or the chain ends at a read-only property.
+     */
+    private static PropInfo writableLeafOfPath(final BeanInfo beanInfo, final String path) {
+        final List<PropInfo> chain = beanInfo.getPropInfoChain(path);
+
+        if (chain.isEmpty()) {
+            return null;
+        }
+
+        final PropInfo leaf = chain.get(chain.size() - 1);
+        return leaf.isReadOnlyProperty ? null : leaf;
     }
 
     /**
@@ -269,7 +315,7 @@ public abstract class DynamoDBExecutorBase {
             if (Strings.isBlank(numberFormat) && (fieldConfig == null || Strings.isBlank(fieldConfig.dateFormat()))) {
                 // Number is abstract and its Type has no String factory. Use the JSON parser's numeric
                 // inference, as before, unless PropInfo has an explicit format to apply or reject.
-                return N.fromJson(value, Number.class);
+                return readNumberText(value);
             }
         } else if (isNumericWrapper(propInfo.jsonXmlType)) {
             final JsonXmlField fieldConfig = propInfo.getAnnotation(JsonXmlField.class);
@@ -746,11 +792,19 @@ public abstract class DynamoDBExecutorBase {
 
     /**
      * Reads non-null scalar text as {@link Number}, or a supported wrapper chain ending in {@code Number},
-     * using the JSON reader's numeric inference and empty/null-like text handling.
+     * using the JSON reader's numeric inference and empty/null-like text handling. The text of an abacus
+     * {@code Fraction} ({@code "3/4"}) reads as that {@code Fraction}, inside the wrappers for a wrapper chain.
      */
     protected static Object readJsonScalar(final String value, final Type<?> targetType) {
         if (targetType.javaType() == Number.class) {
-            return N.fromJson(value, Number.class);
+            return readNumberText(value);
+        }
+
+        final Fraction fraction = fractionOfText(value);
+
+        if (fraction != null) {
+            // The JSON reader rejects this text for the innermost Number, as for a bare Number (see readNumberText).
+            return readFormattedNumber(fraction, targetType);
         }
 
         // Wrapper Type.valueOf delegates to its element's String factory, which Number lacks. A JSON
@@ -791,7 +845,8 @@ public abstract class DynamoDBExecutorBase {
      *
      * <p>The two AWS SDKs expose binary attributes differently: SDK v1 decodes a {@code B} attribute as a
      * {@link ByteBuffer}, while SDK v2 decodes it as a {@code byte[]}. Both representations are handled here so
-     * that the executors share one set of conversion rules.</p>
+     * that the executors share one set of conversion rules: a buffer for a type that cannot hold it converts from its
+     * readable bytes, as a {@code byte[]} does (see {@link #readableBytesOfBuffer(Object, Class)}).</p>
      *
      * @throws RuntimeException if the value cannot be converted to the requested Java type, or the target bean or container cannot be constructed or
      *         populated
@@ -844,14 +899,43 @@ public abstract class DynamoDBExecutorBase {
             }
         }
 
-        return N.convert(value, targetClass);
+        return N.convert(readableBytesOfBuffer(value, targetClass), targetClass);
+    }
+
+    /**
+     * Returns the readable bytes of an SDK v1 {@link ByteBuffer} that is converted to a type which cannot hold the buffer, so it
+     * converts as the {@code byte[]} that SDK v2 hands out for the same {@code B} attribute; returns {@code value} unchanged for
+     * any other value, and for a target that can hold the buffer: its own type or a supertype, a collection, or an object array
+     * whose elements can be the buffer (these receive the buffer as is, or as their single element).
+     *
+     * <p>abacus-common converts a ByteBuffer to another type only through its write-mode text form, which is empty for the
+     * read-mode buffer of a {@code B} attribute: a String became {@code ""}, and a number, date, UUID, enum, bean, map or typed
+     * array {@code null} (a primitive its default), silently losing the attribute that SDK v2 converts from its bytes (failing,
+     * for example, for a number, and keeping the bytes' text {@code "[1, 2, 3]"} for a String).</p>
+     *
+     * @param value the decoded value
+     * @param targetClass the class the value is converted to
+     * @return a copy of the buffer's remaining bytes (the buffer's position is not changed), or {@code value}
+     */
+    protected static Object readableBytesOfBuffer(final Object value, final Class<?> targetClass) {
+        if (!(value instanceof final ByteBuffer buffer) || targetClass.isInstance(value) || Collection.class.isAssignableFrom(targetClass)
+                || (targetClass.isArray() && targetClass.getComponentType().isAssignableFrom(ByteBuffer.class))) {
+            return value;
+        }
+
+        final ByteBuffer readable = buffer.duplicate();
+        final byte[] bytes = new byte[readable.remaining()];
+        readable.get(bytes);
+        return bytes;
     }
 
     /**
      * Reads a decoded value as {@link Number}. Number is abstract and has no String factory, so {@code N.convert} rejected every
      * value with {@link UnsupportedOperationException}: text uses JSON numeric inference, as nested Number properties do, and
      * other values fail as the JSON reader rejects them. A decimal that the inferred {@code Double} does not represent exactly
-     * becomes a {@link java.math.BigDecimal}, so a DynamoDB number of up to 38 digits reads and writes back unchanged.
+     * becomes a {@link java.math.BigDecimal}, so a DynamoDB number of up to 38 digits reads and writes back unchanged. Text in
+     * the form an abacus {@link Fraction} is written in ({@code "3/4"}, which {@code toAttributeValue} stores as {@code S}) reads
+     * back as that {@code Fraction}.
      *
      * @throws NumberFormatException if the value is not a number
      * @throws IllegalArgumentException if the value is binary
@@ -865,7 +949,7 @@ public abstract class DynamoDBExecutorBase {
             return N.fromJson(N.toJson(value), Number.class);
         }
 
-        final Number number = N.fromJson(text, Number.class);
+        final Number number = readNumberText(text);
 
         if (number instanceof final Double inferred) {
             try {
@@ -883,12 +967,137 @@ public abstract class DynamoDBExecutorBase {
     }
 
     /**
+     * Reads text for a {@code Number} slot with the JSON reader's numeric inference, except that the text of an abacus
+     * {@link Fraction} ({@code "3/4"}) reads as that {@code Fraction}.
+     */
+    private static Number readNumberText(final String text) {
+        // toAttributeValue stores a number whose text is not a decimal literal (an abacus Fraction, "3/4") as S, since DynamoDB
+        // rejects it as N. A Number property, element or value then read that text with N.fromJson, which rejects it too
+        // ("3/4 is not a valid Number."), so the stored item could not be read back at all. Only text in the exact form a
+        // Fraction is written in changes; it failed before, and every other text keeps the JSON reader's result or failure.
+        final Fraction fraction = fractionOfText(text);
+
+        return fraction != null ? fraction : N.fromJson(text, Number.class);
+    }
+
+    /**
+     * Returns the abacus {@link Fraction} written as {@code text} in the only form its type writes ({@code Fraction.toString()}:
+     * an optional {@code -}, ASCII digits, {@code /}, ASCII digits, and nothing else), or {@code null} for any other text,
+     * including a zero denominator or a term outside the {@code int} range.
+     */
+    private static Fraction fractionOfText(final String text) {
+        final int len = text.length();
+        int i = len > 0 && text.charAt(0) == '-' ? 1 : 0;
+        final int numeratorStart = i;
+
+        while (i < len && isAsciiDigit(text.charAt(i))) {
+            i++;
+        }
+
+        // At least one numerator digit, then '/', then at least one denominator digit.
+        if (i == numeratorStart || i >= len - 1 || text.charAt(i) != '/') {
+            return null;
+        }
+
+        for (int j = i + 1; j < len; j++) {
+            if (!isAsciiDigit(text.charAt(j))) {
+                return null;
+            }
+        }
+
+        try {
+            return Fraction.of(text);
+        } catch (final ArithmeticException | NumberFormatException e) {
+            // "1/0", or a term beyond the int range: not a Fraction's text, so keep the existing failure.
+            return null;
+        }
+    }
+
+    /**
      * Returns whether {@code text}, ignoring surrounding whitespace, is bracketed like a JSON array.
      */
     protected static boolean isJsonArrayText(final String text) {
         final String trimmed = text.strip();
 
         return trimmed.length() >= 2 && trimmed.charAt(0) == '[' && trimmed.charAt(trimmed.length() - 1) == ']';
+    }
+
+    /**
+     * Returns whether {@code text} is a decimal number literal, the syntax of {@code BigDecimal(String)} with ASCII digits: an
+     * optional sign, digits with at most one decimal point (at least one digit in all), and an optional exponent ({@code e} or
+     * {@code E}, an optional sign, at least one digit), with nothing before or after it. The {@code toAttributeValue} methods
+     * write the text of a number type as a DynamoDB {@code N} value only when it is such a literal; any other text, such as
+     * abacus {@code Fraction}'s {@code "3/4"}, is not a DynamoDB number.
+     *
+     * @param text the text of a number; may be {@code null}
+     * @return {@code true} if {@code text} is a decimal number literal, {@code false} otherwise or for {@code null}
+     */
+    protected static boolean isDecimalNumberText(final String text) {
+        final int len = text == null ? 0 : text.length();
+        int i = 0;
+
+        if (i < len && (text.charAt(i) == '+' || text.charAt(i) == '-')) {
+            i++;
+        }
+
+        int digits = 0;
+
+        for (; i < len && isAsciiDigit(text.charAt(i)); i++) {
+            digits++;
+        }
+
+        if (i < len && text.charAt(i) == '.') {
+            for (i++; i < len && isAsciiDigit(text.charAt(i)); i++) {
+                digits++;
+            }
+        }
+
+        if (digits == 0) {
+            return false;
+        }
+
+        if (i < len && (text.charAt(i) == 'e' || text.charAt(i) == 'E')) {
+            i++;
+
+            if (i < len && (text.charAt(i) == '+' || text.charAt(i) == '-')) {
+                i++;
+            }
+
+            final int exponentStart = i;
+
+            while (i < len && isAsciiDigit(text.charAt(i))) {
+                i++;
+            }
+
+            if (i == exponentStart) {
+                return false;
+            }
+        }
+
+        return i == len;
+    }
+
+    private static boolean isAsciiDigit(final char ch) {
+        return ch >= '0' && ch <= '9';
+    }
+
+    /**
+     * Checks the row type of {@code query(QueryRequest, Class)} before any request is sent. The executors build that Dataset
+     * from {@code Map} rows or bean rows only; an array, collection or single-value row type cannot become a Dataset (it has
+     * no column names), so it is rejected here instead of after every page has been read and paid for.
+     *
+     * @param targetClass the requested row type; {@code null} passes (whether {@code null} is allowed is the caller's rule)
+     * @throws IllegalArgumentException if {@code targetClass} is not {@code null} and is neither a {@link Map} type nor a bean class
+     */
+    protected static void checkDatasetRowType(final Class<?> targetClass) throws IllegalArgumentException {
+        // Map first: an @Entity-annotated Map subclass takes the Map path of query(QueryRequest, Class). Otherwise the rows
+        // reach N.newDataset(Collection), which accepts only Map or bean rows; Type.isBean() is the test the row mappers use to
+        // produce bean rows, so every other type would fail there once an item is returned (or, for a single-value type, at
+        // the first item that does not have exactly one attribute).
+        if (targetClass != null && !Map.class.isAssignableFrom(targetClass) && !N.typeOf(targetClass).isBean()) {
+            throw new IllegalArgumentException("Unsupported row type: " + ClassUtil.getCanonicalClassName(targetClass)
+                    + ". query(QueryRequest, Class) builds a Dataset only from a Map type or a bean class; use list(QueryRequest, Class) for other row types");
+        }
     }
 
     /**
@@ -1094,7 +1303,8 @@ public abstract class DynamoDBExecutorBase {
             // apply the binary rule of item and JSON values to a direct bean's typed containers too.
             return convertMismatchedValue(value, targetType, context);
         } else if (context == MappingContext.MAPPED_BEAN && !isBinaryConversion(value, targetType.javaType())) {
-            return N.convert(value, targetType);
+            // An SDK v1 buffer converts from its readable bytes, as SDK v2's byte[] does, instead of becoming null or "".
+            return N.convert(readableBytesOfBuffer(value, targetType.javaType()), targetType);
         } else if (value instanceof String && (targetType.isParameterizedType() || context == MappingContext.JSON)) {
             return targetType.valueOf((String) value);
         } else if (context == MappingContext.JSON && isJsonShapeMismatch(value, targetType)) {

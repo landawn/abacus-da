@@ -2263,4 +2263,398 @@ public class AsyncDynamoDBExecutorTest extends MockitoTestBase {
     private static String nameOf_ddbfix(final Object row) {
         return row instanceof final Map<?, ?> map ? (String) map.get("name") : ((TestEntity) row).getName();
     }
+
+    // ---- 2026-10-24 sliceD ----
+
+    /**
+     * Pins the documented missing-item result of the three typed getItem overloads: the default value of the target class,
+     * which is null for an ordinary reference type, the primitive default, and an EMPTY WRAPPER (not null) for Optional,
+     * Nullable and Holder targets.
+     */
+    @Test
+    public void testTypedGetItemMissingItemYieldsEmptyWrapperForOptionalLikeTargets_sliceD() throws Exception {
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
+        final Map<String, AttributeValue> key = Map.of("id", AttributeValue.fromS("missing"));
+        final GetItemRequest request = GetItemRequest.builder().tableName("TestTable").key(key).build();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(java.util.Optional.empty(), asyncExecutor.getItem("TestTable", key, java.util.Optional.class).get()),
+                () -> assertEquals(java.util.Optional.empty(), asyncExecutor.getItem("TestTable", key, true, java.util.Optional.class).get()),
+                () -> assertEquals(java.util.Optional.empty(), asyncExecutor.getItem(request, java.util.Optional.class).get()),
+                () -> assertFalse(asyncExecutor.getItem(request, com.landawn.abacus.util.u.Optional.class).get().isPresent()),
+                () -> assertFalse(asyncExecutor.getItem(request, com.landawn.abacus.util.u.Nullable.class).get().isPresent()),
+                () -> assertNull(asyncExecutor.getItem(request, com.landawn.abacus.util.Holder.class).get().value()),
+                () -> assertEquals(0L, (long) asyncExecutor.getItem(request, long.class).get()),
+                () -> assertNull(asyncExecutor.getItem(request, String.class).get()));
+    }
+
+    /**
+     * Pins the documented nullable scanFilter: on every executor and Mapper overload a null filter sends a ScanRequest
+     * without a ScanFilter (a full scan) to the mapper's/the given table.
+     */
+    @Test
+    public void testScanWithNullScanFilterSendsRequestWithoutFilter_sliceD() throws Exception {
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).build()));
+        final AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(1, asyncExecutor.scan("TestTable", (Map<String, Condition>) null).get().count()),
+                () -> assertEquals(1, asyncExecutor.scan("TestTable", (List<String>) null, (Map<String, Condition>) null).get().count()),
+                () -> assertEquals(1, asyncExecutor.scan("TestTable", (Map<String, Condition>) null, TestEntity.class).get().count()),
+                () -> assertEquals(1, asyncExecutor.scan("TestTable", (List<String>) null, (Map<String, Condition>) null, TestEntity.class).get().count()),
+                () -> assertEquals(1, mapper.scan((Map<String, Condition>) null).get().count()),
+                () -> assertEquals(1, mapper.scan((List<String>) null, (Map<String, Condition>) null).get().count()));
+
+        final ArgumentCaptor<ScanRequest> captor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(mockDynamoDbAsyncClient, times(6)).scan(captor.capture());
+
+        for (final ScanRequest sent : captor.getAllValues()) {
+            assertEquals("TestTable", sent.tableName());
+            assertFalse(sent.hasScanFilter());
+            assertFalse(sent.hasAttributesToGet());
+        }
+    }
+
+    /**
+     * Pins the documented row types of query(QueryRequest, Class): a Map type or a bean class is turned into a Dataset; any
+     * other row type is rejected by this call with "Unsupported row type" before any request is sent (since the 2026-10-24
+     * apply round; it used to fail the future only after the pages had been read), and a query that would match no item no
+     * longer makes such a type succeed.
+     */
+    @Test
+    public void testQueryWithClassSupportsOnlyMapAndBeanRowTypes_sliceD() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final QueryResponse onePage = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).build();
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(onePage));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(1, asyncExecutor.query(queryRequest, Map.class).get().size()),
+                () -> assertEquals(1, asyncExecutor.query(queryRequest, TestEntity.class).get().size()), () -> {
+                    for (final Class<?> unsupported : List.of(String.class, Object[].class, List.class)) {
+                        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(queryRequest, unsupported));
+                        assertTrue(e.getMessage().startsWith("Unsupported row type"), e.getMessage());
+                    }
+                });
+
+        final DynamoDbAsyncClient emptyClient = mock(DynamoDbAsyncClient.class);
+        when(emptyClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(QueryResponse.builder().build()));
+        assertThrows(IllegalArgumentException.class, () -> new AsyncDynamoDBExecutor(emptyClient).query(queryRequest, String.class));
+        verifyNoInteractions(emptyClient);
+    }
+
+    /**
+     * Pins the documented stream/scan threading: the returned future only delivers the lazy stream, and every page, the
+     * first one included, is requested while the stream is consumed, on the consuming thread.
+     */
+    @Test
+    public void testStreamAndScanRequestFirstPageOnlyWhenConsumedOnConsumingThread_sliceD() throws Exception {
+        final List<String> requestThreads = new java.util.concurrent.CopyOnWriteArrayList<>();
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenAnswer(invocation -> {
+            requestThreads.add(Thread.currentThread().getName());
+            return CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).build());
+        });
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenAnswer(invocation -> {
+            requestThreads.add(Thread.currentThread().getName());
+            return CompletableFuture.completedFuture(ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2")))).build());
+        });
+
+        final Stream<TestEntity> queryStream = asyncExecutor.stream(QueryRequest.builder().tableName("TestTable").build(), TestEntity.class)
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+        final Stream<TestEntity> scanStream = asyncExecutor.scan(ScanRequest.builder().tableName("TestTable").build(), TestEntity.class)
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertTrue(requestThreads.isEmpty(), requestThreads.toString());
+        assertEquals(List.of("1"), queryStream.map(TestEntity::getId).toList());
+        assertEquals(List.of("2"), scanStream.map(TestEntity::getId).toList());
+        assertEquals(List.of(Thread.currentThread().getName(), Thread.currentThread().getName()), requestThreads);
+    }
+
+    /**
+     * Pins the documented exclusiveStartKey/limit semantics: with an exclusiveStartKey and limit=1 on the request, list
+     * returns only the first page (1 request, 1 row), while stream and scan start from that key, keep the limit as the page
+     * size and follow lastEvaluatedKey through the last page (3 requests, 3 rows each).
+     */
+    @Test
+    public void testStreamAndScanStartAtExclusiveStartKeyAndReadEveryPageWhileListReadsOne_sliceD() throws Exception {
+        final Map<String, AttributeValue> esk = Map.of("id", AttributeValue.fromS("0"));
+        final Map<String, AttributeValue> key1 = Map.of("id", AttributeValue.fromS("1"));
+        final Map<String, AttributeValue> key2 = Map.of("id", AttributeValue.fromS("2"));
+        final List<Map<String, AttributeValue>> rows = List.of(key1, key2, Map.of("id", AttributeValue.fromS("3")));
+        final List<Map<String, AttributeValue>> leks = java.util.Arrays.asList(key1, key2, null);
+
+        final DynamoDbAsyncClient listClient = mock(DynamoDbAsyncClient.class);
+        final DynamoDbAsyncClient streamClient = mock(DynamoDbAsyncClient.class);
+        final DynamoDbAsyncClient scanClient = mock(DynamoDbAsyncClient.class);
+        final java.util.function.Function<QueryRequest, CompletableFuture<QueryResponse>> queryPage = request -> {
+            final int i = request.exclusiveStartKey().equals(esk) ? 0 : request.exclusiveStartKey().equals(key1) ? 1 : 2;
+            final QueryResponse.Builder page = QueryResponse.builder().items(List.of(rows.get(i)));
+            return CompletableFuture.completedFuture(leks.get(i) == null ? page.build() : page.lastEvaluatedKey(leks.get(i)).build());
+        };
+        when(listClient.query(any(QueryRequest.class))).thenAnswer(invocation -> queryPage.apply(invocation.getArgument(0)));
+        when(streamClient.query(any(QueryRequest.class))).thenAnswer(invocation -> queryPage.apply(invocation.getArgument(0)));
+        when(scanClient.scan(any(ScanRequest.class))).thenAnswer(invocation -> {
+            final ScanRequest request = invocation.getArgument(0);
+            final int i = request.exclusiveStartKey().equals(esk) ? 0 : request.exclusiveStartKey().equals(key1) ? 1 : 2;
+            final ScanResponse.Builder page = ScanResponse.builder().items(List.of(rows.get(i)));
+            return CompletableFuture.completedFuture(leks.get(i) == null ? page.build() : page.lastEvaluatedKey(leks.get(i)).build());
+        });
+
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").exclusiveStartKey(esk).limit(1).build();
+        final ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").exclusiveStartKey(esk).limit(1).build();
+
+        final List<TestEntity> listed = new AsyncDynamoDBExecutor(listClient).list(queryRequest, TestEntity.class)
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+        final List<String> streamed = new AsyncDynamoDBExecutor(streamClient).stream(queryRequest, TestEntity.class)
+                .get(5, java.util.concurrent.TimeUnit.SECONDS)
+                .map(TestEntity::getId)
+                .toList();
+        final List<String> scanned = new AsyncDynamoDBExecutor(scanClient).scan(scanRequest, TestEntity.class)
+                .get(5, java.util.concurrent.TimeUnit.SECONDS)
+                .map(TestEntity::getId)
+                .toList();
+
+        final ArgumentCaptor<QueryRequest> streamRequests = ArgumentCaptor.forClass(QueryRequest.class);
+        final ArgumentCaptor<ScanRequest> scanRequests = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(listClient, times(1)).query(any(QueryRequest.class));
+        verify(streamClient, times(3)).query(streamRequests.capture());
+        verify(scanClient, times(3)).scan(scanRequests.capture());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(List.of("1"), listed.stream().map(TestEntity::getId).toList()),
+                () -> assertEquals(List.of("1", "2", "3"), streamed), () -> assertEquals(List.of("1", "2", "3"), scanned),
+                () -> assertEquals(List.of(esk, key1, key2), streamRequests.getAllValues().stream().map(QueryRequest::exclusiveStartKey).toList()),
+                () -> assertEquals(List.of(esk, key1, key2), scanRequests.getAllValues().stream().map(ScanRequest::exclusiveStartKey).toList()),
+                () -> assertEquals(List.of(1, 1, 1), streamRequests.getAllValues().stream().map(QueryRequest::limit).toList()),
+                () -> assertEquals(List.of(1, 1, 1), scanRequests.getAllValues().stream().map(ScanRequest::limit).toList()));
+    }
+
+    /**
+     * A page future that fails with an Error must make the stream's terminal operation throw that same Error, as the sync
+     * executor's stream does (and as documented: "throws the request's failure ... unwrapped from the page future"). The
+     * page loops used ExceptionUtil.toRuntimeException(e, true), which wraps an Error cause in a plain RuntimeException.
+     * Covers a failing first page and a failing later page for both the query stream and the scan stream.
+     */
+    @Test
+    public void testStreamAndScanRethrowErrorFromFailedPageFutureAsIs_sliceD() {
+        final AssertionError firstPageError = new AssertionError("first page failed");
+        final AssertionError laterPageError = new AssertionError("later page failed");
+        final Map<String, AttributeValue> lek = Map.of("id", AttributeValue.fromS("1"));
+
+        final DynamoDbAsyncClient queryFirst = mock(DynamoDbAsyncClient.class);
+        when(queryFirst.query(any(QueryRequest.class))).thenReturn(CompletableFuture.failedFuture(firstPageError));
+        final DynamoDbAsyncClient queryLater = mock(DynamoDbAsyncClient.class);
+        when(queryLater.query(any(QueryRequest.class))).thenReturn(
+                CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(lek)).lastEvaluatedKey(lek).build()),
+                CompletableFuture.failedFuture(laterPageError));
+        final DynamoDbAsyncClient scanFirst = mock(DynamoDbAsyncClient.class);
+        when(scanFirst.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.failedFuture(firstPageError));
+        final DynamoDbAsyncClient scanLater = mock(DynamoDbAsyncClient.class);
+        when(scanLater.scan(any(ScanRequest.class))).thenReturn(
+                CompletableFuture.completedFuture(ScanResponse.builder().items(List.of(lek)).lastEvaluatedKey(lek).build()),
+                CompletableFuture.failedFuture(laterPageError));
+
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertSame(firstPageError,
+                        assertThrows(AssertionError.class, () -> new AsyncDynamoDBExecutor(queryFirst).stream(queryRequest, TestEntity.class).get().toList())),
+                () -> assertSame(laterPageError,
+                        assertThrows(AssertionError.class, () -> new AsyncDynamoDBExecutor(queryLater).stream(queryRequest, TestEntity.class).get().toList())),
+                () -> assertSame(firstPageError,
+                        assertThrows(AssertionError.class, () -> new AsyncDynamoDBExecutor(scanFirst).scan(scanRequest, TestEntity.class).get().toList())),
+                () -> assertSame(laterPageError,
+                        assertThrows(AssertionError.class, () -> new AsyncDynamoDBExecutor(scanLater).scan(scanRequest, TestEntity.class).get().toList())));
+    }
+
+    // ---- 2026-10-24 apply-ddb ----
+
+    /**
+     * query(QueryRequest, Class) rejects a row type that cannot become a Dataset on the calling thread, like its null checks:
+     * the IllegalArgumentException is thrown by the call (no future is returned) and no request is sent, whatever the query
+     * would return. Map types (an @Entity-annotated Map subclass too) and bean classes still query.
+     */
+    @Test
+    public void testQueryWithClass_UnsupportedRowTypeThrownAtCallBeforeAnyRequest_applyDdb() throws Exception {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (final Class<?> rowType : List.of(String.class, Integer.class, int.class, Object.class, String[].class, java.util.Set.class,
+                java.util.Optional.class, com.landawn.abacus.util.Holder.class, com.landawn.abacus.util.MutableBoolean.class)) {
+            checks.add(() -> {
+                final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(queryRequest, rowType),
+                        rowType.getName());
+                assertTrue(e.getMessage().startsWith("Unsupported row type: " + com.landawn.abacus.util.ClassUtil.getCanonicalClassName(rowType)),
+                        e.getMessage());
+            });
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+        verifyNoInteractions(mockDynamoDbAsyncClient);
+
+        final QueryResponse onePage = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).build();
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(onePage));
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(1, asyncExecutor.query(queryRequest, HashMap.class).get().size()),
+                () -> assertEquals(1, asyncExecutor.query(queryRequest, AnnotatedMapRow_applyDdb.class).get().size()),
+                () -> assertEquals(1, asyncExecutor.query(queryRequest, TestEntity.class).get().size()));
+        verify(mockDynamoDbAsyncClient, times(3)).query(any(QueryRequest.class));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class AnnotatedMapRow_applyDdb extends java.util.LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
+
+    // ---- 2026-10-24 r2 sliceD ----
+
+    /**
+     * Pins the documented page-size meaning of a request's limit in the auto-paginating list/query overloads: with limit=1 and
+     * no exclusiveStartKey, every call still reads both pages (each request carrying limit 1) and returns every matching item,
+     * as the sync executor documents.
+     */
+    @Test
+    public void testListAndQueryTreatRequestLimitAsPageSizeAndReadEveryPage_r2sliceD() throws Exception {
+        final Map<String, AttributeValue> lek = Map.of("id", AttributeValue.fromS("1"));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenAnswer(invocation -> {
+            final QueryRequest request = invocation.getArgument(0);
+            return CompletableFuture.completedFuture(request.exclusiveStartKey().isEmpty()
+                    ? QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).lastEvaluatedKey(lek).build()
+                    : QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2")))).build());
+        });
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").limit(1).build();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(List.of("1", "2"),
+                asyncExecutor.list(queryRequest, TestEntity.class).get(5, java.util.concurrent.TimeUnit.SECONDS).stream().map(TestEntity::getId).toList()),
+                () -> assertEquals(2, asyncExecutor.list(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS).size()),
+                () -> assertEquals(2, asyncExecutor.query(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS).size()),
+                () -> assertEquals(2, asyncExecutor.query(queryRequest, TestEntity.class).get(5, java.util.concurrent.TimeUnit.SECONDS).size()));
+
+        final ArgumentCaptor<QueryRequest> requests = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDbAsyncClient, times(8)).query(requests.capture());
+        assertEquals(java.util.Collections.nCopies(8, 1), requests.getAllValues().stream().map(QueryRequest::limit).toList());
+    }
+
+    /**
+     * Pins the documented empty-Dataset edge of query(QueryRequest) and query(QueryRequest, Map type): two matching items that
+     * have no attribute (for example a projection of attributes they lack) give a Dataset with no columns and therefore no
+     * rows, while list(...) still returns two (empty) maps and a bean row type still gives two rows.
+     */
+    @Test
+    public void testQueryOfItemsWithoutAttributesIsEmptyOnlyForMapRows_r2sliceD() throws Exception {
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(Map.of(), Map.of())).count(2).build()));
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").projectionExpression("missingAttr").build();
+
+        final Dataset mapRows = asyncExecutor.query(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        final Dataset typedMapRows = asyncExecutor.query(queryRequest, HashMap.class).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        final Dataset beanRows = asyncExecutor.query(queryRequest, TestEntity.class).get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(0, mapRows.size()), () -> assertTrue(mapRows.columnNames().isEmpty()),
+                () -> assertEquals(0, typedMapRows.size()), () -> assertEquals(2, beanRows.size()),
+                () -> assertEquals(List.of(Map.of(), Map.of()), asyncExecutor.list(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS)));
+    }
+
+    /**
+     * Pins the Mapper class doc's ID rule for arrays: an array ID other than byte[] (here String[]) is rejected with an
+     * IllegalArgumentException before any future is created, on every entity-key operation, while a byte[] ID is the binary
+     * key and is sent as B.
+     */
+    @Test
+    public void testMapperRejectsNonByteArrayIdButSendsByteArrayIdAsBinaryKey_r2sliceD() throws Exception {
+        final AsyncDynamoDBExecutor.Mapper<ArrayIdEntity_r2sliceD> mapper = asyncExecutor.mapper(ArrayIdEntity_r2sliceD.class, "TestTable", null);
+        final ArrayIdEntity_r2sliceD entity = new ArrayIdEntity_r2sliceD();
+        entity.setId(new String[] { "a" });
+        entity.setName("n");
+
+        final List<org.junit.jupiter.api.function.Executable> calls = List.of(() -> mapper.getItem(entity), () -> mapper.getItem(entity, true),
+                () -> mapper.putItem(entity), () -> mapper.updateItem(entity), () -> mapper.deleteItem(entity), () -> mapper.batchGetItem(List.of(entity)),
+                () -> mapper.batchPutItem(List.of(entity)), () -> mapper.batchDeleteItem(List.of(entity)));
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (final org.junit.jupiter.api.function.Executable call : calls) {
+            checks.add(() -> assertEquals("DynamoDB key attribute 'id' must be scalar, not java.lang.String[]",
+                    assertThrows(IllegalArgumentException.class, call).getMessage()));
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+        verifyNoInteractions(mockDynamoDbAsyncClient);
+
+        final AsyncDynamoDBExecutor.Mapper<BinaryIdEntity_r2sliceD> binaryMapper = asyncExecutor.mapper(BinaryIdEntity_r2sliceD.class, "TestTable", null);
+        final BinaryIdEntity_r2sliceD binaryEntity = new BinaryIdEntity_r2sliceD();
+        binaryEntity.setId(new byte[] { 1, 2 });
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
+        assertNull(binaryMapper.getItem(binaryEntity).get(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        final ArgumentCaptor<GetItemRequest> sent = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(mockDynamoDbAsyncClient).getItem(sent.capture());
+        assertEquals(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[] { 1, 2 }), sent.getValue().key().get("id").b());
+    }
+
+    public static class ArrayIdEntity_r2sliceD {
+        @com.landawn.abacus.annotation.Id
+        private String[] id;
+        private String name;
+
+        public String[] getId() {
+            return id;
+        }
+
+        public void setId(final String[] id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    public static class BinaryIdEntity_r2sliceD {
+        @com.landawn.abacus.annotation.Id
+        private byte[] id;
+
+        public byte[] getId() {
+            return id;
+        }
+
+        public void setId(final byte[] id) {
+            this.id = id;
+        }
+    }
+
+    /**
+     * Beans.isBeanClass accepts an @Entity-annotated Map subclass, so the async Mapper constructor used to build a mapper for one.
+     * Its key came from the @Id field while toItem writes a Map's entries, so putItem sent an item without its key. Both mapper
+     * factories now reject such a class with the "is not an entity class" message, before any request; a bean entity still maps.
+     */
+    @Test
+    public void testMapperRejectsEntityAnnotatedMapSubclass_r2sliceD() {
+        final String expected = MapRowEntity_r2sliceD.class.getCanonicalName() + " is not an entity class with getter/setter method";
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(expected,
+                        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(MapRowEntity_r2sliceD.class, "T", null)).getMessage()),
+                () -> assertEquals(expected,
+                        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(MapRowEntity_r2sliceD.class)).getMessage()),
+                () -> assertNotNull(asyncExecutor.mapper(TestEntity.class, "T", null)));
+        verifyNoInteractions(mockDynamoDbAsyncClient);
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table(name = "T")
+    public static class MapRowEntity_r2sliceD extends java.util.LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
 }

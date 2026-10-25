@@ -63,6 +63,12 @@ import com.landawn.abacus.util.stream.Stream;
  * Do not {@code map} a scan future through a function that consumes the stream: a second {@code get()}
  * would re-apply it to the already-consumed stream.</p>
  *
+ * <p><b>Arguments are not copied:</b> each task captures the caller's arguments by reference and reads
+ * them on a worker thread when it runs. Do not modify a passed collection, {@code Any*} builder or native
+ * HBase operation until its future completes (for a scan, until consumption of the returned stream has
+ * begun: the scan is read when the scanner opens): the task may or may not see such a change, and neither
+ * the HBase operations nor the collections they hold are thread-safe.</p>
+ *
  * <h2>Key Features</h2>
  * <ul>
  * <li><strong>Caller-side offloading</strong>: Operations run on worker threads and return a {@code ContinuableFuture}; resolving a future may still block</li>

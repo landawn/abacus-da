@@ -393,4 +393,79 @@ public class MongoCollectionStreamingTest extends MongoCollectionExecutorTestSup
 
         assertSame(mockStringPublisher, result);
     }
+
+    // ---- 2026-10-24 r2 sliceQ (reactive twin; edited on the main agent's instruction) ----
+
+    /** An executor whose aggregate command emits {@code rows} (as the server would for the pipeline under test). */
+    @SuppressWarnings("unchecked")
+    private static MongoCollectionExecutor executorAggregating(final Document... rows) {
+        final org.mockito.MockSettings lenient = org.mockito.Mockito.withSettings().strictness(org.mockito.quality.Strictness.LENIENT);
+        final MongoCollection<Document> collection = mock(MongoCollection.class, lenient);
+        final AggregatePublisher<Document> publisher = mock(AggregatePublisher.class, lenient);
+        when(collection.aggregate(anyList(), eq(Document.class))).thenReturn(publisher);
+        stubEmits(publisher, rows);
+        return new MongoCollectionExecutor(collection);
+    }
+
+    private static org.junit.jupiter.api.function.Executable signalsRejection(final String label,
+            final java.util.function.Function<MongoCollectionExecutor, Flux<?>> call, final Document row) {
+        return () -> {
+            // Building the publisher does not fail; the rejection is signalled on consumption, as documented.
+            final Flux<?> groups = call.apply(executorAggregating(row));
+
+            StepVerifier.create(groups)
+                    .expectErrorSatisfies(
+                            e -> org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(IllegalArgumentException.class, e.getClass(), label),
+                                    () -> assertTrue(e.getMessage().startsWith("Cannot convert document holding "), label + ": " + e.getMessage())))
+                    .verify(java.time.Duration.ofSeconds(10));
+            StepVerifier.create(call.apply(executorAggregating())).verifyComplete(); // an empty result still completes empty
+        };
+    }
+
+    /**
+     * r2 sliceQ (bug found by slice V, live-proven): a group field inside {@code _id} is projected back under {@code _id}, and the
+     * single-value conversion converts a row's sole non-{@code _id} field. So a single-value row type received the COUNT of
+     * {@code groupByAndCount("_id.part")} as if it were the group key, and {@code groupBy(["_id.part", "x"])} emitted only
+     * {@code x}, silently dropping the {@code _id} key. Both now signal IllegalArgumentException, as the same calls without
+     * {@code _id} paths (and the docs) do.
+     */
+    @Test
+    public void testSingleValueGroupRowsWithEmbeddedIdKeysAreRejected_r2sliceQ() {
+        final Document partCount = new Document("_id", new Document("part", "p1")).append("count", 2);
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                signalsRejection("groupByAndCount(_id.part, String)", ex -> ex.groupByAndCount("_id.part", String.class), partCount),
+                signalsRejection("groupByAndCount(_id.part, Long)", ex -> ex.groupByAndCount("_id.part", Long.class), partCount),
+                signalsRejection("groupByAndCount(_id, int)", ex -> ex.groupByAndCount("_id", int.class), new Document("_id", "p1").append("count", 1)),
+                signalsRejection("groupByAndCount([_id.part], String)", ex -> ex.groupByAndCount(Arrays.asList("_id.part"), String.class), partCount),
+                signalsRejection("groupByAndCount([_id.part, _id.q], int)", ex -> ex.groupByAndCount(Arrays.asList("_id.part", "_id.q"), int.class),
+                        new Document("_id", new Document("part", "p1").append("q", 1)).append("count", 1)),
+                signalsRejection("groupBy([_id.part, x], String)", ex -> ex.groupBy(Arrays.asList("_id.part", "x"), String.class),
+                        new Document("_id", new Document("part", "p1")).append("x", "a")),
+                signalsRejection("groupBy([x, _id.part], String)", ex -> ex.groupBy(Arrays.asList("x", "_id.part"), String.class),
+                        new Document("x", "a").append("_id", new Document("part", "p1"))),
+                signalsRejection("groupBy([_id, x], String)", ex -> ex.groupBy(Arrays.asList("_id", "x"), String.class),
+                        new Document("_id", "p1").append("x", "a")));
+    }
+
+    /** Pins the grouping results the embedded-_id rejection must leave alone. */
+    @Test
+    public void testSingleValueGroupRowsThatStillConvert_r2sliceQ() {
+        final Document partCount = new Document("_id", new Document("part", "p1")).append("count", 2);
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> StepVerifier.create(executorAggregating(new Document("_id", "p1")).groupBy(Arrays.asList("_id.part"), String.class))
+                        .expectNext("p1")
+                        .verifyComplete(),
+                () -> StepVerifier.create(executorAggregating(new Document("_id", "p1")).groupBy("_id.part", String.class)).expectNext("p1").verifyComplete(),
+                () -> StepVerifier.create(executorAggregating(new Document("_id", new Document("part", "p1").append("q", 1)))
+                        .groupBy(Arrays.asList("_id.part", "_id.q"), String.class)).expectNext("{\"part\": \"p1\", \"q\": 1}").verifyComplete(),
+                () -> StepVerifier.create(executorAggregating(partCount).groupByAndCount("_id.part", Map.class)).expectNext(partCount).verifyComplete(),
+                () -> StepVerifier.create(executorAggregating(new Document("x", "a").append("count", 1)).groupByAndCount("x", String.class))
+                        .expectErrorSatisfies(e -> assertTrue(
+                                e instanceof IllegalArgumentException
+                                        && e.getMessage().startsWith("Cannot convert document with multiple non-_id fields to single-value type"),
+                                "unchanged message without _id paths: " + e))
+                        .verify(java.time.Duration.ofSeconds(10)));
+    }
 }

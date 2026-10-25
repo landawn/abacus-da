@@ -966,4 +966,419 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
         assertTrue(captor.getAllValues().get(0).exclusiveStartKey().isEmpty());
         assertEquals("2", captor.getAllValues().get(1).exclusiveStartKey().get("id").s());
     }
+
+    // ---- 2026-10-24 sliceC ----
+
+    /**
+     * Pins the documented row-type rule of query(QueryRequest, Class): a Map type builds the Dataset from the raw items and a
+     * bean class from its properties, but an array, collection or single-value row type has no column names, so it is rejected
+     * before the request is sent (since the 2026-10-24 apply round; it used to be rejected once the query returned an item),
+     * while list(QueryRequest, Class) accepts it. An item-less result no longer makes such a type succeed.
+     */
+    @Test
+    public void testQueryWithClass_NonBeanNonMapRowTypeRejectedBeforeAnyRequest_sliceC() {
+        final QueryRequest req = QueryRequest.builder().tableName("TestTable").build();
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", AttributeValue.fromS("1"));
+        item.put("name", AttributeValue.fromS("n"));
+        final QueryResponse twoColumns = QueryResponse.builder().items(List.of(item)).build();
+        final QueryResponse oneColumn = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).build();
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(twoColumns);
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> executor.query(req, Object[].class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> executor.query(req, List.class)),
+                () -> assertEquals(1, executor.list(req, Object[].class).size()),
+                () -> assertEquals(List.of("id", "name"), executor.query(req, Map.class).columnNames()),
+                () -> assertEquals("n", executor.query(req, TestEntity.class).toList(TestEntity.class).get(0).getName()));
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(oneColumn);
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> executor.query(req, String.class)),
+                () -> assertEquals(List.of("1"), executor.list(req, String.class)));
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
+        assertThrows(IllegalArgumentException.class, () -> executor.query(req, Object[].class));
+    }
+
+    /**
+     * Pins the documented Dataset rule for items without attributes (a projection of attributes the items lack): such an item
+     * is a row of nulls next to an item that has an attribute, but when no selected item has one the Dataset has no column and
+     * therefore no row, although the list conversions still return one (empty) map per item.
+     */
+    @Test
+    public void testExtractData_ItemsWithoutAttributesHaveNoRowsUnlessAnItemHasOne_sliceC() {
+        final QueryResponse allEmpty = QueryResponse.builder().items(List.of(new HashMap<>(), new HashMap<>())).build();
+        final QueryResponse mixed = QueryResponse.builder().items(List.of(Map.of("a", AttributeValue.fromS("x")), new HashMap<>())).build();
+        final ScanResponse scanAllEmpty = ScanResponse.builder().items(List.of(new HashMap<>())).build();
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(allEmpty);
+
+        final Dataset mixedDataset = DynamoDBExecutor.extractData(mixed);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(0, DynamoDBExecutor.extractData(allEmpty).size()),
+                () -> assertEquals(0, DynamoDBExecutor.extractData(scanAllEmpty, 0, 1).size()),
+                () -> assertEquals(0, executor.query(QueryRequest.builder().tableName("TestTable").build()).size()),
+                () -> assertEquals(2, DynamoDBExecutor.toList(allEmpty, Map.class).size()), () -> assertEquals(2, mixedDataset.size()),
+                () -> assertEquals(java.util.Arrays.asList("x", null), new java.util.ArrayList<>(mixedDataset.getColumn("a"))));
+    }
+
+    /**
+     * Pins the documented difference between the paging entry points: list(QueryRequest, Class) returns only the requested page
+     * when the request sets exclusiveStartKey, while stream(QueryRequest, Class) and scan(ScanRequest, Class) start from that key
+     * and continue to the last page; a limit on the request is the page size, not a cap on the streamed rows.
+     */
+    @Test
+    public void testStreamAndScanWithExclusiveStartKey_ContinueToTheLastPage_sliceC() {
+        final Map<String, AttributeValue> startKey = Map.of("id", AttributeValue.fromS("0"));
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").limit(1).exclusiveStartKey(startKey).build();
+        final QueryResponse queryPage1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1"))))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.fromS("1")))
+                .build();
+        final QueryResponse queryPage2 = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2")))).build();
+        final ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").limit(1).exclusiveStartKey(startKey).build();
+        final ScanResponse scanPage1 = ScanResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.fromS("1"))))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.fromS("1")))
+                .build();
+        final ScanResponse scanPage2 = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2")))).build();
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryPage1, queryPage2);
+        final List<String> listed = executor.list(queryRequest, String.class);
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryPage1, queryPage2);
+        final List<String> streamed = executor.stream(queryRequest, String.class).toList();
+        when(mockDynamoDbClient.scan(any(ScanRequest.class))).thenReturn(scanPage1, scanPage2);
+        final List<String> scanned = executor.scan(scanRequest, String.class).toList();
+
+        final ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDbClient, times(3)).query(captor.capture());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(List.of("1"), listed), () -> assertEquals(List.of("1", "2"), streamed),
+                () -> assertEquals(List.of("1", "2"), scanned), () -> assertEquals("0", captor.getAllValues().get(1).exclusiveStartKey().get("id").s()),
+                () -> assertEquals("1", captor.getAllValues().get(2).exclusiveStartKey().get("id").s()),
+                () -> verify(mockDynamoDbClient, times(2)).scan(any(ScanRequest.class)));
+    }
+
+    /**
+     * Pins the documented missing-item result of the typed getItem overloads: the default value of the target type, which is an
+     * empty value (not null) for Optional-like wrappers and a Holder holding null, besides null for reference types and the
+     * primitive default.
+     */
+    @Test
+    public void testTypedGetItem_MissingItemYieldsTargetTypeDefaultIncludingEmptyWrappers_sliceC() {
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build());
+        final Map<String, AttributeValue> key = Map.of("id", AttributeValue.fromS("missing"));
+        final GetItemRequest request = GetItemRequest.builder().tableName("TestTable").key(key).build();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertNull(executor.getItem("TestTable", key, TestEntity.class)),
+                () -> assertNull(executor.getItem("TestTable", key, Integer.class)), () -> assertEquals(0, executor.getItem("TestTable", key, int.class)),
+                () -> assertEquals(java.util.Optional.empty(), executor.getItem("TestTable", key, java.util.Optional.class)),
+                () -> assertEquals(java.util.OptionalInt.empty(), executor.getItem("TestTable", key, true, java.util.OptionalInt.class)),
+                () -> assertFalse(executor.getItem("TestTable", key, com.landawn.abacus.util.u.Optional.class).isPresent()),
+                () -> assertFalse(executor.getItem(request, com.landawn.abacus.util.u.Nullable.class).isPresent()),
+                () -> assertNull(executor.getItem(request, com.landawn.abacus.util.Holder.class).value()));
+    }
+
+    /**
+     * Pins the documented null scanFilter of Mapper.scan(Map) and Mapper.scan(List, Map): it means no filter, so the request is
+     * sent without a scan filter instead of failing.
+     */
+    @Test
+    public void testMapperScan_NullScanFilterSendsNoFilter_sliceC() {
+        when(mockDynamoDbClient.scan(any(ScanRequest.class)))
+                .thenReturn(ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).build());
+        final DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        final List<TestEntity> byFilter = mapper.scan((Map<String, Condition>) null).toList();
+        final List<TestEntity> byAttributesAndFilter = mapper.scan(List.of("id"), (Map<String, Condition>) null).toList();
+
+        final ArgumentCaptor<ScanRequest> captor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(mockDynamoDbClient, times(2)).scan(captor.capture());
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("1", byFilter.get(0).getId()),
+                () -> assertEquals("1", byAttributesAndFilter.get(0).getId()), () -> assertFalse(captor.getAllValues().get(0).hasScanFilter()),
+                () -> assertFalse(captor.getAllValues().get(1).hasScanFilter()),
+                () -> assertEquals(List.of("id"), captor.getAllValues().get(1).attributesToGet()));
+    }
+
+    // ---- 2026-10-24 apply-ddb ----
+
+    /**
+     * A number type whose text is not a decimal number (abacus Fraction renders "3/4"; DynamoDB rejects such an N value) is
+     * written as S holding that text, by every write path (toAttributeValue, asKey, asItem, toAttributeValueUpdate, toItem),
+     * and the S text reads back into the Fraction property and a Fraction single value unchanged.
+     */
+    @Test
+    public void testToAttributeValue_NonDecimalNumberTextIsStoredAsSAndReadsBack_applyDdb() {
+        final com.landawn.abacus.util.Fraction threeQuarters = com.landawn.abacus.util.Fraction.of(3, 4);
+        final com.landawn.abacus.util.Fraction oneThird = com.landawn.abacus.util.Fraction.of(1, 3);
+        final AttributeValue fraction = DynamoDBExecutor.toAttributeValue(threeQuarters);
+        final FractionEntity_applyDdb entity = new FractionEntity_applyDdb();
+        entity.setId(oneThird);
+        entity.setRatio(threeQuarters);
+        entity.setCount(5);
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(entity);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(AttributeValue.fromS("3/4"), fraction),
+                () -> assertEquals(AttributeValue.fromS("2/1"), DynamoDBExecutor.toAttributeValue(com.landawn.abacus.util.Fraction.of(2, 1))),
+                () -> assertEquals(AttributeValue.fromS("1/3"), DynamoDBExecutor.asKey("id", oneThird).get("id")),
+                () -> assertEquals(AttributeValue.fromS("3/4"), DynamoDBExecutor.asItem("ratio", threeQuarters).get("ratio")),
+                () -> assertEquals(AttributeValue.fromS("3/4"), DynamoDBExecutor.toAttributeValueUpdate(threeQuarters).value()),
+                () -> assertEquals(AttributeValue.fromS("1,234"), DynamoDBExecutor.toAttributeValue(new GroupedDigitsNumber_applyDdb())),
+                () -> assertEquals(AttributeValue.fromS("1/3"), item.get("id")), () -> assertEquals(AttributeValue.fromS("3/4"), item.get("ratio")),
+                () -> assertEquals(AttributeValue.fromN("5"), item.get("count")),
+                () -> assertEquals(threeQuarters, DynamoDBExecutor.toEntity(item, FractionEntity_applyDdb.class).getRatio()),
+                () -> assertEquals(oneThird, DynamoDBExecutor.toEntity(item, FractionEntity_applyDdb.class).getId()),
+                () -> assertEquals(threeQuarters, DynamoDBExecutor.toValue(fraction, com.landawn.abacus.util.Fraction.class)));
+    }
+
+    /**
+     * Mapper keys and items go through the same conversion: a Fraction key is sent as S, the stored item is written with S, and
+     * an item stored that way maps back to the entity's Fraction properties.
+     */
+    @Test
+    public void testMapperFractionKeyAndItemUseSAndReadBack_applyDdb() {
+        final DynamoDBExecutor.Mapper<FractionEntity_applyDdb> mapper = executor.mapper(FractionEntity_applyDdb.class, "FractionTable",
+                com.landawn.abacus.util.NamingPolicy.CAMEL_CASE);
+        final FractionEntity_applyDdb entity = new FractionEntity_applyDdb();
+        entity.setId(com.landawn.abacus.util.Fraction.of(1, 3));
+        entity.setRatio(com.landawn.abacus.util.Fraction.of(3, 4));
+        final Map<String, AttributeValue> stored = new LinkedHashMap<>();
+        stored.put("id", AttributeValue.fromS("1/3"));
+        stored.put("ratio", AttributeValue.fromS("3/4"));
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(stored).build());
+
+        final FractionEntity_applyDdb read = mapper.getItem(entity);
+        mapper.putItem(entity);
+
+        final ArgumentCaptor<GetItemRequest> getCaptor = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(mockDynamoDbClient).getItem(getCaptor.capture());
+        final ArgumentCaptor<PutItemRequest> putCaptor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(mockDynamoDbClient).putItem(putCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(AttributeValue.fromS("1/3"), getCaptor.getValue().key().get("id")),
+                () -> assertEquals(AttributeValue.fromS("1/3"), putCaptor.getValue().item().get("id")),
+                () -> assertEquals(AttributeValue.fromS("3/4"), putCaptor.getValue().item().get("ratio")),
+                () -> assertEquals(com.landawn.abacus.util.Fraction.of(1, 3), read.getId()),
+                () -> assertEquals(com.landawn.abacus.util.Fraction.of(3, 4), read.getRatio()));
+    }
+
+    /**
+     * Guard for the Fraction change: every number type whose text is a decimal number is still written as N with exactly the
+     * text it had before (the type's own string form, exponent forms included), and non-finite values are still rejected.
+     */
+    @Test
+    public void testToAttributeValue_DecimalNumbersUnchangedAndNonFiniteRejected_applyDdb() {
+        final java.util.concurrent.atomic.DoubleAdder adder = new java.util.concurrent.atomic.DoubleAdder();
+        adder.add(0.25);
+        final List<Object> decimals = List.of((byte) -1, (short) 7, 42, Integer.MIN_VALUE, -42L, Long.MAX_VALUE, 1.5f, Float.MIN_VALUE, -0.0, 1.0E-7, 1.0E21,
+                Double.MIN_VALUE, -Double.MAX_VALUE, new java.math.BigInteger("123456789012345678901234567890"), new java.math.BigDecimal("1E+10"),
+                new java.math.BigDecimal("0E-10"), new java.math.BigDecimal("-0.000001"), new java.math.BigDecimal("12345678901234567890.123456789"),
+                java.math.BigDecimal.valueOf(1e-7), java.math.BigDecimal.valueOf(12, -5), com.landawn.abacus.util.MutableInt.of(3),
+                com.landawn.abacus.util.MutableLong.of(-9L), com.landawn.abacus.util.MutableDouble.of(2.5), com.landawn.abacus.util.MutableFloat.of(0.1f),
+                adder);
+        final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final Object number : decimals) {
+            @SuppressWarnings("unchecked")
+            final String text = com.landawn.abacus.util.N.typeOf((Class<Object>) number.getClass()).stringOf(number);
+            checks.add(() -> assertEquals(AttributeValue.fromN(text), DynamoDBExecutor.toAttributeValue(number), text));
+            checks.add(() -> assertEquals(AttributeValue.fromN(text), DynamoDBExecutor.asKey("k", number).get("k"), text));
+        }
+
+        for (final Object nonFinite : List.of(Double.NaN, Double.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY,
+                com.landawn.abacus.util.MutableDouble.of(Double.NaN), com.landawn.abacus.util.MutableFloat.of(Float.POSITIVE_INFINITY))) {
+            checks.add(() -> assertTrue(assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(nonFinite)).getMessage()
+                    .startsWith("DynamoDB numbers must be finite"), String.valueOf(nonFinite)));
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    /**
+     * query(QueryRequest, Class) builds a Dataset only from Map or bean rows. Any other row type is rejected with an
+     * IllegalArgumentException before the request is sent - no page is read or paid for - whatever the query would return,
+     * an empty result included. Map types (an @Entity-annotated Map subclass too) and bean classes still query; null is still
+     * rejected as a null argument.
+     */
+    @Test
+    public void testQueryWithClass_UnsupportedRowTypeRejectedBeforeAnyRequest_applyDdb() {
+        final QueryRequest req = QueryRequest.builder().tableName("TestTable").build();
+        final QueryResponse oneItem = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).build();
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(oneItem, QueryResponse.builder().items(List.of()).build());
+        final List<Class<?>> unsupported = List.of(String.class, Integer.class, int.class, Object.class, Object[].class, String[].class, List.class,
+                java.util.Set.class, java.util.Optional.class, com.landawn.abacus.util.Holder.class, com.landawn.abacus.util.MutableBoolean.class);
+        final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final Class<?> rowType : unsupported) {
+            checks.add(() -> {
+                final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> executor.query(req, rowType), rowType.getName());
+                assertTrue(e.getMessage().startsWith("Unsupported row type: " + com.landawn.abacus.util.ClassUtil.getCanonicalClassName(rowType)),
+                        e.getMessage());
+            });
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+        assertThrows(IllegalArgumentException.class, () -> executor.query(req, (Class<?>) null));
+        verify(mockDynamoDbClient, never()).query(any(QueryRequest.class));
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(oneItem);
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(1, executor.query(req, Map.class).size()),
+                () -> assertEquals(1, executor.query(req, AnnotatedMapRow_applyDdb.class).size()),
+                () -> assertEquals(1, executor.query(req, TestEntity.class).size()));
+        verify(mockDynamoDbClient, times(3)).query(any(QueryRequest.class));
+    }
+
+    // ---- 2026-10-24 r2 sliceC ----
+
+    /**
+     * An @Entity-annotated Map subclass (Beans.isBeanClass accepts it) is written as the Map it is by toItem and toUpdateItem, in
+     * both naming-policy forms, and by putItem(String, Object). It used to take the bean path, whose only properties are the Map
+     * getters, so every entry was dropped and keySet/values/entrySet/size/empty were written instead. A row that
+     * list(QueryRequest, Class) reads into that class (as a Map of the item's attributes) now writes back the item it came from.
+     */
+    @Test
+    public void testToItem_EntityAnnotatedMapSubclassIsWrittenAsMap_r2sliceC() {
+        final AnnotatedMapRow_applyDdb entity = new AnnotatedMapRow_applyDdb();
+        entity.put("id", "a1");
+        entity.put("userName", "n");
+        final Map<String, AttributeValue> expected = new LinkedHashMap<>();
+        expected.put("id", AttributeValue.fromS("a1"));
+        expected.put("userName", AttributeValue.fromS("n"));
+        final Map<String, AttributeValue> snakeExpected = new LinkedHashMap<>();
+        snakeExpected.put("id", AttributeValue.fromS("a1"));
+        snakeExpected.put("user_name", AttributeValue.fromS("n"));
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().items(List.of(expected)).build());
+
+        final AnnotatedMapRow_applyDdb readBack = executor.list(QueryRequest.builder().tableName("TestTable").build(), AnnotatedMapRow_applyDdb.class).get(0);
+        executor.putItem("TestTable", (Object) entity);
+
+        final ArgumentCaptor<PutItemRequest> putCaptor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(mockDynamoDbClient).putItem(putCaptor.capture());
+        final Map<String, AttributeValueUpdate> update = DynamoDBExecutor.toUpdateItem(entity);
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expected, DynamoDBExecutor.toItem(entity)),
+                () -> assertEquals(snakeExpected, DynamoDBExecutor.toItem(entity, com.landawn.abacus.util.NamingPolicy.SNAKE_CASE)),
+                () -> assertEquals(List.of("id", "userName"), new java.util.ArrayList<>(update.keySet())),
+                () -> assertEquals(AttributeValue.fromS("n"), update.get("userName").value()),
+                () -> assertEquals(List.of("id", "user_name"),
+                        new java.util.ArrayList<>(DynamoDBExecutor.toUpdateItem(entity, com.landawn.abacus.util.NamingPolicy.SNAKE_CASE).keySet())),
+                () -> assertEquals(expected, putCaptor.getValue().item()), () -> assertEquals(expected, DynamoDBExecutor.toItem(readBack)));
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "FractionTable")
+    public static class FractionEntity_applyDdb {
+        @com.landawn.abacus.annotation.Id
+        private com.landawn.abacus.util.Fraction id;
+        private com.landawn.abacus.util.Fraction ratio;
+        private Integer count;
+
+        public com.landawn.abacus.util.Fraction getId() {
+            return id;
+        }
+
+        public void setId(final com.landawn.abacus.util.Fraction id) {
+            this.id = id;
+        }
+
+        public com.landawn.abacus.util.Fraction getRatio() {
+            return ratio;
+        }
+
+        public void setRatio(final com.landawn.abacus.util.Fraction ratio) {
+            this.ratio = ratio;
+        }
+
+        public Integer getCount() {
+            return count;
+        }
+
+        public void setCount(final Integer count) {
+            this.count = count;
+        }
+    }
+
+    /** A number type whose text is not a decimal literal. */
+    public static final class GroupedDigitsNumber_applyDdb extends Number {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public int intValue() {
+            return 1234;
+        }
+
+        @Override
+        public long longValue() {
+            return 1234;
+        }
+
+        @Override
+        public float floatValue() {
+            return 1234;
+        }
+
+        @Override
+        public double doubleValue() {
+            return 1234;
+        }
+
+        @Override
+        public String toString() {
+            return "1,234";
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class AnnotatedMapRow_applyDdb extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
+
+    // ---- 2026-10-24 r2verify1 ----
+
+    /**
+     * Beans.isBeanClass accepts an @Entity-annotated Map subclass, so both public toEntity overloads mapped an item to it as a
+     * bean whose only properties are its Map accessors (and its own fields): every attribute was silently dropped and an empty
+     * map returned (or UnsupportedOperationException for a class without fields). They now reject every Map type with the
+     * IllegalArgumentException a plain Map already got; a missing item still returns null, and the row readers still fill such a
+     * class with the item's attributes.
+     */
+    @Test
+    public void testToEntityRejectsEntityAnnotatedMapSubclass_r2verify1() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", AttributeValue.fromS("1"));
+        item.put("name", AttributeValue.fromS("x"));
+        final Map<String, Object> expectedRow = new LinkedHashMap<>();
+        expectedRow.put("id", "1");
+        expectedRow.put("name", "x");
+        final String reason = " - Map implementations are never treated as beans";
+        final String withIdMessage = "Not a bean class: " + EntityMapWithId_r2verify1.class.getCanonicalName() + reason;
+
+        final Object row = DynamoDBExecutor.toList(QueryResponse.builder().items(List.of(item)).build(), EntityMapWithId_r2verify1.class).get(0);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(withIdMessage,
+                        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity(item, EntityMapWithId_r2verify1.class)).getMessage()),
+                () -> assertEquals(withIdMessage,
+                        assertThrows(IllegalArgumentException.class,
+                                () -> DynamoDBExecutor.toEntity(GetItemResponse.builder().item(item).build(), EntityMapWithId_r2verify1.class)).getMessage()),
+                () -> assertEquals("Not a bean class: " + AnnotatedMapRow_applyDdb.class.getCanonicalName() + reason,
+                        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity(item, AnnotatedMapRow_applyDdb.class)).getMessage()),
+                // Unchanged: a plain Map type fails alike, and a missing item is null.
+                () -> assertEquals("Not a bean class: java.util.LinkedHashMap" + reason,
+                        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity(item, LinkedHashMap.class)).getMessage()),
+                () -> assertNull(DynamoDBExecutor.toEntity((Map<String, AttributeValue>) null, EntityMapWithId_r2verify1.class)),
+                () -> assertNull(DynamoDBExecutor.toEntity(GetItemResponse.builder().build(), EntityMapWithId_r2verify1.class)),
+                () -> assertTrue(row instanceof EntityMapWithId_r2verify1, String.valueOf(row)), () -> assertEquals(expectedRow, row));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class EntityMapWithId_r2verify1 extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
 }

@@ -67,12 +67,26 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the increment operation
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyIncrement(final Object rowKey) throws IllegalArgumentException, RuntimeException {
-        super(new Increment(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
+        super(new Increment(toNonNullRowKeyBytes(rowKey)));
         increment = (Increment) mutation;
+    }
+
+    // WHY: an empty value wrapper (an empty Optional, a Nullable or Holder of null...) passes the null check but converts to
+    // null bytes, on which the Increment(byte[]) constructor failed with a NullPointerException on row.length, while the
+    // sliced overload of(Object, int, int) rejects the same key with an IllegalArgumentException.
+    private static byte[] toNonNullRowKeyBytes(final Object rowKey) throws IllegalArgumentException, RuntimeException {
+        final byte[] row = toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey));
+
+        if (row == null) {
+            throw new IllegalArgumentException("Row key has no byte representation (an empty value wrapper converts to no bytes): " + rowKey);
+        }
+
+        return row;
     }
 
     /**
@@ -175,11 +189,15 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * // Edge: a null row key is rejected
      * AnyIncrement.of((Object) null);       // throws IllegalArgumentException
+     *
+     * // Edge: an empty value wrapper converts to no bytes and is rejected like null
+     * AnyIncrement.of(Optional.empty());    // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the increment operation; automatically converted to bytes
      * @return a new AnyIncrement instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (such as an empty {@code Optional}, which
+     *         converts to no bytes), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(byte[])
      * @see #addColumn(String, String, long)

@@ -361,8 +361,11 @@ public final class AsyncDynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
      * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
-     * @return a {@link ContinuableFuture} containing the item converted to type T, or {@code null} if not found
-     *         (a primitive {@code targetClass} yields its default value, e.g. {@code 0}, instead of null)
+     * @return a {@link ContinuableFuture} containing the item converted to type T; if the item doesn't exist, the default value
+     *         of {@code targetClass}: {@code null} for entity, {@code Map}, collection, array, and most scalar types, the primitive
+     *         default (e.g. {@code 0} or {@code false}) for a primitive, an empty {@code Optional}, {@code OptionalInt} (and the
+     *         like) or {@code Nullable} for those wrapper types, and a {@code Holder} of {@code null} for
+     *         {@link com.landawn.abacus.util.Holder}
      * @throws IllegalArgumentException if {@code targetClass} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
@@ -419,9 +422,11 @@ public final class AsyncDynamoDBExecutor {
      * @param consistentRead {@code Boolean.TRUE} to perform a strongly consistent read;
      *                       {@code Boolean.FALSE} or {@code null} for an eventually consistent read
      * @param targetClass the class to convert the item to, must not be {@code null}
-     * @return a {@link ContinuableFuture} whose payload is the item converted to type {@code T},
-     *         or {@code null} if the item does not exist (a primitive {@code targetClass} yields its
-     *         default value, e.g. {@code 0}, instead of null)
+     * @return a {@link ContinuableFuture} whose payload is the item converted to type {@code T}; if the item does not exist,
+     *         the default value of {@code targetClass}: {@code null} for entity, {@code Map}, collection, array, and most scalar
+     *         types, the primitive default (e.g. {@code 0} or {@code false}) for a primitive, an empty {@code Optional},
+     *         {@code OptionalInt} (and the like) or {@code Nullable} for those wrapper types, and a {@code Holder} of
+     *         {@code null} for {@link com.landawn.abacus.util.Holder}
      * @throws IllegalArgumentException if {@code targetClass} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
@@ -483,8 +488,11 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type to convert the item to
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
      * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
-     * @return a ContinuableFuture containing the item converted to type T, or null if not found
-     *         (a primitive {@code targetClass} yields its default value, e.g. {@code 0}, instead of null)
+     * @return a ContinuableFuture containing the item converted to type T; if the item doesn't exist, the default value of
+     *         {@code targetClass}: {@code null} for entity, {@code Map}, collection, array, and most scalar types, the primitive
+     *         default (e.g. {@code 0} or {@code false}) for a primitive, an empty {@code Optional}, {@code OptionalInt} (and the
+     *         like) or {@code Nullable} for those wrapper types, and a {@code Holder} of {@code null} for
+     *         {@link com.landawn.abacus.util.Holder}
      * @throws IllegalArgumentException if {@code targetClass} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
@@ -1788,7 +1796,9 @@ public final class AsyncDynamoDBExecutor {
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
-     *         materialized according to the pagination behavior above
+     *         materialized according to the pagination behavior above; its columns are the attribute names of the items, an
+     *         item without attributes is a row of {@code null}s beside items with attributes, and a result whose items all lack
+     *         attributes is an empty Dataset
      * @throws IllegalArgumentException if {@code queryRequest} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
@@ -1868,10 +1878,15 @@ public final class AsyncDynamoDBExecutor {
      *                    filter expressions, and projection, must not be {@code null}
      * @param targetClass the class to convert retrieved items to; if {@code null} or a {@link Map} type, each
      *                    attribute becomes a column whose values are converted as by {@link DynamoDBExecutor#toMap(Map)}
-     *                    (for example, numbers are materialized as Strings)
+     *                    (for example, numbers are materialized as Strings), and an item without attributes is a row of
+     *                    {@code null}s beside items with attributes (a result whose items all lack attributes is an empty
+     *                    Dataset). A bean class maps each item to an entity whose properties are the columns. No other row type
+     *                    (an array, a collection or a single-value type) can be turned into a Dataset, so this method throws
+     *                    for it before the task is submitted
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
      *         and associated type information for type-safe operations
-     * @throws IllegalArgumentException if {@code queryRequest} is null
+     * @throws IllegalArgumentException if {@code queryRequest} is null, or {@code targetClass} is not {@code null}, a {@code Map} type,
+     *         or a bean class (thrown by this call, before any request is sent, even if the query would match nothing)
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #query(QueryRequest)
@@ -1880,6 +1895,8 @@ public final class AsyncDynamoDBExecutor {
     public ContinuableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass)
             throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(queryRequest, cs.queryRequest);
+        // Fail at the call, like the other argument checks: N.newDataset would reject the row type only after every page was read.
+        DynamoDBExecutorBase.checkDatasetRowType(targetClass);
 
         return asyncExecutor.execute(() -> dbExecutor.query(queryRequest, targetClass));
     }
@@ -1890,7 +1907,9 @@ public final class AsyncDynamoDBExecutor {
      * <p>This method provides memory-efficient processing of query results by returning a
      * {@link Stream} that lazily fetches items as needed. This is ideal for processing
      * large result sets without loading all items into memory at once. The stream handles
-     * pagination automatically.</p>
+     * pagination automatically. Unlike {@link #list(QueryRequest)} and {@link #query(QueryRequest)}, which return a single
+     * page when the request sets {@code exclusiveStartKey}, the stream only starts from that key and still continues to the
+     * last page; a {@code Limit} is the page size, not a cap on the streamed rows.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1944,7 +1963,10 @@ public final class AsyncDynamoDBExecutor {
      * <p>This method performs a query operation and returns the results as a Stream with automatic
      * type conversion, combining the benefits of memory-efficient streaming, lazy evaluation, and
      * compile-time type safety. The stream automatically handles pagination, making it ideal for
-     * processing large query results without loading everything into memory.</p>
+     * processing large query results without loading everything into memory. Unlike {@link #list(QueryRequest, Class)} and
+     * {@link #query(QueryRequest, Class)}, which return a single page when the request sets {@code exclusiveStartKey}, the
+     * stream only starts from that key and still continues to the last page; a {@code Limit} is the page size, not a cap on
+     * the streamed rows.</p>
      *
      * <p><b>Stream Benefits:</b></p>
      * <ul>
@@ -2202,6 +2224,9 @@ public final class AsyncDynamoDBExecutor {
      * <li>Limit and exclusive start key for pagination control</li>
      * </ul>
      *
+     * <p><b>Pagination:</b> an {@code exclusiveStartKey} set on the request is only where the scan starts: the stream then
+     * continues to the last page. A {@code Limit} is the page size, not a cap on the streamed rows.</p>
+     *
      * <p><b>Parallel Scan Pattern:</b></p>
      * <p>For large tables, use parallel scans by dividing the table into segments.
      * Each segment can be scanned concurrently to improve throughput.</p>
@@ -2410,6 +2435,9 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>This method provides full scan operation control with automatic type conversion,
      * allowing you to use all advanced scan features while maintaining type safety.</p>
+     *
+     * <p><b>Pagination:</b> an {@code exclusiveStartKey} set on the request is only where the scan starts: the stream then
+     * continues to the last page. A {@code Limit} is the page size, not a cap on the streamed rows.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

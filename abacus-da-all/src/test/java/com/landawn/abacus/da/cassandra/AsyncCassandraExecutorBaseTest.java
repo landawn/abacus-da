@@ -58,6 +58,30 @@ class AsyncCassandraExecutorBaseTest {
         verify(rows).iterator();
     }
 
+    // ---- 2026-10-24 r2 sliceG ----
+
+    /**
+     * Pins the class Javadoc: a repeated get() on a stream future returns the same, single-use Stream (the cursor is not read
+     * again), so a second terminal operation on it throws IllegalStateException.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void r2sliceG_repeatedGetOfAStreamFutureReturnsTheSameSingleUseStream() throws Exception {
+        final CassandraExecutorBase<String, Iterable<String>, Object, Object, Object> sync = mock(CassandraExecutorBase.class);
+        final Iterable<String> rows = mock(Iterable.class);
+        when(rows.iterator()).thenReturn(List.of("7", "8").iterator());
+        when(sync.createRowMapper(Long.class)).thenReturn(Long::valueOf);
+        final Object statement = new Object();
+        final var future = new TestAsync(sync, rows, statement).stream(Long.class, statement);
+
+        final var first = future.get();
+        assertEquals(List.of(7L, 8L), first.toList());
+
+        final var second = future.get();
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertSame(first, second), () -> assertThrows(IllegalStateException.class, second::toList),
+                () -> verify(rows).iterator());
+    }
+
     // Exercise the base extension contract; concrete driver facades override stream(Class, Statement).
     private static final class TestAsync extends AsyncCassandraExecutorBase<String, Iterable<String>, Object, Object, Object> {
         private final Iterable<String> rows;

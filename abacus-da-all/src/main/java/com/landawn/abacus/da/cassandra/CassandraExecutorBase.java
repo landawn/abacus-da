@@ -33,6 +33,8 @@ import java.util.function.Function;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.DuplicateResultException;
+import com.landawn.abacus.parser.ParserUtil;
+import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
@@ -96,7 +98,8 @@ import com.landawn.abacus.util.stream.Stream;
  *     custom user codecs).</li>
  * <li><strong>Entity-to-CQL mapping:</strong> entity properties are mapped to columns through the
  *     configured {@link NamingPolicy} (see below). Primary-key columns are discovered through
- *     {@code @Id} annotations or {@link #registerKeys(Class, Collection)}.</li>
+ *     {@code @Id} annotations or {@link #registerKeys(Class, Collection)}, or else by convention from a
+ *     property named {@code id} (see {@link #getKeyNames(Class)}).</li>
  * </ul>
  *
  * <h2>Generic Type Parameters</h2>
@@ -123,6 +126,15 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><strong>Array/Collection binding:</strong> a single array or collection is unpacked
  *     positionally.</li>
  * </ul>
+ *
+ * <h2>Bind Value Conversion</h2>
+ * <p>The shipped executors convert a bound value (a query parameter, a {@link Condition} or key value, or an entity
+ * property written by {@code insert}/{@code update}) that its column's codec does not accept to the column's type, and reject
+ * with {@link IllegalArgumentException} a conversion that would change the value instead of binding it: a number with a
+ * fractional part for an integer column (for example {@code 1.5} for an {@code int} column), a finite number beyond the range
+ * of a {@code float} or {@code double} column, and text that is not valid base64 for a {@code blob} column. A number out of an
+ * integer column's range, or a {@code NaN} or infinite value for it, fails with {@link ArithmeticException}. The concrete
+ * executors' class documentation has the full rules.</p>
  *
  * <h2>Boolean Conversion</h2>
  * <p>A column read into a {@code Boolean}/{@code boolean} target ({@code queryForBoolean}, {@code queryForSingleValue},
@@ -380,14 +392,17 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method returns the list of property names that comprise the primary key for
      * the given entity class. It first checks for manually registered keys, then falls back
-     * to introspecting the class for {@code @Id} annotations.</p>
+     * to introspecting the class for {@code @Id} annotations ({@code @Id}/{@code @ReadOnlyId}, or a JPA
+     * {@code @Id}). When no property is annotated, a property named exactly {@code id} whose type is
+     * {@code int}/{@code Integer}, {@code long}/{@code Long}, {@code String}, {@code java.sql.Timestamp} or
+     * {@code UUID} is the key by convention.</p>
      *
      * <p>The returned key names are used internally by CRUD operations to construct
      * appropriate WHERE clauses for database operations.</p>
      *
      * @param entityClass the entity class
-     * @return an immutable list of property names that form the primary key (empty if neither
-     *         registration nor {@code @Id} annotations are present)
+     * @return an immutable list of property names that form the primary key (empty if no key is
+     *         registered, annotated, or found by the {@code id} convention)
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not a bean class
      */
     protected static ImmutableList<String> getKeyNames(final Class<?> entityClass) throws IllegalArgumentException {
@@ -415,8 +430,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * property name is part of the primary key.</p>
      *
      * @param entityClass the entity class
-     * @return an immutable set of property names that form the primary key (empty if neither
-     *         registration nor {@code @Id} annotations are present)
+     * @return an immutable set of property names that form the primary key (empty if no key is
+     *         registered, annotated, or found by the {@code id} convention)
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not a bean class
      * @see #getKeyNames(Class)
      */
@@ -669,8 +684,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return an Optional containing the entity if found, otherwise empty
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code ids} is null or empty,
      *         {@code targetClass} is not a bean class, {@code ids} contains a {@code null} or empty
-     *         character-sequence key value, or its length does not match the registered/annotated key columns of
-     *         {@code targetClass}
+     *         character-sequence key value, its length does not match the registered/annotated key columns of
+     *         {@code targetClass}, or an id value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -707,8 +723,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return an Optional containing the entity if found, otherwise empty
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code ids} is null or empty,
      *         {@code targetClass} is not a bean class, {@code ids} contains a {@code null} or empty
-     *         character-sequence key value, or its length does not match the registered/annotated key columns of
-     *         {@code targetClass}
+     *         character-sequence key value, its length does not match the registered/annotated key columns of
+     *         {@code targetClass}, or an id value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -739,7 +756,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition
      * @return an Optional containing the entity if found, otherwise empty
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -773,7 +791,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition
      * @return an Optional containing the entity if found, otherwise empty
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -808,8 +827,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the entity if found, otherwise null
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code ids} is null or empty,
      *         {@code targetClass} is not a bean class, {@code ids} contains a {@code null} or empty
-     *         character-sequence key value, or its length does not match the registered/annotated key columns of
-     *         {@code targetClass}
+     *         character-sequence key value, its length does not match the registered/annotated key columns of
+     *         {@code targetClass}, or an id value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -844,8 +864,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the entity if found, otherwise null
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code ids} is null or empty,
      *         {@code targetClass} is not a bean class, {@code ids} contains a {@code null} or empty
-     *         character-sequence key value, or its length does not match the registered/annotated key columns of
-     *         {@code targetClass}
+     *         character-sequence key value, its length does not match the registered/annotated key columns of
+     *         {@code targetClass}, or an id value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -875,7 +896,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition
      * @return the entity if found, otherwise null
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -907,7 +929,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition
      * @return the entity if found, otherwise null
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
@@ -919,8 +942,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Inserts an entity into the database.
      *
      * <p>This method generates an INSERT statement based on the entity's properties
-     * and executes it. All non-null properties of the entity will be included in
-     * the INSERT statement.</p>
+     * and executes it. All non-null insertable properties of the entity will be included in
+     * the INSERT statement, primary-key properties too, also when a key value is {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -937,7 +960,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity to insert
      * @return the result set from the INSERT operation
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not a supported bean, or exposes no
-     *         insertable properties
+     *         insertable properties, or a property value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -969,7 +993,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param props the properties to insert
      * @return the result set from the INSERT operation
-     * @throws IllegalArgumentException if targetClass is null or props is null or empty
+     * @throws IllegalArgumentException if targetClass is null or is not a bean class, props is null or empty, or a value
+     *         in props is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class
+     *         documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1001,7 +1027,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the batch INSERT operation
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, contains a {@code null} element,
      *         or contains an entity that is not a supported bean or exposes no insertable properties (enforced by the
-     *         shipped executors' batch-statement builders)
+     *         shipped executors' batch-statement builders), or a property value is rejected when converted to its column's
+     *         type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
@@ -1038,7 +1065,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the batch INSERT operation
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or {@code propsList} is {@code null} or
      *         empty or contains a {@code null} or empty map (enforced by the shipped executors' batch-statement
-     *         builders)
+     *         builders), or a map value is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in
+     *         the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
@@ -1056,7 +1084,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method generates an UPDATE statement based on the entity's non-key properties
      * and executes it. The primary key fields are used in the WHERE clause to identify
-     * the record to update. By default, all non-key properties are updated.</p>
+     * the record to update. By default, all non-key properties are updated. A {@code null} property value is
+     * bound as {@code null}, which clears that column (unlike {@link #insert(Object)}, which leaves {@code null}
+     * properties out). A {@link Map} entity (an {@code @Entity}-annotated {@code Map} subclass whose class declares the key
+     * properties) sets every entry that is not a key.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1072,14 +1103,56 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity to update
      * @return the result set from the UPDATE operation
      * @throws IllegalArgumentException if entity is null, if the entity's class is not a bean class, declares no
-     *         updatable non-key property, or declares no key, or if a key value is missing
+     *         updatable non-key property (for a {@code Map} entity: it has no non-key entry) or declares no key, if a
+     *         key value is missing, or if a property or key value is rejected when converted to its column's type (see
+     *         <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
     public RS update(final Object entity) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(entity, cs.entity);
 
-        return update(entity, defaultUpdatePropNames(entity.getClass()));
+        return update(entity, defaultUpdatePropNamesOf(entity));
+    }
+
+    /**
+     * Returns the properties an entity-only update of {@code entity} sets by default: for a {@link Map} entity (an
+     * {@code @Entity}-annotated {@code Map} subclass) its entry keys that are not key properties, in entry order; for any
+     * other entity {@link #defaultUpdatePropNames(Class)} of its class.
+     *
+     * @param entity the entity (not {@code null})
+     * @return the non-empty default update property names
+     * @throws IllegalArgumentException if the entity's class is not a bean class or has no updatable non-key property, or a
+     *         {@code Map} entity has a non-{@code String} key or no non-key entry
+     */
+    static Collection<String> defaultUpdatePropNamesOf(final Object entity) throws IllegalArgumentException {
+        if (!(entity instanceof Map)) {
+            return defaultUpdatePropNames(entity.getClass());
+        }
+
+        // WHY: Beans.isBeanClass accepts an @Entity-annotated Map subclass, so the class-based list is the Map's own getters (a
+        // bogus "empty" column from isEmpty(), next to a typed key accessor) and the entries were lost. As for insert, a Map
+        // entity's entries are its columns: every entry that is not a key is set.
+        final Class<?> entityClass = entity.getClass();
+        final Set<String> keyNames = getKeyNameSet(entityClass);
+        final List<String> updatePropNames = new ArrayList<>(((Map<?, ?>) entity).size());
+
+        for (final Object entryKey : ((Map<?, ?>) entity).keySet()) {
+            if (!(entryKey instanceof String)) {
+                throw new IllegalArgumentException("Map entity keys must be property names, but found: " + entryKey + " in Map entity of class: "
+                        + ClassUtil.getCanonicalClassName(entityClass));
+            }
+
+            if (!keyNames.contains(entryKey)) {
+                updatePropNames.add((String) entryKey);
+            }
+        }
+
+        if (updatePropNames.isEmpty()) {
+            throw new IllegalArgumentException("No non-key entry to update in Map entity of class: " + ClassUtil.getCanonicalClassName(entityClass));
+        }
+
+        return updatePropNames;
     }
 
     /**
@@ -1106,7 +1179,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method generates an UPDATE statement for only the specified properties
      * and executes it. The primary key fields are used in the WHERE clause to identify
-     * the record to update.</p>
+     * the record to update. A listed property whose value is {@code null} is bound as {@code null}, which clears
+     * that column. For a {@link Map} entity (an {@code @Entity}-annotated {@code Map} subclass) the values are its
+     * entries.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1126,8 +1201,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the UPDATE operation
      * @throws IllegalArgumentException if entity is null, if propNamesToUpdate is null or empty, if the entity's
      *         class is not a bean class, if a primary-key property is requested for update, if the entity's class
-     *         declares no key, if a key value is missing, or if a name in propNamesToUpdate is not a property of
-     *         the entity's class
+     *         declares no key, if a key value is missing, if a name in propNamesToUpdate is not a property of
+     *         the entity's class (for a {@code Map} entity: has no entry), or if a property or key value is rejected when
+     *         converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1164,9 +1240,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param props the properties to update
      * @param whereClause the WHERE condition
      * @return the result set from the UPDATE operation
-     * @throws IllegalArgumentException if targetClass is null, if props is null or empty, if {@code props}
-     *         contains a primary-key property, if whereClause is null, or if whereClause contains a relation
-     *         unsupported by CQL
+     * @throws IllegalArgumentException if targetClass is null or is not a bean class, if props is null or empty, if
+     *         {@code props} contains a primary-key property, if whereClause is null or contains a relation unsupported by
+     *         CQL, or if a value in props or the condition is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1186,17 +1263,27 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>This method executes a user-provided UPDATE query with the specified parameters.
      * Parameters are bound positionally to the query's placeholders.</p>
      *
+     * <p><b>Overload resolution:</b> a call that passes only the query, or the query and a single
+     * {@code Collection<String>} of values, compiles to {@link #update(Object)} or {@link #update(Object, Collection)}
+     * instead, which treat the query string as an entity and throw {@link IllegalArgumentException} ("Not a bean
+     * class"). Pass the values as separate arguments or as an {@code Object[]}, or use {@link #execute(String)} for a
+     * statement without parameters.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String query = "UPDATE users SET status = ? WHERE user_id = ?";
      * ResultSet result = executor.update(query, "inactive", "user123"); // returns the driver ResultSet for the UPDATE
+     *
+     * executor.update("UPDATE users SET status = 'x' WHERE user_id = 'u1'"); // throws IllegalArgumentException (binds to update(Object))
+     * executor.update(query, Arrays.asList("inactive", "user123"));         // throws IllegalArgumentException (binds to update(Object, Collection))
      * }</pre>
      *
      * @param query the UPDATE query to execute
      * @param parameters the query parameters
      * @return the result set from the UPDATE operation
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1209,7 +1296,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method creates a batch UPDATE statement for all provided entities
      * and executes them together for better performance. By default, all non-key
-     * properties are updated.</p>
+     * properties are updated; a {@code null} property value is bound as {@code null}, which clears that column. For
+     * {@link Map} entities ({@code @Entity}-annotated {@code Map} subclasses) the updated properties are the first
+     * entity's non-key entries, and every entity supplies their values from its own entries.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1223,8 +1312,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if entities is null or empty, if any element is null, if the first entity's
-     *         class is not a bean class or has no updatable non-key property, if an entity's class declares no key,
-     *         or if a key value is missing
+     *         class is not a bean class or has no updatable non-key property (for a {@code Map} entity: no non-key
+     *         entry), if an entity's class declares no key, if a key value is missing, if a {@code Map} entity lacks
+     *         an entry for one of the updated properties, or if a property or key value is rejected when converted to its
+     *         column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
@@ -1236,14 +1327,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
         N.checkArgNotNull(firstEntity, "The first entity in the collection can't be null.");
 
-        return batchUpdate(entities, defaultUpdatePropNames(firstEntity.getClass()), type);
+        return batchUpdate(entities, defaultUpdatePropNamesOf(firstEntity), type);
     }
 
     /**
      * Performs a batch update of specific properties for multiple entities.
      *
      * <p>This method creates a batch UPDATE statement for all provided entities,
-     * updating only the specified properties, and executes them together for better performance.</p>
+     * updating only the specified properties, and executes them together for better performance. A listed
+     * property whose value is {@code null} is bound as {@code null}, which clears that column. A {@link Map} entity
+     * ({@code @Entity}-annotated {@code Map} subclass) supplies the values from its entries.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1262,8 +1355,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if entities or propNamesToUpdate is null or empty, if any element is
      *         null, if an entity's class is not a bean class, if propNamesToUpdate contains a primary-key property,
-     *         if an entity's class declares no key, if a key value is missing, or if a name in propNamesToUpdate is
-     *         not a property of an entity's class
+     *         if an entity's class declares no key, if a key value is missing, if a name in propNamesToUpdate is
+     *         not a property of an entity's class (for a {@code Map} entity: has no entry), or if a property or key value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @throws IllegalStateException if {@code entities} has more than 65,535 elements, the driver's per-batch statement
@@ -1307,7 +1401,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propsList} is {@code null} or
      *         empty or contains a {@code null} map, {@code targetClass} declares no key, or a map lacks a non-null,
      *         non-empty value for a key property or has no non-key property (enforced by the shipped executors'
-     *         batch-statement builders)
+     *         batch-statement builders), or a map value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @throws IllegalStateException if {@code propsList} has more than 65,535 elements, the driver's per-batch
@@ -1347,8 +1442,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if {@code query} is {@code null} or {@code parametersList} is {@code null},
      *         empty, or contains a {@code null} element (enforced by the shipped executors' batch-statement
-     *         builders), if the CQL contains malformed or mixed parameter markers, or an element's parameter count
-     *         or names do not match the prepared statement
+     *         builders), if the CQL contains malformed or mixed parameter markers, if an element's parameter count
+     *         or names do not match the prepared statement, or if a parameter value is rejected when converted to its column's
+     *         type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @throws IllegalStateException if {@code parametersList} has more than 65,535 elements, the driver's per-batch
@@ -1380,7 +1476,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity to delete (must have primary key values set)
      * @return the result set from the DELETE operation
      * @throws IllegalArgumentException if entity is null, if the entity's class is not a bean class or declares
-     *         no key, or if a key value is missing
+     *         no key, if a key value is missing, or if a key value is rejected when converted to its column's type (see
+     *         <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1413,8 +1510,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propNamesToDelete the property names to delete (null for entire row)
      * @return the result set from the DELETE operation
      * @throws IllegalArgumentException if entity is null, if propNamesToDelete is empty (but not null), if the
-     *         entity's class is not a bean class or declares no key, if a key value is missing, or if a primary-key
-     *         property is requested for deletion
+     *         entity's class is not a bean class or declares no key, if a key value is missing, if a primary-key
+     *         property is requested for deletion, or if a key value is rejected when converted to its column's type (see
+     *         <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1444,8 +1542,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the DELETE operation
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code ids} is null or empty,
      *         {@code targetClass} is not a bean class, {@code ids} contains a {@code null} or empty
-     *         character-sequence key value, or its length does not match the registered/annotated key columns of
-     *         {@code targetClass}
+     *         character-sequence key value, its length does not match the registered/annotated key columns of
+     *         {@code targetClass}, or an id value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1480,8 +1579,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code propNamesToDelete} is
      *         non-null but empty, if {@code ids} is null or empty, if {@code targetClass} is not a bean class, if
      *         {@code ids} contains a {@code null} or empty character-sequence key value or its length does not match
-     *         the registered/annotated key columns of {@code targetClass}, or if {@code propNamesToDelete} contains a
-     *         primary-key property
+     *         the registered/annotated key columns of {@code targetClass}, if {@code propNamesToDelete} contains a
+     *         primary-key property, or if an id value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1509,8 +1609,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param whereClause the WHERE condition
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if targetClass is null, whereClause is null, or whereClause contains a
-     *         relation unsupported by CQL
+     * @throws IllegalArgumentException if targetClass is null or is not a bean class, whereClause is null or contains a
+     *         relation unsupported by CQL, or a condition value is rejected when converted to its column's type (see
+     *         <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1543,9 +1644,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propNamesToDelete the property names to delete (null for entire rows)
      * @param whereClause the WHERE condition
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if targetClass is null, if propNamesToDelete is empty (but not
-     *         null) or contains a primary-key property, or if whereClause is null or contains a relation
-     *         unsupported by CQL
+     * @throws IllegalArgumentException if targetClass is null or is not a bean class, if propNamesToDelete is empty
+     *         (but not null) or contains a primary-key property, if whereClause is null or contains a relation
+     *         unsupported by CQL, or if a condition value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1578,7 +1680,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the batch DELETE operation
      * @throws IllegalArgumentException if entities is null or empty, if any element is null or is not an
      *         instance of the first entity's class, if the entity's class is not a bean class or has no
-     *         single-column key, or if a key value is missing
+     *         single-column key, if a key value is missing, or if a key value is rejected when converted to its column's type
+     *         (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1616,8 +1719,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the batch DELETE operation
      * @throws IllegalArgumentException if entities is null or empty, if propNamesToDelete is empty (but not null),
      *         if any element of entities is null or is not an instance of the first entity's class, if the entity's
-     *         class is not a bean class or has no single-column key, if a key value is missing, or if
-     *         propNamesToDelete contains a primary-key property
+     *         class is not a bean class or has no single-column key, if a key value is missing, if
+     *         propNamesToDelete contains a primary-key property, or if a key value is rejected when converted to its column's
+     *         type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1655,8 +1759,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return {@code true} if a record exists with the given primary key, {@code false} otherwise
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code ids} is null or empty,
      *         {@code targetClass} is not a bean class, {@code ids} contains a {@code null} or empty
-     *         character-sequence key value, or its length does not match the registered/annotated key columns of
-     *         {@code targetClass}
+     *         character-sequence key value, its length does not match the registered/annotated key columns of
+     *         {@code targetClass}, or an id value is rejected when converted to its column's type (see <i>Bind Value
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1682,8 +1787,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition; pass {@code null} to check whether the table has at
      *        least one row
      * @return {@code true} if at least one record matches the condition, {@code false} otherwise
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or is not a bean class, or
-     *         {@code whereClause} contains a relation unsupported by CQL
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or is not a bean class,
+     *         {@code whereClause} contains a relation unsupported by CQL, or a condition value is rejected when converted to
+     *         its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1716,7 +1822,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition; pass {@code null} to count all rows in the table
      * @return the count of records matching the condition, or {@code 0} if no rows match
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1755,7 +1862,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #findFirst(Class, Collection, Condition)
@@ -1794,7 +1902,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #findFirst(Class, Condition)
@@ -1826,7 +1935,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition (may be {@code null} to select every row)
      * @return a list of all matching entities; empty if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
@@ -1855,7 +1965,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition (may be {@code null} to select every row)
      * @return a list of all matching entities; empty if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
@@ -1885,7 +1996,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition (may be {@code null} to select every row)
      * @return a Dataset containing all matching entities; empty Dataset if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
@@ -1914,7 +2026,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a Dataset containing the selected properties of matching entities; empty Dataset
      *         if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
@@ -1950,7 +2063,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalBoolean.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL; or the value read
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation); or
+     *         the value read
      *         cannot be converted to {@code boolean} (for example a {@code bigint} or {@code double} value, an
      *         {@code int} other than {@code 1}, {@code 0} or {@code -1}, or text other than {@code 1}/{@code 0}/{@code -1}/
      *         {@code y}/{@code n}/{@code true}/{@code false} once its padding is removed &mdash; blank text converts to
@@ -1991,7 +2106,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         for {@code NULL}) when at least one row is returned; {@code OptionalChar.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForChar(String, Object...)
@@ -2028,7 +2144,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalByte.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForByte(String, Object...)
@@ -2065,7 +2182,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalShort.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForShort(String, Object...)
@@ -2102,7 +2220,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalInt.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForInt(String, Object...)
@@ -2139,7 +2258,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalLong.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForLong(String, Object...)
@@ -2176,7 +2296,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalFloat.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForFloat(String, Object...)
@@ -2213,7 +2334,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalDouble.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForDouble(String, Object...)
@@ -2249,7 +2371,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         for {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForString(String, Object...)
@@ -2285,7 +2408,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propName} is
-     *         {@code null} or empty, or {@code whereClause} contains a relation unsupported by CQL
+     *         {@code null} or empty, {@code whereClause} contains a relation unsupported by CQL, or a condition value is
+     *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForDate(Class, Class, String, Condition)
@@ -2324,8 +2448,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
-     *         {@code null}, {@code propName} is {@code null} or empty, or {@code whereClause} contains a
-     *         relation unsupported by CQL
+     *         {@code null}, {@code propName} is {@code null} or empty, {@code whereClause} contains a relation unsupported
+     *         by CQL, or a condition value is rejected when converted to its column's type (see <i>Bind Value Conversion</i>
+     *         in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForDate(Class, String, Condition)
@@ -2367,8 +2492,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
-     *         {@code null}, {@code propName} is {@code null} or empty, or {@code whereClause} contains a
-     *         relation unsupported by CQL
+     *         {@code null}, {@code propName} is {@code null} or empty, {@code whereClause} contains a relation unsupported
+     *         by CQL, or a condition value is rejected when converted to its column's type (see <i>Bind Value Conversion</i>
+     *         in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForSingleNonNull(Class, Class, String, Condition)
@@ -2419,8 +2545,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a row is returned;
      *         {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
-     *         {@code null}, {@code propName} is {@code null} or empty, or {@code whereClause} contains a
-     *         relation unsupported by CQL
+     *         {@code null}, {@code propName} is {@code null} or empty, {@code whereClause} contains a relation unsupported
+     *         by CQL, or a condition value is rejected when converted to its column's type (see <i>Bind Value Conversion</i>
+     *         in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if a row is returned but the converted column value is
@@ -2458,7 +2585,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition (may be {@code null} to stream every row)
      * @return a stream of matching entities (lazily produced; empty if no row matches)
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -2486,7 +2614,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a stream of matching entities with selected properties (lazily produced; empty if
      *         no row matches)
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
-     *         or the supplied condition contains a relation unsupported by CQL
+     *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
+     *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -2516,7 +2645,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return {@code true} if the query returned at least one row, {@code false} otherwise
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -2544,7 +2674,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return the aggregate value, or {@code 0L} if no row is returned
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @see #queryForLong(String, Object...)
@@ -2582,7 +2713,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalBoolean.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement; or the
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation); or the
      *         value read cannot be converted to {@code boolean} (for example a {@code bigint} or {@code double} value, an
      *         {@code int} other than {@code 1}, {@code 0} or {@code -1}, or text other than {@code 1}/{@code 0}/{@code -1}/
      *         {@code y}/{@code n}/{@code true}/{@code false} once its padding is removed &mdash; blank text converts to
@@ -2621,7 +2753,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         for {@code NULL}) when at least one row is returned; {@code OptionalChar.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForChar(Class, String, Condition)
@@ -2656,7 +2789,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalByte.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForByte(Class, String, Condition)
@@ -2691,7 +2825,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalShort.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForShort(Class, String, Condition)
@@ -2727,7 +2862,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalInt.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForInt(Class, String, Condition)
@@ -2762,7 +2898,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalLong.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForLong(Class, String, Condition)
@@ -2797,7 +2934,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalFloat.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForFloat(Class, String, Condition)
@@ -2832,7 +2970,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code OptionalDouble.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForDouble(Class, String, Condition)
@@ -2866,7 +3005,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         for {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForString(Class, String, Condition)
@@ -2900,7 +3040,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         for {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForDate(Class, String, Object...)
@@ -2938,7 +3079,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         for {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the
      *         query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForDate(String, Object...)
@@ -2988,7 +3130,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForSingleNonNull(Class, String, Object...)
@@ -3031,7 +3174,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a row is returned;
      *         {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if a row is returned but the converted column value is
@@ -3063,7 +3207,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a <i>present</i> {@code Optional} holding the first row as a {@code Map<String, Object>}
      *         when at least one row is returned; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #findFirst(Class, String, Object...)
@@ -3083,13 +3228,18 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <li><strong>Entity class:</strong> A POJO with getter/setter methods matching column names</li>
      * <li><strong>{@code Map.class}:</strong> Results mapped to a {@code Map<String, Object>}</li>
      * <li><strong>Collection class:</strong> Results mapped to {@code List}, {@code Set}, ...</li>
-     * <li><strong>Array class:</strong> Results mapped to {@code Object[]} or typed arrays</li>
+     * <li><strong>Array class:</strong> Results mapped to {@code Object[]} or typed object arrays such as {@code String[]},
+     *     one element per column; a primitive array class such as {@code long[]} is a single-value type, filled from a
+     *     one-column row's value</li>
      * </ul>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
      * query produces no rows. When a row is found, the mapped value is returned as a <i>present</i>
      * {@code Optional}. Because {@code Optional} cannot carry a {@code null} payload, the mapped value
-     * itself must be non-null.</p>
+     * itself must be non-null. For a single-value {@code targetClass}, a {@code NULL} column maps to the default
+     * value of that type: the primitive default for a primitive class token (for example, {@code int.class} yields
+     * {@code Optional.of(0)}), an empty value for {@code Optional}, {@code Nullable}, {@code OptionalInt} and similar
+     * types, and {@code null} for a wrapper or other reference type, which causes the {@link NullPointerException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3104,15 +3254,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the type to map the result row to
-     * @param targetClass an entity class with getter/setter methods, {@code Map.class}, a collection, or
-     *        an array class (must not be {@code null})
+     * @param targetClass an entity class with getter/setter methods, {@code Map.class}, a collection, an object
+     *        array class, or a single-value type (including a primitive array class) (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed parameter
-     *         markers, the supplied parameter count or names do not match the prepared statement, or {@code targetClass} is a single-value type
-     *         but the first row does not have exactly one column
+     *         markers, the supplied parameter count or names do not match the prepared statement, a parameter value is rejected when
+     *         converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation), or {@code targetClass} is a
+     *         single-value type but the first row does not have exactly one column
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if the first row maps to a null value, which {@link Optional#of(Object)} cannot contain
@@ -3139,7 +3290,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return a list of result rows, each as a {@code Map<String, Object>} keyed by column name
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #list(Class, String, Object...)
@@ -3172,8 +3324,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return a list of result rows mapped to {@code targetClass}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed parameter
-     *         markers, the supplied parameter count or names do not match the prepared statement, or {@code targetClass} is a single-value type
-     *         but the result set does not have exactly one column
+     *         markers, the supplied parameter count or names do not match the prepared statement, a parameter value is rejected when
+     *         converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation), or {@code targetClass} is a
+     *         single-value type but the result set does not have exactly one column
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
@@ -3201,7 +3354,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return a Dataset containing all result rows
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #query(Class, String, Object...)
@@ -3229,7 +3383,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return a Dataset containing all result rows shaped according to {@code targetClass}
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      */
@@ -3253,7 +3408,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return a stream of result rows, each as an {@code Object[]} of column values
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @see #stream(Class, String, Object...)
@@ -3288,7 +3444,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the values to bind, in declaration order
      * @return a stream of result rows mapped to {@code targetClass}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -3407,7 +3564,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters the parameter values (can be individual values, arrays, collections, maps, or entities)
      * @return the result set from the query execution
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -3448,7 +3606,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param parameters a Map containing parameter names as keys and parameter values as values
      * @return the result set from the query execution
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value
+     *         is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -3511,7 +3670,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param cp the parameterized CQL statement to execute
      * @return the driver result set
      * @throws IllegalArgumentException if {@code cp} is {@code null}, the CQL contains malformed or mixed parameter
-     *         markers, or the carried parameter count does not match the prepared statement
+     *         markers, the carried parameter count does not match the prepared statement, or a carried value is rejected
+     *         when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -3555,6 +3715,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Prepares an INSERT statement for the given entity.
      *
+     * <p>Every insertable property with a non-{@code null} value is written, primary-key properties included, also when
+     * a key value is {@code 0}. A {@link Map} entity (an {@code @Entity}-annotated {@code Map} subclass) supplies its entries
+     * as the columns.</p>
+     *
      * @param entity the entity to insert
      * @return the prepared statement with parameters
      * @throws IllegalArgumentException if {@code entity} is {@code null}, is not a supported bean, or exposes no insertable properties
@@ -3564,6 +3728,30 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
+
+        if (entity instanceof Map || !Beans.isBeanClass(targetClass)) {
+            // WHY: Beans.isBeanClass accepts an @Entity-annotated Map subclass, whose getters insertPropsOf would read (a bogus
+            // "empty" column from isEmpty(), the entries lost). The builder's insert(entity) writes a Map's entries and rejects any
+            // other non-bean, with its own messages, as before; only bean entities need insertPropsOf's zero-key rule.
+            return prepareInsertThroughBuilder(entity, targetClass);
+        }
+
+        final Map<String, Object> props = insertPropsOf(entity, targetClass);
+
+        if (props.isEmpty()) {
+            throw new IllegalArgumentException("No insertable property value specified in entity of class: " + ClassUtil.getCanonicalClassName(targetClass));
+        }
+
+        return prepareInsert(targetClass, props);
+    }
+
+    /**
+     * Prepares an INSERT statement for a {@link Map} or non-bean {@code entity} through the naming policy's
+     * {@code insert(entity)} and {@code into(targetClass)}.
+     *
+     * @throws IllegalArgumentException if the builder rejects {@code entity} or {@code targetClass}, or no column is staged
+     */
+    private SP prepareInsertThroughBuilder(final Object entity, final Class<?> targetClass) throws IllegalArgumentException {
         final CqlBuilder cqlBuilder;
 
         switch (namingPolicy) {
@@ -3587,9 +3775,37 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
             return buildCql(cqlBuilder, builder -> builder.into(targetClass));
         } catch (final IllegalStateException e) {
             // A freshly created INSERT builder only fails into() with IllegalStateException when no column was
-            // staged, i.e. the entity has no non-null insertable property: report the documented argument error.
+            // staged: report the documented argument error.
             throw new IllegalArgumentException("No insertable property value specified in entity of class: " + ClassUtil.getCanonicalClassName(targetClass), e);
         }
+    }
+
+    /**
+     * Returns the non-{@code null} values of the insertable properties of {@code entity}, keyed by property name in
+     * declaration order. A key property holding {@code 0} is included too (only a {@code null} value is left out).
+     *
+     * @throws IllegalArgumentException if {@code entityClass} is not a bean class
+     * @throws RuntimeException if reading an insertable entity property invokes a failing getter or cannot access the property
+     */
+    private static Map<String, Object> insertPropsOf(final Object entity, final Class<?> entityClass) throws IllegalArgumentException, RuntimeException {
+        // WHY: the parent abacus-query builder's insert(entity) (parseInsertEntity) leaves the id properties (@Id, or a conventional "id") out when every key
+        // value is null or numerically zero, the SQL convention for a database-generated id. Cassandra never generates a key and rejects an INSERT that
+        // lacks a primary-key column ("Some partition key parts are missing"), so an entity whose key is a legitimate 0 could
+        // not be inserted at all. QueryUtil.insertPropNames(Class, null) lists the insertable properties with the key ones.
+        final Collection<String> propNames = QueryUtil.insertPropNames(entityClass, null);
+        final BeanInfo beanInfo = ParserUtil.getBeanInfo(entityClass);
+        final Map<String, Object> props = N.newLinkedHashMap(propNames.size());
+        Object propValue = null;
+
+        for (final String propName : propNames) {
+            propValue = beanInfo.getPropValue(entity, propName);
+
+            if (propValue != null) {
+                props.put(propName, propValue);
+            }
+        }
+
+        return props;
     }
 
     /**
@@ -3598,7 +3814,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param props map of property names to values
      * @return the prepared statement with parameters
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or {@code props} is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or is not a bean class, or {@code props} is null or empty
      */
     protected SP prepareInsert(final Class<?> targetClass, final Map<String, Object> props) throws IllegalArgumentException {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -3657,12 +3873,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Prepares an UPDATE statement for the given entity.
      *
+     * <p>The values are read from the entity's properties; a {@link Map} entity (an {@code @Entity}-annotated {@code Map}
+     * subclass) supplies them from its entries.</p>
+     *
      * @param entity the entity containing updated values
      * @param propNamesToUpdate collection of property names to update
      * @return the prepared statement with parameters
      * @throws IllegalArgumentException if {@code entity} is {@code null}, {@code propNamesToUpdate} is null or empty or contains
      *         a key property, the entity has no declared key or a null/empty key value, or a name in
-     *         {@code propNamesToUpdate} is not a property of the entity's class
+     *         {@code propNamesToUpdate} is not a property of the entity's class (for a {@code Map} entity: has no entry)
      * @throws RuntimeException if reading a key or update property invokes a failing getter or cannot access the property
      */
     protected SP prepareUpdate(final Object entity, final Collection<String> propNamesToUpdate) throws IllegalArgumentException, RuntimeException {
@@ -3672,20 +3891,49 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         final Class<?> targetClass = entity.getClass();
         checkNoPrimaryKeyProperties(targetClass, propNamesToUpdate, "propNamesToUpdate");
         final Condition cond = entityToCondition(entity);
+        // WHY: Beans.isBeanClass accepts an @Entity-annotated Map subclass, but Beans.beanToMap reads only its getters, so an
+        // entry was rejected ("not found in bean class") and the Map's own getters were the only readable values. A Map
+        // entity's entries are its columns (as for insert), so the values to set come from the entries.
+        final Map<String, Object> mapEntityProps = entity instanceof Map ? mapEntityUpdateProps((Map<?, ?>) entity, propNamesToUpdate, targetClass) : null;
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return buildCql(NSC.update(targetClass), builder -> builder.set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
+                return buildCql(NSC.update(targetClass),
+                        builder -> builder.set(mapEntityProps != null ? mapEntityProps : Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
 
             case SCREAMING_SNAKE_CASE:
-                return buildCql(NAC.update(targetClass), builder -> builder.set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
+                return buildCql(NAC.update(targetClass),
+                        builder -> builder.set(mapEntityProps != null ? mapEntityProps : Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
 
             case CAMEL_CASE:
-                return buildCql(NLC.update(targetClass), builder -> builder.set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
+                return buildCql(NLC.update(targetClass),
+                        builder -> builder.set(mapEntityProps != null ? mapEntityProps : Beans.beanToMap(entity, propNamesToUpdate)).where(cond));
 
             default:
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
         }
+    }
+
+    /**
+     * Returns the entries of {@link Map} entity {@code entity} named by {@code propNamesToUpdate}, in that order.
+     *
+     * @throws IllegalArgumentException if {@code entity} has no entry for one of the names
+     */
+    private static Map<String, Object> mapEntityUpdateProps(final Map<?, ?> entity, final Collection<String> propNamesToUpdate, final Class<?> entityClass)
+            throws IllegalArgumentException {
+        final Map<String, Object> props = N.newLinkedHashMap(propNamesToUpdate.size());
+
+        for (final String propName : propNamesToUpdate) {
+            // A missing entry is rejected like an unknown bean property rather than bound as null, which would clear the column.
+            if (!entity.containsKey(propName)) {
+                throw new IllegalArgumentException(
+                        "No entry for property: " + propName + " in Map entity of class: " + ClassUtil.getCanonicalClassName(entityClass));
+            }
+
+            props.put(propName, entity.get(propName));
+        }
+
+        return props;
     }
 
     /**
@@ -3975,8 +4223,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param query the CQL query
      * @param parameters the query parameters
      * @return a bound (executable) statement ready for {@code execute}
-     * @throws IllegalArgumentException if {@code query} is null, contains malformed or mixed parameter markers, or its bind parameters do not
-     *         match the supplied values
+     * @throws IllegalArgumentException if {@code query} is null, contains malformed or mixed parameter markers, its bind parameters do not
+     *         match the supplied values, or a value is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in
+     *         the class documentation)
      * @throws RuntimeException if preparing CQL, reading a parameter property, or binding a value fails
      */
     protected abstract ST prepareStatement(final String query, final Object... parameters) throws IllegalArgumentException, RuntimeException;

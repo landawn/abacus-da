@@ -1258,9 +1258,11 @@ public class CqlBuilderInsertTest extends TestBase {
     // Resource lifecycle
 
     /**
-     * A batch INSERT whose rendering fails after {@code BEGIN BATCH} was emitted (an unsafe column name, or a NaN
-     * inlined by a raw-CQL builder) must not leave the truncated batch behind: previously the second
-     * {@code into(...)} failed with "can only be called once" and {@code build()} returned the partial text.
+     * A batch INSERT whose rendering fails after {@code BEGIN BATCH} was emitted (an unsafe column name, or a value
+     * with no CQL literal, such as {@code Instant.MAX}, inlined by a raw-CQL builder) must not leave the truncated batch
+     * behind: previously the second {@code into(...)} failed with "can only be called once" and {@code build()} returned
+     * the partial text. (2026-10-24 apply-cql: the failing raw value was a NaN until NaN became the CQL constant
+     * {@code NaN}.)
      */
     @Test
     public void test_batchInto_renderFailure_leavesBuilderUnchanged() {
@@ -1270,10 +1272,10 @@ public class CqlBuilderInsertTest extends TestBase {
         assertThrows(IllegalStateException.class, unsafeColumn::build);
 
         @SuppressWarnings("deprecation")
-        final CqlBuilder nanLiteral = SCCB.batchInsert(N.asList(N.asMap("a", 1, "b", Double.NaN)));
-        assertThrows(IllegalArgumentException.class, () -> nanLiteral.into("t"));
-        assertThrows(IllegalArgumentException.class, () -> nanLiteral.into("t"));
-        assertThrows(IllegalStateException.class, nanLiteral::build);
+        final CqlBuilder unrenderableLiteral = SCCB.batchInsert(N.asList(N.asMap("a", 1, "b", java.time.Instant.MAX)));
+        assertThrows(IllegalArgumentException.class, () -> unrenderableLiteral.into("t"));
+        assertThrows(IllegalArgumentException.class, () -> unrenderableLiteral.into("t"));
+        assertThrows(IllegalStateException.class, unrenderableLiteral::build);
     }
 
     // Additional contracts

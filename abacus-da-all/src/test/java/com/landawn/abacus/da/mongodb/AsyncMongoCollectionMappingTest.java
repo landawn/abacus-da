@@ -92,6 +92,8 @@ public class AsyncMongoCollectionMappingTest extends AsyncMongoCollectionExecuto
             target.addAll(rows);
             return target;
         }).when(findIterable).into(any());
+        // 2026-10-24 sliceT: the dotted query fetches through iterator() (MongoDBBase.fetchAll), so stub it too.
+        MongoIterableStubs.stubRows(findIterable, rows);
 
         final AsyncExecutor realExecutor = new AsyncExecutor(1, 1, 0L, TimeUnit.SECONDS);
 

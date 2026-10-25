@@ -773,4 +773,122 @@ public class AnyScanTest extends TestBase {
         assertTrue(scan.isScanMetricsEnabled());
         assertFalse(scan.val().isScanMetricsByRegionEnabled());
     }
+
+    // ---- 2026-10-24 sliceN ----
+
+    /**
+     * A null start/stop row is documented as an open bound, and HBase recognizes an unbounded row only as the EMPTY
+     * array (its client compares with {@code Bytes.equals(row, HConstants.EMPTY_START_ROW / EMPTY_END_ROW)}, which is
+     * false for null). Every row-bound entry point must therefore store the empty row for null, keeping the requested
+     * inclusivity and the other bound.
+     */
+    @SuppressWarnings("deprecation")
+    @Test
+    public void testNullRowBound_isStoredAsTheEmptyUnboundedRow_sliceN() {
+        final Filter filter = new PrefixFilter(Bytes.toBytes("u"));
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertUnboundedStart_sliceN(AnyScan.create().withStartRow((Object) null), true),
+                () -> assertUnboundedStart_sliceN(AnyScan.create().withStartRow((Object) null, false), false),
+                () -> assertUnboundedStop_sliceN(AnyScan.create().withStopRow((Object) null), false),
+                () -> assertUnboundedStop_sliceN(AnyScan.create().withStopRow((Object) null, true), true),
+                () -> assertUnboundedStart_sliceN(AnyScan.of((Object) null), true), () -> assertUnboundedStart_sliceN(AnyScan.of((Object) null, "z"), true),
+                () -> assertArrayEquals(Bytes.toBytes("z"), AnyScan.of((Object) null, "z").getStopRow()),
+                () -> assertUnboundedStop_sliceN(AnyScan.of("a", (Object) null), false),
+                () -> assertArrayEquals(Bytes.toBytes("a"), AnyScan.of("a", (Object) null).getStartRow()),
+                () -> assertFalse(AnyScan.of((Object) null, (Object) null).isGetScan()),
+                () -> assertUnboundedStart_sliceN(AnyScan.of((Object) null, filter), true),
+                () -> assertSame(filter, AnyScan.of((Object) null, filter).getFilter()),
+                // a null bound replaces an earlier explicit bound
+                () -> assertUnboundedStart_sliceN(AnyScan.create().withStartRow("a").withStartRow((Object) null), true),
+                () -> assertUnboundedStop_sliceN(AnyScan.create().withStopRow("z", true).withStopRow((Object) null), false));
+    }
+
+    /**
+     * Pins the consequence through HBase's own (package-private) sync-scanner decisions in hbase-client 2.6.x, on a
+     * table whose first region is {@code ["", "m")}: with a null stop row, {@code ClientSimpleScanner.setNewStartKey}
+     * ended a forward scan after that first region; with a null start row, {@code ReversedScannerCallable.prepare} did
+     * not treat the start as unbounded, so a reversed scan began at the first region and then ended; an exclusive null
+     * start row threw {@code NullPointerException} from {@code createClosestRowAfter} when the scanner opened.
+     */
+    @Test
+    public void testNullRowBound_scansWholeTableInHBaseScannerDecisions_sliceN() throws Exception {
+        final Class<?> connectionUtils = Class.forName("org.apache.hadoop.hbase.client.ConnectionUtils");
+        final java.lang.reflect.Method noMoreResultsForScan = connectionUtils.getDeclaredMethod("noMoreResultsForScan", Scan.class,
+                org.apache.hadoop.hbase.client.RegionInfo.class);
+        final java.lang.reflect.Method isEmptyStartRow = connectionUtils.getDeclaredMethod("isEmptyStartRow", byte[].class);
+        noMoreResultsForScan.setAccessible(true);
+        isEmptyStartRow.setAccessible(true);
+
+        final org.apache.hadoop.hbase.client.RegionInfo firstRegion = org.apache.hadoop.hbase.client.RegionInfoBuilder
+                .newBuilder(org.apache.hadoop.hbase.TableName.valueOf("t"))
+                .setStartKey(new byte[0])
+                .setEndKey(Bytes.toBytes("m"))
+                .build();
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals(Boolean.FALSE, noMoreResultsForScan.invoke(null, AnyScan.create().val(), firstRegion)),
+                () -> assertEquals(Boolean.FALSE, noMoreResultsForScan.invoke(null, AnyScan.create().withStopRow((Object) null).val(), firstRegion)),
+                () -> assertEquals(Boolean.TRUE, isEmptyStartRow.invoke(null, AnyScan.create().withStartRow((Object) null).setReversed(true).getStartRow())),
+                () -> assertEquals(Boolean.TRUE, isEmptyStartRow.invoke(null, AnyScan.create().withStartRow((Object) null, false).getStartRow())));
+    }
+
+    private static void assertUnboundedStart_sliceN(final AnyScan scan, final boolean inclusive) {
+        assertTrue(Bytes.equals(org.apache.hadoop.hbase.HConstants.EMPTY_START_ROW, scan.getStartRow()), "start row must be the empty row");
+        assertEquals(inclusive, scan.includeStartRow());
+    }
+
+    private static void assertUnboundedStop_sliceN(final AnyScan scan, final boolean inclusive) {
+        assertTrue(Bytes.equals(org.apache.hadoop.hbase.HConstants.EMPTY_END_ROW, scan.getStopRow()), "stop row must be the empty row");
+        assertEquals(inclusive, scan.includeStopRow());
+    }
+
+    // ---- 2026-10-24 verify8 ----
+
+    /**
+     * An empty value wrapper converts to null row-key bytes (HBaseExecutor.toRowKeyBytes, like a null row key), so as a
+     * row bound it must be stored as the empty, unbounded row too, never as a null row: a null stop row silently ended a
+     * forward scan after its first region (see the sliceN tests above).
+     */
+    @SuppressWarnings("deprecation")
+    @Test
+    public void testEmptyValueWrapperRowBound_isStoredAsTheEmptyUnboundedRow_verify8() {
+        final Filter filter = new PrefixFilter(Bytes.toBytes("u"));
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertUnboundedStart_sliceN(AnyScan.create().withStartRow(java.util.Optional.empty()), true),
+                () -> assertUnboundedStart_sliceN(AnyScan.create().withStartRow(com.landawn.abacus.util.u.Nullable.empty(), false), false),
+                () -> assertUnboundedStop_sliceN(AnyScan.create().withStopRow(java.util.OptionalInt.empty()), false),
+                () -> assertUnboundedStop_sliceN(AnyScan.create().withStopRow(com.landawn.abacus.util.Holder.of(null), true), true),
+                () -> assertUnboundedStart_sliceN(AnyScan.of(java.util.Optional.empty()), true),
+                () -> assertUnboundedStart_sliceN(AnyScan.of(java.util.Optional.empty(), java.util.Optional.empty()), true),
+                () -> assertUnboundedStop_sliceN(AnyScan.of(java.util.Optional.empty(), java.util.Optional.empty()), false),
+                () -> assertUnboundedStart_sliceN(AnyScan.of(com.landawn.abacus.util.u.Optional.empty(), filter), true),
+                // a present wrapper is still converted through its value
+                () -> assertArrayEquals(Bytes.toBytes("a"), AnyScan.create().withStartRow(java.util.Optional.of("a")).getStartRow()));
+    }
+
+    // ---- 2026-10-24 r2 sliceN ----
+
+    /**
+     * Pins the documented prefix-scan caveat: the computed bounds are a forward scan's ({@code [prefix, next-prefix)}) and are
+     * not swapped by {@code setReversed(true)}, called before or after. A reversed scan reads from its start row (upper bound)
+     * down to its stop row (lower bound, exclusive), and here the stop row sorts above the start row, so no row qualifies.
+     */
+    @Test
+    public void testPrefixScanBounds_areNotSwappedForAReversedScan_r2sliceN() {
+        final AnyScan reversedAfter = AnyScan.create().setStartStopRowForPrefixScan("user_").setReversed(true);
+        final AnyScan reversedBefore = AnyScan.create().setReversed(true).setStartStopRowForPrefixScan("user_");
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertTrue(reversedAfter.isReversed()), //
+                () -> assertTrue(reversedBefore.isReversed()), //
+                () -> assertArrayEquals(Bytes.toBytes("user_"), reversedAfter.getStartRow()),
+                () -> assertArrayEquals(Bytes.toBytes("user`"), reversedAfter.getStopRow()),
+                () -> assertArrayEquals(Bytes.toBytes("user_"), reversedBefore.getStartRow()),
+                () -> assertArrayEquals(Bytes.toBytes("user`"), reversedBefore.getStopRow()), () -> assertTrue(reversedAfter.includeStartRow()), //
+                () -> assertFalse(reversedAfter.includeStopRow()),
+                // the reversed range (stop, start] is empty: the stop row sorts above the start row
+                () -> assertTrue(Bytes.compareTo(reversedAfter.getStopRow(), reversedAfter.getStartRow()) > 0));
+    }
 }

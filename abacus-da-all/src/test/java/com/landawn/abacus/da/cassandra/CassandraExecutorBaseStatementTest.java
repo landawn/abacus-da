@@ -273,6 +273,293 @@ public class CassandraExecutorBaseStatementTest extends CassandraExecutorBaseTes
         assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareInsert(new TestEntity()));
     }
 
+    // ---- 2026-10-24 sliceF ----
+
+    // The query builder's insert(entity) dropped the key columns when every key value was 0 (SQL's "generated id" convention);
+    // Cassandra has no generated keys and rejects an INSERT without a primary-key column, so key 0 could not be inserted.
+    @Test
+    public void test_sliceF_insertEntityKeepsZeroValuedKeyColumns() {
+        final SliceFZeroKeyEntity single = new SliceFZeroKeyEntity();
+        single.setName("zero");
+
+        final SliceFZeroCompositeKeyEntity composite = new SliceFZeroCompositeKeyEntity();
+        composite.setValue("v");
+
+        final SliceFZeroCompositeKeyEntity partlyZero = new SliceFZeroCompositeKeyEntity();
+        partlyZero.setClusteringKey(5L);
+        partlyZero.setValue("v");
+
+        final SliceFNullableKeyEntity nullKey = new SliceFNullableKeyEntity();
+        nullKey.setName("n");
+
+        final SliceFNullableKeyEntity conventionalZeroId = new SliceFNullableKeyEntity();
+        conventionalZeroId.setId(0L);
+        conventionalZeroId.setName("n");
+
+        final TestCassandraExecutor snake = new TestCassandraExecutor(NamingPolicy.SNAKE_CASE);
+        final TestCassandraExecutor screaming = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        final TestCassandraExecutor camel = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertInsert("INSERT INTO slicef_zero_keys (bucket, name) VALUES (:bucket, :name)", List.of(0, "zero"),
+                        snake.exposedPrepareInsert(single)),
+                () -> assertInsert("INSERT INTO slicef_zero_keys (BUCKET, NAME) VALUES (:bucket, :name)", List.of(0, "zero"),
+                        screaming.exposedPrepareInsert(single)),
+                () -> assertInsert("INSERT INTO slicef_zero_keys (bucket, name) VALUES (:bucket, :name)", List.of(0, "zero"),
+                        camel.exposedPrepareInsert(single)),
+                () -> assertInsert("INSERT INTO slicef_zero_pairs (partition_key, clustering_key, value) VALUES (:partitionKey, :clusteringKey, :value)",
+                        List.of(0, 0L, "v"), snake.exposedPrepareInsert(composite)),
+                () -> assertInsert("INSERT INTO slicef_zero_pairs (partition_key, clustering_key, value) VALUES (:partitionKey, :clusteringKey, :value)",
+                        List.of(0, 5L, "v"), snake.exposedPrepareInsert(partlyZero)),
+                // A property named "id" is the key by convention (no @Id): its 0 is kept too, while a null key is still left out.
+                () -> assertInsert("INSERT INTO slicef_nullable_keys (id, name) VALUES (:id, :name)", List.of(0L, "n"),
+                        snake.exposedPrepareInsert(conventionalZeroId)),
+                () -> assertInsert("INSERT INTO slicef_nullable_keys (name) VALUES (:name)", List.of("n"), snake.exposedPrepareInsert(nullKey)));
+    }
+
+    @Test
+    public void test_sliceF_insertAndAsyncInsertSendZeroValuedKey() {
+        final SliceFZeroKeyEntity entity = new SliceFZeroKeyEntity();
+        entity.setName("zero");
+
+        final RecordingExecutor recording = new RecordingExecutor();
+        recording.insert(entity);
+        recording.recordingAsync().insert(entity);
+
+        assertEquals(List.of("INSERT INTO slicef_zero_keys (bucket, name) VALUES (:bucket, :name) [0, zero]",
+                "INSERT INTO slicef_zero_keys (bucket, name) VALUES (:bucket, :name) [0, zero]"), recording.recorded);
+    }
+
+    @Test
+    public void test_sliceF_insertEntityStillRejectsNonBeanAndValuelessEntity() {
+        final Map<String, Object> map = new LinkedHashMap<>();
+        map.put("bucket", 1);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareInsert(map)),
+                () -> assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareInsert("bucket")),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareInsert(new SliceFNullableKeyEntity())).getMessage()
+                        .startsWith("No insertable property value specified in entity of class: ")));
+    }
+
+    private static void assertInsert(final String expectedQuery, final List<Object> expectedParameters, final SP statement) {
+        assertEquals(expectedQuery, statement.query());
+        assertEquals(expectedParameters, statement.parameters());
+    }
+
+    @Table("slicef_zero_keys")
+    public static class SliceFZeroKeyEntity {
+        @Id
+        private int bucket;
+        private String name;
+
+        public int getBucket() {
+            return bucket;
+        }
+
+        public void setBucket(final int bucket) {
+            this.bucket = bucket;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    @Table("slicef_zero_pairs")
+    public static class SliceFZeroCompositeKeyEntity {
+        @Id
+        private int partitionKey;
+        @Id
+        private long clusteringKey;
+        private String value;
+
+        public int getPartitionKey() {
+            return partitionKey;
+        }
+
+        public void setPartitionKey(final int partitionKey) {
+            this.partitionKey = partitionKey;
+        }
+
+        public long getClusteringKey() {
+            return clusteringKey;
+        }
+
+        public void setClusteringKey(final long clusteringKey) {
+            this.clusteringKey = clusteringKey;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(final String value) {
+            this.value = value;
+        }
+    }
+
+    @Table("slicef_nullable_keys")
+    public static class SliceFNullableKeyEntity {
+        private Long id;
+        private String name;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    // ---- 2026-10-24 verify2 ----
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass. The sliceF bean path read its getters instead of its entries
+    // (INSERT INTO verify2_map_rows (empty) VALUES (:empty)); its entries are the columns, as the builder's insert(entity) writes them.
+    @Test
+    public void test_verify2_insertEntityMapSubclassWritesItsEntries() {
+        final Verify2MapEntity entity = new Verify2MapEntity();
+        entity.put("bucket", 0);
+        entity.put("name", "x");
+
+        final TestCassandraExecutor snake = new TestCassandraExecutor(NamingPolicy.SNAKE_CASE);
+        final TestCassandraExecutor screaming = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        final TestCassandraExecutor camel = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        final RecordingExecutor recording = new RecordingExecutor();
+        recording.insert(entity);
+        recording.recordingAsync().insert(entity);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertInsert("INSERT INTO verify2_map_rows (bucket, name) VALUES (:bucket, :name)", List.of(0, "x"), snake.exposedPrepareInsert(entity)),
+                () -> assertInsert("INSERT INTO verify2_map_rows (BUCKET, NAME) VALUES (:bucket, :name)", List.of(0, "x"),
+                        screaming.exposedPrepareInsert(entity)),
+                () -> assertInsert("INSERT INTO verify2_map_rows (bucket, name) VALUES (:bucket, :name)", List.of(0, "x"), camel.exposedPrepareInsert(entity)),
+                () -> assertEquals(List.of("INSERT INTO verify2_map_rows (bucket, name) VALUES (:bucket, :name) [0, x]",
+                        "INSERT INTO verify2_map_rows (bucket, name) VALUES (:bucket, :name) [0, x]"), recording.recorded),
+                // An empty one is still rejected, with the builder's message.
+                () -> assertEquals("entity map",
+                        assertThrows(IllegalArgumentException.class, () -> snake.exposedPrepareInsert(new Verify2MapEntity())).getMessage()));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @Table("verify2_map_rows")
+    public static class Verify2MapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
+
+    // ---- 2026-10-24 r2 sliceF ----
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass. With a key accessor (here the conventional Long "id"),
+    // update(entity) and batchUpdate(entities, type) set the Map's own getters (UPDATE r2f_map_rows SET empty = :empty WHERE
+    // id = :id) and lost the entries, and update(entity, names) rejected an entry name ("not found in bean class"). As for insert,
+    // a Map entity's entries are its columns.
+    @Test
+    public void test_r2sliceF_updateMapEntitySetsItsEntries() {
+        final R2FKeyedMapEntity entity = new R2FKeyedMapEntity();
+        entity.setId(7L);
+        entity.put("name", "x");
+        entity.put("displayName", "Ada");
+
+        final RecordingExecutor recording = new RecordingExecutor() {
+            @Override
+            protected TestStatement prepareBatchUpdateStatement(final Collection<?> entities, final Collection<String> propNamesToUpdate,
+                    final TestBatchType type) {
+                for (final Object e : entities) {
+                    final SP cp = prepareUpdate(e, propNamesToUpdate);
+                    recorded.add("batch " + cp.query() + " " + cp.parameters());
+                }
+
+                return new TestStatement();
+            }
+        };
+
+        recording.update(entity);
+        recording.update(entity, List.of("displayName"));
+        recording.recordingAsync().update(entity, List.of("name"));
+        recording.batchUpdate(List.of(entity), TestBatchType.LOGGED);
+        recording.batchUpdate(List.of(entity), List.of("name"), TestBatchType.LOGGED);
+
+        final R2FKeyedMapEntity keyOnly = new R2FKeyedMapEntity();
+        keyOnly.setId(1L);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(List.of("UPDATE r2f_map_rows SET name = :name, display_name = :displayName WHERE id = :id [x, Ada, 7]",
+                        "UPDATE r2f_map_rows SET display_name = :displayName WHERE id = :id [Ada, 7]",
+                        "UPDATE r2f_map_rows SET name = :name WHERE id = :id [x, 7]",
+                        "batch UPDATE r2f_map_rows SET name = :name, display_name = :displayName WHERE id = :id [x, Ada, 7]",
+                        "batch UPDATE r2f_map_rows SET name = :name WHERE id = :id [x, 7]"), recording.recorded),
+                () -> assertEquals("UPDATE r2f_map_rows SET NAME = :name, DISPLAY_NAME = :displayName WHERE ID = :id",
+                        new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE).exposedPrepareUpdate(entity, List.of("name", "displayName")).query()),
+                // A listed name without an entry is rejected (as an unknown bean property is), not bound as null.
+                () -> assertEquals("No entry for property: missing in Map entity of class: " + R2FKeyedMapEntity.class.getCanonicalName(),
+                        assertThrows(IllegalArgumentException.class, () -> recording.update(entity, List.of("missing"))).getMessage()),
+                () -> assertThrows(IllegalArgumentException.class, () -> recording.update(entity, List.of("id"))),
+                () -> assertEquals("No non-key entry to update in Map entity of class: " + R2FKeyedMapEntity.class.getCanonicalName(),
+                        assertThrows(IllegalArgumentException.class, () -> recording.update(keyOnly)).getMessage()));
+    }
+
+    // Pins the update(String, Object...) overload note: with only the query, or the query and one Collection<String>, Java binds the
+    // call to update(Object) / update(Object, Collection), which reject the String as a non-bean entity before any CQL runs.
+    @Test
+    public void test_r2sliceF_updateQueryOverloadResolution() {
+        final RecordingExecutor recording = new RecordingExecutor();
+        final String query = "UPDATE people SET display_name = ? WHERE account_id = ?";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(
+                assertThrows(IllegalArgumentException.class, () -> recording.update("UPDATE people SET display_name = 'x' WHERE account_id = 1")).getMessage()
+                        .startsWith("Not a bean class: java.lang.String")),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> recording.update(query, Arrays.asList("x", "1"))).getMessage()
+                        .startsWith("Not a bean class: java.lang.String")),
+                () -> assertEquals(List.of(), recording.recorded));
+
+        recording.update(query, new Object[] { "x", 1L });
+        recording.update(query, "x", 1L);
+
+        assertEquals(List.of(query + " [x, 1]", query + " [x, 1]"), recording.recorded);
+    }
+
+    // Pins the update docs: a null property value is bound as null (it clears the column), while insert leaves it out.
+    @Test
+    public void test_r2sliceF_updateBindsNullPropertyValues() {
+        final NamingEntity entity = new NamingEntity();
+        entity.setAccountId(1L);
+
+        final RecordingExecutor recording = new RecordingExecutor();
+        recording.update(entity);
+        recording.update(entity, List.of("displayName"));
+        recording.insert(entity);
+
+        assertEquals(Arrays.asList("UPDATE people SET display_name = :displayName WHERE account_id = :accountId [null, 1]",
+                "UPDATE people SET display_name = :displayName WHERE account_id = :accountId [null, 1]",
+                "INSERT INTO people (account_id) VALUES (:accountId) [1]"), recording.recorded);
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @Table("r2f_map_rows")
+    public static class R2FKeyedMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        public Long getId() {
+            return (Long) get("id");
+        }
+
+        public void setId(final Long id) {
+            put("id", id);
+        }
+    }
+
     private static java.util.stream.Stream<NamingCase> namingPolicies() {
         return java.util.stream.Stream.of(
                 new NamingCase(NamingPolicy.SNAKE_CASE, "account_id", "display_name", "account_id AS \"accountId\", display_name AS \"displayName\""),

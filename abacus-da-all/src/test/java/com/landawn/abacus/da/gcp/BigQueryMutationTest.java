@@ -629,4 +629,310 @@ public class BigQueryMutationTest extends BigQueryExecutorTestSupport {
             this.email = email;
         }
     }
+
+    // ---- 2026-10-24 sliceL ----
+
+    private QueryJobConfiguration sliceLCaptureInsert(final BigQueryExecutor bqExecutor, final Object entity) throws Exception {
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        bqExecutor.insert(entity);
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery).query(captor.capture());
+        return captor.getValue();
+    }
+
+    private static java.util.List<String> sliceLParameterTexts(final QueryJobConfiguration config) {
+        final java.util.List<String> texts = new ArrayList<>();
+
+        for (final com.google.cloud.bigquery.QueryParameterValue value : config.getPositionalParameters()) {
+            texts.add(value.getValue());
+        }
+
+        return texts;
+    }
+
+    /**
+     * BigQuery never generates ids, but the SQL builder's insert(entity) follows the "database-generated id" convention and
+     * leaves the id properties out while every one of them is zero: an entity with id 0 (or an all-zero composite key) was
+     * inserted without its id column, so the row got NULL there (silent data loss), and an entity whose only value was a
+     * zero id failed with "No insertable values remain". A null id is still left out, and every other entity renders the
+     * same SQL and parameters as before under every naming policy.
+     */
+    @Test
+    public void testInsertEntityKeepsZeroValuedIdProperties_sliceL() throws Exception {
+        final BigQueryExecutor screaming = new BigQueryExecutor(mockBigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
+        final BigQueryExecutor camel = new BigQueryExecutor(mockBigQuery, NamingPolicy.CAMEL_CASE);
+
+        final TestEntity zeroId = new TestEntity();
+        zeroId.setName("a");
+        final TestEntity onlyZeroId = new TestEntity();
+        final TestEntity nonZeroId = new TestEntity();
+        nonZeroId.setId(7);
+        nonZeroId.setName("b");
+        final SliceLBoxedIdEntity boxedZero = new SliceLBoxedIdEntity();
+        boxedZero.setKey(0L);
+        boxedZero.setLabel("c");
+        final SliceLBoxedIdEntity boxedNull = new SliceLBoxedIdEntity();
+        boxedNull.setLabel("d");
+        final SliceLZeroCompositeKeyEntity compositeZero = new SliceLZeroCompositeKeyEntity();
+        compositeZero.setValue("e");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final QueryJobConfiguration config = sliceLCaptureInsert(executor, zeroId);
+            assertEquals("INSERT INTO test_entity (id, name) VALUES (?, ?)", config.getQuery());
+            assertEquals(java.util.Arrays.asList("0", "a"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = sliceLCaptureInsert(screaming, zeroId);
+            assertEquals("INSERT INTO TEST_ENTITY (ID, NAME) VALUES (?, ?)", config.getQuery());
+            assertEquals(java.util.Arrays.asList("0", "a"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = sliceLCaptureInsert(camel, zeroId);
+            assertEquals("INSERT INTO testEntity (id, name) VALUES (?, ?)", config.getQuery());
+            assertEquals(java.util.Arrays.asList("0", "a"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = sliceLCaptureInsert(executor, onlyZeroId);
+            assertEquals("INSERT INTO test_entity (id) VALUES (?)", config.getQuery());
+            assertEquals(java.util.Arrays.asList("0"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = sliceLCaptureInsert(executor, boxedZero);
+            assertEquals("INSERT INTO slice_l_boxed_id_entity (key, label) VALUES (?, ?)", config.getQuery());
+            assertEquals(java.util.Arrays.asList("0", "c"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = sliceLCaptureInsert(executor, compositeZero);
+            assertEquals("INSERT INTO slice_l_zero_composite_key_entity (part_a, part_b, value) VALUES (?, ?, ?)", config.getQuery());
+            assertEquals(java.util.Arrays.asList("0", "0", "e"), sliceLParameterTexts(config));
+        },
+                // Unchanged: a non-zero id, a null id (left out), an entity without any value, and a non-bean entity.
+                () -> {
+                    final QueryJobConfiguration config = sliceLCaptureInsert(executor, nonZeroId);
+                    assertEquals("INSERT INTO test_entity (id, name) VALUES (?, ?)", config.getQuery());
+                    assertEquals(java.util.Arrays.asList("7", "b"), sliceLParameterTexts(config));
+                }, () -> {
+                    final QueryJobConfiguration config = sliceLCaptureInsert(executor, boxedNull);
+                    assertEquals("INSERT INTO slice_l_boxed_id_entity (label) VALUES (?)", config.getQuery());
+                    assertEquals(java.util.Arrays.asList("d"), sliceLParameterTexts(config));
+                }, () -> {
+                    final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.insert(new SliceLBoxedIdEntity()));
+                    assertEquals("No insertable values remain after removing null/default bean properties", ex.getMessage());
+                }, () -> assertThrows(IllegalArgumentException.class, () -> executor.insert(new Object())));
+    }
+
+    public static class SliceLBoxedIdEntity {
+        @com.landawn.abacus.annotation.Id
+        private Long key;
+        private String label;
+
+        public Long getKey() {
+            return key;
+        }
+
+        public void setKey(final Long key) {
+            this.key = key;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(final String label) {
+            this.label = label;
+        }
+    }
+
+    public static class SliceLZeroCompositeKeyEntity {
+        @com.landawn.abacus.annotation.Id
+        private int partA;
+        @com.landawn.abacus.annotation.Id
+        private long partB;
+        private String value;
+
+        public int getPartA() {
+            return partA;
+        }
+
+        public void setPartA(final int partA) {
+            this.partA = partA;
+        }
+
+        public long getPartB() {
+            return partB;
+        }
+
+        public void setPartB(final long partB) {
+            this.partB = partB;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(final String value) {
+            this.value = value;
+        }
+    }
+
+    // ---- 2026-10-24 verify7 ----
+
+    /**
+     * An {@code @Entity}-annotated {@code Map} subclass is a bean class for {@code Beans.isBeanClass}, but the SQL builder's
+     * insert(entity) inserts every Map from its entries. The zero-id insert path must keep that: reading such an entity
+     * through its bean accessors dropped its entries and inserted a bogus {@code empty} column (from {@code isEmpty()}), and
+     * an empty one was inserted instead of being rejected.
+     */
+    @Test
+    public void testInsertEntityAnnotatedMapSubclassInsertsItsEntries_verify7() throws Exception {
+        final Verify7AnnotatedMapEntity entity = new Verify7AnnotatedMapEntity();
+        entity.put("code", 1);
+        entity.setLabel("ignored");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final QueryJobConfiguration config = sliceLCaptureInsert(executor, entity);
+            assertEquals("INSERT INTO verify7_annotated_map_entity (code) VALUES (?)", config.getQuery());
+            assertEquals(java.util.Arrays.asList("1"), sliceLParameterTexts(config));
+        }, () -> assertThrows(IllegalArgumentException.class, () -> executor.insert(new Verify7AnnotatedMapEntity())));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class Verify7AnnotatedMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        private String label;
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(final String label) {
+            this.label = label;
+        }
+    }
+
+    // ---- 2026-10-24 r2 sliceL ----
+
+    private QueryJobConfiguration r2SliceLCapture(final org.junit.jupiter.api.function.Executable call) throws Throwable {
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        call.execute();
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery).query(captor.capture());
+        return captor.getValue();
+    }
+
+    /**
+     * insert(entity) writes an {@code @Entity}-annotated {@code Map} subclass from its entries, and the SQL builder's
+     * set(entity) renders its SET clause from them too, but update/delete read the key values (and update the null filter)
+     * through its bean accessors: the WHERE clause took the bean field ({@code id = 5}) instead of the inserted key entry
+     * ({@code id = 1}), so the statement targeted another row (or none), and a null entry was bound as an untyped null
+     * (IllegalArgumentException) instead of being left out like a null property.
+     */
+    @Test
+    public void testUpdateAndDeleteOfAnnotatedMapSubclassUseItsEntries_r2sliceL() throws Exception {
+        final R2SliceLKeyedMapEntity entity = new R2SliceLKeyedMapEntity();
+        entity.setId(5L);
+        entity.put("id", 1);
+        entity.put("name", "n");
+        entity.put("note", null);
+
+        final R2SliceLKeyedMapEntity noKeyEntry = new R2SliceLKeyedMapEntity();
+        noKeyEntry.setId(5L);
+        noKeyEntry.put("name", "n");
+
+        final R2SliceLKeyedMapEntity nothingToSet = new R2SliceLKeyedMapEntity();
+        nothingToSet.put("id", 1);
+        nothingToSet.put("name", null);
+
+        final LinkedHashMap<String, Object> plainMap = new LinkedHashMap<>();
+        plainMap.put("id", 1);
+        plainMap.put("name", "n");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final QueryJobConfiguration config = r2SliceLCapture(() -> executor.update(entity));
+            assertEquals("UPDATE keyed_map SET name = ? WHERE id = ?", config.getQuery());
+            assertEquals(java.util.Arrays.asList("n", "1"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = r2SliceLCapture(() -> executor.update(entity, N.asSet("id")));
+            assertEquals("UPDATE keyed_map SET name = ? WHERE id = ?", config.getQuery());
+            assertEquals(java.util.Arrays.asList("n", "1"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = r2SliceLCapture(() -> executor.delete(entity));
+            assertEquals("DELETE FROM keyed_map WHERE id = ?", config.getQuery());
+            assertEquals(java.util.Arrays.asList("1"), sliceLParameterTexts(config));
+        }, () -> {
+            final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.update(noKeyEntry));
+            assertEquals("No property value specified in entity for key names: [id]", ex.getMessage());
+        }, () -> {
+            final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.delete(noKeyEntry));
+            assertEquals("No property value specified in entity for key names: [id]", ex.getMessage());
+        }, () -> {
+            final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.update(nothingToSet));
+            assertEquals("No non-null non-key properties to update in the given entity", ex.getMessage());
+        },
+                // Unchanged: insert uses the same entries; a plain Map is still rejected as an entity.
+                () -> {
+                    final R2SliceLKeyedMapEntity toInsert = new R2SliceLKeyedMapEntity();
+                    toInsert.setId(5L);
+                    toInsert.put("id", 1);
+                    toInsert.put("name", "n");
+                    final QueryJobConfiguration config = r2SliceLCapture(() -> executor.insert(toInsert));
+                    assertEquals("INSERT INTO keyed_map (id, name) VALUES (?, ?)", config.getQuery());
+                    assertEquals(java.util.Arrays.asList("1", "n"), sliceLParameterTexts(config));
+                }, () -> assertThrows(IllegalArgumentException.class, () -> executor.update(plainMap, N.asSet("id"))),
+                () -> assertThrows(IllegalArgumentException.class, () -> executor.delete(plainMap)));
+    }
+
+    /**
+     * Pins the class Javadoc's Parameter Binding note: a BigDecimal (a bean property included) binds as BIGNUMERIC.
+     */
+    @Test
+    public void testBigDecimalBindsAsBigNumericParameter_r2sliceL() throws Throwable {
+        final R2SliceLPricedEntity priced = new R2SliceLPricedEntity();
+        priced.setId(1L);
+        priced.setPrice(new java.math.BigDecimal("12.50"));
+
+        final QueryJobConfiguration config = r2SliceLCapture(() -> executor.insert(priced));
+
+        assertTrue(config.getQuery().endsWith(" (id, price) VALUES (?, ?)"), config.getQuery());
+        assertEquals(com.google.cloud.bigquery.StandardSQLTypeName.BIGNUMERIC, config.getPositionalParameters().get(1).getType());
+        assertEquals("12.50", config.getPositionalParameters().get(1).getValue());
+        assertEquals(com.google.cloud.bigquery.StandardSQLTypeName.BIGNUMERIC,
+                BigQueryExecutor.buildQueryParameterValue(java.math.BigDecimal.ONE).get(0).getType());
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table("keyed_map")
+    public static class R2SliceLKeyedMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        @com.landawn.abacus.annotation.Id
+        private Long id;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+    }
+
+    public static class R2SliceLPricedEntity {
+        private long id;
+        private java.math.BigDecimal price;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public java.math.BigDecimal getPrice() {
+            return price;
+        }
+
+        public void setPrice(final java.math.BigDecimal price) {
+            this.price = price;
+        }
+    }
 }

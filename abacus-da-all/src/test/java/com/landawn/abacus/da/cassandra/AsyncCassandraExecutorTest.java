@@ -1079,4 +1079,139 @@ public class AsyncCassandraExecutorTest extends TestBase {
                 () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning(1L).queryForSingleValue(Boolean.class, query)),
                 () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning("yes").queryForSingleValue(Boolean.class, query)));
     }
+
+    // ---- 2026-10-24 sliceG ----
+
+    /**
+     * A real v4 executor over a mocked session. Each execution returns a first page holding one row (v = 1) whose next page's
+     * future fails with {@code failure}; with {@code failFirstPage} the execution future itself fails with it instead.
+     */
+    private static AsyncCassandraExecutor sliceGAsyncFailingWith(final Throwable failure, final boolean failFirstPage) {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement prepared = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        final ColumnDefinitions noVariables = mock(ColumnDefinitions.class);
+        when(noVariables.size()).thenReturn(0);
+        when(prepared.getVariableDefinitions()).thenReturn(noVariables);
+        when(prepared.bind()).thenReturn(mock(BoundStatement.class));
+        when(session.prepare(anyString())).thenReturn(prepared);
+        final ColumnDefinitions columns = sliceOColumns();
+        when(session.executeAsync(any(Statement.class))).thenAnswer(inv -> {
+            final CompletableFuture<AsyncResultSet> failed = new CompletableFuture<>();
+            failed.completeExceptionally(failure);
+
+            if (failFirstPage) {
+                return failed;
+            }
+
+            final Iterator<Row> rows = Arrays.asList(sliceORow(columns, 1L)).iterator();
+            final AsyncResultSet first = mock(AsyncResultSet.class);
+            when(first.getColumnDefinitions()).thenReturn(columns);
+            when(first.currentPage()).thenReturn(() -> rows);
+            when(first.hasMorePages()).thenReturn(true);
+            when(first.fetchNextPage()).thenReturn(failed);
+            return CompletableFuture.completedFuture(first);
+        });
+
+        return new CassandraExecutor(session).async();
+    }
+
+    /**
+     * An Error failing a later page must reach the caller as itself, as a first-page Error and a later-page RuntimeException
+     * already did (and as the sync executor over the driver's MultiPageResultSet does): get() reports it as the
+     * ExecutionException cause and a stream's terminal operation throws it. It used to arrive wrapped in a plain
+     * RuntimeException.
+     */
+    @Test
+    public void testSliceG_laterPageErrorReachesTheCallerUnwrapped() throws Exception {
+        final AssertionError error = new AssertionError("page failed");
+        final String query = "SELECT v FROM t";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final ContinuableFuture<java.util.List<Long>> list = sliceGAsyncFailingWith(error, false).list(Long.class, query);
+            assertSame(error, assertThrows(java.util.concurrent.ExecutionException.class, list::get).getCause());
+            assertSame(error, assertThrows(java.util.concurrent.ExecutionException.class, list::get).getCause()); // replayed
+        }, () -> assertSame(error,
+                assertThrows(java.util.concurrent.ExecutionException.class, () -> sliceGAsyncFailingWith(error, false).query(query).get()).getCause()), () -> {
+                    final Stream<Long> stream = sliceGAsyncFailingWith(error, false).stream(Long.class, query).get(); // the first page arrived
+                    assertSame(error, assertThrows(AssertionError.class, stream::toList));
+                }, () -> {
+                    final ResultSet rs = sliceGAsyncFailingWith(error, false).execute(query).get();
+                    assertEquals(1L, rs.iterator().next().getObject(0));
+                    assertSame(error, assertThrows(AssertionError.class, rs::all));
+                },
+                // control: the same Error failing the first page is the ExecutionException cause
+                () -> assertSame(error,
+                        assertThrows(java.util.concurrent.ExecutionException.class, () -> sliceGAsyncFailingWith(error, true).list(Long.class, query).get())
+                                .getCause()));
+    }
+
+    // ---- 2026-10-24 r2 sliceG ----
+
+    /**
+     * Pins the update(String, Object...) Javadoc: a query alone, or a query with one Collection&lt;String&gt; of values, binds to
+     * update(Object) / update(Object, Collection) and fails at the call site with "Not a bean class" without preparing anything
+     * (the old example claimed update("UPDATE SET") threw the driver's parse failure); a malformed query with a value does reach
+     * the driver's synchronous prepare.
+     */
+    @Test
+    public void testR2SliceG_updateWithOnlyAQueryBindsToTheEntityOverload() {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final IllegalStateException prepareFailure = new IllegalStateException("prepare failed");
+        when(session.prepare(anyString())).thenThrow(prepareFailure);
+        final AsyncCassandraExecutor facade = new CassandraExecutor(session).async();
+
+        final IllegalArgumentException queryOnly = assertThrows(IllegalArgumentException.class,
+                () -> facade.update("UPDATE users SET name = 'x' WHERE id = 1"));
+        final IllegalArgumentException queryAndStrings = assertThrows(IllegalArgumentException.class,
+                () -> facade.update("UPDATE users SET name = ? WHERE id = ?", Arrays.asList("x", "1")));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(queryOnly.getMessage().contains("Not a bean class"), queryOnly.getMessage()),
+                () -> assertTrue(queryAndStrings.getMessage().contains("Not a bean class"), queryAndStrings.getMessage()),
+                () -> org.mockito.Mockito.verify(session, org.mockito.Mockito.never()).prepare(anyString()),
+                () -> assertSame(prepareFailure, assertThrows(IllegalStateException.class, () -> facade.update("UPDATE SET", 1L))),
+                () -> org.mockito.Mockito.verify(session).prepare("UPDATE SET"));
+    }
+
+    /**
+     * Pins the @throws IllegalArgumentException clause the v4 async overrides now state: a parameter value rejected when it is
+     * converted to its column's type (1.5 for an int column) fails at the call site, while binding, before any request is sent.
+     */
+    @Test
+    public void testR2SliceG_lossyBindValueIsRejectedAtTheCallSite() {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final com.datastax.oss.driver.api.core.cql.ColumnDefinition variable = mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class);
+        when(variables.size()).thenReturn(1);
+        when(variables.get(0)).thenReturn(variable);
+        when(variable.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.INT);
+        when(variable.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("k"));
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement prepared = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        when(prepared.getVariableDefinitions()).thenReturn(variables);
+        when(session.prepare(anyString())).thenReturn(prepared);
+        final AsyncCassandraExecutor facade = new CassandraExecutor(session).async();
+        final String query = "SELECT v FROM t WHERE k = ?";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> r2SliceGAssertLossyBind(() -> facade.queryForSingleValue(Long.class, query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.queryForSingleNonNull(Long.class, query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.findFirst(Long.class, query, 1.5)), () -> r2SliceGAssertLossyBind(() -> facade.stream(query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.stream(query, (defs, row) -> row, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.execute(query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.execute(query, java.util.Collections.<String, Object> singletonMap("k", 1.5))),
+                () -> org.mockito.Mockito.verify(session, org.mockito.Mockito.never()).executeAsync(any(Statement.class)));
+    }
+
+    private static void r2SliceGAssertLossyBind(final org.junit.jupiter.api.function.Executable call) {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, call);
+        // The bind-conversion rejection (it names the column's CQL type), not a parameter-count or marker failure.
+        assertTrue(e.getMessage().contains("CQL type int"), e.getMessage());
+    }
 }

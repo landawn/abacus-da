@@ -159,6 +159,47 @@ import lombok.experimental.Accessors;
  * {@link IllegalArgumentException}; a bind value the rule rejects (a {@code Long 1L}, the text {@code "yes"}) is bound
  * unchanged and fails with the driver's {@code CodecNotFoundException}.</p>
  *
+ * <h3>Date, Timestamp, Inet and Blob Conversion</h3>
+ * <p>A {@code date} column (driver type {@link LocalDate}) read into a {@code java.time.LocalDateTime} target or bean property
+ * (including a UDT field read into a bean property) is the start of that day, and one read into an {@code Instant},
+ * {@code ZonedDateTime} or {@code OffsetDateTime} is the start of that day in the JVM default time zone (the instant a
+ * {@link Date} target of the same column receives). The day is taken from the driver value's day count, not its text (which has
+ * no four-digit year outside 1000-9999), so a {@code date} column read into a {@code java.time.LocalDate} is that day whatever its
+ * year, and one read into a {@code Date}, {@code java.sql.Date}, {@code Timestamp} or {@code Calendar} is the start of that day
+ * in the JVM default time zone for the years 1 to 9999 (as the 4.x executor converts a date). A {@code timestamp} column (driver
+ * type {@link Date}) read into an {@code OffsetTime} is that instant's time of day in the JVM default time zone, as for a
+ * {@code LocalTime} target. An
+ * {@code inet} column read into a {@code String} is the address text (for example {@code "127.0.0.1"}, not the
+ * {@code "/127.0.0.1"} of {@code InetAddress.toString()}), as is an {@link InetAddress} bound to a {@code text} column.
+ * A {@code blob} column (driver type {@link ByteBuffer}) read into a {@code String} target or bean property (including a nested
+ * dotted column and a UDT field read into a bean property) is the base64 text of the buffer's remaining bytes; the driver's
+ * buffer is not consumed. A {@code String} bound to a {@code blob} column (or to a custom-type column, which the driver also binds
+ * from a {@link ByteBuffer}, or written to a {@code blob} UDT field) is base64 text, decoded into the blob's bytes; text that is
+ * not valid base64 is rejected with an {@link IllegalArgumentException}.
+ * {@code byte[]} and {@code ByteBuffer} targets receive the blob's bytes, and a {@code ByteBuffer} bound to a {@code text} column
+ * is the base64 text of its remaining bytes.</p>
+ *
+ * <h3>Number Conversion</h3>
+ * <p>A bind value converted to its column's type must keep its number: a number with a fractional part (for example a
+ * {@code Double}, {@code Float} or {@code BigDecimal} {@code 1.5}, or an abacus {@code Fraction} {@code 3/2}) bound to an integer
+ * column ({@code tinyint}, {@code smallint}, {@code int}, {@code bigint}, {@code varint} or {@code counter}, and a {@code time}
+ * column, which a number binds as nanoseconds since midnight), and a finite number beyond the range of a {@code float} or
+ * {@code double} column (for example {@code 1e300} for a {@code float}), are rejected with an {@link IllegalArgumentException}
+ * naming the parameter, the value and the column's CQL type, instead of being bound truncated or as {@code Infinity}. An exact
+ * conversion is bound ({@code 2.0} to an {@code int} column binds {@code 2}), as is a number rounded to the nearest
+ * {@code float} or {@code double} ({@code 0.1} to a {@code float} column binds {@code 0.1f}), and a value out of the integer
+ * column's range, or a {@code NaN} or infinite value for it, fails with {@link ArithmeticException}. This check applies to
+ * binding only: a column value read into a narrower target (a {@code double} column into an {@code int} property) is converted
+ * as {@code N.convert} converts it.</p>
+ *
+ * <h3>Row Conversion with {@code N.convert}</h3>
+ * <p>Loading this class registers a converter with abacus-common for driver rows, so {@code N.convert(row, targetClass)} maps a
+ * {@link Row} as {@link #toList(ResultSet, Class)} maps each row: to a bean, a {@code Map}, a collection, an object array, or (for
+ * a one-column row) a single value. abacus-common looks converters up by class and superclass but not by interface, so the
+ * converter is registered for {@code Row.class} and for the driver's row implementation class
+ * ({@code com.datastax.driver.core.ArrayBackedRow}). A target the row already is an instance of (such as {@code Row} or
+ * {@code Object}) returns the row itself.</p>
+ *
  * <h3>Migration Path</h3>
  * <p>Applications using this legacy executor should consider migrating to the modern
  * {@link com.landawn.abacus.da.cassandra.CassandraExecutor} for:</p>
@@ -269,6 +310,30 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final BiFunction<Row, Class<?>, Object> converter = CassandraExecutor::readRow;
 
         N.registerConverter(Row.class, converter);
+        // WHY: abacus-common looks a converter up by the value's exact class and then its superclasses, never its interfaces,
+        // so the Row.class registration alone never fires: every row driver 3 returns is an ArrayBackedRow, and N.convert(row,
+        // Bean.class) or N.convert(row, Map.class) threw ParsingException while N.convert(row, Object[].class) gave [row].
+        // Registering the driver's concrete (package-private) row class too makes N.convert map a row as toList/findFirst do.
+        registerRowConverter("com.datastax.driver.core.ArrayBackedRow", converter);
+    }
+
+    /**
+     * Registers {@code converter} for the driver's row class {@code className}. The class is package-private in the driver, so
+     * it is resolved by name; a driver version without it (or without it as a {@link Row}) is skipped, keeping only the
+     * {@code Row.class} registration. A class that already has a converter keeps it (abacus registration is first-wins).
+     */
+    private static void registerRowConverter(final String className, final BiFunction<Row, Class<?>, Object> converter) {
+        final Class<?> rowClass;
+
+        try {
+            rowClass = Class.forName(className, false, Row.class.getClassLoader());
+        } catch (final ClassNotFoundException | LinkageError e) {
+            return;
+        }
+
+        if (Row.class.isAssignableFrom(rowClass)) {
+            N.registerConverter(rowClass.asSubclass(Row.class), converter);
+        }
     }
 
     /**
@@ -422,7 +487,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <li><strong>serialConsistency:</strong> Serial consistency for conditional operations</li>
      * <li><strong>retryPolicy:</strong> Retry behavior for failed operations</li>
      * <li><strong>fetchSize:</strong> Number of rows to fetch per page</li>
-     * <li><strong>readTimeoutMillis:</strong> Query timeout in milliseconds</li>
+     * <li><strong>readTimeoutMillis:</strong> Per-host read timeout in milliseconds, not a whole-query timeout
+     *     (driver 3 {@code Statement.setReadTimeoutMillis}; {@code 0} disables it, and a negative value makes building each
+     *     statement fail with {@link IllegalArgumentException})</li>
      * <li><strong>traceQuery:</strong> Enable query tracing for debugging</li>
      * </ul>
      *
@@ -685,7 +752,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>This method iterates over all remaining rows in {@code resultSet}
      * and returns a {@link Dataset} preserving column names. When {@code targetClass} is a
-     * bean class, each column value is converted (via {@code N.convert}) to the type of the
+     * bean class, each column value is converted (via {@code N.convert}, with the class-level {@code date},
+     * {@code timestamp}, {@code inet} and {@code blob} rules) to the type of the
      * matching bean property where one exists. Nested {@link Row} values are recursively
      * converted to the matching property type.</p>
      *
@@ -721,8 +789,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(resultSet, cs.resultSet);
 
-        final boolean isEntity = Beans.isBeanClass(targetClass);
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
+        // WHY: Beans.isBeanClass also accepts an @Entity-annotated Map subclass. Such a target is a map target, as for readRow and
+        // toList: typing its columns by its Map getters (isEmpty() -> "empty") turned a nested row into an Object[] (or a single value
+        // of the getter's type) instead of a map.
+        final boolean isEntity = !isMap && Beans.isBeanClass(targetClass);
         final ColumnDefinitions columnDefinitions = resultSet.getColumnDefinitions();
         final int columnCount = columnDefinitions.size();
         // Only a sizing hint: a faulty ResultSet reporting a negative count must not fail the extraction.
@@ -785,7 +856,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <ul>
      *   <li>{@link Row}, {@link Object}, or another supertype of {@code Row} — rows are returned unchanged (the existing list from
      *       {@link ResultSet#all()} is returned)</li>
-     *   <li>An array class — each row becomes an array of column values, each converted to the array's component type.
+     *   <li>An object array class (such as {@code Object[]} or {@code String[]}) — each row becomes an array of column values,
+     *       each converted to the array's component type. A primitive array class such as {@code long[]} is a single-value
+     *       type (see the last item): the one column's value is converted to it.
      *       For {@code Object[]} targets, nested {@link Row}s are recursively flattened to {@code Object[]}.
      *       Other array targets preserve nested rows assignable to the component type (such as {@code Row[]} or
      *       {@code GettableData[]}); otherwise nested rows are mapped to the component type, including beans and arrays.</li>
@@ -861,11 +934,26 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p>The method handles:</p>
      * <ul>
      * <li><strong>Direct mapping:</strong> Column names matching property names exactly</li>
-     * <li><strong>Naming-policy mapping:</strong> Column-to-property name resolution via
-     *     {@link QueryUtil#columnToPropNameMap(Class)} (e.g., snake_case columns to camelCase properties)</li>
+     * <li><strong>Name variants:</strong> a column name also matches a property case-insensitively or in its
+     *     snake_case form (e.g., {@code first_name} to {@code firstName}), or by the property's declared {@code @Column}
+     *     name (see {@link QueryUtil#columnToPropNameMap(Class)}); no executor naming policy is involved, since this
+     *     method is static</li>
      * <li><strong>Nested properties:</strong> Dot-notation property paths (e.g., {@code "address.city"})
-     *     when no direct property is found</li>
-     * <li><strong>Null values:</strong> {@code null} column values are written through as {@code null}</li>
+     *     when no direct property is found; the value is converted for the path's last property as a top-level column
+     *     value is, and a path that does not resolve, or whose last property is read-only, is ignored</li>
+     * <li><strong>Null values:</strong> a {@code NULL} column sets the property to the default value of its type:
+     *     {@code null} for a wrapper or other reference type, the primitive default for a primitive property (for
+     *     example, {@code 0} for an {@code int}), and an empty value for an {@code Optional}-like property</li>
+     * <li><strong>Type conversion:</strong> a column value is converted to the property type (see the class documentation
+     *     for the {@code date}, {@code timestamp}, {@code inet} and {@code blob} rules; a {@code blob} read into a {@code String}
+     *     property is the base64 text of its bytes), for top-level and nested properties alike. A collection or map column read
+     *     into a property declared as a parameterized collection or map (for example {@code List<byte[]>} or
+     *     {@code Map<String, String>}) or as an object array has each element, key and value converted by the same rules for the
+     *     declared element type, nested containers included (a {@code list<timestamp>} into a {@code List<LocalDateTime>}, a
+     *     {@code set<inet>} into a {@code Set<String>}, a {@code list<time>} into a {@code List<LocalTime>}); the driver's
+     *     collection is set unchanged when every element already has its declared type, and otherwise a new one of the declared
+     *     kind holding the converted elements in the driver's order. A UDT or tuple element is kept as the driver decodes it; an
+     *     element that cannot be converted fails the row as a top-level value would</li>
      * <li><strong>Nested {@link Row} values:</strong> Recursively converted via {@link #readRow(Row, Class)}
      *     to the property type</li>
      * <li><strong>Read-only properties:</strong> a column matching a property that cannot be written (for example a
@@ -941,7 +1029,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
             if (propInfo == null) {
                 if (propName.indexOf(SK._PERIOD) > 0) { //NOSONAR
-                    entityInfo.setPropValue(entity, propName, propValue, true);
+                    entityInfo.setPropValue(entity, propName, toNestedPropValue(entityInfo, propName, propValue, columnDefinitions, i), true);
                 }
 
                 continue;
@@ -954,16 +1042,42 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             parameterType = propInfo.clazz;
 
             if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof Row)) {
-                // BLOB -> byte[] and TIME -> date/time types are converted here: PropInfo.setPropValue's own conversion turns
-                // a ByteBuffer into null and reads a time's nanosecond count as epoch milliseconds.
-                propInfo.setPropValue(entity, parameterType == byte[].class && propValue instanceof ByteBuffer ? convertValue(propValue, byte[].class)
-                        : timeOfDayValue(propValue, parameterType, columnDefinitions, i));
+                // BLOB -> byte[], TIME -> date/time types, and the blob/inet/date/timestamp pairs of isMisconvertedDriverValue are
+                // converted here: PropInfo.setPropValue's own conversion turns a ByteBuffer into null (into "" for a String), reads a
+                // time's nanosecond count as epoch milliseconds, renders an InetAddress as "/address" and fails for those date/timestamp
+                // pairs. A collection or map has its elements converted for the property's declared element types.
+                propInfo.setPropValue(entity, toPropValue(propInfo, propValue, columnDefinitions, i));
             } else {
                 propInfo.setPropValue(entity, readRow((Row) propValue, parameterType));
             }
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    /**
+     * Converts the value of a dotted (nested-path) column, which {@link BeanInfo#setPropValue(Object, String, Object, boolean)}
+     * stores, as a top-level column value is converted ({@link #toPropValue(PropInfo, Object, ColumnDefinitions, int)}), for the
+     * (element) type of the path's last property. A path that does not resolve, or whose last property is read-only, keeps the value
+     * unchanged; the setter then ignores it, as before.
+     * @throws RuntimeException if {@code value} cannot be converted to the last property's class
+     */
+    private static Object toNestedPropValue(final BeanInfo entityInfo, final String path, final Object value, final ColumnDefinitions columnDefinitions,
+            final int index) throws RuntimeException {
+        // WHY: BeanInfo.setPropValue(path) stores the value through the last property's PropInfo.setPropValue, whose N.convert
+        // conversion is the one the top-level path corrects, so a nested property got none of those conversions: an inet column
+        // became "/127.0.0.1", a date into a LocalDateTime threw DateTimeParseException, a time's nanosecond count was read as
+        // epoch milliseconds and a BLOB into a byte[] became null. The read-only check is the setter's own (it skips such a
+        // property without converting), so a value it ignores is not converted, and cannot fail, here either.
+        final List<PropInfo> chain = entityInfo.getPropInfoChain(path);
+
+        if (chain.isEmpty()) {
+            return value;
+        }
+
+        final PropInfo leaf = chain.get(chain.size() - 1);
+
+        return isReadOnlyProperty(leaf) ? value : toPropValue(leaf, value, columnDefinitions, index);
     }
 
     // A getter-only (computed) property, e.g. one inherited from an @Entity superclass (abacus-common 8.1.0), is in
@@ -1063,22 +1177,397 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * {@link ByteBuffer} and {@code byte[]} is handled here because {@code N.convert} does not support it: it
      * converts a {@code ByteBuffer} to {@code null} for {@code byte[]}, and a {@code byte[]} to a
      * {@code ByteBuffer} whose position already equals its limit (so the driver would encode an empty blob).
-     * Every other conversion is delegated to {@code N.convert}.
+     * The driver values that {@code N.convert} maps wrongly are handled here too (see {@link #isMisconvertedDriverValue}):
+     * a {@code ByteBuffer} (a CQL {@code blob}) converted to {@code String} is the base64 text of its remaining bytes, its position
+     * unchanged ({@code N.convert} encodes only the bytes before the position, so a blob read into a {@code String} became
+     * {@code ""}); an {@link InetAddress} converted to {@code String} is its {@link InetAddress#getHostAddress() host address}; a CQL
+     * {@code date} (the driver's {@link LocalDate}) converted to a {@code java.time.LocalDateTime} is the start of that day, and to
+     * an {@code Instant}, {@code ZonedDateTime} or {@code OffsetDateTime} the start of that day in the JVM default time zone; a CQL
+     * {@code date} converted to a {@code java.time.LocalDate} is that day, whatever its year, and to a {@code Date} (including
+     * {@code java.sql.Date} and {@code Timestamp}) or {@code Calendar} is converted from that {@code java.time.LocalDate}, as by the
+     * 4.x executor, which supports the years 1 to 9999 ({@code N.convert} parses the driver value's text, which has no four-digit year
+     * outside 1000-9999); a
+     * CQL {@code timestamp} (a {@link Date}) converted to an {@code OffsetTime} is that instant's time of day in the JVM default
+     * time zone. Every other conversion is delegated to {@code N.convert}.
      * @throws RuntimeException if {@code value} cannot be converted to {@code targetClass}
      */
     @SuppressWarnings("unchecked")
     private static <T> T convertValue(final Object value, final Class<T> targetClass) throws RuntimeException {
         if (targetClass == byte[].class && value instanceof final ByteBuffer byteBuffer) {
-            final ByteBuffer duplicate = byteBuffer.duplicate();
-            final byte[] bytes = new byte[duplicate.remaining()];
-            duplicate.get(bytes);
-
-            return (T) bytes;
+            return (T) remainingBytes(byteBuffer);
         } else if (targetClass == ByteBuffer.class && value instanceof final byte[] bytes) {
             return (T) ByteBuffer.wrap(bytes);
+        } else if (targetClass == String.class && value instanceof final ByteBuffer byteBuffer) {
+            // WHY: N.convert(ByteBuffer, String.class) base64-encodes only the bytes before the position, and a driver-decoded blob
+            // is positioned at 0, so a blob read into a String target or property became "". Encode the remaining bytes (the blob's
+            // content, as for a byte[] target above) through a duplicate, leaving the caller's buffer untouched; base64 is the text
+            // form a String bound to a blob column is decoded from (see toBindValue). Same rule as the 4.x executor.
+            return (T) Strings.base64Encode(remainingBytes(byteBuffer));
+        } else if (targetClass == String.class && value instanceof final InetAddress inetAddress) {
+            // WHY: N.convert renders InetAddress.toString(), "hostname/address" ("/127.0.0.1" for an inet value the driver decodes),
+            // which is not an address literal (Cassandra rejects it for an inet column). The host address is the value's text form,
+            // the one CqlBuilder renders for an inet literal and the 4.x executor returns.
+            return (T) inetAddress.getHostAddress();
+        } else if (value instanceof final LocalDate localDate && isStartOfDayTarget(targetClass)) {
+            // WHY: N.convert parses the driver LocalDate's date-only toString() as a date-time and throws DateTimeParseException, so a
+            // date column could not be read into these targets, while a Date, Timestamp or Calendar target receives the start of that
+            // day in the JVM default zone. The driver's LocalDate counts days since the epoch in the proleptic Gregorian calendar, as
+            // java.time does, so the day is taken from that count (zone-free) rather than from its text.
+            final java.time.LocalDate day = java.time.LocalDate.ofEpochDay(localDate.getDaysSinceEpoch());
+
+            if (targetClass == java.time.LocalDateTime.class) {
+                return (T) day.atStartOfDay();
+            }
+
+            final java.time.ZonedDateTime startOfDay = day.atStartOfDay(java.time.ZoneId.systemDefault());
+
+            return (T) (targetClass == java.time.ZonedDateTime.class ? startOfDay
+                    : targetClass == java.time.OffsetDateTime.class ? startOfDay.toOffsetDateTime() : startOfDay.toInstant());
+        } else if (value instanceof final LocalDate localDate && isDateValueTarget(targetClass)) {
+            // WHY: N.convert parses the driver LocalDate's toString(), which is not padded to four year digits ("1-01-01" for the
+            // common 0001-01-01 sentinel, "999-03-01") and has no sign for a year after 9999, so a date column outside the years
+            // 1000-9999 could not be read into a java.time.LocalDate (DateTimeParseException) or a Date, Timestamp or Calendar
+            // (IllegalArgumentException), while the 4.x executor, which decodes a java.time.LocalDate, reads it. The day comes from
+            // the epoch-day count, as above; a Date, Timestamp or Calendar target is then converted from that java.time.LocalDate,
+            // as the 4.x executor converts its date (for the years 1000-9999 the same values N.convert gave).
+            final java.time.LocalDate day = java.time.LocalDate.ofEpochDay(localDate.getDaysSinceEpoch());
+
+            return targetClass == java.time.LocalDate.class ? (T) day : N.convert(day, targetClass);
+        } else if (targetClass == java.time.OffsetTime.class && value instanceof final Date date) {
+            // WHY: N.convert(Date, OffsetTime.class) fails ("Conversion returned java.lang.String"), so a timestamp column could not be
+            // read into an OffsetTime although a LocalTime target receives its time of day in the JVM default zone; use that zone's
+            // offset at the instant (as the 4.x executor reads a timestamp into an OffsetTime).
+            final java.time.Instant instant = value instanceof final java.sql.Timestamp timestamp ? timestamp.toInstant()
+                    : java.time.Instant.ofEpochMilli(date.getTime());
+
+            return (T) java.time.OffsetTime.ofInstant(instant, java.time.ZoneId.systemDefault());
         }
 
         return N.convert(value, targetClass);
+    }
+
+    // The java.time date-time targets a CQL date (the driver's LocalDate) is read into as the start of that day.
+    private static boolean isStartOfDayTarget(final Class<?> targetClass) {
+        return targetClass == java.time.LocalDateTime.class || targetClass == java.time.Instant.class || targetClass == java.time.ZonedDateTime.class
+                || targetClass == java.time.OffsetDateTime.class;
+    }
+
+    // The date targets a CQL date (the driver's LocalDate) is read into through its epoch day: a java.time.LocalDate, and a Date
+    // (including java.sql.Date and Timestamp) or Calendar.
+    private static boolean isDateValueTarget(final Class<?> targetClass) {
+        return targetClass == java.time.LocalDate.class || Date.class.isAssignableFrom(targetClass) || java.util.Calendar.class.isAssignableFrom(targetClass);
+    }
+
+    /**
+     * Returns whether {@code value} is a driver value that {@code N.convert}, and so {@code PropInfo.setPropValue}'s own
+     * conversion, maps wrongly to {@code targetClass}, while {@link #convertValue(Object, Class)} maps it: a {@code blob} or
+     * {@code inet} value for a {@code String}, a {@code date} value for a {@code java.time} date-time, a {@code java.time.LocalDate},
+     * a {@code Date} or a {@code Calendar} (wrong only outside the years 1000-9999, but routed alike), or a {@code timestamp} value
+     * for an {@code OffsetTime}.
+     */
+    private static boolean isMisconvertedDriverValue(final Object value, final Class<?> targetClass) {
+        return ((value instanceof InetAddress || value instanceof ByteBuffer) && targetClass == String.class)
+                || (value instanceof LocalDate && (isStartOfDayTarget(targetClass) || isDateValueTarget(targetClass)))
+                || (value instanceof Date && targetClass == java.time.OffsetTime.class);
+    }
+
+    // A copy of the buffer's remaining bytes (a blob's content); the buffer's position, limit and mark are unchanged.
+    private static byte[] remainingBytes(final ByteBuffer byteBuffer) {
+        final ByteBuffer duplicate = byteBuffer.duplicate();
+        final byte[] bytes = new byte[duplicate.remaining()];
+        duplicate.get(bytes);
+
+        return bytes;
+    }
+
+    /**
+     * Converts a bind value that the column's codec does not accept to the column's Java type {@code javaClazz}, as
+     * {@link #prepareStatement(String, Object...)} binds it. Text for a {@code blob} (or custom-type) column is base64-decoded into
+     * a buffer positioned at 0. Any other value is converted by {@link #convertValue(Object, Class)}; a value that conversion rejects
+     * with {@link ClassCastException} or {@link IllegalArgumentException} is returned unchanged, so the driver reports it (a
+     * {@link CodecNotFoundException}). A conversion that would change a number is rejected instead of bound: a number with a
+     * fractional part (see {@link #isLossyNumberConversion(Object, Object)}) for an integer column ({@code tinyint},
+     * {@code smallint}, {@code int}, {@code bigint}, {@code varint} or {@code counter}, and a {@code time} column, whose Java type
+     * here is a {@code Long} of nanoseconds), and a finite number beyond the range of a {@code float} or {@code double} column.
+     *
+     * @throws IllegalArgumentException if the conversion would change a number as described above, or text bound to a {@code blob}
+     *         column is not valid base64; the message names the parameter, the value or problem, and the column's CQL type
+     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it
+     * @throws RuntimeException if the conversion fails otherwise
+     */
+    private static Object toBindValue(final Object value, final Class<?> javaClazz, final DataType colType, final ColumnDefinitions variables,
+            final Map<Integer, String> namedParameters, final int index) throws IllegalArgumentException, ArithmeticException, RuntimeException {
+        if (javaClazz == ByteBuffer.class && value instanceof final String text) {
+            // WHY: N.convert(String, ByteBuffer.class) base64-decodes the text but returns the buffer positioned at its limit, so the
+            // driver bound an EMPTY blob; and text that is not base64 failed inside that conversion, was bound unchanged and surfaced
+            // only as the driver's CodecNotFoundException. Decode into a buffer positioned at 0 (the text form a blob read into a
+            // String has, see convertValue), and reject invalid text here, outside the keep-the-original fallback below.
+            try {
+                return ByteBuffer.wrap(Strings.base64Decode(text));
+            } catch (final IllegalArgumentException e) {
+                throw new IllegalArgumentException("Cannot bind text to " + describeParameter(variables, namedParameters, index) + " of CQL type " + colType
+                        + ": the text is not valid base64 (" + e.getMessage() + ")", e);
+            }
+        }
+
+        final Object converted;
+
+        try {
+            converted = convertValue(value, javaClazz);
+        } catch (final ClassCastException | IllegalArgumentException e) {
+            // Type conversion failed, keep original value
+            if (logger.isDebugEnabled()) {
+                logger.debug("Failed to convert parameter at index {} from {} to {}; keeping original value", index, value.getClass().getName(),
+                        javaClazz.getName(), e);
+            }
+
+            return value;
+        }
+
+        // WHY: N.convert truncates a fractional number for an integer type (1.5 -> 1) and turns a finite number beyond the float or
+        // double range into Infinity, so a value other than the one bound was silently stored (the driver's own codecs reject the
+        // original value). Thrown here, outside the catch above, so the bind fails with this message rather than the original value
+        // being bound and rejected as a CodecNotFoundException. Same rule as the 4.x executor.
+        if (isLossyNumberConversion(value, converted)) {
+            throw new IllegalArgumentException("Cannot bind " + ClassUtil.getSimpleClassName(value.getClass()) + " value " + value + " to "
+                    + describeParameter(variables, namedParameters, index) + " of CQL type " + colType + " without changing it: it would be bound as "
+                    + converted);
+        }
+
+        return converted;
+    }
+
+    /**
+     * Returns whether converting the bind value {@code source} produced a different number {@code converted}: a number with a
+     * fractional part (a {@code Double}, {@code Float}, {@code BigDecimal}, or another {@link Number} such as an abacus
+     * {@code Fraction} or {@code MutableDouble}) converted to an integer type (which includes the {@code Long} nanoseconds of a
+     * {@code time} column), or a finite number converted to an infinite {@code Float} or {@code Double}. (A non-finite value, or a
+     * value out of the integer type's range, already makes {@code N.convert} throw {@link ArithmeticException}; rounding to the
+     * nearest {@code float}/{@code double} is not a change.)
+     */
+    private static boolean isLossyNumberConversion(final Object source, final Object converted) {
+        if (!(source instanceof final Number number)) {
+            return false;
+        }
+
+        // WHY (r2): the first version tested only Double/Float/BigDecimal sources. N.convert truncates any Number through
+        // intValue()/longValue(), so a Fraction 3/2 or MutableDouble 1.5 was still bound as 1 (also as the nanoseconds of a time
+        // column); and it took every other Number for finite, so an infinite MutableDouble/MutableFloat/DoubleAdder bound to a float
+        // or double column (which stays Infinity) was rejected "without changing it: it would be bound as Infinity". Only BigDecimal
+        // and BigInteger values are finite whatever their double value (which overflows to Infinity for a huge value); any other
+        // number is as finite as its double value, and an integral one (Long, AtomicLong, MutableInt, ...) always has an integral
+        // double value. Same rule as the 4.x executor.
+        if (converted instanceof Float || converted instanceof Double) {
+            return Double.isInfinite(((Number) converted).doubleValue())
+                    && (number instanceof BigDecimal || number instanceof BigInteger || Double.isFinite(number.doubleValue()));
+        } else if (converted instanceof Byte || converted instanceof Short || converted instanceof Integer || converted instanceof Long
+                || converted instanceof BigInteger) {
+            if (number instanceof final BigDecimal decimal) {
+                return decimal.signum() != 0 && decimal.stripTrailingZeros().scale() > 0;
+            }
+
+            // A Float widens to double exactly; a huge BigInteger gives Infinity, which rint keeps.
+            final double d = number.doubleValue();
+
+            return d != Math.rint(d);
+        }
+
+        return false;
+    }
+
+    // "parameter 'name' (index i)", or "parameter at index i" when no name is known, for bind error messages. A ParsedCql marker name
+    // (":name" or "#{name}") is preferred; otherwise the prepared statement's variable name (the bound column) is used.
+    private static String describeParameter(final ColumnDefinitions variables, final Map<Integer, String> namedParameters, final int index) {
+        String name = namedParameters == null ? null : namedParameters.get(index);
+
+        if (Strings.isEmpty(name)) {
+            name = variables.getName(index);
+        }
+
+        return Strings.isEmpty(name) ? "parameter at index " + index : "parameter '" + name + "' (index " + index + ")";
+    }
+
+    /**
+     * Converts a driver-decoded value for {@link PropInfo#setPropValue(Object, Object)} where that method's own conversion
+     * (through {@code N.convert}) fails: a BLOB {@link ByteBuffer} for a {@code byte[]} property (it would become {@code null}) and
+     * the values {@link #isMisconvertedDriverValue} lists. Any other value is returned unchanged.
+     * @throws RuntimeException if {@code value} cannot be converted to {@code propClass}
+     */
+    private static Object toPropValue(final Class<?> propClass, final Object value) throws RuntimeException {
+        return (propClass == byte[].class && value instanceof ByteBuffer) || isMisconvertedDriverValue(value, propClass) ? convertValue(value, propClass)
+                : value;
+    }
+
+    /**
+     * Converts the driver-decoded value of column {@code index} for {@code propInfo}, as {@link PropInfo#setPropValue(Object, Object)}
+     * then stores it: a collection or map by {@link #toContainerPropValue(PropInfo, Object, DataType)}, any other value by
+     * {@code timeOfDayValue} and then {@link #toPropValue(Class, Object)}.
+     * @throws RuntimeException if {@code value}, or one of its elements, cannot be converted to the property's (element) type
+     */
+    private static Object toPropValue(final PropInfo propInfo, final Object value, final ColumnDefinitions columnDefinitions, final int index)
+            throws RuntimeException {
+        return value instanceof Collection || value instanceof Map ? toContainerPropValue(propInfo, value, columnDefinitions.getType(index))
+                : toPropValue(propInfo.clazz, timeOfDayValue(value, propInfo.clazz, columnDefinitions, index));
+    }
+
+    /**
+     * Converts a driver-decoded collection or map of CQL type {@code cqlType} (or {@code null} if unknown) for a property declared as
+     * a parameterized collection or map, or as an object array: its elements (keys and values) are converted to the declared element
+     * types (see {@link #toContainerValue(Type, Object, DataType)}). The driver's container is returned when every element already
+     * fits; otherwise the converted one, as the property's class.
+     * @throws RuntimeException if an element cannot be converted to its declared type
+     */
+    private static Object toContainerPropValue(final PropInfo propInfo, final Object value, final DataType cqlType) throws RuntimeException {
+        // WHY: PropInfo.setPropValue stores a driver collection or map as is when the property's raw class accepts it (a List
+        // property, an ArrayList), so a List<byte[]> or List<String> property of a list<blob> column held ByteBuffers, a
+        // List<LocalDateTime> of a list<timestamp> held Dates, a Set<String> of a set<inet> held InetAddresses and a
+        // List<java.time.LocalDate> of a list<date> held driver LocalDates: heap pollution that failed with ClassCastException where
+        // the elements were used. The elements now get the conversions a top-level value of the element type gets (including a
+        // time element's nanoseconds, from the CQL element type). A container whose elements all fit is stored as before (no copy).
+        // Same rule as the 4.x executor.
+        final Object converted = toContainerValue(propInfo.type, value, cqlType);
+
+        if (converted != value) {
+            return propInfo.clazz.isInstance(converted) ? converted : N.convert(converted, propInfo.type);
+        }
+
+        return value;
+    }
+
+    /**
+     * Converts the elements of a driver-decoded collection (for a collection or object-array {@code type}) or the keys and values of
+     * a map (for a map {@code type}) to the element types {@code type} declares, by {@link #toElementValue(Type, Object, DataType)},
+     * with the element CQL types of {@code cqlType}. Returns {@code value} itself when every element already fits (or {@code type}
+     * declares no element types); otherwise a new {@link ArrayList} (a {@link java.util.LinkedHashSet} for a set type, or a
+     * {@code Set} value of a type that a {@code LinkedHashSet} satisfies) or {@link java.util.LinkedHashMap} of the converted
+     * elements, in the driver's iteration order, which the caller converts to the declared container class if it is not one already.
+     * @throws RuntimeException if an element cannot be converted to its declared type
+     */
+    private static Object toContainerValue(final Type<?> type, final Object value, final DataType cqlType) throws RuntimeException {
+        if (value instanceof final Collection<?> collection && (type.isCollection() || type.isObjectArray())) {
+            final Type<?> elementType = type.elementType();
+
+            if (elementType == null) {
+                return value;
+            }
+
+            final DataType elementCqlType = typeArgument(cqlType, 0);
+            List<Object> converted = null;
+            int index = 0;
+
+            for (final Object element : collection) {
+                final Object elementValue = toElementValue(elementType, element, elementCqlType);
+
+                if (converted != null) {
+                    converted.add(elementValue);
+                } else if (elementValue != element) {
+                    // The first element that changes: copy the elements before it, which fit as they are.
+                    converted = new ArrayList<>(collection.size());
+                    final Iterator<?> iter = collection.iterator();
+
+                    for (int i = 0; i < index; i++) {
+                        converted.add(iter.next());
+                    }
+
+                    converted.add(elementValue);
+                }
+
+                index++;
+            }
+
+            if (converted == null) {
+                return value;
+            }
+
+            return type.isSet() || (collection instanceof Set && type.javaType().isAssignableFrom(java.util.LinkedHashSet.class))
+                    ? new java.util.LinkedHashSet<>(converted)
+                    : converted;
+        } else if (value instanceof final Map<?, ?> map && type.isMap()) {
+            final List<Type<?>> parameterTypes = type.parameterTypes();
+
+            if (parameterTypes.size() != 2) {
+                return value;
+            }
+
+            final Type<?> keyType = parameterTypes.get(0);
+            final Type<?> valueType = parameterTypes.get(1);
+            final DataType keyCqlType = typeArgument(cqlType, 0);
+            final DataType valueCqlType = typeArgument(cqlType, 1);
+            Map<Object, Object> converted = null;
+            int index = 0;
+
+            for (final Map.Entry<?, ?> entry : map.entrySet()) {
+                final Object key = toElementValue(keyType, entry.getKey(), keyCqlType);
+                final Object entryValue = toElementValue(valueType, entry.getValue(), valueCqlType);
+
+                if (converted != null) {
+                    converted.put(key, entryValue);
+                } else if (key != entry.getKey() || entryValue != entry.getValue()) {
+                    converted = new java.util.LinkedHashMap<>();
+                    final Iterator<? extends Map.Entry<?, ?>> iter = map.entrySet().iterator();
+
+                    for (int i = 0; i < index; i++) {
+                        final Map.Entry<?, ?> previous = iter.next();
+                        converted.put(previous.getKey(), previous.getValue());
+                    }
+
+                    converted.put(key, entryValue);
+                }
+
+                index++;
+            }
+
+            return converted == null ? value : converted;
+        }
+
+        return value;
+    }
+
+    // The CQL type argument at position i of a collection type (a list or set element type, a map key or value type), or null.
+    private static DataType typeArgument(final DataType cqlType, final int i) {
+        final List<DataType> typeArguments = cqlType == null ? null : cqlType.getTypeArguments();
+
+        return typeArguments != null && typeArguments.size() > i ? typeArguments.get(i) : null;
+    }
+
+    /**
+     * Converts one element (or map key or value) of CQL type {@code cqlType} (or {@code null} if unknown) of a driver-decoded
+     * collection or map to {@code type}, as a top-level column value of that type is converted ({@code timeOfDayValue}, then
+     * {@link #convertValue(Object, Class)}): for example a {@code blob} to {@code byte[]} or base64 text, a {@code timestamp} to a
+     * {@code LocalDateTime} in the JVM default zone, an {@code inet} to its address text, a {@code time} to a {@code LocalTime}. A
+     * nested collection or map is converted element by element ({@link #toContainerValue(Type, Object, DataType)}) and then to
+     * {@code type}'s container class (for example a {@code String[]}) if it is not one already; a single value for a collection or
+     * map {@code type} is converted by {@code N.convert} to that type, element type included. Returns {@code value} itself when it
+     * already is a {@code type} (a nested container: when its elements also fit), and keeps a {@code null}, a UDT value and a tuple
+     * value as the driver decodes them, as a UDT or tuple column is set.
+     * @throws RuntimeException if {@code value} cannot be converted to {@code type}
+     */
+    private static Object toElementValue(final Type<?> type, final Object value, final DataType cqlType) throws RuntimeException {
+        if (value == null) {
+            return null;
+        }
+
+        final Class<?> cls = type.javaType();
+
+        if (value instanceof Collection || value instanceof Map) {
+            final Object converted = toContainerValue(type, value, cqlType);
+
+            return cls.isInstance(converted) ? converted : N.convert(converted, type);
+        }
+
+        if (cls.isInstance(value) || value instanceof UDTValue || value instanceof TupleValue) {
+            return value;
+        }
+
+        if (type.isCollection() || type.isMap()) {
+            // WHY (r2 verify): a scalar for a parameterized collection or map element type (a set<int> column into a
+            // List<List<Long>> property) is converted to that full type, as PropInfo.setPropValue's N.convert of the whole container
+            // did before; the raw class (N.convert(3, List.class)) dropped the element type and stored a List<Integer> in it.
+            return N.convert(value, type);
+        }
+
+        // A time element's Long nanoseconds become a time of day only for a date/time element type, as for a top-level column.
+        return convertValue(isTimeOfDayTarget(cls) ? timeOfDayValue(value, cls, cqlType) : value, cls);
     }
 
     /**
@@ -1114,6 +1603,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return value;
+    }
+
+    // The CQL type of the UDT field at position index (fields by position, as the bean decode loop reads them), or null.
+    private static DataType udtFieldType(final UserType userType, final int index) {
+        int i = 0;
+
+        for (final UserType.Field field : userType) {
+            if (i++ == index) {
+                return field.getType();
+            }
+        }
+
+        return null;
     }
 
     // The date/time types that a time column or UDT field accepts when bound (see toTimeOfDay), so each reads back.
@@ -1402,7 +1904,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param whereClause the WHERE condition
      * @return an instance of {@code targetClass} populated with data from the single matching row,
      *         or {@code null} when no row matches
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code whereClause} contains a relation unsupported by CQL
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code whereClause} contains a relation unsupported by CQL,
+     *         or a condition value is rejected when converted to its column's type (see <i>Number Conversion</i> and <i>Date,
+     *         Timestamp, Inet and Blob Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if multiple entities match the condition
@@ -1462,7 +1966,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *         value for Optional/Nullable/OptionalInt-like types, or {@code null} for wrappers and other reference
      *         types); {@code Nullable.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number Conversion</i> and <i>Date, Timestamp, Inet and Blob
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForSingleNonNull(Class, String, Object...)
@@ -1517,7 +2023,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value, including the primitive
      *         default for a {@code NULL} column and primitive target; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number Conversion</i> and <i>Date, Timestamp, Inet and Blob
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if a row is returned but the converted column value is {@code null},
@@ -1546,7 +2054,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <li><strong>Entity class:</strong> A POJO with getter/setter methods matching column names</li>
      * <li><strong>{@code Map.class}:</strong> Results mapped to a {@code Map<String, Object>}</li>
      * <li><strong>Collection class:</strong> Results mapped to {@code List}, {@code Set}, ...</li>
-     * <li><strong>Array class:</strong> Results mapped to {@code Object[]} or typed arrays</li>
+     * <li><strong>Array class:</strong> Results mapped to {@code Object[]} or typed object arrays such as {@code String[]};
+     *     a primitive array class such as {@code long[]} is a single-value type, filled from a one-column row's value</li>
      * </ul>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
@@ -1582,8 +2091,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed parameter
-     *         markers, the supplied parameter count or names do not match the prepared statement, or {@code targetClass} is a single-value type
-     *         but the first row does not have exactly one column
+     *         markers, the supplied parameter count or names do not match the prepared statement, a parameter value is rejected when
+     *         converted to its column's type (see <i>Number Conversion</i> and <i>Date, Timestamp, Inet and Blob Conversion</i> in the
+     *         class documentation), or {@code targetClass} is a single-value type but the first row does not have exactly one column
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if the first row maps to a null value, which {@link Optional#of(Object)} cannot contain
@@ -1664,7 +2174,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return a Stream of mapped results
      * @throws IllegalArgumentException if {@code query} or {@code rowMapper} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number Conversion</i> and <i>Date, Timestamp, Inet and Blob
+     *         Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      */
@@ -1795,7 +2307,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return the ResultSet containing query results
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number Conversion</i> and <i>Date, Timestamp, Inet and Blob
+     *         Conversion</i> in the class documentation)
      * @throws NoHostAvailableException if the driver cannot complete the request on any available host
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
@@ -1853,7 +2367,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return the ResultSet containing query results
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number Conversion</i> and <i>Date, Timestamp, Inet and Blob
+     *         Conversion</i> in the class documentation)
      * @throws NoHostAvailableException if the driver cannot complete the request on any available host
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
@@ -2224,7 +2740,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * bind markers.</p>
      *
      * <p>Values are coerced to the column's declared Java type using the executor's
-     * {@link CodecRegistry} and {@code N.convert(...)} where applicable. A date/time value bound to a {@code time} column
+     * {@link CodecRegistry} and {@code N.convert(...)} where applicable; a value the conversion rejects is bound unchanged, and the
+     * driver then fails with a {@link CodecNotFoundException}. A conversion that would change a number is rejected (see
+     * <i>Number Conversion</i> in the class documentation): a number with a fractional part (such as a {@code Double},
+     * {@code Float}, {@code BigDecimal} or {@code Fraction}) for an integer column, and a finite number beyond the range of a
+     * {@code float} or {@code double} column. A
+     * {@code String} bound to a {@code blob} column is decoded as base64. An {@link InetAddress} bound to a {@code text} column is
+     * its host address (for example {@code "127.0.0.1"}). A date/time value bound to a {@code time} column
      * (a {@link LocalTime}, {@code OffsetTime}, {@code LocalDateTime}, {@code OffsetDateTime}, {@code ZonedDateTime},
      * {@code Instant}, {@link Date} such as {@code java.sql.Time}, or {@code Calendar}) is bound as its time of day in
      * nanoseconds: the value's own local time, or for an {@code Instant} the time in the current JVM default zone.
@@ -2240,8 +2762,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the parameters to bind, in one of the supported forms
      * @return an executable {@link Statement} with parameters bound
      * @throws IllegalArgumentException if {@code query} is {@code null}, an unmapped query contains malformed or
-     *         mixed parameter markers, a required parameter is missing, a named parameter cannot be resolved, or
-     *         the number of positional values does not exactly match the prepared statement
+     *         mixed parameter markers, a required parameter is missing, a named parameter cannot be resolved,
+     *         the number of positional values does not exactly match the prepared statement, a value's conversion to its
+     *         column's type would change the number, or text for a {@code blob} column is not valid base64
+     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it
      * @throws RuntimeException if the driver fails to prepare the resolved CQL or the session is closed, a bean
      *         property getter fails, or the driver rejects a bound value
      */
@@ -2387,15 +2911,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             } else if (timeOfDay != null) {
                 values[i] = timeOfDay.toNanoOfDay();
             } else {
-                try {
-                    values[i] = convertValue(values[i], javaClazz);
-                } catch (final ClassCastException | IllegalArgumentException e) {
-                    // Type conversion failed, keep original value
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("Failed to convert parameter at index {} from {} to {}; keeping original value", i,
-                                values[i] == null ? null : values[i].getClass().getName(), javaClazz.getName(), e);
-                    }
-                }
+                // A value the conversion rejects is kept (the driver reports it); a lossy number conversion or invalid base64 text
+                // for a blob column throws IllegalArgumentException naming the parameter.
+                values[i] = toBindValue(values[i], javaClazz, colType, columnDefinitions, namedParameters, i);
             }
         }
 
@@ -2785,16 +3303,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Sets one UDT field, with the same fallbacks as ordinary binding when no registered codec accepts the value: a
-     * {@code byte[]} or {@link ByteBuffer} for a BLOB field, the time of day of a date/time value for a TIME field, and for a
-     * TIMESTAMP field any value {@code N.convert} turns into the driver's {@link Date} (a {@link java.time.LocalDateTime} in the
-     * JVM default time zone; a {@link java.time.ZonedDateTime}, {@link java.time.OffsetDateTime} or {@link java.time.Instant} as
-     * the instant it denotes), as the same value bound to a {@code timestamp} column is converted. A value the conversion
-     * rejects fails with the driver's original {@link CodecNotFoundException}.
+     * {@code byte[]}, {@link ByteBuffer} or base64 {@code String} for a BLOB field, the time of day of a date/time value for a
+     * TIME field, and for a TIMESTAMP field any value {@code N.convert} turns into the driver's {@link Date} (a
+     * {@link java.time.LocalDateTime} in the JVM default time zone; a {@link java.time.ZonedDateTime},
+     * {@link java.time.OffsetDateTime} or {@link java.time.Instant} as the instant it denotes), as the same value bound to a
+     * {@code timestamp} column is converted. A value the conversion rejects fails with the driver's original
+     * {@link CodecNotFoundException}.
      *
+     * @throws IllegalArgumentException if a {@code String} for a BLOB field is not valid base64
      * @throws RuntimeException if no codec supports the field value, the value cannot be encoded, or the field index is invalid
      */
     @SuppressWarnings("unchecked")
-    private static void setUdtField(final UDTValue udtValue, final int index, final DataType fieldType, final Object value) throws RuntimeException {
+    private static void setUdtField(final UDTValue udtValue, final int index, final DataType fieldType, final Object value)
+            throws IllegalArgumentException, RuntimeException {
         if (value == null) {
             udtValue.setToNull(index);
         } else if (value instanceof final List<?> list) {
@@ -2838,6 +3359,20 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 if ((value instanceof byte[] || value instanceof ByteBuffer) && DataType.blob().equals(e.getCqlType()) && missingValueCodec) {
                     // Preserve a registered runtime-type codec; otherwise use the driver's native BLOB representation.
                     udtValue.setBytes(index, value instanceof final byte[] bytes ? ByteBuffer.wrap(bytes) : (ByteBuffer) value);
+                } else if (value instanceof final String text && DataType.blob().equals(e.getCqlType()) && missingValueCodec) {
+                    // WHY: the same rule as a String bound to a blob column (toBindValue): the text is base64, decoded into a buffer
+                    // positioned at 0, and text that is not base64 is rejected with a message naming the field (this failed with
+                    // CodecNotFoundException, while the column path bound an empty blob).
+                    final byte[] bytes;
+
+                    try {
+                        bytes = Strings.base64Decode(text);
+                    } catch (final IllegalArgumentException decodeFailure) {
+                        throw new IllegalArgumentException("Cannot set text to UDT field " + udtFieldDescription(udtValue, index)
+                                + " of CQL type blob: the text is not valid base64 (" + decodeFailure.getMessage() + ")", decodeFailure);
+                    }
+
+                    udtValue.setBytes(index, ByteBuffer.wrap(bytes));
                 } else if (timeOfDay != null) {
                     // Reached for TIME only when the registry accessor is unavailable: keep the exact-class lookup's fallback.
                     // That lookup cannot be separated from serialization, so, as with BLOB above, a registered codec whose
@@ -2863,6 +3398,20 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 }
             }
         }
+    }
+
+    // "'name' (index i)" for the UDT field at position index (fields are iterated by position, as the codec writes them), or
+    // "at index i" when the value has no such field, for error messages.
+    private static String udtFieldDescription(final UDTValue udtValue, final int index) {
+        int i = 0;
+
+        for (final UserType.Field field : udtValue.getType()) {
+            if (i++ == index) {
+                return "'" + field.getName() + "' (index " + index + ")";
+            }
+        }
+
+        return "at index " + index;
     }
 
     // Driver 3 provides no public UDT registry getter. Resolve its protected accessor only when a TIME field needs it,
@@ -2959,7 +3508,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *   <li>{@link Map} subclasses: encoded by reading each UDT field by name from the map;
          *       decoded into a new map keyed by UDT field name</li>
          *   <li>JavaBean classes: encoded and decoded by reading/writing the bean property
-         *       whose name matches each UDT field name</li>
+         *       whose name matches each UDT field name, resolved as a result column's property is by
+         *       {@link CassandraExecutor#toEntity(Row, Class)} (including a declared {@code @Column} name). A field without a
+         *       matching property is encoded as {@code null} and ignored on decode; a field whose property is read-only (for
+         *       example getter-only) is encoded from its getter but ignored on decode</li>
          * </ul>
          * <p>UDT field values are read and written by field position, so case-sensitive (quoted) field
          * names such as {@code "firstName"} are supported.</p>
@@ -2968,8 +3520,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * <p>A {@code byte[]} field value is accepted for a CQL {@code blob}. A registered codec for that
          * Java type takes precedence; otherwise the bytes are wrapped in a {@link ByteBuffer} for the
-         * driver's standard BLOB codec. Blob fields decoded into {@code byte[]} bean properties are copied
-         * from the buffer's remaining bytes.</p>
+         * driver's standard BLOB codec. A {@code String} field value for a {@code blob} is likewise accepted as base64 text,
+         * as a {@code String} bound to a {@code blob} column is: it is decoded into the field's bytes, and text that is not valid
+         * base64 is rejected with an {@link IllegalArgumentException}. Blob fields decoded into {@code byte[]} bean properties are
+         * copied from the buffer's remaining bytes, and those decoded into {@code String} bean properties are the base64 text of
+         * those bytes.</p>
          *
          * <p>A CQL {@code time} field also accepts {@link LocalTime}, time-bearing {@code java.time}
          * values, {@link Date}, and {@link java.util.Calendar}. When the driver's codec registry is accessible
@@ -2987,6 +3542,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * on 1970-01-01 in the current JVM default zone (a {@code java.sql.Timestamp} keeps nanoseconds), so a value
          * written from such a property reads back with the same local time of day, for a {@code Date} while the JVM default
          * zone is unchanged; the date part is not stored.</p>
+         *
+         * <p>A DATE, TIMESTAMP, INET or BLOB field decoded into a bean property follows the class-level <i>Date, Timestamp, Inet and
+         * Blob Conversion</i> rules of {@link CassandraExecutor} (for example, a DATE field read into a {@code LocalDateTime} property
+         * is the start of that day, an INET field read into a {@code String} property is the address text, and a BLOB field read into
+         * a {@code String} property is the base64 text of its bytes).</p>
          *
          * <p>If reflective access to the driver's codec registry is unavailable, TIME fields use exact-runtime-class
          * codec lookup. This can miss a {@code Date} codec for a {@code java.sql.Time} or {@code java.sql.Timestamp}
@@ -3101,11 +3661,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             if (propInfo != null && !isReadOnlyProperty(propInfo)) {
                                 final Object fieldValue = udtValue.getObject(idx);
 
-                                // BLOB -> byte[] and TIME -> date/time types are converted here: PropInfo.setPropValue's own
-                                // conversion turns a ByteBuffer into null and reads a time's nanosecond count as epoch milliseconds.
+                                // BLOB -> byte[], TIME -> date/time types, and the blob/inet/date/timestamp pairs of
+                                // isMisconvertedDriverValue are converted here, as toEntity does: PropInfo.setPropValue's own conversion
+                                // maps them wrongly. A collection or map field has its elements converted for the declared element types.
                                 propInfo.setPropValue(targetBean,
-                                        byte[].class.equals(propInfo.clazz) && fieldValue instanceof ByteBuffer ? convertValue(fieldValue, byte[].class)
-                                                : timeOfDayValue(fieldValue, propInfo.clazz, userType, idx));
+                                        fieldValue instanceof Collection || fieldValue instanceof Map
+                                                ? toContainerPropValue(propInfo, fieldValue, udtFieldType(userType, idx))
+                                                : toPropValue(propInfo.clazz, timeOfDayValue(fieldValue, propInfo.clazz, userType, idx)));
                             }
                         }
 
@@ -3119,8 +3681,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 }
 
                 /**
-                 * @throws IllegalArgumentException if the non-null value has an unsupported Java type or a collection has more elements than UDT
-                 *         fields
+                 * @throws IllegalArgumentException if the non-null value has an unsupported Java type, a collection has more elements than UDT
+                 *         fields, or a {@code String} for a {@code blob} field is not valid base64
                  * @throws RuntimeException if reading a bean property, resolving a field codec, or encoding a field value fails
                  */
                 @Override
@@ -3199,6 +3761,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *         lookup then yields a {@code null} user type), or {@code javaClazz} is a primitive type, which the
          *         driver codec contract does not support
          * @throws NullPointerException if the keyspace cannot be found in the metadata
+         * @throws RuntimeException if reading {@code cluster}'s metadata initializes the cluster and that fails (for example,
+         *         a {@link NoHostAvailableException} when no host can be reached), or the cluster was closed or failed to
+         *         initialize earlier (an {@link IllegalStateException})
          */
         public static <T> UDTCodec<T> create(final Cluster cluster, final String keySpace, final String userTypeName, final Class<T> javaClazz)
                 throws IllegalArgumentException, NullPointerException {
@@ -3234,8 +3799,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *        that resolved this codec by CQL type itself, or {@code null}
          * @param protocolVersion the native protocol version negotiated with the cluster
          * @return the serialized {@link ByteBuffer}, or {@code null} for a {@code null} input
-         * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
-         *         or a collection with more elements than UDT fields
+         * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type,
+         *         a collection with more elements than UDT fields, or a {@code String} for a {@code blob} field that is not valid base64
          * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB or TIME conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec that does not qualify for either fallback
          * @throws InvalidTypeException if the value cannot be serialized to this UDT
@@ -3333,8 +3898,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * @param value the value to format
          * @return the CQL UDT literal (or {@code "NULL"} if {@code value} is {@code null})
-         * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
-         *         or a collection with more elements than UDT fields
+         * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type,
+         *         a collection with more elements than UDT fields, or a {@code String} for a {@code blob} field that is not valid base64
          * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB or TIME conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec that does not qualify for either fallback
          * @throws InvalidTypeException if a mapped UDT field cannot be formatted as its declared CQL type

@@ -96,7 +96,11 @@ import java.lang.annotation.Target;
  *     private String lastName;  // Uses parent's column family: "personal:lastName"
  * }
  * }</pre>
- * 
+ *
+ * <p>A nested entity that is flattened this way always stores its properties in the family of the
+ * parent field: a {@code @ColumnFamily} on the nested class or on one of its fields is ignored there
+ * (a {@code @Column} on a nested field still renames its qualifier).</p>
+ *
  * <h3>Common Use Cases</h3>
  * <ul>
  *   <li><strong>Data Organization:</strong> Group related fields into logical column families</li>

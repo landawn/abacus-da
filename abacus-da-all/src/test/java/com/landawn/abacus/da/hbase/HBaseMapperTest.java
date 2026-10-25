@@ -528,4 +528,325 @@ public class HBaseMapperTest extends TestBase {
         private String id;
         private String name;
     }
+
+    // ---- 2026-10-24 sliceM ----
+
+    // put(entity) writes the row keyed by the property AnyPut.create resolves, which is the one registered through the
+    // (deprecated) registerRowKeyProperty when there is one; delete(entity) used the "id" property instead and so removed
+    // a different row (here "7" instead of "rk-1").
+    @Test
+    @SuppressWarnings({ "deprecation", "rawtypes", "unchecked" })
+    public void testDelete_entityUsesTheRowKeyPropertyThatPutWrites() throws Exception {
+        HBaseExecutor.registerRowKeyProperty(RegisteredRowKeyEntity.class, "rowKey");
+
+        final Mocks m = new Mocks();
+        final HBaseMapper<RegisteredRowKeyEntity, String> mapper = m.executor.mapper(RegisteredRowKeyEntity.class, "t", null);
+
+        mapper.put(new RegisteredRowKeyEntity(7L, "rk-1"));
+        mapper.delete(new RegisteredRowKeyEntity(7L, "rk-1"));
+        mapper.delete(Arrays.asList(new RegisteredRowKeyEntity(8L, "rk-2")));
+
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Put> putCaptor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Put.class);
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Delete> deleteCaptor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Delete.class);
+        final org.mockito.ArgumentCaptor<List> deletesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(m.table).put(putCaptor.capture());
+        verify(m.table).delete(deleteCaptor.capture());
+        verify(m.table).delete(deletesCaptor.capture());
+
+        final List<org.apache.hadoop.hbase.client.Delete> deletes = deletesCaptor.getValue();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("rk-1", Bytes.toString(putCaptor.getValue().getRow())),
+                () -> assertEquals("rk-1", Bytes.toString(deleteCaptor.getValue().getRow())), () -> assertEquals(1, deletes.size()),
+                () -> assertEquals("rk-2", Bytes.toString(deletes.get(0).getRow())));
+    }
+
+    @Test
+    public void testDelete_nullEntity_throwsIllegalArgumentException() throws Exception {
+        final Mocks m = new Mocks();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> m.mapper.delete((User) null)),
+                () -> assertThrows(IllegalArgumentException.class, () -> m.mapper.delete(Arrays.asList(new User("u1", "A"), null))));
+    }
+
+    // Only used by testDelete_entityUsesTheRowKeyPropertyThatPutWrites: registerRowKeyProperty is process-wide.
+    public static class RegisteredRowKeyEntity {
+        private Long id;
+        private String rowKey;
+
+        public RegisteredRowKeyEntity() {
+        }
+
+        RegisteredRowKeyEntity(final Long id, final String rowKey) {
+            this.id = id;
+            this.rowKey = rowKey;
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+
+        public String getRowKey() {
+            return rowKey;
+        }
+
+        public void setRowKey(final String rowKey) {
+            this.rowKey = rowKey;
+        }
+    }
+
+    // put(entity) skips a property holding an empty value wrapper like a null one. It used to fail with
+    // NullPointerException (N.stringOf(empty) is null); an empty cell instead would read back as a PRESENT empty string
+    // (Optional.of(""), Nullable.of(""), Holder.of("")) rather than the empty value that was written.
+    @Test
+    public void testPut_entityWithEmptyValueWrappers_writesNoCellsForThemAndReadsBackEmptyValues() throws Exception {
+        final Mocks m = new Mocks();
+        final HBaseMapper<ValueWrapperEntity, String> mapper = m.executor.mapper(ValueWrapperEntity.class, "t", null);
+        final ValueWrapperEntity entity = new ValueWrapperEntity();
+        entity.setId("w1");
+        entity.setName("n");
+
+        mapper.put(entity);
+
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Put> putCaptor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Put.class);
+        verify(m.table).put(putCaptor.capture());
+
+        final org.apache.hadoop.hbase.client.Put written = putCaptor.getValue();
+        final List<Cell> cells = new java.util.ArrayList<>();
+        written.getFamilyCellMap().values().forEach(cells::addAll);
+
+        final ValueWrapperEntity back = HBaseExecutor.toEntity(Result.create(cells), ValueWrapperEntity.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(1, cells.size(), "only the name cell is written"),
+                () -> assertTrue(written.has(Bytes.toBytes("cf"), Bytes.toBytes("name"))), () -> assertEquals("w1", back.getId()),
+                () -> assertEquals("n", back.getName()), () -> assertEquals(java.util.Optional.empty(), back.getJdkOptional()),
+                () -> assertEquals(java.util.OptionalInt.empty(), back.getJdkOptionalInt()),
+                () -> assertEquals(com.landawn.abacus.util.u.Optional.empty(), back.getOptional()),
+                () -> assertEquals(com.landawn.abacus.util.u.Nullable.empty(), back.getNullable()), () -> assertTrue(back.getHolder().isNull()));
+    }
+
+    // Every wrapper starts empty, so a property without a cell reads back as the empty value.
+    @ColumnFamily("cf")
+    public static class ValueWrapperEntity {
+        @Id
+        private String id;
+        private String name;
+        private java.util.Optional<String> jdkOptional = java.util.Optional.empty();
+        private java.util.OptionalInt jdkOptionalInt = java.util.OptionalInt.empty();
+        private com.landawn.abacus.util.u.Optional<String> optional = com.landawn.abacus.util.u.Optional.empty();
+        private com.landawn.abacus.util.u.Nullable<String> nullable = com.landawn.abacus.util.u.Nullable.empty();
+        private com.landawn.abacus.util.Holder<String> holder = com.landawn.abacus.util.Holder.of(null);
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public java.util.Optional<String> getJdkOptional() {
+            return jdkOptional;
+        }
+
+        public void setJdkOptional(final java.util.Optional<String> jdkOptional) {
+            this.jdkOptional = jdkOptional;
+        }
+
+        public java.util.OptionalInt getJdkOptionalInt() {
+            return jdkOptionalInt;
+        }
+
+        public void setJdkOptionalInt(final java.util.OptionalInt jdkOptionalInt) {
+            this.jdkOptionalInt = jdkOptionalInt;
+        }
+
+        public com.landawn.abacus.util.u.Optional<String> getOptional() {
+            return optional;
+        }
+
+        public void setOptional(final com.landawn.abacus.util.u.Optional<String> optional) {
+            this.optional = optional;
+        }
+
+        public com.landawn.abacus.util.u.Nullable<String> getNullable() {
+            return nullable;
+        }
+
+        public void setNullable(final com.landawn.abacus.util.u.Nullable<String> nullable) {
+            this.nullable = nullable;
+        }
+
+        public com.landawn.abacus.util.Holder<String> getHolder() {
+            return holder;
+        }
+
+        public void setHolder(final com.landawn.abacus.util.Holder<String> holder) {
+            this.holder = holder;
+        }
+    }
+
+    // ---- 2026-10-24 apply-hbase ----
+
+    /**
+     * Item 10a: the executor's and the mapper's collection put paths convert their elements through AnyPut.toPut /
+     * AnyPut.create(Collection), so a native Put element (reachable through an unchecked collection) is now sent as it is, in
+     * order, while any other operation element is rejected. It used to be bean-mapped (IllegalArgumentException "row key ... null").
+     */
+    @Test
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public void testPut_collectionPathsPassNativePutThrough_applyHbase() throws Exception {
+        final org.apache.hadoop.hbase.client.Put nativePut = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("rk")).addColumn(Bytes.toBytes("info"),
+                Bytes.toBytes("user_name"), Bytes.toBytes("Alice"));
+        final Mocks m = new Mocks();
+
+        m.executor.put("users", (java.util.Collection) Arrays.asList(nativePut, AnyPut.of("rk2").addColumn("info", "user_name", "Bob")));
+        m.mapper.put((java.util.Collection) Arrays.asList(nativePut, new User("u1", "Carol")));
+
+        final org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(m.table, times(2)).put(captor.capture());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(2, captor.getAllValues().get(0).size()),
+                () -> assertSame(nativePut, captor.getAllValues().get(0).get(0)), () -> assertEquals(2, captor.getAllValues().get(1).size()),
+                () -> assertSame(nativePut, captor.getAllValues().get(1).get(0)),
+                () -> assertThrows(IllegalArgumentException.class, () -> m.executor.put("users", (java.util.Collection) Arrays.asList(AnyDelete.of("rk")))),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> m.mapper.put((java.util.Collection) Arrays.asList(new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("rk"))))));
+    }
+
+    // ---- 2026-10-24 r2 sliceM ----
+
+    // put(entity) writes the row keyed by the row-key property of the entity's own class (AnyPut.create resolves it per class).
+    // delete(entity) looked that property up in a cache only: for a subclass declaring its own @Id that had not been put or read
+    // yet, it fell back to the mapped class's "id" property and deleted another row ("ID-1" instead of "KEY-1").
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testDelete_subclassWithItsOwnIdBeforeAnyPut_usesTheRowKeyThatPutWrites_r2sliceM() throws Exception {
+        final Mocks m = new Mocks();
+        final HBaseMapper<ConventionalIdBase, String> mapper = m.executor.mapper(ConventionalIdBase.class, "t", null);
+        final OwnIdSubclass entity = new OwnIdSubclass();
+        entity.setId("ID-1");
+        entity.setKey("KEY-1");
+        entity.setName("n");
+
+        mapper.delete(entity); // first use of OwnIdSubclass in this JVM: nothing cached for it yet
+        mapper.delete(Arrays.asList(entity));
+        mapper.put(entity);
+
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Delete> deleteCaptor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Delete.class);
+        final org.mockito.ArgumentCaptor<List> deletesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Put> putCaptor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Put.class);
+        verify(m.table).delete(deleteCaptor.capture());
+        verify(m.table).delete(deletesCaptor.capture());
+        verify(m.table).put(putCaptor.capture());
+
+        final List<org.apache.hadoop.hbase.client.Delete> deletes = deletesCaptor.getValue();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("KEY-1", Bytes.toString(putCaptor.getValue().getRow())),
+                () -> assertEquals("KEY-1", Bytes.toString(deleteCaptor.getValue().getRow())), () -> assertEquals(1, deletes.size()),
+                () -> assertEquals("KEY-1", Bytes.toString(deletes.get(0).getRow())));
+    }
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass, so a mapper was created for one although it can never read a row
+    // (toEntity rejects Map types) and its put mapped the Map getters (keySet, values, entrySet, size, empty) instead of the entries.
+    @Test
+    public void testMapper_entityAnnotatedMapSubclass_isRejected_r2sliceM() throws Exception {
+        final Mocks m = new Mocks();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(com.landawn.abacus.util.Beans.isBeanClass(EntityMapWithTable.class), "precondition: accepted as a bean class"),
+                () -> assertThrows(IllegalArgumentException.class, () -> m.executor.mapper(EntityMapWithTable.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> m.executor.mapper(EntityMapWithTable.class, "t", NamingPolicy.CAMEL_CASE)),
+                () -> assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toEntity(Result.EMPTY_RESULT, EntityMapWithTable.class)));
+    }
+
+    // delete(null) reported the helper's parameter name ("entity") instead of delete's own ("entityToDelete").
+    @Test
+    public void testDelete_nullEntity_messageNamesTheParameter_r2sliceM() throws Exception {
+        final Mocks m = new Mocks();
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> m.mapper.delete((User) null));
+
+        assertTrue(e.getMessage().contains("entityToDelete"), e.getMessage());
+    }
+
+    // ---- 2026-10-24 r2 main ----
+    // put(null) and put((Collection) null) reported the helper's parameter names ("entity" / "entities").
+    @Test
+    public void testPut_nullArgument_messageNamesTheParameter_r2main() throws Exception {
+        final Mocks m = new Mocks();
+        final IllegalArgumentException single = assertThrows(IllegalArgumentException.class, () -> m.mapper.put((User) null));
+        final IllegalArgumentException batch = assertThrows(IllegalArgumentException.class, () -> m.mapper.put((java.util.Collection<User>) null));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(single.getMessage().contains("entityToPut"), single.getMessage()),
+                () -> assertTrue(batch.getMessage().contains("entitiesToPut"), batch.getMessage()));
+    }
+
+    // Only used by testDelete_subclassWithItsOwnIdBeforeAnyPut_usesTheRowKeyThatPutWrites_r2sliceM: the row-key cache is
+    // process-wide, and that test needs OwnIdSubclass to be uncached when it starts.
+    public static class ConventionalIdBase {
+        private String id;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    public static class OwnIdSubclass extends ConventionalIdBase {
+        @Id
+        private String key;
+
+        public String getKey() {
+            return key;
+        }
+
+        public void setKey(final String key) {
+            this.key = key;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @Table("entity_maps")
+    public static class EntityMapWithTable extends java.util.HashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        @Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
 }

@@ -15,14 +15,20 @@
 package com.landawn.abacus.da.neo4j;
 
 import java.io.Serializable;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.neo4j.ogm.cypher.Filter;
 import org.neo4j.ogm.cypher.Filters;
+import org.neo4j.ogm.cypher.function.FilterFunction;
 import org.neo4j.ogm.cypher.query.Pagination;
 import org.neo4j.ogm.cypher.query.SortOrder;
 import org.neo4j.ogm.session.Neo4jSession;
@@ -95,6 +101,11 @@ import com.landawn.abacus.util.u.Optional;
  * the returned {@link Stream} lazily iterates only the already-materialized rows. Because the session
  * is already released, these streams hold no resource — closing them is optional and merely
  * conventional.</p>
+ *
+ * <h2>Load Depth</h2>
+ * <p>A {@code depth} of {@code -1} (unlimited) is accepted by the {@code load}/{@code loadAll} overloads for
+ * node-entity classes only: for a relationship-entity class Neo4j-OGM rejects any negative {@code depth} with an
+ * {@link IllegalArgumentException} before querying the database.</p>
  *
  * <h2>Null Arguments</h2>
  * <p>A {@code null} argument that Neo4j-OGM can never accept is rejected up front with an
@@ -414,11 +425,12 @@ public final class Neo4jExecutor {
      * @param id the configured primary-index value, or a native graph ID for an entity class
      *           without a primary index
      * @param depth the depth of relationships to traverse: {@code 0} for the node only, a positive
-     *              integer for that many hops, or {@code -1} for unlimited
+     *              integer for that many hops, or {@code -1} for unlimited (node-entity classes only)
      * @return the loaded entity, or {@code null} if no node with that ID exists
      * @throws IllegalArgumentException if {@code targetClass} or {@code id} is {@code null}; also thrown by Neo4j-OGM if
-     *         {@code targetClass} is not a managed entity class, or if the type of {@code id} does not match the class's
-     *         primary index (or is not a {@code Long} native graph ID for a class without a primary index)
+     *         {@code targetClass} is not a managed entity class, if the type of {@code id} does not match the class's
+     *         primary index (or is not a {@code Long} native graph ID for a class without a primary index), or if
+     *         {@code depth} is negative for a relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #load(Class, Serializable)
@@ -494,9 +506,10 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of loaded node entities with relationships, may be empty if no nodes found
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection)
@@ -573,9 +586,10 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param sortOrder the sort order specification for results; must not be {@code null}
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of loaded node entities with relationships, sorted as specified
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, SortOrder)
@@ -652,9 +666,10 @@ public final class Neo4jExecutor {
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of loaded node entities with relationships for the specified page
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, Pagination)
@@ -738,9 +753,10 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of loaded, sorted node entities with relationships for the specified page
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Collection, SortOrder, Pagination)
@@ -810,8 +826,10 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param objects collection of node entities to reload; may be {@code null} or empty, in which
      *                case it is returned unchanged without a database round-trip
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of reloaded node entities with relationships and current database state
+     * @throws IllegalArgumentException thrown by Neo4j-OGM if {@code depth} is negative and {@code objects} is a non-empty collection of
+     *         relationship entities
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Collection)
@@ -882,8 +900,10 @@ public final class Neo4jExecutor {
      * @param objects collection of node entities to reload; may be {@code null} or empty, in which
      *                case it is returned unchanged without a database round-trip
      * @param sortOrder the sort order specification for results; must not be {@code null}
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of reloaded, sorted node entities with relationships
+     * @throws IllegalArgumentException thrown by Neo4j-OGM if {@code depth} is negative and {@code objects} is a non-empty collection of
+     *         relationship entities
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Collection, SortOrder)
@@ -955,8 +975,10 @@ public final class Neo4jExecutor {
      *                case it is returned unchanged without a database round-trip
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of reloaded node entities with relationships
+     * @throws IllegalArgumentException thrown by Neo4j-OGM if {@code depth} is negative and {@code objects} is a non-empty collection of
+     *         relationship entities
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Collection, Pagination)
@@ -1035,8 +1057,10 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of reloaded, sorted node entities with relationships
+     * @throws IllegalArgumentException thrown by Neo4j-OGM if {@code depth} is negative and {@code objects} is a non-empty collection of
+     *         relationship entities
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Collection, SortOrder, Pagination)
@@ -1105,9 +1129,10 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of all nodes of the specified type with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class)
@@ -1174,9 +1199,10 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of all sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, SortOrder)
@@ -1245,9 +1271,10 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Pagination)
@@ -1323,9 +1350,10 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, SortOrder, Pagination)
@@ -1397,9 +1425,10 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is
+     *         negative for a relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter)
@@ -1476,9 +1505,10 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is
+     *         negative for a relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, SortOrder)
@@ -1556,9 +1586,10 @@ public final class Neo4jExecutor {
      * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is
+     *         negative for a relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, Pagination)
@@ -1643,9 +1674,10 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is
+     *         negative for a relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filter, SortOrder, Pagination)
@@ -1726,9 +1758,10 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters)
@@ -1809,9 +1842,10 @@ public final class Neo4jExecutor {
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, SortOrder)
@@ -1891,9 +1925,10 @@ public final class Neo4jExecutor {
      *                or empty, in which case every node of {@code targetClass} is loaded
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, Pagination)
@@ -1981,9 +2016,10 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
+     * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
+     *         relationship-entity class
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
      *         load query
      * @see #loadAll(Class, Filters, SortOrder, Pagination)
@@ -2027,8 +2063,12 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
-     *               entities; must not be {@code null}
-     * @throws IllegalArgumentException if {@code object} is {@code null}
+     *               entities; must not be {@code null}. An element of an array or {@code Iterable} whose class is not
+     *               mapped is not saved: it is skipped silently, or rejected with an {@link IllegalArgumentException}
+     *               when event listeners are registered with the {@link SessionFactory}. A {@code null} element fails
+     *               with a {@link NullPointerException}
+     * @throws IllegalArgumentException if {@code object} is {@code null}; also thrown by Neo4j-OGM if {@code object} is
+     *         neither an array nor an {@code Iterable} and is not an instance of a mapped entity class
      * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object, int)
      */
@@ -2062,10 +2102,14 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
-     *               entities; must not be {@code null}
+     *               entities; must not be {@code null}. An element of an array or {@code Iterable} whose class is not
+     *               mapped is not saved: it is skipped silently, or rejected with an {@link IllegalArgumentException}
+     *               when event listeners are registered with the {@link SessionFactory}. A {@code null} element fails
+     *               with a {@link NullPointerException}
      * @param depth the depth of related entities to traverse and persist: {@code 0} for the node
      *              only, a positive integer for that many hops, or {@code -1} for unlimited
-     * @throws IllegalArgumentException if {@code object} is {@code null}
+     * @throws IllegalArgumentException if {@code object} is {@code null}; also thrown by Neo4j-OGM if {@code object} is
+     *         neither an array nor an {@code Iterable} and is not an instance of a mapped entity class
      * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object)
      */
@@ -2085,6 +2129,11 @@ public final class Neo4jExecutor {
      * entity class without a native graph-ID field (primary index only), the cleared pooled session
      * cannot resolve the graph ID, so OGM first reloads each entity by its primary-index value (and logs
      * a warning) before deleting it. The delete is irreversible.
+     * <p>
+     * The deletes of an array or {@code Iterable} are not atomic: Neo4j-OGM deletes each entity in a transaction of
+     * its own, so when one of them fails, the entities before it stay deleted and those after it are not attempted.
+     * To delete several entities all-or-nothing, call {@link Session#delete(Object)} inside an explicit transaction
+     * through {@link #run(Consumer)}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2365,6 +2414,22 @@ public final class Neo4jExecutor {
      * <p>
      * This method counts node or relationship entities without loading them into memory.
      * Useful for pagination calculations and data analytics.
+     * <p>
+     * Neo4j-OGM names each filter's Cypher parameter after the filter's property and its index
+     * ({@code <property>_<index>}), and only {@link Filters#add(Filter)} assigns that index: a filter never added to a
+     * {@code Filters} object has the index {@code 0}. A {@code Filters} argument (as in the second example below) is
+     * passed to Neo4j-OGM as it is, and Neo4j-OGM resolves its filters in place, as it does every filter it is given
+     * (owner type, property name, converter and relationship details; for a relationship-entity count it also shortens
+     * a filter's nested path). The filters of any other non-empty iterable, such as a plain {@code List}, are sent as
+     * copies in a new {@code Filters} object, each copy indexed by its position: two filters on the same property get
+     * distinct parameters ({@code age > $age_0 AND age < $age_1}), and the caller's {@code Filter} objects are not
+     * modified (neither re-indexed nor resolved). Such an iterable is passed on as it is &mdash; so two of its filters on
+     * the same property share one parameter, the last value wins and the count is silently wrong &mdash; if it contains a
+     * {@code null} element (Neo4j-OGM then throws a {@code NullPointerException}), an instance of a {@code Filter}
+     * subclass, or a filter whose nested path holds an instance of a {@code Filter.NestedPathSegment} subclass. Every
+     * iterable is passed on as it is (with a warning logged once) if the Neo4j-OGM {@code Filter} and
+     * {@code Filter.NestedPathSegment} classes on the classpath do not declare exactly the fields of Neo4j-OGM 5.0.10, or
+     * if the filter's private comparison function, which the copy reads reflectively, cannot be accessed.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2379,6 +2444,12 @@ public final class Neo4jExecutor {
      * filters.and(new Filter("age", ComparisonOperator.GREATER_THAN, 25));
      * long count = executor.count(Person.class, filters);
      *
+     * // Filters on the same property in a plain list: each copy is sent with a parameter of its own
+     * Filter minAge = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * Filter maxAge = new Filter("age", ComparisonOperator.LESS_THAN, 65);
+     * maxAge.setBooleanOperator(BooleanOperator.AND);
+     * long workingAge = executor.count(Person.class, Arrays.asList(minAge, maxAge));   // age_0 = 18, age_1 = 65
+     *
      * // Count for pagination
      * Filter departmentFilter = new Filter("department", ComparisonOperator.EQUALS, "IT");
      * long totalItems = executor.count(Person.class, Arrays.asList(departmentFilter));
@@ -2389,12 +2460,17 @@ public final class Neo4jExecutor {
      * @param targetClass the OGM-mapped class whose entities are counted
      * @param filters OGM {@link Filter}s whose {@link org.neo4j.ogm.cypher.BooleanOperator}s define
      *                how each filter is joined to the preceding one; pass an empty iterable to
-     *                count all entities of {@code targetClass}. Unlike the {@link Filters} overloads
-     *                of {@code loadAll}, a {@code null} iterable is <i>not</i> accepted here
+     *                count all entities of {@code targetClass}. A {@link Filters} object is used as it is,
+     *                the filters of any other iterable are copied as described above. Unlike the
+     *                {@link Filters} overloads of {@code loadAll}, a {@code null} iterable is <i>not</i>
+     *                accepted here
      * @return the number of entities of {@code targetClass} that satisfy the supplied filter
      *         expression
      * @throws IllegalArgumentException if {@code targetClass} or {@code filters} is {@code null}
-     * @throws RuntimeException if OGM cannot map the target class or filters, the database cannot be reached, or Neo4j rejects the count query
+     * @throws RuntimeException if {@code targetClass} is not a mapped entity class (Neo4j-OGM rejects it with a plain
+     *         {@code RuntimeException}, whereas {@link #count(Class)} returns {@code 0} for it), if a filter after the first
+     *         has no {@link org.neo4j.ogm.cypher.BooleanOperator}, if OGM cannot map the filters, the database cannot be
+     *         reached, or Neo4j rejects the count query
      * @see #count(Class)
      * @see org.neo4j.ogm.cypher.Filter
      */
@@ -2402,7 +2478,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filters, cs.filters);
 
-        return withSession(session -> session.count(targetClass, filters));
+        final Iterable<Filter> indexedFilters = FilterCopier.indexedCopiesOf(filters);
+
+        return withSession(session -> session.count(targetClass, indexedFilters));
     }
 
     /**
@@ -2453,7 +2531,9 @@ public final class Neo4jExecutor {
      * pooled session for the call, this only returns a non-null ID when the entity carries an ID
      * field that OGM has already populated (either because it was loaded from the database or
      * because a previous {@code save} assigned it). Transient objects that have never been saved
-     * or that are not mapped at all return {@code null}.
+     * or that are not mapped at all return {@code null}. So does every instance of an entity class without a
+     * native graph-ID field (one identified only by a primary index, such as an {@code @Id String} property),
+     * even after it has been saved or loaded, because Neo4j-OGM resolves the ID only from that field.
      * <p>
      * Side effect: for a mapped entity whose native-ID field is still {@code null}, Neo4j-OGM writes a
      * temporary negative placeholder ID into that field (as {@code save} does for new entities) and this
@@ -2473,7 +2553,7 @@ public final class Neo4jExecutor {
      * @param possibleEntity an object that may or may not be an OGM-mapped entity; may be
      *                       {@code null}, in which case {@code null} is returned
      * @return the native Neo4j graph ID for the entity, or {@code null} if {@code possibleEntity}
-     *         is not a mapped/managed entity with an assigned ID
+     *         is not a mapped/managed entity with an assigned ID, or its class has no native graph-ID field
      * @throws RuntimeException if OGM cannot read or convert the mapped graph identifier of {@code possibleEntity}
      * @see #load(Class, Serializable)
      */
@@ -2695,6 +2775,151 @@ public final class Neo4jExecutor {
     private static void addSuppressedIfDistinct(final Throwable failure, final Throwable other) {
         if (other != failure) {
             failure.addSuppressed(other);
+        }
+    }
+
+    /**
+     * Copies the filters of a plain iterable into a new {@link Filters} object for {@link #count(Class, Iterable)}.
+     */
+    private static final class FilterCopier {
+        // WHY: Neo4j-OGM names a filter's Cypher parameter <property>_<index> and only Filters.add assigns the index, so all
+        // filters of a plain list keep index 0 and two of them on the same property share one parameter (the last value
+        // wins and the count is silently wrong). new Filters(filters) would fix the names but re-index - and so mutate -
+        // the caller's own Filter objects, which can make another Filters object they belong to collide; faithful copies are
+        // indexed instead. Filter (5.0.10) offers no copy API and no getter for its comparison function, so the function is
+        // read reflectively, and only when Filter and NestedPathSegment declare exactly the fields of 5.0.10: a copy made
+        // under another layout could silently drop state that a different OGM version renders.
+        private static final Set<String> FILTER_FIELDS = Set.of("index", "propertyName", "booleanOperator", "negated", "ownerEntityType",
+                "nestedEntityTypeLabel", "nestedPropertyName", "nestedPropertyType", "relationshipType", "relationshipDirection", "propertyConverter",
+                "nestedRelationshipEntity", "function", "nestedPath");
+
+        private static final Set<String> SEGMENT_FIELDS = Set.of("propertyName", "propertyType", "relationshipType", "relationshipDirection",
+                "nestedEntityTypeLabel", "nestedRelationshipEntity");
+
+        /** {@code Filter.function}, or {@code null} when filters cannot be copied faithfully (filters are then passed on as they are). */
+        private static final Field FUNCTION_FIELD = functionField();
+
+        private FilterCopier() {
+        }
+
+        /**
+         * Returns {@code filters} itself when it is a {@link Filters} object, empty, or holds a filter that cannot be
+         * copied faithfully; otherwise a new {@code Filters} object of copies of its filters, indexed by position.
+         */
+        static Iterable<Filter> indexedCopiesOf(final Iterable<Filter> filters) {
+            if (filters instanceof Filters || FUNCTION_FIELD == null) {
+                return filters;
+            }
+
+            final Filters copies = new Filters();
+
+            for (final Filter filter : filters) {
+                final Filter copy = copyOf(filter);
+
+                if (copy == null) {
+                    return filters;
+                }
+
+                copies.add(copy);
+            }
+
+            return copies.isEmpty() ? filters : copies;
+        }
+
+        /**
+         * Copies every field of {@code filter} except its index, or returns {@code null} for a {@code null} filter (Neo4j-OGM's
+         * {@code NullPointerException} is kept) and for a {@code Filter} or {@code NestedPathSegment} subclass, whose
+         * additional state or overridden rendering a plain copy would lose.
+         */
+        private static Filter copyOf(final Filter filter) {
+            if (filter == null || filter.getClass() != Filter.class) {
+                return null;
+            }
+
+            final List<Filter.NestedPathSegment> nestedPath = filter.getNestedPath();
+            Filter.NestedPathSegment[] nestedPathCopy = null;
+
+            if (nestedPath != null) {
+                nestedPathCopy = new Filter.NestedPathSegment[nestedPath.size()];
+
+                for (int i = 0; i < nestedPathCopy.length; i++) {
+                    final Filter.NestedPathSegment segment = nestedPath.get(i);
+
+                    if (segment == null || segment.getClass() != Filter.NestedPathSegment.class) {
+                        return null;
+                    }
+
+                    // WHY: OGM resolves the segments in place (relationship type/direction, entity label), so they are copied too
+                    final Filter.NestedPathSegment segmentCopy = new Filter.NestedPathSegment(segment.getPropertyName(), segment.getPropertyType());
+                    segmentCopy.setRelationshipType(segment.getRelationshipType());
+                    segmentCopy.setRelationshipDirection(segment.getRelationshipDirection());
+                    segmentCopy.setNestedEntityTypeLabel(segment.getNestedEntityTypeLabel());
+                    segmentCopy.setNestedRelationshipEntity(segment.isNestedRelationshipEntity());
+                    nestedPathCopy[i] = segmentCopy;
+                }
+            }
+
+            final FilterFunction<?> function;
+
+            try {
+                function = (FilterFunction<?>) FUNCTION_FIELD.get(filter);
+            } catch (final IllegalAccessException e) {
+                return null;
+            }
+
+            // WHY: the function is shared, not copied: OGM's functions are immutable (ignoreCase() replaces the filter's
+            // function) and are handed the rendering filter's own parameter namer, so the copy renders with its own index
+            final Filter copy = new Filter(filter.getPropertyName(), function);
+            copy.setBooleanOperator(filter.getBooleanOperator());
+            copy.setNegated(filter.isNegated());
+            copy.setOwnerEntityType(filter.getOwnerEntityType());
+            copy.setNestedEntityTypeLabel(filter.getNestedEntityTypeLabel());
+            copy.setNestedPropertyName(filter.getNestedPropertyName());
+            copy.setNestedPropertyType(filter.getNestedPropertyType());
+            copy.setRelationshipType(filter.getRelationshipType());
+            copy.setRelationshipDirection(filter.getRelationshipDirection());
+            copy.setPropertyConverter(filter.getPropertyConverter());
+            copy.setNestedRelationshipEntity(filter.isNestedRelationshipEntity());
+
+            if (nestedPathCopy != null) {
+                copy.setNestedPath(nestedPathCopy);
+            }
+
+            return copy;
+        }
+
+        private static Field functionField() {
+            try {
+                if (!FILTER_FIELDS.equals(instanceFieldNames(Filter.class)) || !SEGMENT_FIELDS.equals(instanceFieldNames(Filter.NestedPathSegment.class))) {
+                    logger.warn("Neo4j-OGM's Filter or Filter.NestedPathSegment class does not have the fields of Neo4j-OGM 5.0.10;"
+                            + " count(Class, Iterable<Filter>) passes the filters of a plain iterable to Neo4j-OGM as they are, so filters on the"
+                            + " same property in it share one Cypher parameter");
+
+                    return null;
+                }
+
+                final Field field = Filter.class.getDeclaredField("function");
+                field.setAccessible(true);
+
+                return field;
+            } catch (final NoSuchFieldException | RuntimeException e) {
+                logger.warn("Cannot read the comparison function of a Neo4j-OGM Filter; count(Class, Iterable<Filter>) passes the filters of a plain"
+                        + " iterable to Neo4j-OGM as they are, so filters on the same property in it share one Cypher parameter", e);
+
+                return null;
+            }
+        }
+
+        private static Set<String> instanceFieldNames(final Class<?> cls) {
+            final Set<String> names = new HashSet<>();
+
+            for (final Field field : cls.getDeclaredFields()) {
+                if (!Modifier.isStatic(field.getModifiers()) && !field.isSynthetic()) {
+                    names.add(field.getName());
+                }
+            }
+
+            return names;
         }
     }
 

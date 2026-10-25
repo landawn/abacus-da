@@ -395,4 +395,20 @@ public class AnyIncrementTest extends TestBase {
         assertArrayEquals(Bytes.toBytes("counter_row_123"), increment.getRow());
         assertArrayEquals(Bytes.toBytes("counter_row_123"), increment.val().getRow());
     }
+
+    // ---- 2026-10-24 r2 sliceO ----
+
+    /**
+     * of(Object) with an empty value wrapper (no row-key bytes) failed with a NullPointerException on row.length inside
+     * Increment(byte[]); it now throws IllegalArgumentException, as the sliced of(Object, int, int) already did (guard).
+     */
+    @Test
+    public void testOf_emptyValueWrapperRowKey_throwsIllegalArgumentException_r2sliceO() {
+        final Object emptyOptional = java.util.Optional.empty();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(emptyOptional)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(com.landawn.abacus.util.Holder.of(null))),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(emptyOptional, 0, 1)),
+                () -> assertArrayEquals(Bytes.toBytes("k"), AnyIncrement.of(java.util.Optional.of("k")).getRow()));
+    }
 }

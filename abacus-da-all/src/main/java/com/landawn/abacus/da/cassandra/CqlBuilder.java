@@ -18,33 +18,42 @@ package com.landawn.abacus.da.cassandra;
 
 import static com.landawn.abacus.util.SK._SPACE;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
+import com.landawn.abacus.parser.ParserUtil;
+import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.query.AbstractQueryBuilder;
 import com.landawn.abacus.query.QueryUtil;
+import com.landawn.abacus.query.QueryUtil.ColumnInfo;
 import com.landawn.abacus.query.SortDirection;
 import com.landawn.abacus.query.SqlDialect;
 import com.landawn.abacus.query.SqlDialect.SqlPolicy;
@@ -69,6 +78,7 @@ import com.landawn.abacus.query.condition.SubQuery;
 import com.landawn.abacus.query.condition.Where;
 import com.landawn.abacus.util.Array;
 import com.landawn.abacus.util.Beans;
+import com.landawn.abacus.util.ImmutableMap;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.Objectory;
@@ -162,15 +172,21 @@ import com.landawn.abacus.util.u.Optional;
  * {@code minus(...)} with a {@code String} or a {@code CqlBuilder} argument and {@code unionSelect(...)},
  * {@code unionAllSelect(...)}, {@code intersectSelect(...)}, {@code exceptSelect(...)} and {@code minusSelect(...)}; and the
  * {@code groupBy(...)} overloads that take a {@link SortDirection} ({@code groupBy(String, SortDirection)},
- * {@code groupBy(Collection, SortDirection)} and {@code groupBy(Map)}), because CQL GROUP BY has no ASC/DESC. These throw
+ * {@code groupBy(Collection, SortDirection)} and {@code groupBy(Map)}), with the inherited {@code groupByAsc(...)} and
+ * {@code groupByDesc(...)} shortcuts that delegate to them, because CQL GROUP BY has no ASC/DESC; and
+ * {@code distinctOn(...)} and {@code distinctRow()} (CQL has only a plain {@code DISTINCT}, see {@code distinct()}). These throw
  * {@link IllegalArgumentException}: a condition passed to {@code append(...)} (hence {@code appendIf(...)} and
  * {@code appendIfOrElse(...)}), {@code where(...)} or {@code Dsl.renderCondition(...)} that is a HAVING clause, a set-operation
  * clause ({@code Union}, {@code UnionAll}, {@code Intersect}, {@code Except} or {@code Minus}), a {@code GroupBy} clause whose
  * sort list carries a direction (such as {@code Filters.groupByDesc(...)}), a {@code Limit} rendering OFFSET or FETCH, or a
- * {@code Criteria} carrying any of them; and {@code from(CqlBuilder, alias)} (a derived table). Nothing else is rejected by
- * this builder: {@code groupBy(String...)}/{@code groupBy(Collection)}, {@code limit(count)} and {@code orderBy(...)} (with
- * or without a direction) render as usual, and in particular the {@code join(...)}/{@code leftJoin(...)}/... methods still
- * render a JOIN clause exactly as written, which Cassandra rejects only when the statement is executed.</p>
+ * {@code Criteria} carrying any of them or a {@code DISTINCT ON (...)}/{@code DISTINCTROW} select modifier; and
+ * {@code from(CqlBuilder, alias)} (a derived table). On an UPDATE or DELETE statement, whose CQL grammar ends with the WHERE
+ * and IF clauses, {@code limit(count)}, every {@code orderBy(...)} method and an appended {@code Limit} or {@code OrderBy}
+ * clause (standalone or inside a {@code Criteria}) throw {@link IllegalStateException}, as the parent builder already does for
+ * GROUP BY there. Nothing else is rejected by this builder: on a SELECT, {@code groupBy(String...)}/{@code groupBy(Collection)},
+ * {@code limit(count)} and {@code orderBy(...)} (with or without a direction) render as usual; a raw
+ * {@code selectModifier(String)} is rendered as written; and in particular the {@code join(...)}/{@code leftJoin(...)}/...
+ * methods still render a JOIN clause exactly as written, which Cassandra rejects only when the statement is executed.</p>
  *
  * <h2>Thread Safety</h2>
  * <p>This builder is <b>NOT thread-safe</b>. Each thread should use its own builder instance.
@@ -185,8 +201,37 @@ import com.landawn.abacus.util.u.Optional;
  * <h2>Naming Policy</h2>
  * <p>Column names are automatically transformed according to the naming policy of the chosen
  * {@link Dsl} constant (e.g. camelCase property names become snake_case column names under
- * {@code PSC}/{@code NSC}). Explicit table-name strings are used as-is; table names derived from
- * an entity class follow the naming policy unless overridden by {@code @Table}.</p>
+ * {@code PSC}/{@code NSC}). Explicit table-name strings are used as written (apart from the reserved-keyword quoting
+ * described next); table names derived from an entity class follow the naming policy unless overridden by {@code @Table}.</p>
+ *
+ * <p>Column and table names are rendered unquoted, except a name that is a <i>reserved</i> CQL keyword (Cassandra's
+ * {@code reserved_keywords.txt}, for example {@code desc}, {@code order}, {@code select}, {@code from}, {@code limit} or
+ * {@code token}), which Cassandra rejects unquoted: it is rendered quoted in lower case, whatever the naming policy
+ * ({@code desc}, {@code DESC} and {@code Desc} all become {@code "desc"}, the column an unquoted name denotes, since CQL
+ * reads an unquoted name in lower case). This applies to every column and table name the builder renders, whether it
+ * comes from an entity mapping ({@code @Column}/{@code @Table} or the entity's property and class names) or from the
+ * caller ({@code select(...)}, {@code insert(...)}, {@code set(...)}, {@code orderBy(...)}, {@code groupBy(...)},
+ * {@code from(...)}, {@code into(...)}, {@code update(...)}, {@code deleteFrom(...)}, a {@code Filters} condition), and to
+ * each part of a dotted name ({@code ks.order} becomes {@code ks."order"}, the UDT field {@code addr.desc} becomes
+ * {@code addr."desc"}). It does not apply to names inside function calls ({@code token(id)}, {@code writetime(desc)}) or
+ * other expressions, including one string that holds more than a name ({@code "desc, limit"}, {@code "desc DESC"},
+ * {@code "desc = desc + 1"}; pass the names as separate arguments, and a direction as a {@link SortDirection}, instead),
+ * to aliases, to raw expression text ({@code Filters.expr(...)} and the sort list of a {@code Criteria} or appended
+ * {@code OrderBy}/{@code GroupBy} clause, which reach the builder as expression text), to the column list that a
+ * sub-entity property expands to (for an entity whose {@code addr} property is a bean, {@code select("addr")} renders
+ * {@code addr.street AS "addr.street", addr.desc AS "addr.desc"}), or to {@code null},
+ * {@code nan} and {@code infinity}, which are also literal values ({@code SELECT NULL FROM t} is valid CQL); quote such a
+ * name yourself. A non-reserved keyword such as {@code group}, {@code value}, {@code key} or {@code ttl} is valid
+ * unquoted and is rendered unquoted. Mapping a property or entity to a quoted name, for example
+ * {@code @Column("\"desc\"")} or {@code @Table("\"order\"")}, or passing the quoted name (the Java string
+ * {@code "\"desc\""}), still works, but is no longer needed for a reserved keyword: a quoted name is rendered verbatim
+ * by every naming policy, and is case-sensitive in CQL.</p>
+ *
+ * <p>The named-parameter DSLs ({@code NSB}, {@code NSC}, {@code NAC}, {@code NLC}) name a value's marker after its
+ * property or column, unquoted, so a reserved-keyword column gets a reserved marker ({@code UPDATE t SET "desc" = :desc}),
+ * which Cassandra's own parser rejects as well. A {@link CassandraExecutor} prepares CQL text through {@link ParsedCql},
+ * which replaces every named marker with {@code ?}, so such a statement runs there unchanged; to hand it to the driver
+ * yourself, use a positional DSL ({@code PSC}, ...) or {@code ParsedCql.parse(cql).parameterizedCql()}.</p>
  *
  * @see com.landawn.abacus.query.Filters
  * @see CassandraExecutor
@@ -219,10 +264,50 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     private static final String MSG_GROUP_BY_DIRECTION_NOT_SUPPORTED = "Cassandra CQL does not support GROUP BY with a sort direction (ASC/DESC); use groupBy(String...) and sort with orderBy(...) instead";
 
+    private static final String MSG_DISTINCT_ON_NOT_SUPPORTED = "Cassandra CQL does not support DISTINCT ON (...); use distinct(), which CQL allows on partition key and static columns only";
+
+    private static final String MSG_DISTINCTROW_NOT_SUPPORTED = "Cassandra CQL does not support DISTINCTROW; use distinct(), which CQL allows on partition key and static columns only";
+
+    /** A select modifier rendering SQL's {@code DISTINCT ON (...)} (as {@code Criteria.Builder.distinctOn(...)} stores it). */
+    private static final Pattern DISTINCT_ON_MODIFIER = Pattern.compile("^\\s*DISTINCT\\s+ON\\b", Pattern.CASE_INSENSITIVE);
+
+    /** A select modifier rendering MySQL's {@code DISTINCTROW} (as {@code Criteria.Builder.distinctRow()} stores it). */
+    private static final Pattern DISTINCTROW_MODIFIER = Pattern.compile("^\\s*DISTINCTROW\\b", Pattern.CASE_INSENSITIVE);
+
+    /** Class name of the DataStax driver 4 duration value ({@code com.datastax.oss.driver.api.core.data.CqlDuration}). */
+    private static final String DRIVER4_DURATION_CLASS_NAME = "com.datastax.oss.driver.api.core.data.CqlDuration";
+
+    /** Class name of the DataStax driver 3 duration value ({@code com.datastax.driver.core.Duration}). */
+    private static final String DRIVER3_DURATION_CLASS_NAME = "com.datastax.driver.core.Duration";
+
     /** Prefix of the set-operation message; the rejected keyword (UNION, UNION ALL, INTERSECT, EXCEPT or MINUS) follows it. */
     private static final String MSG_SET_OPERATION_NOT_SUPPORTED_PREFIX = "Cassandra CQL does not support ";
 
     private static final String MSG_SET_OPERATION_NOT_SUPPORTED_SUFFIX = " (set operations combining SELECT results); run each SELECT separately and combine the results in the application";
+
+    /**
+     * Cassandra 5.0's reserved CQL keywords ({@code org/apache/cassandra/cql3/reserved_keywords.txt}), in lower case, except
+     * {@code null}, {@code nan} and {@code infinity}, which are also literal values ({@code SELECT NULL FROM t} parses), so
+     * a bare one may be meant as a literal. Unquoted, a column or table name spelling one of these (in any case) is a
+     * syntax error; non-reserved keywords such as {@code group}, {@code value}, {@code key} or {@code ttl} are valid names.
+     * (Earlier Cassandra versions reserve a subset of these; quoting a lower-case name never changes what it denotes.)
+     */
+    private static final Set<String> RESERVED_CQL_KEYWORDS = Set.of("add", "allow", "alter", "and", "apply", "asc", "authorize", "batch", "begin", "by",
+            "columnfamily", "create", "delete", "desc", "describe", "drop", "entries", "execute", "from", "full", "grant", "if", "in", "index", "insert",
+            "into", "is", "keyspace", "limit", "materialized", "modify", "norecursive", "not", "of", "on", "or", "order", "primary", "rename", "revoke",
+            "schema", "select", "set", "table", "to", "token", "truncate", "unlogged", "update", "use", "using", "view", "where", "with");
+
+    /** Length of the {@code " AS "} separator the parent builder renders before a SELECT alias. */
+    private static final int SPACE_AS_SPACE_LENGTH = 4;
+
+    /** CQL constant for a NaN {@code double}/{@code float} value. */
+    private static final String CQL_NAN = "NaN";
+
+    /** CQL constant for a positive infinite {@code double}/{@code float} value. */
+    private static final String CQL_INFINITY = "Infinity";
+
+    /** CQL constant for a negative infinite {@code double}/{@code float} value. */
+    private static final String CQL_NEGATIVE_INFINITY = "-Infinity";
 
     /** Lower-case hex formatter for inlined CQL blob literals ({@code 0x0102ff}). */
     private static final HexFormat HEX_FORMAT = HexFormat.of();
@@ -277,11 +362,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
         checkCqlTableReference(tableName, cs.tableName);
 
+        // WHY: a reserved CQL keyword used as a keyspace or table name ("order") is a syntax error unquoted; render it quoted.
+        final String tableReference = quoteReservedKeywordsInTableReference(tableName);
+
         if (!isBatchInsert) {
-            return super.into(tableName);
+            return super.into(tableReference);
         }
 
-        final String normalizedTableName = tableName.trim();
+        final String normalizedTableName = tableReference.trim();
 
         final Map<String, Object> firstProps = _propsList.iterator().next();
 
@@ -913,18 +1001,27 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * ({@code 253402300800000} for {@code +10000-01-01T00:00:00Z}), the other CQL {@code timestamp} literal form, which
      * Cassandra accepts for any representable value. A {@link LocalDateTime} has no zone: it is rendered as the instant it denotes in the JVM
      * default time zone, which is the instant the same value stores when bound as a parameter (the executors convert a
-     * bound {@code LocalDateTime} in the JVM default zone). A {@code byte[]} is rendered as a CQL {@code blob} constant in lower-case hex
+     * bound {@code LocalDateTime} in the JVM default zone). A {@link LocalTime} is rendered as a quoted CQL {@code time}
+     * literal that always carries the seconds, as Cassandra's {@code hh:mm:ss[.fffffffff]} format requires ({@code '12:00:00'}
+     * for {@code 12:00}; {@code '09:30:00.000001'} keeps its fraction). A {@code byte[]} is rendered as a CQL {@code blob} constant in lower-case hex
      * ({@code 0x01ff}; an empty array renders {@code 0x}), a {@link ByteBuffer} likewise from its remaining bytes
      * (its position is not changed), and an {@link InetAddress} as a quoted {@code inet} literal of its
      * {@link InetAddress#getHostAddress() host address} without an IPv6 scope suffix (for example {@code '127.0.0.1'}
-     * or {@code 'fe80:0:0:0:0:0:0:1'} for {@code fe80::1%eth0}), matching the address bytes a bound value sends. Every other value,
+     * or {@code 'fe80:0:0:0:0:0:0:1'} for {@code fe80::1%eth0}), matching the address bytes a bound value sends. A DataStax driver
+     * duration ({@code com.datastax.oss.driver.api.core.data.CqlDuration} of driver 4 or {@code com.datastax.driver.core.Duration}
+     * of driver 3) is rendered as a bare (unquoted) CQL {@code duration} literal in the drivers' standard format (for example
+     * {@code 1h30m} or {@code -1y2mo3d}; a zero duration renders {@code 0s}). A {@code NaN} or infinite {@code Double} or
+     * {@code Float}, or another floating-point {@code Number} whose text is {@code NaN}, {@code Infinity} or {@code -Infinity}
+     * (such as {@code MutableDouble}, {@code MutableFloat}, {@code DoubleAdder} or {@code DoubleAccumulator}), is rendered as
+     * the bare CQL constant {@code NaN}, {@code Infinity} or {@code -Infinity}, which Cassandra accepts for a {@code double}
+     * or {@code float} column (the parent builder rejects these values, as SQL has no such literals). Every other value,
      * including {@code java.sql.Date} ({@code 'yyyy-mm-dd'}) and
      * {@code java.sql.Time} ({@code 'hh:mm:ss'}) in the JVM default time zone, is rendered by the parent builder.
      *
      * @param propValue the value to render into the CQL string
      * @throws IllegalStateException if this builder is closed
-     * @throws IllegalArgumentException if {@code propValue} is a {@code Float} or {@code Double} that is {@code NaN} or
-     *         infinite, another {@code Number} whose text is not a valid numeric literal, or an instant-valued
+     * @throws IllegalArgumentException if {@code propValue} is a {@code Number} whose text is not a valid numeric literal
+     *         (other than the non-finite constants above), or an instant-valued
      *         {@code java.time} value whose milliseconds since the epoch do not fit in a {@code long} (such as
      *         {@link Instant#MAX}), which no CQL {@code timestamp} can hold
      */
@@ -968,6 +1065,20 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             // JVM default zone (N.convert(localDateTime, Date.class) in the driver 3 executor), so the raw literal denotes the
             // same instant as the bound value: the wall-clock time read in the JVM default zone, rendered in UTC.
             appendTimestampLiteral(localDateTime.atZone(ZoneId.systemDefault()).toInstant().truncatedTo(ChronoUnit.MILLIS));
+        } else if (propValue instanceof final LocalTime localTime) {
+            // WHY: the parent inlines LocalTime.toString(), which leaves out zero seconds ('12:00' for 12:00, '00:00' for
+            // midnight), and Cassandra's time literal requires them: "Unable to coerce '12:00' to a formatted time (long)"
+            // (TimeType, format hh:mm:ss[.fffffffff], Cassandra 5.0). So every whole-minute LocalTime, the type driver 4 maps
+            // to a time column, was rejected inlined although it binds fine. Add the seconds; any fraction is kept as rendered.
+            final String time = localTime.toString();
+
+            _sb.append('\'').append(time);
+
+            if (time.length() == 5) { // "HH:mm": second and nano-of-second are both zero
+                _sb.append(":00");
+            }
+
+            _sb.append('\'');
         } else if (propValue instanceof final byte[] bytes) {
             // The parent renders a byte[] as the quoted text '[1, 2]', which Cassandra rejects for a blob column.
             // A CQL blob constant is 0x followed by hex digits ("0x" alone is the empty blob).
@@ -987,9 +1098,82 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             final int zoneIndex = hostAddress.indexOf('%');
 
             _sb.append('\'').append(hostAddress, 0, zoneIndex < 0 ? hostAddress.length() : zoneIndex).append('\'');
+        } else if (isDriverDuration(propValue)) {
+            // WHY: the parent quotes a driver duration ('1h30m'), and Cassandra accepts a quoted constant only for
+            // text/ascii/varchar/inet/date/time/timestamp columns: "Invalid STRING constant (1h30m) for "d" of type duration"
+            // (Constants.Literal, Cassandra 5.0). A CQL duration constant is the bare text that both drivers' toString()
+            // produce ("1h30m", "-1y2mo3d5s123ns"); a zero duration's toString() is "", which would leave "d = " behind.
+            final String duration = propValue.toString();
+
+            _sb.append(duration.isEmpty() ? "0s" : duration);
         } else {
-            super.setParameterForRawSql(propValue);
+            // WHY: the parent rejects NaN and infinite floating-point values ("NaN/Infinity has no portable SQL literal"), but
+            // CQL has them: Cassandra 5.0 parses NaN, Infinity and -Infinity as float constants that type-check for double and
+            // float columns (Constants.Literal.floatingPoint(..).prepare), the values a bound Double/Float would store.
+            final String nonFiniteLiteral = propValue instanceof final Number number ? nonFiniteFloatingPointLiteral(number) : null;
+
+            if (nonFiniteLiteral != null) {
+                _sb.append(nonFiniteLiteral);
+            } else {
+                super.setParameterForRawSql(propValue);
+            }
         }
+    }
+
+    /**
+     * Returns the CQL constant ({@code NaN}, {@code Infinity} or {@code -Infinity}) of a non-finite floating-point
+     * {@code number}, or {@code null} for any other number. A {@code Double} or {@code Float} is judged by its value. Any
+     * other {@code Number} (a {@code MutableDouble}, {@code MutableFloat}, {@code DoubleAdder}, {@code DoubleAccumulator},
+     * Guava {@code AtomicDouble}, ...) is judged by its text, which is what the parent would render and reject, confirmed by
+     * its {@code doubleValue()}; so a {@code BigDecimal} or {@code BigInteger} beyond the {@code double} range (finite text,
+     * infinite {@code doubleValue()}) is left to the parent.
+     *
+     * @param number the number to inspect
+     * @return the non-finite CQL constant, or {@code null}
+     */
+    private static String nonFiniteFloatingPointLiteral(final Number number) {
+        if (number instanceof Double || number instanceof Float) {
+            final double value = number.doubleValue();
+
+            return Double.isNaN(value) ? CQL_NAN
+                    : value == Double.POSITIVE_INFINITY ? CQL_INFINITY : value == Double.NEGATIVE_INFINITY ? CQL_NEGATIVE_INFINITY : null;
+        }
+
+        // The JDK integral types and BigDecimal always have a finite decimal text; skip the toString() for them.
+        if (number instanceof Integer || number instanceof Long || number instanceof Short || number instanceof Byte || number instanceof BigInteger
+                || number instanceof BigDecimal) {
+            return null;
+        }
+
+        final String text = number.toString();
+
+        if (CQL_NAN.equals(text)) {
+            return Double.isNaN(number.doubleValue()) ? CQL_NAN : null;
+        } else if (CQL_INFINITY.equals(text)) {
+            return number.doubleValue() == Double.POSITIVE_INFINITY ? CQL_INFINITY : null;
+        } else if (CQL_NEGATIVE_INFINITY.equals(text)) {
+            return number.doubleValue() == Double.NEGATIVE_INFINITY ? CQL_NEGATIVE_INFINITY : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Tells whether {@code value} is a DataStax driver duration (driver 4 {@code CqlDuration} or driver 3 {@code Duration},
+     * both final classes). Matched by class name, so this builder, which both executor generations share, depends on
+     * neither driver.
+     *
+     * @param value the value to inspect; may be {@code null}
+     * @return {@code true} if {@code value} is a driver 4 or driver 3 duration
+     */
+    private static boolean isDriverDuration(final Object value) {
+        if (value == null) {
+            return false;
+        }
+
+        final String className = value.getClass().getName();
+
+        return DRIVER4_DURATION_CLASS_NAME.equals(className) || DRIVER3_DURATION_CLASS_NAME.equals(className);
     }
 
     /**
@@ -1619,16 +1803,110 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkCanAppendCqlFrom();
         checkCqlTableReference(expr, cs.expr);
 
+        // WHY: a reserved CQL keyword used as a keyspace or table name ("order") is a syntax error unquoted; render it quoted.
+        final String tableReference = quoteReservedKeywordsInTableReference(expr);
+
         if (_op == OperationType.DELETE) {
             // Since abacus-query 4.9.4 every parent from(...) overload rejects a non-SELECT operation (via a private
             // check this class cannot relax), so the CQL column DELETE ("DELETE c1, c2 FROM t") is rendered here.
             // It must not be routed through the parent as a QUERY: that would render SELECT-style "AS" aliases.
-            final String tableName = expr.trim();
+            final String tableName = tableReference.trim();
 
             return mutateAtomically(() -> appendDeleteColumnsAndFromClause(tableName));
         }
 
-        return super.from(expr);
+        // WHY: for selectFrom(entityClass) the parent renders the entity's whole column list from a text cache that it shares
+        // with every other builder of the same naming policy (fullSelectPartsPool), so those columns never reach the
+        // appendColumnName hook that quotes reserved-keyword names. The cache is used only while _propOrColumnNames IS the
+        // cached select-property list; for an entity with a reserved-keyword column, an equal copy makes the parent render
+        // each column through the hook instead (same text for every other column; the shared cache is left untouched).
+        if (_entityInfo != null && _propOrColumnNames != null && _propOrColumnNames == QueryUtil.selectPropNames(_entityClass, false, null)
+                && hasReservedKeywordColumn(_propOrColumnNames)) {
+            _propOrColumnNames = new ArrayList<>(_propOrColumnNames);
+        }
+
+        return super.from(tableReference);
+    }
+
+    /**
+     * Returns {@code true} if any of {@code propNames}, rendered as a column of the current entity, is an identifier or
+     * dotted identifier chain (of unquoted and quoted parts, as {@code quoteReservedKeywordColumn} reads it) with an
+     * unquoted reserved-keyword part.
+     */
+    private boolean hasReservedKeywordColumn(final Collection<String> propNames) {
+        for (final String propName : propNames) {
+            final String columnName = normalizeColumnName(_propColumnNameMap, propName);
+            int index = 0;
+
+            while (index < columnName.length()) {
+                final int partEnd;
+
+                if (columnName.charAt(index) == '"') {
+                    // A quoted part ("\"Addr\".desc") is never reserved, but the parts after it may be.
+                    partEnd = quotedIdentifierPartEnd(columnName, index, columnName.length());
+
+                    if (partEnd < 0) {
+                        break;
+                    }
+                } else if (isCqlUnquotedNameStart(columnName.charAt(index))) {
+                    int unquotedEnd = index + 1;
+
+                    while (unquotedEnd < columnName.length() && isCqlUnquotedNameChar(columnName.charAt(unquotedEnd))) {
+                        unquotedEnd++;
+                    }
+
+                    if (isReservedCqlKeyword(columnName, index, unquotedEnd)) {
+                        return true;
+                    }
+
+                    partEnd = unquotedEnd;
+                } else {
+                    break;
+                }
+
+                index = partEnd < columnName.length() && columnName.charAt(partEnd) == '.' ? partEnd + 1 : columnName.length();
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Renders a column reference as the parent builder does, then quotes it if it names a reserved CQL keyword.
+     *
+     * <p>Every column this builder renders (SELECT, INSERT, SET, WHERE, IF, ORDER BY, GROUP BY and DELETE columns, from entity
+     * mappings, property names or caller-supplied names) goes through this hook. A rendered plain identifier or dotted
+     * identifier chain whose part is a reserved CQL keyword ({@code desc}, {@code order}, {@code select}, {@code token},
+     * ...) gets that part quoted in lower case ({@code "desc"}), under every naming policy; function calls, expressions,
+     * literals, quoted names and aliases are rendered unchanged (see {@code quoteReservedKeywordColumn}).</p>
+     *
+     * @param entityClass the entity class for resolving sub-entity properties
+     * @param entityInfo the bean info for the entity class, or {@code null}
+     * @param propColumnNameMap the property-to-column-name mapping
+     * @param tableAlias the table alias to prefix the column name, or {@code null}
+     * @param propName the property or column name to append; must not be {@code null}
+     * @param propAlias the column alias for the SELECT clause, or {@code null}
+     * @param withClassAlias whether to prefix the alias with the class alias
+     * @param classAlias the class alias to use when {@code withClassAlias} is {@code true}
+     * @param isForSelect whether this column is being appended in a SELECT clause (adds an AS alias)
+     * @param quotePropAlias whether to wrap the property alias in the identifier quote
+     * @throws IllegalStateException if this builder is closed
+     * @throws IllegalArgumentException if the parent builder rejects {@code propName} or its alias (see the parent method)
+     */
+    @Override
+    protected void appendColumnName(final Class<?> entityClass, final BeanInfo entityInfo, final ImmutableMap<String, ColumnInfo> propColumnNameMap,
+            final String tableAlias, final String propName, final String propAlias, final boolean withClassAlias, final String classAlias,
+            final boolean isForSelect, final boolean quotePropAlias) {
+        final int start = _sb.length();
+
+        super.appendColumnName(entityClass, entityInfo, propColumnNameMap, tableAlias, propName, propAlias, withClassAlias, classAlias, isForSelect,
+                quotePropAlias);
+
+        // WHY: names are rendered unquoted, and Cassandra rejects a reserved keyword there ("SELECT desc FROM t": no viable
+        // alternative at input 'desc'). The column names come from the parent's static, shared mapping caches (and static
+        // normalizeColumnName), which this class must not alter, so the reference just rendered is rewritten in place;
+        // the quoted lower-case name denotes the same column, as CQL folds unquoted names to lower case.
+        quoteReservedKeywordColumn(start, isForSelect);
     }
 
     /**
@@ -2266,13 +2544,77 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         throw new UnsupportedOperationException(MSG_GROUP_BY_DIRECTION_NOT_SUPPORTED);
     }
 
+    // WHY: the parent renders SQL's "DISTINCT ON (...)" (PostgreSQL) and MySQL's "DISTINCTROW", and Cassandra's grammar has
+    // only a plain DISTINCT ("no viable alternative at input 'ON'" / "... at input 'a'" from the 5.0 parser), so the
+    // statement failed only when it was executed. Rejected like the other SQL-only clause methods above.
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code DISTINCT ON (...)}, so this inherited method always fails instead of
+     * rendering {@code SELECT DISTINCT ON (expressions) ...}, which Cassandra rejects as a syntax error. It fails for every
+     * argument, including a blank one (which the parent would render as a plain {@code DISTINCT}). Use {@link #distinct()},
+     * which CQL allows on partition key and static columns only.
+     *
+     * @param expressions the DISTINCT ON expressions
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support DISTINCT ON
+     */
+    @Override
+    public CqlBuilder distinctOn(final String expressions) throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_DISTINCT_ON_NOT_SUPPORTED);
+    }
+
+    /**
+     * Unsupported: Cassandra CQL has no {@code DISTINCTROW} (a MySQL synonym of {@code DISTINCT}), so this inherited method
+     * always fails instead of rendering {@code SELECT DISTINCTROW ...}, which Cassandra rejects as a syntax error. Use
+     * {@link #distinct()}, which CQL allows on partition key and static columns only.
+     *
+     * @return never returns normally
+     * @throws IllegalStateException if this builder is closed
+     * @throws UnsupportedOperationException otherwise, because CQL does not support DISTINCTROW
+     */
+    @Override
+    public CqlBuilder distinctRow() throws IllegalStateException, UnsupportedOperationException {
+        assertNotClosed();
+
+        throw new UnsupportedOperationException(MSG_DISTINCTROW_NOT_SUPPORTED);
+    }
+
+    /**
+     * Applies the parent builder's clause-placement checks, after rejecting a {@code LIMIT} or {@code ORDER BY} clause on an
+     * UPDATE or DELETE statement. Every {@code limit(count)} and {@code orderBy(...)} call, and every appended {@code Limit}
+     * or {@code OrderBy} clause (standalone or inside a {@code Criteria}), claims its clause slot here before it renders.
+     *
+     * @param op the clause keyword being claimed (for example {@code "LIMIT"} or {@code "ORDER BY"})
+     * @throws IllegalStateException if this builder is closed, {@code op} is {@code LIMIT} or {@code ORDER BY} and this is an
+     *         UPDATE or DELETE statement, or the parent builder rejects the clause at the builder's current position
+     */
+    @Override
+    protected void checkIfAlreadyCalled(final String op) throws IllegalStateException {
+        assertNotClosed();
+
+        // WHY: the parent accepts LIMIT and ORDER BY on UPDATE/DELETE (a MySQL extension) and rendered "UPDATE t SET a = ?
+        // WHERE id = ? LIMIT 5" / "DELETE FROM t WHERE id = ? ORDER BY a", which Cassandra rejects ("mismatched input 'LIMIT'
+        // expecting EOF"): CQL UPDATE/DELETE end with the WHERE and IF clauses. Same exception and wording as the parent's
+        // rejection of GROUP BY/HAVING on those statements.
+        if ((_op == OperationType.UPDATE || _op == OperationType.DELETE) && (SK.LIMIT.equals(op) || SK.ORDER_BY.equals(op))) {
+            throw new IllegalStateException(
+                    "'" + op + "' is only valid for SELECT statements in Cassandra CQL; " + opCqlKeyword() + " has no " + op + " clause");
+        }
+
+        super.checkIfAlreadyCalled(op);
+    }
+
     /**
      * Appends {@code condition} exactly as the parent builder does, after rejecting a condition that would render a
      * clause Cassandra CQL does not have: a HAVING clause ({@code Filters.having(...)}), a set-operation clause
      * ({@code Filters.union(...)}, {@code unionAll(...)}, {@code intersect(...)}, {@code except(...)} or
      * {@code minus(...)}), a {@code GroupBy} clause whose sort list carries a direction ({@code Filters.groupByDesc(...)},
      * {@code Filters.groupBy(name, direction)}, ...), a {@link Limit} that skips rows, such as {@code Filters.limit(10, 20)}
-     * or {@code Filters.limit("LIMIT 10 OFFSET 20")}, or a {@link Criteria} carrying any of them. A <i>resolved</i>
+     * or {@code Filters.limit("LIMIT 10 OFFSET 20")}, or a {@link Criteria} carrying any of them or a {@code DISTINCT ON (...)}
+     * or {@code DISTINCTROW} select modifier ({@code Criteria.builder().distinctOn(...)}/{@code distinctRow()}). A <i>resolved</i>
      * {@code Limit} whose offset is zero ({@code Filters.limit(10, 0)}) renders a plain {@code LIMIT count} and is accepted,
      * whereas an unresolved expression naming OFFSET, such as {@code Filters.limit("LIMIT 99999999999 OFFSET 0")}, is
      * rejected because the parent would render it verbatim. The check runs before anything is rendered, so a rejected
@@ -2282,11 +2624,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param condition the condition, clause or {@code Criteria} to append; must not be {@code null}
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalStateException if this builder is closed, or the parent builder cannot append the condition at
-     *         the builder's current position (for example a clause that was already specified)
+     *         the builder's current position (for example a clause that was already specified), or it is (or a
+     *         {@code Criteria} carries) a {@code Limit} or {@code OrderBy} clause and this is an UPDATE or DELETE statement
      * @throws IllegalArgumentException if {@code condition} is {@code null}, or it or a nested condition is not
      *         supported by CQL (see {@link #appendCondition(Condition)}), or it would render a HAVING, OFFSET,
-     *         {@code FETCH ... ROWS ONLY}, FOR UPDATE, set-operation or {@code GROUP BY ... ASC/DESC} clause (the same
-     *         exception {@code where(...)} throws for such a condition)
+     *         {@code FETCH ... ROWS ONLY}, FOR UPDATE, set-operation, {@code GROUP BY ... ASC/DESC}, {@code DISTINCT ON}
+     *         or {@code DISTINCTROW} clause (the same exception {@code where(...)} throws for such a condition)
      */
     @Override
     public CqlBuilder append(final Condition condition) throws IllegalStateException, IllegalArgumentException {
@@ -2329,6 +2672,17 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             if (!criteria.setOperations().isEmpty()) {
                 throw new IllegalArgumentException(setOperationNotSupported(criteria.setOperations().get(0).operator().toString()));
+            }
+
+            // The parent splices a Criteria select modifier into the SELECT prefix without calling distinctOn()/distinctRow().
+            final String selectModifier = criteria.selectModifier();
+
+            if (selectModifier != null && DISTINCT_ON_MODIFIER.matcher(selectModifier).find()) {
+                throw new IllegalArgumentException(MSG_DISTINCT_ON_NOT_SUPPORTED);
+            }
+
+            if (selectModifier != null && DISTINCTROW_MODIFIER.matcher(selectModifier).find()) {
+                throw new IllegalArgumentException(MSG_DISTINCTROW_NOT_SUPPORTED);
             }
 
             if (criteria.groupBy() != null) {
@@ -2583,6 +2937,207 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
+     * Returns {@code true} if {@code text[start, end)} spells, in any case, one of {@link #RESERVED_CQL_KEYWORDS}.
+     *
+     * @param text the text holding an unquoted identifier
+     * @param start the inclusive start of the identifier
+     * @param end the exclusive end of the identifier
+     * @return whether the identifier is a reserved CQL keyword that must be quoted
+     */
+    private static boolean isReservedCqlKeyword(final CharSequence text, final int start, final int end) {
+        final int len = end - start;
+
+        if (len < 2 || len > 12) { // the shortest reserved keywords ("by", "if", ...) have 2 letters, the longest ("columnfamily") 12
+            return false;
+        }
+
+        final char[] lowerCase = new char[len];
+
+        for (int i = 0; i < len; i++) {
+            final char ch = text.charAt(start + i);
+
+            if (ch >= 'A' && ch <= 'Z') {
+                lowerCase[i] = (char) (ch + ('a' - 'A'));
+            } else if (ch >= 'a' && ch <= 'z') {
+                lowerCase[i] = ch;
+            } else {
+                return false; // a digit or '_': no keyword contains one
+            }
+        }
+
+        return RESERVED_CQL_KEYWORDS.contains(new String(lowerCase));
+    }
+
+    /**
+     * Returns {@code tableReference} (already validated by {@link #checkCqlTableReference(String, String)}) with every
+     * unquoted keyspace or table part that is a reserved CQL keyword replaced by the quoted lower-case name, for example
+     * {@code ks.order} becomes {@code ks."order"}; returns the same instance if no part is reserved.
+     *
+     * @param tableReference one table name, optionally keyspace-qualified, possibly with surrounding whitespace
+     * @return the table reference to render
+     */
+    private static String quoteReservedKeywordsInTableReference(final String tableReference) {
+        StringBuilder result = null;
+        int copiedThrough = 0;
+        int index = skipWhitespace(tableReference, 0);
+
+        for (int part = 0; part < 2 && index < tableReference.length(); part++) {
+            final int partEnd = skipCqlTableNamePart(tableReference, index);
+
+            if (partEnd < 0) {
+                break;
+            }
+
+            if (tableReference.charAt(index) != '"' && isReservedCqlKeyword(tableReference, index, partEnd)) {
+                if (result == null) {
+                    result = new StringBuilder(tableReference.length() + 4);
+                }
+
+                result.append(tableReference, copiedThrough, index)
+                        .append('"')
+                        .append(tableReference.substring(index, partEnd).toLowerCase(Locale.ROOT))
+                        .append('"');
+                copiedThrough = partEnd;
+            }
+
+            index = skipWhitespace(tableReference, partEnd);
+
+            if (index >= tableReference.length() || tableReference.charAt(index) != '.') {
+                break;
+            }
+
+            index = skipWhitespace(tableReference, index + 1);
+        }
+
+        return result == null ? tableReference : result.append(tableReference, copiedThrough, tableReference.length()).toString();
+    }
+
+    /**
+     * Quotes the reserved-keyword parts of the column reference rendered at {@code _sb[start, end)} by
+     * {@link #appendColumnName(Class, BeanInfo, ImmutableMap, String, String, String, boolean, String, boolean, boolean)}.
+     *
+     * <p>The rendered text is changed only when it is an identifier or dotted identifier chain whose parts are unquoted or
+     * quoted identifiers (a column, or a UDT field such as {@code addr.desc} or {@code "Addr".desc}), in a SELECT list
+     * optionally followed by {@code " AS "} and one alias token. Then every unquoted part that is a reserved CQL keyword
+     * becomes its quoted lower-case name ({@code desc}, {@code DESC} and {@code Desc} all become {@code "desc"}, the column
+     * an unquoted name denotes, since CQL folds unquoted names to lower case); quoted parts are kept as written. Anything
+     * else is kept exactly as rendered: a function call ({@code token(id)}, {@code writetime(desc)}), an expression, a
+     * literal, a quoted name, {@code *}, a multi-column sub-entity expansion, and every alias.</p>
+     *
+     * @param start the buffer index at which the column reference starts
+     * @param isForSelect whether the reference is a SELECT-list item (the only position where the builder renders an alias)
+     */
+    private void quoteReservedKeywordColumn(final int start, final boolean isForSelect) {
+        final int end = _sb.length();
+        int[] reservedParts = null; // start/end pairs
+        int reservedCount = 0;
+        int index = start;
+
+        while (true) {
+            if (index >= end) {
+                return; // a chain ending in '.': leave it
+            }
+
+            int partEnd;
+
+            if (_sb.charAt(index) == '"') {
+                // WHY: a quoted part is kept as written, but the chain goes on, as in a table reference
+                // (quoteReservedKeywordsInTableReference): the field of "Addr".desc is still a bare reserved keyword.
+                partEnd = quotedIdentifierPartEnd(_sb, index, end);
+
+                if (partEnd < 0) {
+                    return; // an empty or unterminated quoted part: leave it
+                }
+            } else if (!isCqlUnquotedNameStart(_sb.charAt(index))) {
+                return; // not an identifier chain: leave it
+            } else {
+                partEnd = index + 1;
+
+                while (partEnd < end && isCqlUnquotedNameChar(_sb.charAt(partEnd))) {
+                    partEnd++;
+                }
+            }
+
+            if (_sb.charAt(index) != '"' && isReservedCqlKeyword(_sb, index, partEnd)) {
+                if (reservedParts == null) {
+                    reservedParts = new int[4];
+                } else if (reservedParts.length == reservedCount * 2) {
+                    reservedParts = Arrays.copyOf(reservedParts, reservedParts.length * 2);
+                }
+
+                reservedParts[reservedCount * 2] = index;
+                reservedParts[reservedCount * 2 + 1] = partEnd;
+                reservedCount++;
+            }
+
+            if (partEnd < end && _sb.charAt(partEnd) == '.') {
+                index = partEnd + 1;
+            } else {
+                index = partEnd;
+                break;
+            }
+        }
+
+        if (reservedCount == 0 || (index != end && !(isForSelect && isSingleAliasSuffix(index, end)))) {
+            return;
+        }
+
+        for (int i = reservedCount - 1; i >= 0; i--) {
+            final int partStart = reservedParts[i * 2];
+            final int partEnd = reservedParts[i * 2 + 1];
+
+            _sb.replace(partStart, partEnd, '"' + _sb.substring(partStart, partEnd).toLowerCase(Locale.ROOT) + '"');
+        }
+    }
+
+    /**
+     * Returns the index just past the non-empty quoted identifier ({@code "..."}, in which {@code ""} stands for one quote)
+     * that starts at {@code text[index]}, or {@code -1} if it is empty or not closed before {@code end}.
+     */
+    private static int quotedIdentifierPartEnd(final CharSequence text, final int index, final int end) {
+        for (int i = index + 1; i < end; i++) {
+            if (text.charAt(i) == '"') {
+                if (i + 1 < end && text.charAt(i + 1) == '"') {
+                    i++;
+                } else {
+                    return i > index + 1 ? i + 1 : -1;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Returns {@code true} if {@code _sb[index, end)} is {@code " AS "} followed by exactly one alias token: a quoted
+     * identifier (with doubled quotes inside) ending at {@code end}, or a non-empty run without whitespace, commas or
+     * parentheses.
+     */
+    private boolean isSingleAliasSuffix(final int index, final int end) {
+        if (end - index <= SPACE_AS_SPACE_LENGTH || !matchesAt(_sb, " AS ", index, end)) {
+            return false;
+        }
+
+        final int aliasStart = index + SPACE_AS_SPACE_LENGTH;
+
+        if (_sb.charAt(aliasStart) == '"') {
+            final int closingQuote = skipQuoted(_sb, aliasStart, '"');
+
+            return closingQuote == end - 1 && _sb.charAt(closingQuote) == '"';
+        }
+
+        for (int i = aliasStart; i < end; i++) {
+            final char ch = _sb.charAt(i);
+
+            if (Character.isWhitespace(ch) || ch == ',' || ch == '(' || ch == ')' || ch == '"') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Validates the structural preconditions for the overridden {@code from(...)} entry points.
      * Mirrors the parent builder's checks except that DELETE is also accepted: CQL supports
      * {@code DELETE col1, col2 FROM tbl}, while the parent treats {@code from(...)} as SELECT-only.
@@ -2746,7 +3301,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             _sb.append(SK._PARENTHESIS_R);
         } else if (cond instanceof InSubQuery || cond instanceof NotIn || cond instanceof NotInSubQuery || cond instanceof SubQuery) {
-            throw new IllegalArgumentException("Cassandra CQL does not support NOT IN or sub-queries: " + cond.operator());
+            // A bare SubQuery (e.g. the value of Filters.eq("a", subQuery)) has the EMPTY operator, which left the message
+            // ending in ": " with nothing after it, and "IN" alone read as if IN itself were unsupported: name the construct.
+            final String rejected = cond instanceof SubQuery ? "sub-query"
+                    : cond instanceof NotIn ? cond.operator().toString() : cond.operator() + " (sub-query)";
+
+            throw new IllegalArgumentException("Cassandra CQL does not support NOT IN or sub-queries: " + rejected);
         } else if (cond instanceof final Where where) {
 
             _sb.append(_SPACE);
@@ -3150,8 +3710,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method inspects the entity object and extracts the properties that are
          * suitable for insertion. Properties marked with @Transient, @ReadOnly, or @ReadOnlyId
-         * annotations are automatically excluded, as are properties whose value is {@code null} (and an id property
-         * still holding its default value). Property names are converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
+         * annotations are automatically excluded, as are properties whose value is {@code null}. Unlike the parent SQL
+         * builder, an id property ({@code @Id}, or a property named {@code id}) holding {@code 0} is kept: Cassandra never
+         * generates keys, so a zero key is a real value (a {@code null} key is still left out). Property names are converted
+         * per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3179,7 +3741,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method allows fine-grained control over which properties to include in the INSERT
          * statement. Properties in the exclusion set will not be included even if they have values
-         * and are normally insertable.</p>
+         * and are normally insertable. As for {@link #insert(Object)}, a property whose value is {@code null} is left out
+         * and an id property holding {@code 0} is kept.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3211,8 +3774,115 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 instance._op = OperationType.ADD;
                 instance.setEntityClass(entity.getClass());
 
-                parseInsertEntity(instance, entity, excludedPropNames);
+                if (entity instanceof String || entity instanceof Map || !Beans.isBeanClass(entity.getClass())) {
+                    parseInsertEntity(instance, entity, excludedPropNames);
+                } else {
+                    instance._props = insertPropsOf(entity, excludedPropNames);
+                }
             });
+        }
+
+        /**
+         * Returns the insertable property values of entity bean {@code entity} that are not {@code null}, in insert-column
+         * order: the parent builder's insert properties minus {@code excludedPropNames}, with id properties kept whatever
+         * their value (only a {@code null} value is left out, as for every property).
+         *
+         * @param entity the entity bean
+         * @param excludedPropNames properties to exclude (may be {@code null})
+         * @return a new mutable map of property name to value
+         */
+        private static Map<String, Object> insertPropsOf(final Object entity, final Set<String> excludedPropNames) {
+            // WHY: the parent's parseInsertEntity (and QueryUtil.insertPropNames(entity, ...)) apply the SQL generated-key
+            // convention and leave the id properties (@Id, or a property named "id") out when every one of them is null or
+            // numerically zero. Cassandra never generates keys and rejects such an INSERT ("Some partition key parts are
+            // missing"), so an entity whose key is a legitimate 0 could not be inserted. Only null values are left out here;
+            // every other column, and the column order, is the parent's (QueryUtil.insertPropNames(Class, ...) is the same
+            // property list with the id properties always included).
+            final Collection<String> propNames = QueryUtil.insertPropNames(entity.getClass(), excludedPropNames);
+            final BeanInfo beanInfo = ParserUtil.getBeanInfo(entity.getClass());
+            final Map<String, Object> props = N.newLinkedHashMap(propNames.size());
+
+            for (final String propName : propNames) {
+                final Object propValue = beanInfo.getPropValue(entity, propName);
+
+                if (propValue != null) {
+                    props.put(propName, propValue);
+                }
+            }
+
+            return props;
+        }
+
+        /**
+         * Converts the rows of a {@code batchInsert(...)} call: map rows exactly as the parent builder does; entity bean rows
+         * like the parent, except that a column is dropped only when it is {@code null} in every row (an id column holding
+         * {@code 0} is kept, see {@link #insertPropsOf(Object, Set)}).
+         *
+         * @param propsList the rows
+         * @return the property maps, one per non-null row, all with the same keys
+         * @throws IllegalArgumentException as the parent's conversion: no non-null row, mixed or inconsistent rows, a row
+         *         that is neither a Map nor an entity bean, or no column left after removing the all-null ones
+         */
+        private static List<Map<String, Object>> toCqlInsertPropsList(final Collection<?> propsList) throws IllegalArgumentException {
+            final Optional<?> first = N.firstNonNull(propsList);
+
+            if (!first.isPresent() || first.get() instanceof Map) {
+                return toInsertPropsList(propsList);
+            }
+
+            // WHY: the parent's toInsertPropsList also drops the id columns when every row holds a null or zero key (the SQL
+            // generated-key convention; see insertPropsOf), which Cassandra rejects for a real key of 0. The bean path below is
+            // the parent's with that removal left out; its validation and messages are kept.
+            final Class<?> entityClass = first.get().getClass();
+            final Collection<String> propNames = QueryUtil.insertPropNames(entityClass, null);
+            final BeanInfo beanInfo = ParserUtil.getBeanInfo(entityClass);
+            final List<Map<String, Object>> rows = new ArrayList<>(propsList.size());
+
+            for (final Object entity : propsList) {
+                if (entity == null) {
+                    continue;
+                }
+
+                if (entity.getClass() != entityClass) {
+                    throw new IllegalArgumentException("All non-null bean entities in propsList must have the same runtime class. Expected: "
+                            + entityClass.getName() + ", current: " + entity.getClass().getName());
+                }
+
+                final Map<String, Object> props = N.newLinkedHashMap(propNames.size());
+
+                for (final String propName : propNames) {
+                    props.put(propName, beanInfo.getPropValue(entity, propName));
+                }
+
+                rows.add(props);
+            }
+
+            final List<String> nullPropNames = new ArrayList<>();
+
+            for (final String propName : propNames) {
+                boolean allNull = true;
+
+                for (final Map<String, Object> props : rows) {
+                    if (props.get(propName) != null) {
+                        allNull = false;
+                        break;
+                    }
+                }
+
+                if (allNull) {
+                    nullPropNames.add(propName);
+                }
+            }
+
+            if (!nullPropNames.isEmpty()) {
+                for (final Map<String, Object> props : rows) {
+                    props.keySet().removeAll(nullPropNames);
+                }
+            }
+
+            N.checkArgument(!rows.get(0).isEmpty(), "No insertable values remain after removing columns that are null in every batch row");
+
+            return rows;
         }
 
         /**
@@ -3319,7 +3989,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>The generated CQL uses Cassandra's {@code BEGIN BATCH ... APPLY BATCH} syntax. Every row must expose
          * the same non-empty set of property names; otherwise the generated statements would silently omit values
-         * or bind them to the wrong columns.</p>
+         * or bind them to the wrong columns. For entity bean rows, a column that is {@code null} in every row is left out;
+         * unlike the parent SQL builder, an id column ({@code @Id}, or a property named {@code id}) holding {@code 0} is kept,
+         * because Cassandra never generates keys.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3342,8 +4014,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *         row is empty, has a non-String or blank key, or exposes a different set of property names than the
          *         other map rows; if rows mix maps and beans, bean rows have different runtime classes, or the first
          *         non-null row is neither a Map nor an entity bean; or if no bean column remains after the columns that
-         *         are null (or a default-valued ID) in every row are removed (all validated eagerly from the supplied
-         *         rows)
+         *         are null in every row are removed (all validated eagerly from the supplied rows)
          */
         @Beta
         public CqlBuilder batchInsert(final Collection<?> propsList) throws IllegalArgumentException {
@@ -3359,7 +4030,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                     instance.setEntityClass(first.get().getClass());
                 }
 
-                instance._propsList = toInsertPropsList(propsList);
+                instance._propsList = toCqlInsertPropsList(propsList);
             });
         }
 
@@ -3391,7 +4062,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             final CqlBuilder instance = createCqlBuilderInstance();
 
             instance._op = OperationType.UPDATE;
-            instance._tableName = tableName;
+            instance._tableName = quoteReservedKeywordsInTableReference(tableName); // a reserved keyword is a syntax error unquoted
 
             return instance;
         }
@@ -3427,7 +4098,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             return setUpOrRelease(instance, () -> {
                 instance._op = OperationType.UPDATE;
-                instance._tableName = tableName;
+                instance._tableName = quoteReservedKeywordsInTableReference(tableName); // a reserved keyword is a syntax error unquoted
                 instance.setEntityClass(entityClass);
             });
         }
@@ -3494,6 +4165,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 // Match into(Class)/from(Class): reject an unrenderable @Table name up front
                 // instead of silently producing invalid CQL.
                 checkCqlTableReference(instance._tableName, cs.tableName);
+                instance._tableName = quoteReservedKeywordsInTableReference(instance._tableName); // as into(Class)/from(Class)
                 instance._propOrColumnNames = getUpdatePropNamesByClass(entityClass, excludedPropNames);
             });
         }
@@ -3678,7 +4350,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             final CqlBuilder instance = createCqlBuilderInstance();
 
             instance._op = OperationType.DELETE;
-            instance._tableName = tableName;
+            instance._tableName = quoteReservedKeywordsInTableReference(tableName); // a reserved keyword is a syntax error unquoted
 
             return instance;
         }
@@ -3712,7 +4384,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             return setUpOrRelease(instance, () -> {
                 instance._op = OperationType.DELETE;
-                instance._tableName = tableName;
+                instance._tableName = quoteReservedKeywordsInTableReference(tableName); // a reserved keyword is a syntax error unquoted
                 instance.setEntityClass(entityClass);
             });
         }
@@ -3749,6 +4421,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 // Match into(Class)/from(Class): reject an unrenderable @Table name up front
                 // instead of silently producing invalid CQL.
                 checkCqlTableReference(instance._tableName, cs.tableName);
+                instance._tableName = quoteReservedKeywordsInTableReference(instance._tableName); // as into(Class)/from(Class)
             });
         }
 
@@ -4284,8 +4957,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *         NOT IN, or a subquery), contains a null comparison or IN value, or has an empty junction/IN list; or if it
          *         is a HAVING clause, a set-operation clause (UNION, UNION ALL, INTERSECT, EXCEPT or MINUS), a {@code GroupBy}
          *         clause whose sort list carries a direction, a {@code Limit} that skips rows or renders
-         *         {@code FETCH ... ROWS ONLY}, or a {@code Criteria} carrying any of them (CQL has none of these clauses;
-         *         see {@link CqlBuilder#append(Condition)})
+         *         {@code FETCH ... ROWS ONLY}, or a {@code Criteria} carrying any of them or a {@code DISTINCT ON (...)} or
+         *         {@code DISTINCTROW} select modifier (CQL has none of these clauses; see {@link CqlBuilder#append(Condition)})
          */
         public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) throws IllegalArgumentException {
             N.checkArgNotNull(cond, cs.cond);

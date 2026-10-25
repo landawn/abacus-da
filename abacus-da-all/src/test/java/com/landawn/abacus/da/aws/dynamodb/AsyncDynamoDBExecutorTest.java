@@ -794,6 +794,42 @@ public class AsyncDynamoDBExecutorTest extends MockitoTestBase {
         assertEquals(mockDynamoDBExecutor, syncExecutor);
     }
 
+    // ---- 2026-10-24 apply-ddb ----
+
+    /**
+     * query(QueryRequest, Class) rejects a row type that cannot become a Dataset on the calling thread, like its other argument
+     * checks: the IllegalArgumentException is thrown by the call itself, no task is submitted and no request is sent (also through
+     * a real executor over a mocked client). null, Map types and bean classes are still submitted.
+     */
+    @Test
+    public void testQueryWithClass_UnsupportedRowTypeThrownAtCallBeforeAnyRequest_applyDdb() throws Exception {
+        final QueryRequest queryRequest = new QueryRequest().withTableName("T");
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (final Class<?> rowType : List.of(String.class, int.class, Object.class, Object[].class, List.class, com.landawn.abacus.util.Holder.class)) {
+            checks.add(() -> assertTrue(
+                    assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(queryRequest, rowType), rowType.getName()).getMessage()
+                            .startsWith("Unsupported row type: "),
+                    rowType.getName()));
+        }
+
+        final com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient client = org.mockito.Mockito
+                .mock(com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient.class);
+        checks.add(() -> assertThrows(IllegalArgumentException.class, () -> new DynamoDBExecutor(client).async().query(queryRequest, String.class)));
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+        verify(mockAsyncExecutor, times(0)).execute(any(Callable.class));
+        org.mockito.Mockito.verifyNoInteractions(mockDynamoDBExecutor, client);
+
+        when(mockDynamoDBExecutor.query(any(QueryRequest.class), any())).thenReturn(N.newEmptyDataset());
+
+        for (final Class<?> rowType : java.util.Arrays.asList(null, Map.class, TestEntity.class)) {
+            assertNotNull(asyncExecutor.query(queryRequest, rowType).get());
+        }
+
+        verify(mockAsyncExecutor, times(3)).execute(any(Callable.class));
+    }
+
     private static class TestEntity {
         private String id;
         private String name;

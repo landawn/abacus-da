@@ -511,4 +511,33 @@ class CassandraRowMappingTest {
                 () -> assertEquals(2, other.size()), () -> assertEquals(List.of(1L, 2L), other.getColumn("id")),
                 () -> assertEquals(List.of("Ada", "Grace"), other.getColumn("name")), () -> assertEquals(List.of("id", "name"), other.columnNames()));
     }
+
+    // ---- 2026-10-24 r2 sliceK ----
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass, and extractData tested it before the Map check: its columns
+    // were typed by the Map's getters, so a nested row became an Object[], and one in a column named like a getter ("empty", from
+    // isEmpty()) was converted to that getter's boolean (IllegalArgumentException), instead of maps as for any other map target
+    // (toList and readRow test the Map first).
+    @Test
+    void r2sliceK_extractDataTreatsAnEntityAnnotatedMapAsAMapTarget() {
+        final Row outer = row(new String[] { "nested", "empty", "name" }, row(new String[] { "value" }, "Ada"), row(new String[] { "value" }, "Grace"), "x");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final com.landawn.abacus.util.Dataset dataset = CassandraExecutor.extractData(result(outer), R2EntityMap.class);
+            assertEquals(Map.of("value", "Ada"), dataset.getColumn("nested").get(0));
+            assertEquals(Map.of("value", "Grace"), dataset.getColumn("empty").get(0));
+            assertEquals("x", dataset.getColumn("name").get(0));
+        }, () -> assertEquals(Map.of("value", "Ada"),
+                CassandraExecutor.extractData(result(row(new String[] { "nested" }, row(new String[] { "value" }, "Ada"))), R2EntityMap.class)
+                        .getColumn("nested")
+                        .get(0)),
+                // The shapes of a plain Map target and of toList for the same class (pinned).
+                () -> assertEquals(Map.of("value", "Ada"), CassandraExecutor.extractData(result(outer), LinkedHashMap.class).getColumn("nested").get(0)),
+                () -> assertEquals(Map.of("value", "Ada"), CassandraExecutor.toList(result(outer), R2EntityMap.class).get(0).get("nested")));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2EntityMap extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
 }

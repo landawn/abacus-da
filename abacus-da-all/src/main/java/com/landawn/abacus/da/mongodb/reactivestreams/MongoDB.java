@@ -312,8 +312,9 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p>The collection is used as-is, including its codec registry: unlike a collection obtained by name, it
      * does not receive this instance's framework codec registry, so writing an entity with a nested bean
-     * property fails with {@code CodecConfigurationException} unless the collection comes from {@link #db()}
-     * (or its own registry can encode that bean).</p>
+     * property, or with an array property other than {@code byte[]} (such as a {@code String[]}, which the
+     * framework registry stores as a BSON array), fails with {@code CodecConfigurationException} unless the
+     * collection comes from {@link #db()} (or its own registry can encode that value).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -441,8 +442,9 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p>The collection is used as-is, including its codec registry: unlike a collection obtained by name, it
      * does not receive this instance's framework codec registry, so writing an entity with a nested bean
-     * property fails with {@code CodecConfigurationException} unless the collection comes from {@link #db()}
-     * (or its own registry can encode that bean).</p>
+     * property, or with an array property other than {@code byte[]} (such as a {@code String[]}, which the
+     * framework registry stores as a BSON array), fails with {@code CodecConfigurationException} unless the
+     * collection comes from {@link #db()} (or its own registry can encode that value).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -509,7 +511,10 @@ public final class MongoDB extends MongoDBBase {
     }
 
     /**
-     * Converts a decoded scalar for reactive result mapping, including readable binary buffers.
+     * Converts a decoded scalar for reactive result mapping, including readable binary buffers. This bridge delegates
+     * to {@link MongoDBBase#convertBsonValue(Object, Class)}, so a {@link java.util.Date} requested as
+     * {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC, as the
+     * driver's codecs write those types.
      *
      * @param <T> the requested value type
      * @param value the decoded field value, possibly null

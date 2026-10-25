@@ -1310,6 +1310,59 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
         return new MongoCollectionMapper<>(new MongoCollectionExecutor(MongoCollectionExecutorTestSupport.mockCollectionReturning(row)), entityClass);
     }
 
+    // ---- 2026-10-24 r2 sliceV ----
+
+    /** An entity whose text value looks like an aggregation field path. */
+    public static class LiteralNoteEntity {
+        private String note;
+
+        public String getNote() {
+            return note;
+        }
+
+        public void setNote(final String note) {
+            this.note = note;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testPipelineUpdatesWriteEntityValuesLiterallyAndDocumentValuesAsExpressions_r2sliceV() {
+        // Pins the mapper docs of updateOne/updateMany/findOneAndUpdate(Bson, Collection): a converted entity becomes a
+        // {$set: {f: {$literal: v}}} stage (so "$other" is stored as text), while a Document element (T = Document) keeps
+        // its values as aggregation expressions.
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> coll = mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+        when(coll.updateOne(org.mockito.ArgumentMatchers.any(Bson.class), org.mockito.ArgumentMatchers.anyList())).thenReturn(Mono.empty());
+        when(coll.updateMany(org.mockito.ArgumentMatchers.any(Bson.class), org.mockito.ArgumentMatchers.anyList())).thenReturn(Mono.empty());
+        when(coll.findOneAndUpdate(org.mockito.ArgumentMatchers.any(Bson.class), org.mockito.ArgumentMatchers.anyList())).thenReturn(Mono.empty());
+
+        final MongoCollectionExecutor executor = new MongoCollectionExecutor(coll);
+        final MongoCollectionMapper<LiteralNoteEntity> entityMapper = new MongoCollectionMapper<>(executor, LiteralNoteEntity.class);
+        final LiteralNoteEntity entity = new LiteralNoteEntity();
+        entity.setNote("$other");
+        final Bson filter = new Document("k", 1);
+
+        entityMapper.updateOne(filter, List.of(entity));
+        entityMapper.updateMany(filter, List.of(entity));
+        entityMapper.findOneAndUpdate(filter, List.of(entity));
+        new MongoCollectionMapper<>(executor, Document.class).updateOne(filter, List.of(new Document("ref", "$other")));
+
+        final org.mockito.ArgumentCaptor<List<Bson>> updateOneStages = org.mockito.ArgumentCaptor.forClass(List.class);
+        final org.mockito.ArgumentCaptor<List<Bson>> updateManyStages = org.mockito.ArgumentCaptor.forClass(List.class);
+        final org.mockito.ArgumentCaptor<List<Bson>> findOneAndUpdateStages = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(coll, org.mockito.Mockito.times(2)).updateOne(org.mockito.ArgumentMatchers.any(Bson.class), updateOneStages.capture());
+        verify(coll).updateMany(org.mockito.ArgumentMatchers.any(Bson.class), updateManyStages.capture());
+        verify(coll).findOneAndUpdate(org.mockito.ArgumentMatchers.any(Bson.class), findOneAndUpdateStages.capture());
+
+        final Document literalStage = new Document("$set", new Document("note", new Document("$literal", "$other")));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(List.of(literalStage), updateOneStages.getAllValues().get(0), "updateOne"),
+                () -> assertEquals(List.of(literalStage), updateManyStages.getValue(), "updateMany"),
+                () -> assertEquals(List.of(literalStage), findOneAndUpdateStages.getValue(), "findOneAndUpdate"),
+                () -> assertEquals(List.of(new Document("$set", new Document("ref", "$other"))), updateOneStages.getAllValues().get(1),
+                        "a Document element keeps its values as expressions"));
+    }
+
     // Helper class for testing
     static class TestEntity {
         private String id;

@@ -3574,6 +3574,1016 @@ public class MongoDBBaseTest extends MockitoTestBase {
 
     // ---- end 2026-10-20 mongoxd ----
 
+    // ---- 2026-10-24 sliceT ----
+
+    /** Writes {@code doc} through the registry's codecs and decodes it again, as an insert followed by a find does. */
+    private static Document sliceTRoundTrip(final Document doc) {
+        final org.bson.BsonDocument bson = doc.toBsonDocument(Document.class, MongoDBBase.codecRegistry);
+
+        return new org.bson.codecs.DocumentCodec(MongoDBBase.codecRegistry).decode(new org.bson.BsonDocumentReader(bson),
+                org.bson.codecs.DecoderContext.builder().build());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testStringElementArraysReadBackTheJsonTextTheCodecWrites_sliceT() {
+        // GeneralCodec wrote an array (the driver has no codec for one) as its N.stringOf JSON text, ["a", "b, c"], but bean
+        // mapping converted that text with N.convert, which wraps a String as the single element of a String[]/Object[]: a
+        // String[] {"a", "b, c"} written by this class came back as {"[\"a\", \"b, c\"]"} (also proven against live MongoDB).
+        // Since 2026-10-24 (apply-mongo) the codec writes a BSON array; the round trip below now reads that array, and the
+        // text cases below (plus testLegacyArrayTextStillReadsInEveryShape_applyMongo) keep the stored-text reading pinned.
+        final SliceTTextArrayEntity child = new SliceTTextArrayEntity();
+        child.setTags(new String[] { "nested" });
+
+        final SliceTTextArrayEntity source = new SliceTTextArrayEntity();
+        source.setTags(new String[] { "a", "b, c" });
+        source.setObjs(new Object[] { "x", 1 });
+        source.setNames(new CharSequence[] { "n" });
+        source.setRows(Arrays.asList(new String[] { "r1" }, new String[] { "r2", "r3" }));
+        source.setByKey(new LinkedHashMap<>(Collections.singletonMap("k", new String[] { "v" })));
+        source.setChildren(Collections.singletonList(child));
+        source.setChild(child);
+
+        final Document stored = sliceTRoundTrip(MongoDBBase.toDocument(source));
+        // The stored shape: a BSON array (decoded as a List), no longer the JSON text "[\"a\", \"b, c\"]" (apply-mongo).
+        assertEquals(Arrays.asList("a", "b, c"), stored.get("tags"));
+
+        final SliceTTextArrayEntity back = MongoDBBase.toEntity(stored, SliceTTextArrayEntity.class);
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(new Document("tags", "[\"p\", \"q\"]"), new Document("tags", "plain")));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertArrayEquals(new String[] { "a", "b, c" }, back.getTags()),
+                () -> assertArrayEquals(new Object[] { "x", 1 }, back.getObjs()), () -> assertArrayEquals(new CharSequence[] { "n" }, back.getNames()),
+                () -> assertArrayEquals(new String[] { "r2", "r3" }, back.getRows().get(1)),
+                () -> assertArrayEquals(new String[] { "v" }, back.getByKey().get("k")),
+                () -> assertArrayEquals(new String[] { "nested" }, back.getChildren().get(0).getTags()),
+                () -> assertArrayEquals(new String[] { "nested" }, back.getChild().getTags()),
+                // A record component and the scalar reads (also used by the executors' queryForSingleValue/distinct) parse it too.
+                () -> assertArrayEquals(new String[] { "a", "b" },
+                        MongoDBBase.toEntity(new Document("name", "r").append("tags", "[\"a\", \"b\"]"), SliceTTextArrayRecord.class).tags()),
+                () -> assertArrayEquals(new String[] { "a" }, MongoDBBase.convertBsonValue(" [\"a\"] ", String[].class)), () -> {
+                    final List<String[]> rows = MongoDBBase.toList(iterable, String[].class);
+                    assertArrayEquals(new String[] { "p", "q" }, rows.get(0));
+                    assertArrayEquals(new String[] { "plain" }, rows.get(1));
+                },
+                // Other text keeps the single-element reading, and so does text that only looks like an array literal.
+                () -> assertArrayEquals(new String[] { "abc" }, MongoDBBase.toEntity(new Document("tags", "abc"), SliceTTextArrayEntity.class).getTags()),
+                () -> assertArrayEquals(new String[] { "[x]y]" }, MongoDBBase.toEntity(new Document("tags", "[x]y]"), SliceTTextArrayEntity.class).getTags()),
+                // Unchanged: arrays of other element types already parsed their text, and a String property keeps its text.
+                () -> assertArrayEquals(new Long[] { 1L, 2L }, MongoDBBase.toEntity(new Document("longs", "[1, 2]"), SliceTTextArrayEntity.class).getLongs()),
+                () -> assertEquals("[a]", MongoDBBase.toEntity(new Document("label", "[a]"), SliceTTextArrayEntity.class).getLabel()));
+    }
+
+    @Test
+    public void testToEntitySkipsBinaryConversionOfReadOnlyProperties_sliceT() {
+        // Beans.mapToBean skips a read-only property, and the decoded-value pass already skipped one (2026-10-19), but the binary
+        // pass still converted its stored value: a list of text stored for a getter-only byte[]/ByteBuffer/byte[][]/ByteBuffer[]
+        // property of an @AccessFieldByMethod bean failed the whole row (NumberFormatException or "Illegal base64 character").
+        final List<String> text = Collections.singletonList("x");
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> cases = java.util.stream.Stream.of("bytes", "buffer", "chunks", "buffers")
+                .map(prop -> () -> {
+                    final SliceTReadOnlyBinaryEntity entity = MongoDBBase.toEntity(new Document("name", prop).append(prop, text),
+                            SliceTReadOnlyBinaryEntity.class);
+
+                    assertEquals(prop, entity.getName(), prop);
+                    assertArrayEquals(new byte[] { 1 }, entity.getBytes(), prop);
+                    assertEquals(0, entity.getChunks().length, prop);
+                });
+
+        org.junit.jupiter.api.Assertions.assertAll(cases);
+
+        // A writable binary property is still converted.
+        final SliceTReadOnlyBinaryEntity entity = MongoDBBase.toEntity(new Document("data", new Binary(new byte[] { 7 })), SliceTReadOnlyBinaryEntity.class);
+        assertArrayEquals(new byte[] { 7 }, entity.getData());
+    }
+
+    public static class SliceTTextArrayEntity {
+        private String label;
+        private String[] tags;
+        private Object[] objs;
+        private CharSequence[] names;
+        private Long[] longs;
+        private List<String[]> rows;
+        private Map<String, String[]> byKey;
+        private List<SliceTTextArrayEntity> children;
+        private SliceTTextArrayEntity child;
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(final String label) {
+            this.label = label;
+        }
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(final String[] tags) {
+            this.tags = tags;
+        }
+
+        public Object[] getObjs() {
+            return objs;
+        }
+
+        public void setObjs(final Object[] objs) {
+            this.objs = objs;
+        }
+
+        public CharSequence[] getNames() {
+            return names;
+        }
+
+        public void setNames(final CharSequence[] names) {
+            this.names = names;
+        }
+
+        public Long[] getLongs() {
+            return longs;
+        }
+
+        public void setLongs(final Long[] longs) {
+            this.longs = longs;
+        }
+
+        public List<String[]> getRows() {
+            return rows;
+        }
+
+        public void setRows(final List<String[]> rows) {
+            this.rows = rows;
+        }
+
+        public Map<String, String[]> getByKey() {
+            return byKey;
+        }
+
+        public void setByKey(final Map<String, String[]> byKey) {
+            this.byKey = byKey;
+        }
+
+        public List<SliceTTextArrayEntity> getChildren() {
+            return children;
+        }
+
+        public void setChildren(final List<SliceTTextArrayEntity> children) {
+            this.children = children;
+        }
+
+        public SliceTTextArrayEntity getChild() {
+            return child;
+        }
+
+        public void setChild(final SliceTTextArrayEntity child) {
+            this.child = child;
+        }
+    }
+
+    public record SliceTTextArrayRecord(String name, String[] tags) {
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.AccessFieldByMethod
+    public static class SliceTReadOnlyBinaryEntity {
+        private String name;
+        private byte[] data;
+        private final byte[] bytes = { 1 };
+        private final ByteBuffer buffer = ByteBuffer.wrap(new byte[] { 2 });
+        private final byte[][] chunks = {};
+        private final ByteBuffer[] buffers = {};
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public byte[] getData() {
+            return data;
+        }
+
+        public void setData(final byte[] data) {
+            this.data = data;
+        }
+
+        public byte[] getBytes() {
+            return bytes;
+        }
+
+        public ByteBuffer getBuffer() {
+            return buffer;
+        }
+
+        public byte[][] getChunks() {
+            return chunks;
+        }
+
+        public ByteBuffer[] getBuffers() {
+            return buffers;
+        }
+    }
+
+    // ---- end 2026-10-24 sliceT ----
+
+    // ---- 2026-10-24 verify4 ----
+
+    @Test
+    public void testDottedKeyArrayTextIsParsedWhateverTheOuterBeanDeclares_verify4() {
+        // The sliceT array-text pass was gated by a per-class flag of the OUTER bean, so a dotted key naming a nested bean's
+        // String[] property ("child.tags") was parsed only when the outer bean itself had a String[]-like property.
+        final String text = "[\"a\", \"b\"]";
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertArrayEquals(new String[] { "a", "b" },
+                        MongoDBBase.toEntity(new Document("child.tags", text), Verify4PlainOuter.class).getChild().getTags()),
+                // Control: an outer bean that has a String[] property of its own (already parsed before this fix).
+                () -> assertArrayEquals(new String[] { "a", "b" },
+                        MongoDBBase.toEntity(new Document("child.tags", text), SliceTTextArrayEntity.class).getChild().getTags()),
+                // A dotted String value of a non-array property keeps its text.
+                () -> assertEquals("[a]", MongoDBBase.toEntity(new Document("child.label", "[a]"), Verify4PlainOuter.class).getChild().getLabel()));
+    }
+
+    /** A bean without a String[]-like property of its own, holding one that has. */
+    public static class Verify4PlainOuter {
+        private String name;
+        private SliceTTextArrayEntity child;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public SliceTTextArrayEntity getChild() {
+            return child;
+        }
+
+        public void setChild(final SliceTTextArrayEntity child) {
+            this.child = child;
+        }
+    }
+
+    // ---- end 2026-10-24 verify4 ----
+
+    // ---- 2026-10-24 apply-mongo ----
+
+    /** Encodes {@code value} as the only field of a Document through {@code registry}, as an insert does. */
+    private static org.bson.BsonValue applyMongoEncodeField(final org.bson.codecs.configuration.CodecRegistry registry, final Object value) {
+        final org.bson.BsonDocument written = new org.bson.BsonDocument();
+        registry.get(Document.class)
+                .encode(new org.bson.BsonDocumentWriter(written), new Document("v", value), org.bson.codecs.EncoderContext.builder().build());
+
+        return written.get("v");
+    }
+
+    @Test
+    public void testArraysAreWrittenAsBsonArraysLikeTheSameElementsOfAList_applyMongo() {
+        // Maintainer decision (2026-10-24 item 6): GeneralCodec wrote every array but byte[] as its N.stringOf JSON text (a BSON
+        // string), so eq("tags", "a") matched nothing, $push/$addToSet failed on the field, and a ByteBuffer[] was stored as [""].
+        // An array is now a BSON array whose elements are encoded exactly as the same elements of a List.
+        final ApplyMongoInner inner = new ApplyMongoInner();
+        inner.setName("i");
+        inner.setTags(new String[] { "x" });
+        inner.setBufs(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 5, 6 }) });
+        final Map<String, Object> map = new LinkedHashMap<>();
+        map.put("k", 1);
+        final Date date = new Date(1700000000000L);
+
+        final Object[][] cases = { { new String[] { "a", "b, c" }, Arrays.asList("a", "b, c") },
+                { new Object[] { "x", 1, 2L, 1.5, true, null, new Object[] { "y" }, map },
+                        Arrays.asList("x", 1, 2L, 1.5, true, null, Arrays.asList("y"), map) },
+                { new CharSequence[] { "n" }, Arrays.asList("n") }, { new Integer[] { 1, null, 3 }, Arrays.asList(1, null, 3) },
+                { new int[] { 1, 2 }, Arrays.asList(1, 2) }, { new long[] { 1L, 5000000000L }, Arrays.asList(1L, 5000000000L) },
+                { new double[] { 1.5, 2 }, Arrays.asList(1.5, 2.0) }, { new float[] { 1.5f }, Arrays.asList(1.5f) },
+                { new short[] { 3 }, Arrays.asList((short) 3) }, { new Byte[] { 1, 2 }, Arrays.asList((byte) 1, (byte) 2) },
+                { new boolean[] { true, false }, Arrays.asList(true, false) }, { new char[] { 'a', 'b' }, Arrays.asList('a', 'b') },
+                { new Character[] { 'c' }, Arrays.asList('c') },
+                { new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 1, 2, 3 }), null }, Arrays.asList(ByteBuffer.wrap(new byte[] { 1, 2, 3 }), null) },
+                { new byte[][] { { 9 }, { 8, 7 } }, Arrays.asList(new byte[] { 9 }, new byte[] { 8, 7 }) },
+                { new ApplyMongoInner[] { inner }, Arrays.asList(inner) }, { new Map[] { map }, Arrays.asList(map) },
+                { new Document[] { new Document("d", 1) }, Arrays.asList(new Document("d", 1)) },
+                { new String[][] { { "p" }, { "q", "r" } }, Arrays.asList(Arrays.asList("p"), Arrays.asList("q", "r")) },
+                { new int[][] { { 1 }, { 2, 3 } }, Arrays.asList(Arrays.asList(1), Arrays.asList(2, 3)) },
+                { new java.util.concurrent.TimeUnit[] { java.util.concurrent.TimeUnit.SECONDS }, Arrays.asList(java.util.concurrent.TimeUnit.SECONDS) },
+                { new Date[] { date }, Arrays.asList(date) },
+                { new java.math.BigDecimal[] { new java.math.BigDecimal("1.25") }, Arrays.asList(new java.math.BigDecimal("1.25")) },
+                { new LocalDate[] { LocalDate.of(2024, 1, 2) }, Arrays.asList(LocalDate.of(2024, 1, 2)) }, { new String[0], new ArrayList<>() } };
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> sameAsList = Arrays.stream(cases).map(c -> () -> {
+            final org.bson.BsonValue written = applyMongoEncodeField(MongoDBBase.codecRegistry, c[0]);
+            final String label = c[0].getClass().getSimpleName();
+
+            assertTrue(written.isArray(), label + ": " + written);
+            assertEquals(applyMongoEncodeField(MongoDBBase.codecRegistry, c[1]), written, label);
+        });
+
+        // The concrete element shapes, including the char[] decision (one-character strings, as a List<Character> is written).
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> shapes = java.util.stream.Stream.of(
+                () -> assertEquals(org.bson.BsonDocument.parse("{v: ['a', 'b, c']}").get("v"),
+                        applyMongoEncodeField(MongoDBBase.codecRegistry, new String[] { "a", "b, c" })),
+                () -> assertEquals(new org.bson.BsonArray(Arrays.asList(new org.bson.BsonInt32(1), new org.bson.BsonInt32(2))),
+                        applyMongoEncodeField(MongoDBBase.codecRegistry, new int[] { 1, 2 })),
+                () -> assertEquals(new org.bson.BsonArray(Arrays.asList(new org.bson.BsonInt64(5000000000L))),
+                        applyMongoEncodeField(MongoDBBase.codecRegistry, new long[] { 5000000000L })),
+                () -> assertEquals(new org.bson.BsonArray(Arrays.asList(new org.bson.BsonString("a"), new org.bson.BsonString("b"))),
+                        applyMongoEncodeField(MongoDBBase.codecRegistry, new char[] { 'a', 'b' })),
+                () -> assertEquals(new org.bson.BsonArray(Arrays.asList(new org.bson.BsonBinary(new byte[] { 1, 2, 3 }), org.bson.BsonNull.VALUE)),
+                        applyMongoEncodeField(MongoDBBase.codecRegistry, new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 1, 2, 3 }), null })),
+                () -> assertEquals(org.bson.BsonDocument.parse("{v: [{name: 'i', tags: ['x'], bufs: [BinData(0, 'BQY=')]}]}").get("v"),
+                        applyMongoEncodeField(MongoDBBase.codecRegistry, new ApplyMongoInner[] { inner })),
+                // Unchanged: a byte[] is BSON binary.
+                () -> assertEquals(new org.bson.BsonBinary(new byte[] { 1, 2 }), applyMongoEncodeField(MongoDBBase.codecRegistry, new byte[] { 1, 2 })));
+
+        org.junit.jupiter.api.Assertions.assertAll(java.util.stream.Stream.concat(sameAsList, shapes));
+    }
+
+    @Test
+    public void testArraysRoundTripIntoTheirDeclaredPropertyTypes_applyMongo() {
+        // Every array property, also inside nested beans, records and typed containers, is stored as a BSON array and read back
+        // into its declared type (a ByteBuffer[] kept its bytes only now: they were stored as [""]).
+        final ApplyMongoInner inner = new ApplyMongoInner();
+        inner.setName("i");
+        inner.setTags(new String[] { "x", "y" });
+        inner.setBufs(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 5, 6 }) });
+
+        final ApplyMongoArrayEntity source = new ApplyMongoArrayEntity();
+        source.setTags(new String[] { "a", "b, c" });
+        source.setObjs(new Object[] { "x", 1, 2L, 1.5, true, null });
+        source.setBoxedInts(new Integer[] { 1, null, 3 });
+        source.setInts(new int[] { 1, 2 });
+        source.setLongs(new long[] { 1L, 5000000000L });
+        source.setDoubles(new double[] { 1.5, 2 });
+        source.setFloats(new float[] { 1.5f });
+        source.setShorts(new short[] { 3 });
+        source.setBytes(new byte[] { 1, 2 });
+        source.setBoxedBytes(new Byte[] { 4 });
+        source.setBools(new boolean[] { true, false });
+        source.setChars(new char[] { 'a', 'b' });
+        source.setBoxedChars(new Character[] { 'c' });
+        source.setBufs(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 1, 2, 3 }), null });
+        source.setChunks(new byte[][] { { 9 }, { 8, 7 } });
+        source.setInners(new ApplyMongoInner[] { inner });
+        source.setNested(new String[][] { { "p" }, { "q", "r" } });
+        source.setNestedInts(new int[][] { { 1 }, { 2, 3 } });
+        source.setRows(Arrays.asList(new String[] { "r1" }, new String[] { "r2", "r3" }));
+        source.setByKey(new LinkedHashMap<>(Collections.singletonMap("k", new String[] { "v" })));
+        source.setIntRows(Arrays.asList(new int[] { 4 }, new int[] { 5, 6 }));
+        source.setInner(inner);
+        source.setRec(new ApplyMongoRecord("r", new String[] { "t" }, new int[] { 7 }, new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 8 }) }));
+
+        final Document stored = sliceTRoundTrip(MongoDBBase.toDocument(source));
+        final ApplyMongoArrayEntity back = MongoDBBase.toEntity(stored, ApplyMongoArrayEntity.class);
+        final ApplyMongoRecord rec = MongoDBBase.toEntity((Document) stored.get("rec"), ApplyMongoRecord.class);
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> storedAsArrays = java.util.stream.Stream
+                .of("tags", "objs", "boxedInts", "ints", "longs", "doubles", "floats", "shorts", "boxedBytes", "bools", "chars", "boxedChars", "bufs", "chunks",
+                        "inners", "nested", "nestedInts")
+                .map(prop -> () -> assertTrue(stored.get(prop) instanceof List, prop + ": " + stored.get(prop)));
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> values = java.util.stream.Stream.of(
+                () -> assertArrayEquals(new String[] { "a", "b, c" }, back.getTags()),
+                // An int64 element stays a Long (the JSON text read it back as an Integer).
+                () -> assertArrayEquals(new Object[] { "x", 1, 2L, 1.5, true, null }, back.getObjs()),
+                () -> assertArrayEquals(new Integer[] { 1, null, 3 }, back.getBoxedInts()), () -> assertArrayEquals(new int[] { 1, 2 }, back.getInts()),
+                () -> assertArrayEquals(new long[] { 1L, 5000000000L }, back.getLongs()), () -> assertArrayEquals(new double[] { 1.5, 2 }, back.getDoubles()),
+                () -> assertArrayEquals(new float[] { 1.5f }, back.getFloats()), () -> assertArrayEquals(new short[] { 3 }, back.getShorts()),
+                () -> assertArrayEquals(new byte[] { 1, 2 }, back.getBytes()), () -> assertArrayEquals(new Byte[] { 4 }, back.getBoxedBytes()),
+                () -> assertArrayEquals(new boolean[] { true, false }, back.getBools()), () -> assertArrayEquals(new char[] { 'a', 'b' }, back.getChars()),
+                () -> assertArrayEquals(new Character[] { 'c' }, back.getBoxedChars()),
+                () -> assertArrayEquals(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 1, 2, 3 }), null }, back.getBufs()),
+                () -> assertArrayEquals(new byte[][] { { 9 }, { 8, 7 } }, back.getChunks()),
+                () -> assertArrayEquals(new String[] { "x", "y" }, back.getInners()[0].getTags()),
+                () -> assertArrayEquals(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 5, 6 }) }, back.getInners()[0].getBufs()),
+                () -> assertArrayEquals(new String[][] { { "p" }, { "q", "r" } }, back.getNested()),
+                () -> assertArrayEquals(new int[][] { { 1 }, { 2, 3 } }, back.getNestedInts()),
+                () -> assertArrayEquals(new String[] { "r2", "r3" }, back.getRows().get(1)),
+                () -> assertArrayEquals(new String[] { "v" }, back.getByKey().get("k")), () -> assertArrayEquals(new int[] { 5, 6 }, back.getIntRows().get(1)),
+                () -> assertArrayEquals(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 5, 6 }) }, back.getInner().getBufs()),
+                () -> assertArrayEquals(new String[] { "t" }, back.getRec().tags()), () -> assertArrayEquals(new int[] { 7 }, back.getRec().nums()),
+                () -> assertArrayEquals(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 8 }) }, back.getRec().bufs()),
+                // A record read at the top level too.
+                () -> assertArrayEquals(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 8 }) }, rec.bufs()),
+                () -> assertArrayEquals(new int[] { 7 }, rec.nums()));
+
+        org.junit.jupiter.api.Assertions.assertAll(java.util.stream.Stream.concat(storedAsArrays, values));
+    }
+
+    @Test
+    public void testLegacyArrayTextStillReadsInEveryShape_applyMongo() {
+        // Documents written before the codec stored BSON arrays hold each array as its N.stringOf JSON text (the exact strings
+        // below are what that codec wrote). They must still read back after the storage change (pinned: passes on both).
+        final Document legacy = new Document("tags", "[\"a\", \"b, c\"]").append("objs", "[\"x\", 1]")
+                .append("ints", "[1, 2]")
+                .append("longs", "[1, 5000000000]")
+                .append("chars", "['a', 'b']")
+                .append("chunks", "[[9], [8, 7]]")
+                .append("nested", "[[\"p\"], [\"q\", \"r\"]]")
+                .append("rows", Arrays.asList("[\"r1\"]", "[\"r2\", \"r3\"]"))
+                .append("byKey", new Document("k", "[\"v\"]"))
+                .append("inners", "[{\"name\": \"i\", \"tags\": [\"x\", \"y\"]}]")
+                .append("inner", new Document("name", "i").append("tags", "[\"x\", \"y\"]"))
+                .append("rec", new Document("name", "r").append("tags", "[\"t\"]").append("nums", "[7]"));
+        final ApplyMongoArrayEntity back = MongoDBBase.toEntity(legacy, ApplyMongoArrayEntity.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertArrayEquals(new String[] { "a", "b, c" }, back.getTags()),
+                () -> assertArrayEquals(new Object[] { "x", 1 }, back.getObjs()), () -> assertArrayEquals(new int[] { 1, 2 }, back.getInts()),
+                () -> assertArrayEquals(new long[] { 1L, 5000000000L }, back.getLongs()), () -> assertArrayEquals(new char[] { 'a', 'b' }, back.getChars()),
+                () -> assertArrayEquals(new byte[][] { { 9 }, { 8, 7 } }, back.getChunks()),
+                () -> assertArrayEquals(new String[][] { { "p" }, { "q", "r" } }, back.getNested()),
+                () -> assertArrayEquals(new String[] { "r2", "r3" }, back.getRows().get(1)),
+                () -> assertArrayEquals(new String[] { "v" }, back.getByKey().get("k")),
+                () -> assertArrayEquals(new String[] { "x", "y" }, back.getInners()[0].getTags()),
+                () -> assertArrayEquals(new String[] { "x", "y" }, back.getInner().getTags()),
+                () -> assertArrayEquals(new String[] { "t" }, back.getRec().tags()), () -> assertArrayEquals(new int[] { 7 }, back.getRec().nums()),
+                // The codec's own read of a single value (distinct / queryForSingleValue) too.
+                () -> assertArrayEquals(new String[] { "a", "b" }, mxDecode(String[].class, new org.bson.BsonString("[\"a\", \"b\"]"))));
+    }
+
+    @Test
+    public void testFiltersAndUpdatesSendAnArrayValueAsABsonArray_applyMongo() {
+        // Filters and update documents encode their values through the same registry, so an array value is now a BSON array
+        // there as well (it was the JSON text, which matched only documents that stored the very same text).
+        final org.bson.codecs.configuration.CodecRegistry registry = MongoDBBase.codecRegistry;
+        final org.bson.BsonDocument rawUpdate = new org.bson.BsonDocument();
+        registry.get(Document.class)
+                .encode(new org.bson.BsonDocumentWriter(rawUpdate), new Document("$set", new Document("tags", new String[] { "a" })),
+                        org.bson.codecs.EncoderContext.builder().build());
+        final org.bson.BsonDocument legacyMap = new org.bson.BsonDocument();
+        final BasicBSONObject bsonObject = new BasicBSONObject("tags", new String[] { "a" });
+        ((org.bson.codecs.Codec<BasicBSONObject>) registry.get(BasicBSONObject.class)).encode(new org.bson.BsonDocumentWriter(legacyMap), bsonObject,
+                org.bson.codecs.EncoderContext.builder().build());
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(org.bson.BsonDocument.parse("{tags: ['a', 'b']}"),
+                        com.mongodb.client.model.Filters.eq("tags", new String[] { "a", "b" }).toBsonDocument(Document.class, registry)),
+                () -> assertEquals(org.bson.BsonDocument.parse("{scores: {$in: [[1, 2]]}}"),
+                        com.mongodb.client.model.Filters.in("scores", (Object) new int[] { 1, 2 }).toBsonDocument(Document.class, registry)),
+                () -> assertEquals(org.bson.BsonDocument.parse("{$set: {tags: ['a']}}"),
+                        com.mongodb.client.model.Updates.set("tags", new String[] { "a" }).toBsonDocument(Document.class, registry)),
+                () -> assertEquals(org.bson.BsonDocument.parse("{$set: {tags: ['a']}}"), rawUpdate),
+                () -> assertEquals(org.bson.BsonDocument.parse("{tags: ['a']}"), legacyMap));
+    }
+
+    @Test
+    public void testArrayElementsFollowTheRegistryUuidRepresentation_applyMongo() {
+        // Each element is encoded through the registry performing the lookup, so a UUID[] follows the client's UuidRepresentation
+        // exactly like a List<UUID>; without a representation it fails like a List<UUID> or a UUID property (it was stored as text).
+        final org.bson.codecs.configuration.CodecRegistry standard = org.bson.codecs.configuration.CodecRegistries
+                .withUuidRepresentation(MongoDBBase.codecRegistry, org.bson.UuidRepresentation.STANDARD);
+        final java.util.UUID key = java.util.UUID.fromString("01234567-89ab-cdef-0123-456789abcdef");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(new org.bson.BsonArray(Arrays.asList(new org.bson.BsonBinary(key, org.bson.UuidRepresentation.STANDARD))),
+                        applyMongoEncodeField(standard, new java.util.UUID[] { key })),
+                () -> assertEquals(applyMongoEncodeField(standard, Arrays.asList(key)), applyMongoEncodeField(standard, new java.util.UUID[] { key })),
+                () -> assertThrows(org.bson.codecs.configuration.CodecConfigurationException.class,
+                        () -> applyMongoEncodeField(MongoDBBase.codecRegistry, new java.util.UUID[] { key })),
+                () -> assertThrows(org.bson.codecs.configuration.CodecConfigurationException.class,
+                        () -> applyMongoEncodeField(MongoDBBase.codecRegistry, Arrays.asList(key))));
+    }
+
+    @Test
+    public void testGeneralCodecWritesByteArraysAsBinaryAndOtherArraysAsBsonArrays_applyMongo() {
+        // Used directly (the driver's ByteArrayCodec precedes it in codecRegistry), the codec writes a byte[] as binary, like that
+        // codec, not as an array of int32 values (nor as the text "[1, 2]", as before). The encoder context stays optional for an
+        // array, as it is for a scalar value.
+        final org.bson.BsonDocument written = new org.bson.BsonDocument();
+        final org.bson.BsonDocumentWriter writer = new org.bson.BsonDocumentWriter(written);
+        writer.writeStartDocument();
+        writer.writeName("bytes");
+        new MongoDBBase.GeneralCodec<>(byte[].class).encode(writer, new byte[] { 1, 2 }, null);
+        writer.writeName("strs");
+        new MongoDBBase.GeneralCodec<>(String[].class).encode(writer, new String[] { "a" }, null);
+        writer.writeName("objs");
+        new MongoDBBase.GeneralCodec<>(Object[].class).encode(writer, new Object[] { null, new Object[] { 1 } }, null);
+        writer.writeEndDocument();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(org.bson.BsonDocument.parse("{bytes: BinData(0, 'AQI='), strs: ['a'], objs: [null, [1]]}"), written),
+                // The codec reads a BSON array back into the array type (distinct(field, String[].class), queryForSingleValue).
+                () -> assertArrayEquals(new String[] { "a" }, mxDecode(String[].class, written.get("strs"))),
+                () -> assertArrayEquals(new byte[] { 1, 2 }, mxDecode(byte[].class, written.get("bytes"))),
+                () -> assertArrayEquals(new int[] { 1, 2 }, mxDecode(int[].class, org.bson.BsonDocument.parse("{v: [1, 2]}").get("v"))),
+                () -> assertArrayEquals(new char[] { 'a', 'b' }, mxDecode(char[].class, org.bson.BsonDocument.parse("{v: ['a', 'b']}").get("v"))));
+    }
+
+    public static class ApplyMongoInner {
+        private String name;
+        private String[] tags;
+        private ByteBuffer[] bufs;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(final String[] tags) {
+            this.tags = tags;
+        }
+
+        public ByteBuffer[] getBufs() {
+            return bufs;
+        }
+
+        public void setBufs(final ByteBuffer[] bufs) {
+            this.bufs = bufs;
+        }
+    }
+
+    public record ApplyMongoRecord(String name, String[] tags, int[] nums, ByteBuffer[] bufs) {
+    }
+
+    public static class ApplyMongoArrayEntity {
+        private String[] tags;
+        private Object[] objs;
+        private Integer[] boxedInts;
+        private int[] ints;
+        private long[] longs;
+        private double[] doubles;
+        private float[] floats;
+        private short[] shorts;
+        private byte[] bytes;
+        private Byte[] boxedBytes;
+        private boolean[] bools;
+        private char[] chars;
+        private Character[] boxedChars;
+        private ByteBuffer[] bufs;
+        private byte[][] chunks;
+        private ApplyMongoInner[] inners;
+        private String[][] nested;
+        private int[][] nestedInts;
+        private List<String[]> rows;
+        private Map<String, String[]> byKey;
+        private List<int[]> intRows;
+        private ApplyMongoInner inner;
+        private ApplyMongoRecord rec;
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(final String[] tags) {
+            this.tags = tags;
+        }
+
+        public Object[] getObjs() {
+            return objs;
+        }
+
+        public void setObjs(final Object[] objs) {
+            this.objs = objs;
+        }
+
+        public Integer[] getBoxedInts() {
+            return boxedInts;
+        }
+
+        public void setBoxedInts(final Integer[] boxedInts) {
+            this.boxedInts = boxedInts;
+        }
+
+        public int[] getInts() {
+            return ints;
+        }
+
+        public void setInts(final int[] ints) {
+            this.ints = ints;
+        }
+
+        public long[] getLongs() {
+            return longs;
+        }
+
+        public void setLongs(final long[] longs) {
+            this.longs = longs;
+        }
+
+        public double[] getDoubles() {
+            return doubles;
+        }
+
+        public void setDoubles(final double[] doubles) {
+            this.doubles = doubles;
+        }
+
+        public float[] getFloats() {
+            return floats;
+        }
+
+        public void setFloats(final float[] floats) {
+            this.floats = floats;
+        }
+
+        public short[] getShorts() {
+            return shorts;
+        }
+
+        public void setShorts(final short[] shorts) {
+            this.shorts = shorts;
+        }
+
+        public byte[] getBytes() {
+            return bytes;
+        }
+
+        public void setBytes(final byte[] bytes) {
+            this.bytes = bytes;
+        }
+
+        public Byte[] getBoxedBytes() {
+            return boxedBytes;
+        }
+
+        public void setBoxedBytes(final Byte[] boxedBytes) {
+            this.boxedBytes = boxedBytes;
+        }
+
+        public boolean[] getBools() {
+            return bools;
+        }
+
+        public void setBools(final boolean[] bools) {
+            this.bools = bools;
+        }
+
+        public char[] getChars() {
+            return chars;
+        }
+
+        public void setChars(final char[] chars) {
+            this.chars = chars;
+        }
+
+        public Character[] getBoxedChars() {
+            return boxedChars;
+        }
+
+        public void setBoxedChars(final Character[] boxedChars) {
+            this.boxedChars = boxedChars;
+        }
+
+        public ByteBuffer[] getBufs() {
+            return bufs;
+        }
+
+        public void setBufs(final ByteBuffer[] bufs) {
+            this.bufs = bufs;
+        }
+
+        public byte[][] getChunks() {
+            return chunks;
+        }
+
+        public void setChunks(final byte[][] chunks) {
+            this.chunks = chunks;
+        }
+
+        public ApplyMongoInner[] getInners() {
+            return inners;
+        }
+
+        public void setInners(final ApplyMongoInner[] inners) {
+            this.inners = inners;
+        }
+
+        public String[][] getNested() {
+            return nested;
+        }
+
+        public void setNested(final String[][] nested) {
+            this.nested = nested;
+        }
+
+        public int[][] getNestedInts() {
+            return nestedInts;
+        }
+
+        public void setNestedInts(final int[][] nestedInts) {
+            this.nestedInts = nestedInts;
+        }
+
+        public List<String[]> getRows() {
+            return rows;
+        }
+
+        public void setRows(final List<String[]> rows) {
+            this.rows = rows;
+        }
+
+        public Map<String, String[]> getByKey() {
+            return byKey;
+        }
+
+        public void setByKey(final Map<String, String[]> byKey) {
+            this.byKey = byKey;
+        }
+
+        public List<int[]> getIntRows() {
+            return intRows;
+        }
+
+        public void setIntRows(final List<int[]> intRows) {
+            this.intRows = intRows;
+        }
+
+        public ApplyMongoInner getInner() {
+            return inner;
+        }
+
+        public void setInner(final ApplyMongoInner inner) {
+            this.inner = inner;
+        }
+
+        public ApplyMongoRecord getRec() {
+            return rec;
+        }
+
+        public void setRec(final ApplyMongoRecord rec) {
+            this.rec = rec;
+        }
+    }
+
+    // ---- end 2026-10-24 apply-mongo ----
+
+    // ---- 2026-10-24 r2 sliceT ----
+
+    /** The column names and the rows (as maps) of {@code ds}. */
+    private static List<Object> r2sliceTShape(final Dataset ds) {
+        return Arrays.asList(new ArrayList<>(ds.columnNames()), ds.toList(Map.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testExtractDataReadsAnEntityAnnotatedMapRowTypeLikeMapClass_r2sliceT() {
+        // Beans.isBeanClass is also true for an @Entity-annotated Map subclass, so with a first row that is not a Map extractData took
+        // its bean-target branch and copied each bean row into the Map subclass with Beans.copyAs: UnsupportedOperationException ("No
+        // all arguments constructor found"), or, for a subclass declaring a property of its own, one row of its Map accessors
+        // ([keySet, values, entrySet, size, owner, empty], all null) with the bean's values lost. It now reads like HashMap.class.
+        final NoIdEntity bean = new NoIdEntity();
+        bean.setValue("a");
+        final List<Object> rows = Arrays.asList(bean, new Document("value", "b"));
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(iterable, rows);
+        final List<Object> expected = Arrays.asList(Arrays.asList("value"),
+                Arrays.asList(Collections.singletonMap("value", "a"), Collections.singletonMap("value", "b")));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(rows, HashMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(rows, R2SliceTEntityMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(rows, R2SliceTOwnedMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(Arrays.asList("value"), rows, R2SliceTEntityMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(iterable, R2SliceTOwnedMap.class))));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToEntityRejectsEntityAnnotatedMapSubclassesLikeEveryMapType_r2sliceT() {
+        // toEntity mapped an @Entity-annotated Map subclass (Beans.isBeanClass accepts it) as a bean of its Map accessors: it threw a
+        // misleading UnsupportedOperationException ("No all arguments constructor found"), or, for a subclass declaring a settable
+        // property, silently returned a map without the document's entries ({} with owner = "x"). Every Map type is now rejected
+        // alike (a plain HashMap already was, by Beans.mapToBean); readRow/toList/stream read a document into such a map.
+        final Document doc = new Document("owner", "x").append("a", 1);
+        final MongoIterable<Document> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(doc));
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(
+                        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(doc, R2SliceTEntityMap.class)).getMessage().contains("toMap")),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(doc, R2SliceTOwnedMap.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(doc, HashMap.class)),
+                () -> assertNull(MongoDBBase.toEntity(null, R2SliceTOwnedMap.class)),
+                // Unchanged: the row readers copy the document's entries into such a map.
+                () -> assertEquals(new LinkedHashMap<>(doc), MongoDBBase.readRow(doc, R2SliceTOwnedMap.class)),
+                () -> assertEquals(Arrays.asList(new LinkedHashMap<>(doc)), MongoDBBase.toList(iterable, R2SliceTOwnedMap.class)));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListReadsAnArrayOrCollectionRowTypeFromTheSoleFieldUnlikeStream_r2sliceT() {
+        // Pins the documented difference (decided not to change, 2026-09-27): for document rows toList treats an Object[]/String[]/List
+        // row type as a single-value target, while stream(MongoCursor, Class) (readRow) returns the field values positionally.
+        final Document single = new Document("_id", 7).append("tags", Arrays.asList("x", "y"));
+        final Document multi = new Document("_id", 7).append("a", 1);
+        final MongoIterable<Document> singleRows = org.mockito.Mockito.mock(MongoIterable.class);
+        final MongoIterable<Document> multiRows = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(singleRows, Arrays.asList(single));
+        MongoIterableStubs.stubRows(multiRows, Arrays.asList(new Document("_id", 7).append("a", 1).append("b", 2)));
+        final MongoCursor<Document> cursor = org.mockito.Mockito.mock(MongoCursor.class);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(multi);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertArrayEquals(new String[] { "x", "y" }, MongoDBBase.toList(singleRows, String[].class).get(0)),
+                () -> assertEquals(Arrays.asList("x", "y"), MongoDBBase.toList(singleRows, List.class).get(0)),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(multiRows, Object[].class)),
+                () -> assertArrayEquals(new Object[] { 7, 1 }, MongoDBBase.stream(cursor, Object[].class).first().orElseThrow()));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testStreamsCloseTheirCursorWithTheInterruptStatusCleared_r2sliceT() {
+        // stream(MongoIterable[, Class]) and stream(MongoCursor[, Class]) closed the cursor with Fn.close(cursor) on the calling thread
+        // as is. Closed on an interrupted thread (a task cancelled with cancel(true) while consuming the stream), the sync driver skips
+        // killCursors and the server cursor stays open until its idle timeout (proven live for the executors' streams, slice Q). The
+        // cursor is now closed once, through closeCursor, and the interrupt status is restored.
+        final List<R2SliceTRecordingCursor> opened = new ArrayList<>();
+        final MongoIterable<Document> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            final R2SliceTRecordingCursor cursor = new R2SliceTRecordingCursor(Arrays.asList(new Document("value", "a"), new Document("value", "b")));
+            opened.add(cursor);
+            return cursor;
+        }).when(iterable).iterator();
+
+        final Map<String, java.util.function.Supplier<Stream<?>>> streams = new LinkedHashMap<>();
+        streams.put("stream(iterable)", () -> MongoDBBase.stream(iterable));
+        streams.put("stream(iterable, Map)", () -> MongoDBBase.stream(iterable, Map.class));
+        streams.put("stream(iterable, NoIdEntity)", () -> MongoDBBase.stream(iterable, NoIdEntity.class));
+        streams.put("stream(cursor)", () -> MongoDBBase.stream(iterable.iterator()));
+        streams.put("stream(cursor, Document)", () -> MongoDBBase.stream(iterable.iterator(), Document.class));
+        streams.put("stream(cursor, null)", () -> MongoDBBase.stream(iterable.iterator(), null));
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> checks = streams.entrySet().stream().map(e -> () -> {
+            final String label = e.getKey();
+            opened.clear();
+            final Stream<?> stream = e.getValue().get();
+            assertNotNull(stream.iterator().next(), label);
+
+            Thread.currentThread().interrupt();
+
+            try {
+                stream.close();
+                stream.close();
+                assertTrue(Thread.currentThread().isInterrupted(), label + ": interrupt status restored");
+            } finally {
+                Thread.interrupted();
+            }
+
+            assertEquals(1, opened.size(), label + ": cursors opened");
+            assertEquals(1, opened.get(0).closeCount, label + ": close calls");
+            assertTrue(!opened.get(0).interruptedAtClose, label + ": cursor closed on an interrupted thread");
+        });
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testExtractDataWithoutRowsKeepsTheSelectedColumns_r2sliceT() {
+        // Without a (non-null) row, extractData returned a Dataset without any column even when names were selected, so a projected
+        // query that matched nothing (sync and reactive query(fields, ...) both end here) failed on getColumn("name") with
+        // IllegalArgumentException, and its columns depended on whether a document matched. The selected names are now the columns,
+        // named and validated by the same N.newDataset call as with rows.
+        final List<String> names = Arrays.asList("name", "address.city");
+        final List<String> flatNames = Arrays.asList("value");
+        final List<Object> noRows = new ArrayList<>();
+        final MongoIterable<Document> none = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(none, Collections.emptyList());
+
+        final com.mongodb.client.MongoCollection<Document> collection = org.mockito.Mockito.mock(com.mongodb.client.MongoCollection.class);
+        final FindIterable<Document> found = org.mockito.Mockito.mock(FindIterable.class);
+        when(collection.find(org.mockito.ArgumentMatchers.any(Bson.class))).thenReturn(found);
+        when(found.projection(org.mockito.ArgumentMatchers.any())).thenReturn(found);
+        when(found.sort(org.mockito.ArgumentMatchers.any())).thenReturn(found);
+        when(found.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(found);
+        when(found.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(found);
+        MongoIterableStubs.stubRows(found, Collections.emptyList());
+        final MongoCollectionExecutor sync = new MongoDB(org.mockito.Mockito.mock(com.mongodb.client.MongoDatabase.class)).collectionExecutor(collection);
+
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> reactiveCollection = org.mockito.Mockito
+                .mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+        final com.mongodb.reactivestreams.client.FindPublisher<Document> publisher = org.mockito.Mockito
+                .mock(com.mongodb.reactivestreams.client.FindPublisher.class);
+        when(reactiveCollection.find(org.mockito.ArgumentMatchers.any(Bson.class))).thenReturn(publisher);
+        when(publisher.projection(org.mockito.ArgumentMatchers.any())).thenReturn(publisher);
+        when(publisher.sort(org.mockito.ArgumentMatchers.any())).thenReturn(publisher);
+        when(publisher.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(publisher);
+        when(publisher.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(publisher);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            reactor.core.publisher.Flux.<Document> empty().subscribe((org.reactivestreams.Subscriber<? super Document>) invocation.getArgument(0));
+            return null;
+        }).when(publisher).subscribe(org.mockito.ArgumentMatchers.any());
+        final com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutor reactive = new com.landawn.abacus.da.mongodb.reactivestreams.MongoDB(
+                org.mockito.Mockito.mock(com.mongodb.reactivestreams.client.MongoDatabase.class)).collectionExecutor(reactiveCollection);
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> perRowType = java.util.stream.Stream
+                .of(Map.class, HashMap.class, Document.class, NoIdEntity.class, R2SliceTOwnedMap.class)
+                .map(rowType -> () -> {
+                    final Dataset ds = MongoDBBase.extractData(names, noRows, rowType);
+                    assertEquals(names, ds.columnNames(), rowType.getSimpleName());
+                    assertEquals(0, ds.size(), rowType.getSimpleName());
+                });
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> paths = java.util.stream.Stream.of(
+                () -> assertEquals(names, MongoDBBase.extractData(names, (List<?>) null, Map.class).columnNames()),
+                () -> assertEquals(names, MongoDBBase.extractData(names, none, NoIdEntity.class).columnNames()),
+                () -> assertTrue(MongoDBBase.extractData(names, noRows, Map.class).getColumn("name").isEmpty()),
+                // The order of the selected names is kept, as with rows.
+                () -> assertEquals(Arrays.asList("b", "a"),
+                        MongoDBBase.extractData(new java.util.LinkedHashSet<>(Arrays.asList("b", "a")), noRows, Map.class).columnNames()),
+                // The executors (sync: dotted names through fetchAll, flat names through the MongoIterable overload; reactive both).
+                () -> assertEquals(names, sync.query(names, new Document(), Map.class).columnNames()),
+                () -> assertEquals(flatNames, sync.query(flatNames, new Document(), NoIdEntity.class).columnNames()),
+                () -> assertEquals(names, reactive.query(names, new Document(), Map.class).block().columnNames()),
+                () -> assertEquals(flatNames, reactive.query(flatNames, new Document(), NoIdEntity.class).block().columnNames()),
+                // Names are validated as with rows: duplicates fail whether or not a row exists.
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(Arrays.asList("a", "a"), noRows, Map.class)),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> MongoDBBase.extractData(Arrays.asList("a", "a"), Arrays.asList(new Document("a", 1)), Map.class)),
+                // Null rows give rows of nulls, as among other rows.
+                () -> assertEquals(2, MongoDBBase.extractData(names, Arrays.asList(null, null), Map.class).size()),
+                // Unchanged: without selected names the empty Dataset has no columns.
+                () -> assertTrue(MongoDBBase.extractData(null, noRows, Map.class).columnNames().isEmpty()),
+                () -> assertTrue(MongoDBBase.extractData(Collections.emptyList(), noRows, Map.class).columnNames().isEmpty()),
+                () -> assertTrue(MongoDBBase.extractData(none, Map.class).columnNames().isEmpty()));
+
+        org.junit.jupiter.api.Assertions.assertAll(java.util.stream.Stream.concat(perRowType, paths));
+    }
+
+    /** A cursor over {@code rows} recording how often it was closed and whether the closing thread was interrupted. */
+    private static final class R2SliceTRecordingCursor implements MongoCursor<Document> {
+        private final List<Document> rows;
+        private int position;
+        int closeCount;
+        boolean interruptedAtClose;
+
+        R2SliceTRecordingCursor(final List<Document> rows) {
+            this.rows = rows;
+        }
+
+        @Override
+        public void close() {
+            closeCount++;
+            interruptedAtClose = Thread.currentThread().isInterrupted();
+        }
+
+        @Override
+        public boolean hasNext() {
+            return position < rows.size();
+        }
+
+        @Override
+        public Document next() {
+            if (!hasNext()) {
+                throw new java.util.NoSuchElementException();
+            }
+
+            return rows.get(position++);
+        }
+
+        @Override
+        public int available() {
+            return rows.size() - position;
+        }
+
+        @Override
+        public Document tryNext() {
+            return hasNext() ? next() : null;
+        }
+
+        @Override
+        public com.mongodb.ServerCursor getServerCursor() {
+            return null;
+        }
+
+        @Override
+        public com.mongodb.ServerAddress getServerAddress() {
+            return null;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2SliceTEntityMap extends HashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2SliceTOwnedMap extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        private String owner;
+
+        public String getOwner() {
+            return owner;
+        }
+
+        public void setOwner(final String owner) {
+            this.owner = owner;
+        }
+    }
+
+    // ---- end 2026-10-24 r2 sliceT ----
+
     public static class BinaryEntity {
         private ByteBuffer buffer;
         private byte[] bytes;

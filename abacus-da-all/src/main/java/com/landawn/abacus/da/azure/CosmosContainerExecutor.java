@@ -211,6 +211,21 @@ public class CosmosContainerExecutor {
     private static final Set<String> COSMOS_CONDITION_KEYWORDS = Set.of("AND", "OR", "NOT", "BETWEEN", "IN", "LIKE", "IS", "NULL", "TRUE", "FALSE", "UNDEFINED",
             "SELECT", "FROM", "WHERE", "DISTINCT", "TOP", "AS", "JOIN", "ON", "WITHIN", "OFFSET", "LIMIT", "ORDER", "BY", "ASC", "DESC", "GROUP", "HAVING");
 
+    // Keyword tokens of the Cosmos DB NoSQL grammar that cannot be used as identifiers (the grammar's identifier rule admits only
+    // ALL, FIRST and LAST among its keywords). A property named like one must be written with the bracket accessor: c["value"]
+    // is valid while c.value is a syntax error, and such a name cannot be the FROM source. These keywords are case-insensitive.
+    private static final Set<String> COSMOS_RESERVED_WORDS = Set.of("AND", "ARRAY", "AS", "ASC", "BETWEEN", "BY", "DESC", "DISTINCT", "ESCAPE", "EXISTS",
+            "FROM", "GROUP", "IN", "JOIN", "LEFT", "LIKE", "LIMIT", "NOT", "OFFSET", "OR", "ORDER", "RANK", "RIGHT", "SELECT", "TOP", "VALUE", "WHERE");
+
+    // The literal keywords and udf are reserved only in this exact lower-case spelling (c.NULL is an ordinary property path).
+    private static final Set<String> COSMOS_LOWER_CASE_RESERVED_WORDS = Set.of("true", "false", "null", "undefined", "udf");
+
+    private static final List<String> COSMOS_LOGICAL_KEYWORDS = List.of("AND", "OR", "NOT");
+
+    // Keywords directly followed by an operand expression. Any other name or literal before AND/OR/BETWEEN in the condition
+    // completes an operand (clause keywords such as VALUE or TOP occur only inside subqueries, so there they are property names).
+    private static final Set<String> COSMOS_OPERAND_INTRODUCING_KEYWORDS = Set.of("AND", "OR", "NOT", "BETWEEN", "LIKE");
+
     // Cosmos DB SQL requires every property reference to be bound to the FROM source/alias; bare
     // identifiers (e.g. "category") are a syntax error. Building with this alias makes SqlBuilder
     // emit a Cosmos-valid form, e.g. SELECT * FROM entity c WHERE c.category = @p0.
@@ -1902,15 +1917,28 @@ public class CosmosContainerExecutor {
      * {@code x IS NULL} becomes {@code IS_NULL(c.x)}, {@code x IS NOT NULL} becomes {@code NOT IS_NULL(c.x)},
      * {@code x IS TRUE}/{@code IS FALSE} (for example from {@code Filters.isTrue}) become {@code c.x = true}/{@code c.x = false}, and
      * {@code x IS NOT TRUE}/{@code IS NOT FALSE} (for example from {@code Filters.isNot("x", true)}) become {@code c.x != true}/
-     * {@code c.x != false}; unlike SQL {@code IS NOT TRUE}, such a Cosmos comparison never matches an item that lacks {@code x}.
+     * {@code c.x != false}; unlike SQL {@code IS NOT TRUE}, such a Cosmos comparison never matches an item that lacks {@code x} or
+     * whose {@code x} is {@code null} or not a Boolean, because Cosmos DB comparisons between different JSON types are undefined.
      * Cosmos DB distinguishes an explicit JSON {@code null} from an absent property, and {@code IS_NULL} is false for an
      * absent property: {@code Filters.isNull("x")} does not match items that lack {@code x}, while
      * {@code Filters.isNotNull("x")} does.</p>
      *
+     * <p>A property, or a segment of a property path, named like a Cosmos DB reserved word (such as {@code value}, {@code order},
+     * {@code group}, {@code desc}, {@code top}, or {@code select}), or whose name is not a plain ASCII identifier, is written with the
+     * bracket accessor, for example {@code c["value"]}, because Cosmos DB rejects {@code c.value} as a syntax error; this also applies
+     * inside subqueries. The FROM source is the entity's table name when that name is a plain identifier that is not a reserved word.
+     * Another name without whitespace, parentheses, or quotes (an entity named {@code Order}, or a {@code @Table} name such as
+     * {@code sales.orders}) is dropped, so the query reads {@code FROM c}, which Cosmos DB resolves to the queried container just the
+     * same; a {@code @Table} name that contains whitespace, parentheses, or quotes is kept as written.</p>
+     *
      * <p>{@code EXISTS} and {@code NOT EXISTS} subqueries supplied through {@code Filters.subQuery(...)} retain their own
      * identifiers, including array, unary, and parenthesized projections that omit {@code FROM}. Qualification with {@code c}
      * resumes for properties in the surrounding condition after the subquery closes. Use {@code Filters.subQuery(...)} for
-     * literal subquery SQL; {@code Filters.expr(...)} still applies the SQL builder's property mapping and naming policy.</p>
+     * literal subquery SQL; {@code Filters.expr(...)} still applies the SQL builder's property mapping and naming policy. A subquery
+     * built from an entity class ({@code Filters.subQuery(Product.class, List.of("id"), cond)}) is rendered as relational SQL with a
+     * quoted alias ({@code SELECT id AS "id" FROM product WHERE ...}), which Cosmos DB rejects as a syntax error; write it as Cosmos
+     * SQL text instead, such as {@code Filters.subQuery("SELECT VALUE 1 FROM t IN c.tags WHERE t = ?", List.of("x"))}, whose
+     * {@code ?} placeholders are bound like those of the surrounding condition.</p>
      *
      * <p>Within one {@code Filters.expr(...)}, the SQL builder cannot tell whether a backslash escapes a quote, so property names
      * after a backslash-escaped quote (as in {@code name = 'O\'Brien' AND bonusPoints > 1}) are qualified but not converted by the
@@ -2320,9 +2348,141 @@ public class CosmosContainerExecutor {
             throw e;
         }
 
-        final SP sp = toCosmosConditionSyntax(built, namingPolicy);
+        final SP sp = toCosmosConditionSyntax(toCosmosFromSource(built), namingPolicy);
 
-        return N.isEmpty(selectPropNames) ? sp : toCosmosProjection(sp);
+        return escapeCosmosReservedPropertyNames(N.isEmpty(selectPropNames) ? sp : toCosmosProjection(sp));
+    }
+
+    /**
+     * The SQL builder names the FROM source after the entity's table name. Cosmos DB ignores that name (any identifier refers to the
+     * queried container), but it must be a plain identifier that is not a reserved word: {@code FROM order c} (entity {@code Order})
+     * is a syntax error, and a dotted name such as {@code FROM sales.orders c} would iterate the {@code orders} property of every
+     * item. Such a source is dropped, leaving {@code FROM c}, which queries the container under the alias.
+     */
+    private static SP toCosmosFromSource(final SP sp) {
+        final String query = sp.query();
+        final int fromIndex = query.indexOf(" FROM ");
+
+        if (fromIndex < 0) {
+            return sp;
+        }
+
+        final int sourceStart = fromIndex + " FROM ".length();
+        final int whereIndex = query.indexOf(" WHERE ", sourceStart);
+        final int fromEnd = whereIndex < 0 ? query.length() : whereIndex;
+        final String aliasSuffix = " " + COSMOS_ALIAS;
+
+        if (fromEnd - aliasSuffix.length() <= sourceStart || !query.startsWith(aliasSuffix, fromEnd - aliasSuffix.length())) {
+            return sp;
+        }
+
+        final int sourceEnd = fromEnd - aliasSuffix.length();
+        final String source = query.substring(sourceStart, sourceEnd);
+
+        // Only a single generated table-name token is replaced; anything else (for example a " FROM " inside a selected expression)
+        // is left for the projection rewrite to reject.
+        if (isPlainCosmosIdentifier(source) && !isCosmosReservedWord(source) || !isSingleCosmosSourceToken(source)) {
+            return sp;
+        }
+
+        return new SP(query.substring(0, sourceStart) + query.substring(sourceEnd + 1), sp.parameters());
+    }
+
+    /**
+     * Rewrites a member access to a property named like a Cosmos DB reserved word ({@code c.value}, {@code c.tags[0].order}), or
+     * whose name is not a plain ASCII identifier (the grammar's identifier token, so {@code c.prénom}, {@code c.a$b} or {@code c.$type}), to the
+     * equivalent bracket accessor ({@code c["value"]}), which is the only form the Cosmos DB grammar accepts for such a name. Names
+     * followed by an argument list ({@code udf.like(...)}) are function names and string literals are left unchanged.
+     */
+    private static SP escapeCosmosReservedPropertyNames(final SP sp) {
+        final String query = sp.query();
+        final int len = query.length();
+        final StringBuilder sb = new StringBuilder(len + 8);
+        char quote = 0;
+
+        for (int i = 0; i < len; i++) {
+            final char ch = query.charAt(i);
+
+            if (quote != 0) {
+                sb.append(ch);
+
+                if (ch == '\\' && i + 1 < len) {
+                    sb.append(query.charAt(++i));
+                } else if (ch == quote && i + 1 < len && query.charAt(i + 1) == quote) {
+                    sb.append(query.charAt(++i));
+                } else if (ch == quote) {
+                    quote = 0;
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+                sb.append(ch);
+            } else if (ch == '.' && i > 0 && i + 1 < len && isCosmosMemberAccessTarget(query.charAt(i - 1))
+                    && Character.isJavaIdentifierStart(query.charAt(i + 1))) {
+                // A leading '$' ($type) is included: the grammar has no '$' token at all, so only c["$type"] can reach such a name.
+                int nameEnd = i + 1;
+
+                while (++nameEnd < len && Character.isJavaIdentifierPart(query.charAt(nameEnd))) {
+                    // scan the complete property name
+                }
+
+                final String name = query.substring(i + 1, nameEnd);
+                int next = nameEnd;
+
+                while (next < len && Character.isWhitespace(query.charAt(next))) {
+                    next++;
+                }
+
+                if ((isCosmosReservedWord(name) || !isPlainCosmosIdentifier(name)) && (next >= len || query.charAt(next) != '(')) {
+                    sb.append("[\"").append(name).append("\"]");
+                } else {
+                    sb.append(ch).append(name);
+                }
+
+                i = nameEnd - 1;
+            } else {
+                sb.append(ch);
+            }
+        }
+
+        final String escapedQuery = sb.toString();
+        return escapedQuery.equals(query) ? sp : new SP(escapedQuery, sp.parameters());
+    }
+
+    private static boolean isCosmosMemberAccessTarget(final char previousChar) {
+        return Character.isJavaIdentifierPart(previousChar) || previousChar == ']' || previousChar == ')';
+    }
+
+    private static boolean isCosmosReservedWord(final String identifier) {
+        return COSMOS_RESERVED_WORDS.contains(identifier.toUpperCase(Locale.ROOT)) || COSMOS_LOWER_CASE_RESERVED_WORDS.contains(identifier);
+    }
+
+    private static boolean isSingleCosmosSourceToken(final String source) {
+        for (int i = 0; i < source.length(); i++) {
+            final char ch = source.charAt(i);
+
+            if (Character.isWhitespace(ch) || ch == '(' || ch == ')' || ch == '\'' || ch == '"') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** Matches the grammar's identifier token: an ASCII letter or underscore followed by ASCII letters, digits, or underscores. */
+    private static boolean isPlainCosmosIdentifier(final String name) {
+        if (name.isEmpty()) {
+            return false;
+        }
+
+        for (int i = 0; i < name.length(); i++) {
+            final char ch = name.charAt(i);
+
+            if (!(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_' || i > 0 && ch >= '0' && ch <= '9')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static SP toCosmosConditionSyntax(final SP sp, final NamingPolicy namingPolicy) {
@@ -2353,7 +2513,7 @@ public class CosmosContainerExecutor {
 
                 if (expressionStart < sb.length()) {
                     final String expression = sb.substring(expressionStart);
-                    sb.setLength(expressionStart);
+                    truncateBeforeCosmosFunctionCall(sb, expressionStart);
                     sb.append("NOT IS_NULL(").append(expression).append(')');
                     i += " IS NOT NULL".length() - 1;
                 } else {
@@ -2364,7 +2524,7 @@ public class CosmosContainerExecutor {
 
                 if (expressionStart < sb.length()) {
                     final String expression = sb.substring(expressionStart);
-                    sb.setLength(expressionStart);
+                    truncateBeforeCosmosFunctionCall(sb, expressionStart);
                     sb.append("IS_NULL(").append(expression).append(')');
                     i += " IS NULL".length() - 1;
                 } else {
@@ -2400,6 +2560,18 @@ public class CosmosContainerExecutor {
         // name, not a property path: "AS id" must not become "AS c.id", which Cosmos DB rejects as a syntax error.
         final String normalizedQuery = removeQualifiedAliases(cosmosQuery);
         return normalizedQuery.equals(query) ? qualifiedSp : new SP(normalizedQuery, qualifiedSp.parameters());
+    }
+
+    /**
+     * Cuts {@code sb} back to the start of an IS NULL operand. An operand glued to a keyword ({@code NOT(x) IS NULL}) gets a separating
+     * space, so the function call does not fuse with the keyword ({@code NOTIS_NULL(...)}).
+     */
+    private static void truncateBeforeCosmosFunctionCall(final StringBuilder sb, final int expressionStart) {
+        sb.setLength(expressionStart);
+
+        if (expressionStart > 0 && Character.isJavaIdentifierPart(sb.charAt(expressionStart - 1))) {
+            sb.append(' ');
+        }
     }
 
     private static String removeQualifiedAliases(final String query) {
@@ -2818,6 +2990,23 @@ public class CosmosContainerExecutor {
             final int conditionStart) {
         final char previousChar = previous < conditionStart ? 0 : query.charAt(previous);
 
+        // AND, OR and BETWEEN (also NOT BETWEEN) right after a complete operand are the binary keyword, so a sign, decimal point or
+        // bracket after them starts their right operand: "price BETWEEN -1 AND 1" and "price > 1 AND -price < 0" were read as
+        // arithmetic on a property named like the keyword (c["BETWEEN"] -1, c["AND"] -c.price), a syntax error. A property named
+        // and/or/between can follow only an operator, a parenthesis, or a keyword that introduces an operand, never an operand.
+        if (("AND".equals(identifier) || "OR".equals(identifier) || "BETWEEN".equals(identifier)) && followsCompleteCosmosOperand(query,
+                "BETWEEN".equals(identifier) ? skipPrecedingCosmosNot(query, previous, conditionStart) : previous, conditionStart)) {
+            return false;
+        }
+
+        // NOT before a sign or a decimal literal is the unary keyword (NOT -price > 0): read as a property, the bracket accessor
+        // turns it into the valid but unrelated arithmetic c["NOT"] - c.price, which silently matches nothing. Right after an operator
+        // (price = not - 1) it stays a property: a logical NOT there would negate a number, which is always undefined.
+        if ("NOT".equals(identifier) && "=<>!+-*/%~|&^?".indexOf(previousChar) < 0 && next + 1 < query.length()
+                && (query.charAt(next) == '-' || query.charAt(next) == '+' || query.charAt(next) == '.' && Character.isDigit(query.charAt(next + 1)))) {
+            return false;
+        }
+
         if (next < query.length()) {
             final char nextChar = query.charAt(next);
 
@@ -2861,6 +3050,54 @@ public class CosmosContainerExecutor {
         // On the right-hand side of an operator, clause keywords such as ORDER can also be
         // legitimate property names. Preserve actual literals and predicate operators.
         return "=<>!+-*/%".indexOf(previousChar) >= 0 && !isCosmosLiteralKeyword(identifier);
+    }
+
+    /**
+     * Whether the token ending at {@code previous} completes an operand: a closing parenthesis, bracket, brace or quote, a number,
+     * or a name (including a literal keyword or a property named like a keyword), but not a keyword that introduces an operand.
+     */
+    private static boolean followsCompleteCosmosOperand(final String query, final int previous, final int conditionStart) {
+        if (previous < conditionStart) {
+            return false;
+        }
+
+        final char previousChar = query.charAt(previous);
+
+        if (previousChar == ')' || previousChar == ']' || previousChar == '}' || previousChar == '\'' || previousChar == '"') {
+            return true;
+        }
+
+        if (!Character.isJavaIdentifierPart(previousChar)) {
+            return false;
+        }
+
+        int tokenStart = previous;
+
+        while (tokenStart > conditionStart && Character.isJavaIdentifierPart(query.charAt(tokenStart - 1))) {
+            tokenStart--;
+        }
+
+        // A path segment (c.not) or parameter (@not) is a name, whatever its spelling.
+        return tokenStart > conditionStart && (query.charAt(tokenStart - 1) == '.' || query.charAt(tokenStart - 1) == '@')
+                || !COSMOS_OPERAND_INTRODUCING_KEYWORDS.contains(query.substring(tokenStart, previous + 1).toUpperCase(Locale.ROOT));
+    }
+
+    /** Returns the end of the token before a {@code NOT} ending at {@code previous} ({@code x NOT BETWEEN}), else {@code previous}. */
+    private static int skipPrecedingCosmosNot(final String query, final int previous, final int conditionStart) {
+        final int notStart = previous - "NOT".length() + 1;
+
+        if (notStart < conditionStart || !query.regionMatches(true, notStart, "NOT", 0, "NOT".length()) || notStart > conditionStart
+                && (Character.isJavaIdentifierPart(query.charAt(notStart - 1)) || query.charAt(notStart - 1) == '.' || query.charAt(notStart - 1) == '@')) {
+            return previous;
+        }
+
+        int index = notStart - 1;
+
+        while (index >= conditionStart && Character.isWhitespace(query.charAt(index))) {
+            index--;
+        }
+
+        return index;
     }
 
     private static boolean isFollowedByCosmosFunctionName(final String query, final int start) {
@@ -2916,9 +3153,21 @@ public class CosmosContainerExecutor {
             // " NOT " is a boundary too, so "NOT x IS NULL" renders as "NOT IS_NULL(x)" rather than
             // "IS_NULL(NOT x)". The whole-token " IS NOT NULL" branch is matched before this method is
             // ever called, so that form is unaffected.
-            if (quote == 0 && parenthesisDepth == 0 && bracketDepth == 0
-                    && (endsWith(sb, index, " WHERE ") || endsWith(sb, index, " AND ") || endsWith(sb, index, " OR ") || endsWith(sb, index, " NOT "))) {
-                return index;
+            if (quote == 0 && parenthesisDepth == 0 && bracketDepth == 0) {
+                if (endsWith(sb, index, " WHERE ")) {
+                    return index;
+                }
+
+                // AND/OR/NOT are recognized as whole tokens, also when glued to a preceding ')', ']' or literal or to a following '('
+                // ("(a = 1)AND b IS NULL", "NOT(b) IS NULL"). Requiring surrounding spaces let the scan run on to WHERE and wrap the
+                // preceding predicate: IS_NULL((c.a = 1)AND c.b), which Cosmos DB evaluates as false for every item.
+                if (endsWithLogicalKeyword(sb, index)) {
+                    while (index < sb.length() && Character.isWhitespace(sb.charAt(index))) {
+                        index++;
+                    }
+
+                    return index;
+                }
             }
 
             final char ch = sb.charAt(index - 1);
@@ -2968,6 +3217,27 @@ public class CosmosContainerExecutor {
         }
 
         return sb.length();
+    }
+
+    /**
+     * Whether {@code sb[0, endIndex)} ends with AND, OR, or NOT (any case) as a whole token: not part of a longer identifier, not a
+     * property after a path separator, and not followed by an identifier character.
+     */
+    private static boolean endsWithLogicalKeyword(final StringBuilder sb, final int endIndex) {
+        if (endIndex < sb.length() && Character.isJavaIdentifierPart(sb.charAt(endIndex))) {
+            return false;
+        }
+
+        for (final String keyword : COSMOS_LOGICAL_KEYWORDS) {
+            final int startIndex = endIndex - keyword.length();
+
+            if (startIndex >= 0 && endsWith(sb, endIndex, keyword)
+                    && (startIndex == 0 || !Character.isJavaIdentifierPart(sb.charAt(startIndex - 1)) && sb.charAt(startIndex - 1) != '.')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

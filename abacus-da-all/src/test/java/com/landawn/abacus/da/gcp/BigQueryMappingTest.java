@@ -1652,4 +1652,462 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
         assertEquals(Arrays.asList((Boolean) null), BigQueryExecutor.toList(mockTableResult, Boolean.class));
         assertEquals(Arrays.asList(Boolean.FALSE), BigQueryExecutor.toList(mockTableResult, boolean.class));
     }
+
+    // ---- 2026-10-24 sliceL ----
+
+    private static final com.google.cloud.Date SLICEL_JAN_2 = com.google.cloud.Date.fromYearMonthDay(2024, 1, 2);
+    private static final com.google.cloud.Date SLICEL_MAR_4 = com.google.cloud.Date.fromYearMonthDay(2024, 3, 4);
+
+    private static SliceLGoogleDateBean sliceLGoogleDateEntity(final Field field, final FieldValue cell) {
+        final FieldList fields = FieldList.of(field);
+
+        return BigQueryExecutor.toEntity(fields, FieldValueList.of(Arrays.asList(cell), fields), SliceLGoogleDateBean.class);
+    }
+
+    // The client's shape of a REPEATED DATE cell: a schema-less FieldValueList with the REPEATED attribute.
+    private static FieldValue sliceLRepeatedDates() {
+        return FieldValue.of(FieldValue.Attribute.REPEATED, FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-01-02"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-03-04"))));
+    }
+
+    /**
+     * The executor binds a {@code com.google.cloud.Date} as a native DATE parameter, so a DATE cell must read back into one.
+     * abacus-common has no conversion to that class: a bean property, a single-value read and a typed array row failed with
+     * "Conversion returned java.lang.String for com.google.cloud.Date", a {@code com.google.cloud.Date[]} property with a
+     * ParsingException, and a {@code List<com.google.cloud.Date>} property silently held the String cell texts
+     * (ClassCastException on element access).
+     */
+    @Test
+    public void testDateCellReadsIntoGoogleCloudDate_sliceL() throws Exception {
+        final Field repeatedField = Field.newBuilder("days", StandardSQLTypeName.DATE).setMode(Field.Mode.REPEATED).build();
+        final Field repeatedArrayField = Field.newBuilder("dayArray", StandardSQLTypeName.DATE).setMode(Field.Mode.REPEATED).build();
+        final QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT v FROM t").build();
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(
+                        () -> assertEquals(SLICEL_JAN_2,
+                                sliceLGoogleDateEntity(Field.of("day", StandardSQLTypeName.DATE), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-01-02"))
+                                        .getDay(),
+                                "bean property"),
+                        () -> assertNull(
+                                sliceLGoogleDateEntity(Field.of("day", StandardSQLTypeName.DATE), FieldValue.of(FieldValue.Attribute.PRIMITIVE, null)).getDay(),
+                                "NULL cell"),
+                        () -> assertEquals(Arrays.asList(SLICEL_JAN_2, SLICEL_MAR_4), sliceLGoogleDateEntity(repeatedField, sliceLRepeatedDates()).getDays(),
+                                "List<com.google.cloud.Date> property elements"),
+                        () -> org.junit.jupiter.api.Assertions.assertArrayEquals(new com.google.cloud.Date[] { SLICEL_JAN_2, SLICEL_MAR_4 },
+                                sliceLGoogleDateEntity(repeatedArrayField, sliceLRepeatedDates()).getDayArray(), "com.google.cloud.Date[] property"),
+                        () -> {
+                            final FieldList fields = FieldList.of(Field.of("day", StandardSQLTypeName.DATE));
+                            final List<FieldValueList> rows = Arrays
+                                    .asList(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2024-01-02")), fields));
+                            final TableResult tableResult = mock(TableResult.class);
+                            when(tableResult.getSchema()).thenReturn(Schema.of(fields));
+                            when(tableResult.getTotalRows()).thenReturn(1L);
+                            when(tableResult.iterateAll()).thenReturn(rows);
+
+                            assertEquals(Arrays.asList(SLICEL_JAN_2), BigQueryExecutor.extractData(tableResult, SliceLGoogleDateBean.class).getColumn("day"),
+                                    "bean-class Dataset column");
+                        }, () -> {
+                            stubSingleBqCell(StandardSQLTypeName.DATE, "2024-01-02");
+                            assertEquals(SLICEL_JAN_2, executor.queryForSingleValue(com.google.cloud.Date.class, "SELECT v FROM t").orElse(null),
+                                    "queryForSingleValue");
+                            assertEquals(SLICEL_JAN_2, executor.queryForSingleNonNull(com.google.cloud.Date.class, "SELECT v FROM t").get(),
+                                    "queryForSingleNonNull");
+                            assertEquals(Arrays.asList(SLICEL_JAN_2), BigQueryExecutor.toList(mockTableResult, com.google.cloud.Date.class), "toList");
+                            assertEquals(Arrays.asList(SLICEL_JAN_2), executor.stream(com.google.cloud.Date.class, cfg).toList(), "stream");
+                            org.junit.jupiter.api.Assertions.assertArrayEquals(new com.google.cloud.Date[] { SLICEL_JAN_2 },
+                                    BigQueryExecutor.toList(mockTableResult, com.google.cloud.Date[].class).get(0), "typed array row");
+                        },
+                        // The cell text is exactly what the same value binds as: the write and read sides agree.
+                        () -> assertEquals("2024-01-02", BigQueryExecutor.buildQueryParameterValue(SLICEL_JAN_2).get(0).getValue(), "DATE parameter text"));
+    }
+
+    /**
+     * Pins the class Javadoc's advice for a table or column name that is a GoogleSQL reserved keyword: generated names are
+     * not quoted (only the AS aliases are), and a backtick-quoted {@code @Table}/{@code @Column} name is emitted verbatim in
+     * every generated statement, including a property name inside a raw {@code Filters.expr}.
+     */
+    @Test
+    public void testReservedKeywordNamesNeedBacktickQuotedAnnotations_sliceL() throws Exception {
+        when(mockTableResult.getSchema()).thenReturn(null);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.list(SliceLKeywordOrder.class,
+                com.landawn.abacus.query.Filters.and(com.landawn.abacus.query.Filters.eq("from", 1), com.landawn.abacus.query.Filters.expr("from > 0")));
+        assertEquals("SELECT `from` AS `from`, name AS `name` FROM `order` WHERE (`from` = ?) AND (`from` > 0)", captureGeneratedSql());
+
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        final SliceLKeywordOrder order = new SliceLKeywordOrder();
+        order.setFrom(1);
+        order.setName("a");
+        executor.insert(order);
+        assertEquals("INSERT INTO `order` (`from`, name) VALUES (?, ?)", captureGeneratedSql());
+
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        executor.update(order, N.asSet("from"));
+        assertEquals("UPDATE `order` SET name = ? WHERE `from` = ?", captureGeneratedSql());
+
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        executor.delete(SliceLKeywordOrder.class, com.landawn.abacus.query.Filters.eq("from", 1));
+        assertEquals("DELETE FROM `order` WHERE `from` = ?", captureGeneratedSql());
+
+        // Without the annotations, the keyword names are emitted bare (a syntax error in BigQuery).
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        executor.list(SliceLBareKeywordOrder.class, com.landawn.abacus.query.Filters.eq("from", 1));
+        assertEquals("SELECT from AS `from` FROM order WHERE from = ?", captureGeneratedSql());
+    }
+
+    /**
+     * Pins the class Javadoc's zone rule: a TIMESTAMP read into a local or zoned java.time target is the instant in the JVM
+     * default time zone (the expected values are derived from that zone, so the test holds in any zone).
+     */
+    @Test
+    public void testTimestampIntoLocalAndZonedJavaTimeTargetsUsesJvmDefaultZone_sliceL() throws Exception {
+        final java.time.Instant instant = java.time.Instant.ofEpochSecond(1_718_900_000L, 123_456_000L);
+        final java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        final java.time.ZonedDateTime zoned = java.time.ZonedDateTime.ofInstant(instant, zone);
+        final FieldList fields = FieldList.of(Field.of("zoned", StandardSQLTypeName.TIMESTAMP), Field.of("offset", StandardSQLTypeName.TIMESTAMP),
+                Field.of("localDateTime", StandardSQLTypeName.TIMESTAMP), Field.of("localDate", StandardSQLTypeName.TIMESTAMP),
+                Field.of("localTime", StandardSQLTypeName.TIMESTAMP));
+        final FieldValue cell = FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1718900000.123456");
+        final SliceLZoneBean bean = BigQueryExecutor.toEntity(fields, FieldValueList.of(Arrays.asList(cell, cell, cell, cell, cell), fields),
+                SliceLZoneBean.class);
+
+        stubSingleBqCell(StandardSQLTypeName.TIMESTAMP, "1718900000.123456");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(zoned, bean.getZoned()),
+                () -> assertEquals(java.time.OffsetDateTime.ofInstant(instant, zone), bean.getOffset()),
+                () -> assertEquals(zoned.toLocalDateTime(), bean.getLocalDateTime()), () -> assertEquals(zoned.toLocalDate(), bean.getLocalDate()),
+                () -> assertEquals(zoned.toLocalTime(), bean.getLocalTime()),
+                () -> assertEquals(zoned, executor.queryForSingleValue(java.time.ZonedDateTime.class, "SELECT v FROM t").orElse(null)),
+                () -> assertEquals(java.time.OffsetDateTime.ofInstant(instant, zone),
+                        executor.queryForSingleValue(java.time.OffsetDateTime.class, "SELECT v FROM t").orElse(null)));
+    }
+
+    public static class SliceLZoneBean {
+        private java.time.ZonedDateTime zoned;
+        private java.time.OffsetDateTime offset;
+        private java.time.LocalDateTime localDateTime;
+        private java.time.LocalDate localDate;
+        private java.time.LocalTime localTime;
+
+        public java.time.ZonedDateTime getZoned() {
+            return zoned;
+        }
+
+        public void setZoned(final java.time.ZonedDateTime zoned) {
+            this.zoned = zoned;
+        }
+
+        public java.time.OffsetDateTime getOffset() {
+            return offset;
+        }
+
+        public void setOffset(final java.time.OffsetDateTime offset) {
+            this.offset = offset;
+        }
+
+        public java.time.LocalDateTime getLocalDateTime() {
+            return localDateTime;
+        }
+
+        public void setLocalDateTime(final java.time.LocalDateTime localDateTime) {
+            this.localDateTime = localDateTime;
+        }
+
+        public java.time.LocalDate getLocalDate() {
+            return localDate;
+        }
+
+        public void setLocalDate(final java.time.LocalDate localDate) {
+            this.localDate = localDate;
+        }
+
+        public java.time.LocalTime getLocalTime() {
+            return localTime;
+        }
+
+        public void setLocalTime(final java.time.LocalTime localTime) {
+            this.localTime = localTime;
+        }
+    }
+
+    public static class SliceLGoogleDateBean {
+        private com.google.cloud.Date day;
+        private List<com.google.cloud.Date> days;
+        private com.google.cloud.Date[] dayArray;
+
+        public com.google.cloud.Date getDay() {
+            return day;
+        }
+
+        public void setDay(final com.google.cloud.Date day) {
+            this.day = day;
+        }
+
+        public List<com.google.cloud.Date> getDays() {
+            return days;
+        }
+
+        public void setDays(final List<com.google.cloud.Date> days) {
+            this.days = days;
+        }
+
+        public com.google.cloud.Date[] getDayArray() {
+            return dayArray;
+        }
+
+        public void setDayArray(final com.google.cloud.Date[] dayArray) {
+            this.dayArray = dayArray;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("`order`")
+    public static class SliceLKeywordOrder {
+        @com.landawn.abacus.annotation.Column("`from`")
+        private int from;
+        private String name;
+
+        public int getFrom() {
+            return from;
+        }
+
+        public void setFrom(final int from) {
+            this.from = from;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("order")
+    public static class SliceLBareKeywordOrder {
+        private int from;
+
+        public int getFrom() {
+            return from;
+        }
+
+        public void setFrom(final int from) {
+            this.from = from;
+        }
+    }
+
+    // ---- 2026-10-24 r2 sliceL ----
+
+    private static final FieldList R2SLICEL_PAIR = FieldList.of(Field.of("a", StandardSQLTypeName.INT64), Field.of("b", StandardSQLTypeName.STRING));
+
+    /**
+     * A STRUCT cell mapped to an {@code Object} property (or {@code Serializable}, the non-Iterable types the record already
+     * is) keeps the raw record, as {@code queryForSingleValue(Object.class, ...)} does. It was read as a single-value row:
+     * a STRUCT of two or more fields failed the whole row with "Field count must be 1 to map a row to the single-value type:
+     * java.lang.Object" (toEntity, bean-class toList and extractData, records), and a one-field STRUCT silently became the
+     * text of its first field. A Collection-typed property still receives the field values.
+     */
+    @Test
+    public void testStructCellReadsIntoObjectPropertyAsRawRecord_r2sliceL() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("payload", StandardSQLTypeName.STRUCT, R2SLICEL_PAIR));
+        // The client's shape of a top-level STRUCT cell: the record carries its sub-schema.
+        final FieldValueList struct = FieldValueList.of(Arrays.asList(verifyCell("1"), verifyCell("x")), R2SLICEL_PAIR);
+        final FieldValueList row = FieldValueList.of(Arrays.asList(verifyCell("7"), FieldValue.of(FieldValue.Attribute.RECORD, struct)), fields);
+        final FieldList oneField = FieldList.of(Field.of("a", StandardSQLTypeName.INT64));
+        final FieldList oneFieldFields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("payload", StandardSQLTypeName.STRUCT, oneField));
+        final FieldValueList oneFieldStruct = FieldValueList.of(Arrays.asList(verifyCell("1")), oneField);
+        final FieldValueList oneFieldRow = FieldValueList.of(Arrays.asList(verifyCell("7"), FieldValue.of(FieldValue.Attribute.RECORD, oneFieldStruct)),
+                oneFieldFields);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final R2SliceLObjectHolder holder = BigQueryExecutor.toEntity(fields, row, R2SliceLObjectHolder.class);
+            org.junit.jupiter.api.Assertions.assertSame(struct, holder.getPayload(), "Object property");
+            assertEquals("x", ((FieldValueList) holder.getPayload()).get("b").getStringValue());
+            assertEquals(7L, holder.getId());
+        }, () -> org.junit.jupiter.api.Assertions.assertSame(struct, BigQueryExecutor.toEntity(fields, row, R2SliceLSerializableHolder.class).getPayload(),
+                "Serializable property"),
+                () -> org.junit.jupiter.api.Assertions.assertSame(struct, BigQueryExecutor.toEntity(fields, row, R2SliceLObjectRecord.class).payload(),
+                        "record component"),
+                () -> org.junit.jupiter.api.Assertions.assertSame(oneFieldStruct,
+                        BigQueryExecutor.toEntity(oneFieldFields, oneFieldRow, R2SliceLObjectHolder.class).getPayload(), "one-field STRUCT"),
+                () -> {
+                    fixBqStubResult(fields, row);
+                    org.junit.jupiter.api.Assertions.assertSame(struct,
+                            BigQueryExecutor.toList(mockTableResult, R2SliceLObjectHolder.class).get(0).getPayload(), "toList bean rows");
+                    org.junit.jupiter.api.Assertions.assertSame(struct,
+                            BigQueryExecutor.extractData(mockTableResult, R2SliceLObjectHolder.class).getColumn("payload").get(0), "bean-class Dataset");
+                },
+                // Unchanged: a Collection-typed property gets the field values, not the FieldValue wrappers, and the
+                // single-value Object read, which the property now matches, keeps the record.
+                () -> assertEquals(Arrays.asList("1", "x"), BigQueryExecutor.toEntity(fields, row, R2SliceLListHolder.class).getPayload(), "List property"),
+                () -> {
+                    final FieldList single = FieldList.of(fields.get(1));
+                    final List<FieldValueList> rows = Arrays
+                            .asList(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, struct)), single));
+                    when(mockTableResult.getSchema()).thenReturn(Schema.of(single));
+                    when(mockTableResult.getTotalRows()).thenReturn(1L);
+                    when(mockTableResult.getValues()).thenReturn(rows);
+                    when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+                    org.junit.jupiter.api.Assertions.assertSame(struct, executor.queryForSingleValue(Object.class, "SELECT payload FROM t").orElse(null),
+                            "queryForSingleValue(Object.class)");
+                });
+    }
+
+    /**
+     * {@code Beans.isBeanClass} accepts an {@code @Entity}-annotated {@code Map} subclass, so the public {@code toEntity} mapped
+     * such a target as a bean: its entries stayed empty and only a column matching a bean property was assigned, while
+     * {@code toList}, {@code stream}, {@code extractData} and {@code N.convert} fill the same class with one entry per column.
+     */
+    @Test
+    public void testToEntityOfAnnotatedMapSubclassFillsItsEntries_r2sliceL() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("code", StandardSQLTypeName.INT64), Field.of("label", StandardSQLTypeName.STRING));
+        final FieldValueList row = FieldValueList.of(Arrays.asList(verifyCell("1"), verifyCell("L")), fields);
+        final Map<String, Object> expected = new LinkedHashMap<>();
+        expected.put("code", "1");
+        expected.put("label", "L");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final R2SliceLMapEntity entity = BigQueryExecutor.toEntity(fields, row, R2SliceLMapEntity.class);
+            assertEquals(expected, entity);
+            assertNull(entity.getLabel(), "bean property not assigned");
+        }, () -> assertEquals(expected, BigQueryExecutor.toEntity(Schema.of(fields), row, R2SliceLMapEntity.class), "Schema overload"),
+                () -> assertEquals(expected, BigQueryExecutor.toEntity(row, R2SliceLMapEntity.class), "schema-from-row overload"), () -> {
+                    fixBqStubResult(fields, row);
+                    assertEquals(BigQueryExecutor.toList(mockTableResult, R2SliceLMapEntity.class).get(0),
+                            BigQueryExecutor.toEntity(fields, row, R2SliceLMapEntity.class), "same as a toList row");
+                }, () -> org.junit.jupiter.api.Assertions.assertInstanceOf(R2SliceLMapEntity.class,
+                        BigQueryExecutor.toEntity(fields, row, R2SliceLMapEntity.class)));
+    }
+
+    /**
+     * Pins the class Javadoc: the fields of a STRUCT read into a typed {@code Map}/{@code Collection} property are converted
+     * from their cell text, without the native TIMESTAMP/BYTES decoding, while the same STRUCT mapped to a bean is decoded.
+     */
+    @Test
+    public void testStructFieldsOfTypedContainerPropertyAreConvertedFromText_r2sliceL() throws Exception {
+        final FieldList sub = FieldList.of(Field.of("seenAt", StandardSQLTypeName.TIMESTAMP));
+        final FieldList fields = FieldList.of(Field.of("times", StandardSQLTypeName.STRUCT, sub), Field.of("visit", StandardSQLTypeName.STRUCT, sub));
+        final FieldValue cell = FieldValue.of(FieldValue.Attribute.RECORD, FieldValueList.of(Arrays.asList(verifyCell("1718900000.5")), sub));
+
+        assertThrows(RuntimeException.class, () -> BigQueryExecutor.toEntity(FieldList.of(fields.get(0)),
+                FieldValueList.of(Arrays.asList(cell), FieldList.of(fields.get(0))), R2SliceLTimesHolder.class));
+        assertEquals(java.time.Instant.ofEpochSecond(1_718_900_000L, 500_000_000L),
+                BigQueryExecutor
+                        .toEntity(FieldList.of(fields.get(1)), FieldValueList.of(Arrays.asList(cell), FieldList.of(fields.get(1))), R2SliceLTimesHolder.class)
+                        .getVisit()
+                        .getSeenAt());
+    }
+
+    public static class R2SliceLObjectHolder {
+        private long id;
+        private Object payload;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public Object getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final Object payload) {
+            this.payload = payload;
+        }
+    }
+
+    public static class R2SliceLSerializableHolder {
+        private java.io.Serializable payload;
+
+        public java.io.Serializable getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final java.io.Serializable payload) {
+            this.payload = payload;
+        }
+    }
+
+    public static class R2SliceLListHolder {
+        private List<Object> payload;
+
+        public List<Object> getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final List<Object> payload) {
+            this.payload = payload;
+        }
+    }
+
+    public record R2SliceLObjectRecord(long id, Object payload) {
+    }
+
+    public static class R2SliceLTimesHolder {
+        private Map<String, java.time.Instant> times;
+        private Visit visit;
+
+        public Map<String, java.time.Instant> getTimes() {
+            return times;
+        }
+
+        public void setTimes(final Map<String, java.time.Instant> times) {
+            this.times = times;
+        }
+
+        public Visit getVisit() {
+            return visit;
+        }
+
+        public void setVisit(final Visit visit) {
+            this.visit = visit;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2SliceLMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        private String label;
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(final String label) {
+            this.label = label;
+        }
+    }
+
+    // ---- 2026-10-24 r2 main ----
+
+    /**
+     * An {@code Iterable<Long>} property is not given the raw STRUCT record: the record's elements are {@code FieldValue}
+     * wrappers, so the property held them and failed with ClassCastException only when iterated. It fails at read time
+     * again, as before the raw-record rule for {@code Object}/{@code Serializable} properties.
+     */
+    @Test
+    public void testStructCellIntoIterablePropertyIsNotTheRawRecord_r2main() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("payload", StandardSQLTypeName.STRUCT, R2SLICEL_PAIR));
+        final FieldValueList struct = FieldValueList.of(Arrays.asList(verifyCell("1"), verifyCell("x")), R2SLICEL_PAIR);
+        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, struct)), fields);
+
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toEntity(fields, row, R2MainIterableHolder.class));
+    }
+
+    public static class R2MainIterableHolder {
+        private Iterable<Long> payload;
+
+        public Iterable<Long> getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final Iterable<Long> payload) {
+            this.payload = payload;
+        }
+    }
 }

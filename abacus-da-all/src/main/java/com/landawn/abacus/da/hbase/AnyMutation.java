@@ -561,9 +561,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param family the column-family name
      * @param qualifier the column-qualifier name
-     * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
+     * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}, so an empty value
+     *        wrapper such as {@code Optional.empty()} encodes to {@code null} bytes like {@code null}
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
-     * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
+     * @throws NullPointerException if {@code value} is {@code null} or an empty value wrapper and a queued cell matches {@code family} and
      *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values), or traversal of the requested family reaches a null cell
      * @throws RuntimeException if the family is present and converting {@code value} to bytes invokes a failing string conversion
      * @see #has(String, String)
@@ -597,9 +598,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param family the column-family name
      * @param qualifier the column-qualifier name
      * @param ts the cell timestamp, in milliseconds since the epoch
-     * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
+     * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}, so an empty value
+     *        wrapper such as {@code Optional.empty()} encodes to {@code null} bytes like {@code null}
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
-     * @throws NullPointerException if {@code value} is {@code null} and a queued cell matches {@code family} and
+     * @throws NullPointerException if {@code value} is {@code null} or an empty value wrapper and a queued cell matches {@code family} and
      *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values), or traversal of the requested family reaches a null cell
      * @throws RuntimeException if the family is present and converting {@code value} to bytes invokes a failing string conversion
      * @see #has(String, String)
