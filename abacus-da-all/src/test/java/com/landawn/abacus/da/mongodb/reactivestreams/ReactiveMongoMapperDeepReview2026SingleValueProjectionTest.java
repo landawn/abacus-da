@@ -215,4 +215,21 @@ public class ReactiveMongoMapperDeepReview2026SingleValueProjectionTest extends 
                 () -> assertTrue(mapperRows.get(0).contains("\"x\"") && mapperRows.get(0).contains("\"y\""), mapperRows.get(0)),
                 () -> assertEquals(mapperRows, executorRows));
     }
+
+    // ---- 2026-10-24 r2 sliceV ----
+
+    @Test
+    public void testDottedSelectedFieldThroughArraySignalsClassCastException_r2sliceV() {
+        // An array property (a BSON array since GeneralCodec writes Java arrays as BSON arrays) projected by a dotted path
+        // such as "inners.city" comes back as {inners: [{city: ...}, ...]}: the single-value read cannot resolve the path
+        // through the list and signals a ClassCastException on consumption (building the publisher does not fail).
+        final Document arrayRow = new Document("_id", ID1).append("inners", Arrays.asList(new Document("city", "c1"), new Document("city", "c2")));
+        final List<String> path = List.of("inners.city");
+
+        final Flux<String> listed = stringMapperReturning(arrayRow).list(path, Filters.empty());
+
+        StepVerifier.create(listed).expectError(ClassCastException.class).verify(TIMEOUT);
+        StepVerifier.create(stringMapperReturning(arrayRow).findFirst(path, Filters.empty())).expectError(ClassCastException.class).verify(TIMEOUT);
+        StepVerifier.create(stringMapperReturning(arrayRow).get(ID1, path)).expectError(ClassCastException.class).verify(TIMEOUT);
+    }
 }

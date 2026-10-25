@@ -1147,4 +1147,71 @@ public class AsyncCassandraExecutorTest extends TestBase {
                         assertThrows(java.util.concurrent.ExecutionException.class, () -> sliceGAsyncFailingWith(error, true).list(Long.class, query).get())
                                 .getCause()));
     }
+
+    // ---- 2026-10-24 r2 sliceG ----
+
+    /**
+     * Pins the update(String, Object...) Javadoc: a query alone, or a query with one Collection&lt;String&gt; of values, binds to
+     * update(Object) / update(Object, Collection) and fails at the call site with "Not a bean class" without preparing anything
+     * (the old example claimed update("UPDATE SET") threw the driver's parse failure); a malformed query with a value does reach
+     * the driver's synchronous prepare.
+     */
+    @Test
+    public void testR2SliceG_updateWithOnlyAQueryBindsToTheEntityOverload() {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final IllegalStateException prepareFailure = new IllegalStateException("prepare failed");
+        when(session.prepare(anyString())).thenThrow(prepareFailure);
+        final AsyncCassandraExecutor facade = new CassandraExecutor(session).async();
+
+        final IllegalArgumentException queryOnly = assertThrows(IllegalArgumentException.class,
+                () -> facade.update("UPDATE users SET name = 'x' WHERE id = 1"));
+        final IllegalArgumentException queryAndStrings = assertThrows(IllegalArgumentException.class,
+                () -> facade.update("UPDATE users SET name = ? WHERE id = ?", Arrays.asList("x", "1")));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(queryOnly.getMessage().contains("Not a bean class"), queryOnly.getMessage()),
+                () -> assertTrue(queryAndStrings.getMessage().contains("Not a bean class"), queryAndStrings.getMessage()),
+                () -> org.mockito.Mockito.verify(session, org.mockito.Mockito.never()).prepare(anyString()),
+                () -> assertSame(prepareFailure, assertThrows(IllegalStateException.class, () -> facade.update("UPDATE SET", 1L))),
+                () -> org.mockito.Mockito.verify(session).prepare("UPDATE SET"));
+    }
+
+    /**
+     * Pins the @throws IllegalArgumentException clause the v4 async overrides now state: a parameter value rejected when it is
+     * converted to its column's type (1.5 for an int column) fails at the call site, while binding, before any request is sent.
+     */
+    @Test
+    public void testR2SliceG_lossyBindValueIsRejectedAtTheCallSite() {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        final com.datastax.oss.driver.api.core.cql.ColumnDefinition variable = mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class);
+        when(variables.size()).thenReturn(1);
+        when(variables.get(0)).thenReturn(variable);
+        when(variable.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.INT);
+        when(variable.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("k"));
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement prepared = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        when(prepared.getVariableDefinitions()).thenReturn(variables);
+        when(session.prepare(anyString())).thenReturn(prepared);
+        final AsyncCassandraExecutor facade = new CassandraExecutor(session).async();
+        final String query = "SELECT v FROM t WHERE k = ?";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> r2SliceGAssertLossyBind(() -> facade.queryForSingleValue(Long.class, query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.queryForSingleNonNull(Long.class, query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.findFirst(Long.class, query, 1.5)), () -> r2SliceGAssertLossyBind(() -> facade.stream(query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.stream(query, (defs, row) -> row, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.execute(query, 1.5)),
+                () -> r2SliceGAssertLossyBind(() -> facade.execute(query, java.util.Collections.<String, Object> singletonMap("k", 1.5))),
+                () -> org.mockito.Mockito.verify(session, org.mockito.Mockito.never()).executeAsync(any(Statement.class)));
+    }
+
+    private static void r2SliceGAssertLossyBind(final org.junit.jupiter.api.function.Executable call) {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, call);
+        // The bind-conversion rejection (it names the column's CQL type), not a parameter-count or marker failure.
+        assertTrue(e.getMessage().contains("CQL type int"), e.getMessage());
+    }
 }

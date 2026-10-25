@@ -1218,4 +1218,132 @@ public class AnyPutTest extends TestBase {
                 () -> assertTrue(AnyPut.create(Arrays.asList(user)).get(0).has("info", "name", "n")),
                 () -> assertTrue(AnyPut.toPut(Arrays.asList(user)).get(0).has(Bytes.toBytes("info"), Bytes.toBytes("name"))));
     }
+
+    // ---- 2026-10-24 r2 sliceO ----
+
+    /**
+     * An empty value wrapper converts to no row-key bytes. of(Object) / of(Object, long), and create(entity) for an entity whose
+     * row key holds one, failed with a NullPointerException on row.length inside Put(byte[]); they now throw the
+     * IllegalArgumentException that of(Object, boolean) and the sliced overloads already threw for the same key (pinned as guards).
+     */
+    @Test
+    public void testOf_emptyValueWrapperRowKey_throwsIllegalArgumentException_r2sliceO() {
+        final Object emptyOptional = java.util.Optional.empty();
+        final WrapperRowKeyEntity entity = new WrapperRowKeyEntity();
+        entity.setId(java.util.Optional.empty());
+        entity.setName("n");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(emptyOptional)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(emptyOptional, 5L)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(com.landawn.abacus.util.u.Nullable.of((String) null))),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(com.landawn.abacus.util.Holder.of(null))),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.create(entity)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.create(entity, Arrays.asList("name"))),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.create(Arrays.asList(entity))),
+                // guards: the overloads that already threw IllegalArgumentException, and a present wrapper still works
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(emptyOptional, true)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(emptyOptional, 5L, true)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(emptyOptional, 0, 1)),
+                () -> assertArrayEquals(Bytes.toBytes("k"), AnyPut.of(java.util.Optional.of("k")).getRow()), () -> {
+                    entity.setId(java.util.Optional.of("k1"));
+                    assertArrayEquals(Bytes.toBytes("k1"), AnyPut.create(entity).getRow());
+                });
+    }
+
+    @ColumnFamily("cf")
+    public static class WrapperRowKeyEntity {
+        @Id
+        private java.util.Optional<String> id;
+        private String name;
+
+        public java.util.Optional<String> getId() {
+            return id;
+        }
+
+        public void setId(final java.util.Optional<String> id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    /**
+     * Beans.isBeanClass accepts an @Entity-annotated Map subclass. With an id property, create(...) mapped it through its Map
+     * getters: the cells keySet/values/entrySet/size/empty, and its entries never became columns. Every single-entity create,
+     * collection factory and toPut now rejects it (as a plain Map already was, by getBeanInfo; guard). As a nested property such a
+     * Map is not flattened but written as one JSON cell, unchanged (guard).
+     */
+    @Test
+    public void testCreate_entityAnnotatedMapSubclass_isRejectedNotMappedThroughMapGetters_r2sliceO() {
+        final EntityMapWithId map = new EntityMapWithId();
+        map.setId("k1");
+        map.put("name", "n");
+
+        final List<java.util.function.Supplier<?>> calls = Arrays.asList(() -> AnyPut.create(map), () -> AnyPut.create(map, NamingPolicy.SNAKE_CASE),
+                () -> AnyPut.create(map, Arrays.asList("name")), () -> AnyPut.create(map, (java.util.Collection<String>) null, NamingPolicy.CAMEL_CASE),
+                () -> AnyPut.create(Arrays.asList(map)), () -> AnyPut.create(Arrays.asList(map), NamingPolicy.SNAKE_CASE),
+                () -> AnyPut.create(Arrays.asList(map), Arrays.asList("name")), () -> AnyPut.toPut(Arrays.asList(map)),
+                () -> AnyPut.toPut(Arrays.asList(map), NamingPolicy.SNAKE_CASE));
+
+        final MapPropertyEntity holder = new MapPropertyEntity();
+        holder.setId("h1");
+        final EntityMapWithId nested = new EntityMapWithId();
+        nested.put("city", "c");
+        holder.setAttrs(nested);
+
+        org.junit.jupiter.api.Assertions.assertAll(java.util.stream.Stream.concat(
+                calls.stream()
+                        .map(call -> (org.junit.jupiter.api.function.Executable) () -> assertTrue(
+                                assertThrows(IllegalArgumentException.class, call::get).getMessage().contains("not one"))),
+                java.util.stream.Stream.of(() -> assertThrows(IllegalArgumentException.class, () -> AnyPut.create(new java.util.HashMap<>(map))), () -> {
+                    final AnyPut put = AnyPut.create(holder);
+                    assertEquals(1, put.size());
+                    assertTrue(put.has("cf", "attrs"));
+                    assertFalse(put.has("cf", "keySet"));
+                })));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @ColumnFamily("cf")
+    public static class EntityMapWithId extends java.util.HashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
+
+    @ColumnFamily("cf")
+    public static class MapPropertyEntity {
+        @Id
+        private String id;
+        private EntityMapWithId attrs;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public EntityMapWithId getAttrs() {
+            return attrs;
+        }
+
+        public void setAttrs(final EntityMapWithId attrs) {
+            this.attrs = attrs;
+        }
+    }
 }

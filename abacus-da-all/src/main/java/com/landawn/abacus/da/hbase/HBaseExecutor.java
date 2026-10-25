@@ -550,6 +550,7 @@ public final class HBaseExecutor {
     // _3: family -> qualifier -> the only property that writes that cell (see the end of the method). toValue consults _3 only
     // for a non-empty qualifier without an entry in _1, and never counts a _3 entry as a member of the family when it searches
     // the family's nested beans, so a _3 entry cannot change how any other cell is routed.
+    @SuppressWarnings("deprecation")
     private static Tuple3<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>, Map<String, Map<String, Tuple2<String, Boolean>>>> getFamilyColumnFieldNameMap(
             final Class<?> entityClass) {
         Tuple3<Map<String, Map<String, Tuple2<String, Boolean>>>, Map<String, String>, Map<String, Map<String, Tuple2<String, Boolean>>>> familyColumnFieldNameMapTP = classFamilyColumnFieldNamePool
@@ -680,6 +681,13 @@ public final class HBaseExecutor {
             // other written cell (two or more properties write it, under the same or different policies, or its one writer
             // would not read it back) is marked CONTESTED_CELL_TP and keeps the routing it had (see toValue). Done after every
             // other registration.
+            // WHY the row key is left out of the writers: AnyPut.create never writes the row-key property, which getCellWriterMap
+            // lists like any other, so a cell it shared with one other property was marked contested, and that property could not
+            // read back a cell only it writes. The row key resolved so far is used (registerRowKeyProperty clears this cache, so a
+            // new row key rebuilds the map); a cell then written by no property gets no _3 entry and toValue routes it as unwritten.
+            final Method resolvedRowKeySetMethod = classRowKeySetMethodPool.get(entityClass);
+            final Method rowKeySetMethod = resolvedRowKeySetMethod == ClassUtil.SENTINEL_METHOD ? null : resolvedRowKeySetMethod;
+
             for (final Map.Entry<String, Map<String, List<PropInfo>>> familyEntry : getCellWriterMap(entityInfo, defaultColumnFamilyName).entrySet()) {
                 final String columnFamilyName = familyEntry.getKey();
                 final Map<String, Tuple2<String, Boolean>> columnFieldMap = familyColumnFieldNameMapTP._1.get(columnFamilyName);
@@ -691,7 +699,19 @@ public final class HBaseExecutor {
                         continue;
                     }
 
-                    final PropInfo writer = qualifierEntry.getValue().size() == 1 ? qualifierEntry.getValue().get(0) : null;
+                    final List<PropInfo> writers = new ArrayList<>(qualifierEntry.getValue().size());
+
+                    for (final PropInfo cellWriter : qualifierEntry.getValue()) {
+                        if (rowKeySetMethod == null || !rowKeySetMethod.equals(cellWriter.setMethod)) {
+                            writers.add(cellWriter);
+                        }
+                    }
+
+                    if (writers.isEmpty()) {
+                        continue;
+                    }
+
+                    final PropInfo writer = writers.size() == 1 ? writers.get(0) : null;
                     final boolean isSoleWriter = writer != null
                             && (!isFlattenedNestedBean(writer) || readsBackIntoWriter(writer, defaultColumnFamilyName, columnFamilyName, qualifier));
 
@@ -809,8 +829,9 @@ public final class HBaseExecutor {
 
     // family -> qualifier -> the properties of entityInfo that AnyPut.create writes that cell for under some naming policy (each
     // once, in declaration order). Mirrors AnyPut.create's choice of family and qualifier; reads only the bean metadata. The
-    // row-key property, which AnyPut.create skips, is listed too (it may change through registerRowKeyProperty): toValue treats
-    // a cell listed only for it as written by no property.
+    // row-key property, which AnyPut.create skips, is listed too (it may change through registerRowKeyProperty):
+    // getFamilyColumnFieldNameMap leaves the resolved row key out of each cell's writers, and toValue treats a cell recorded for
+    // the row key alone (in a map built concurrently with the row key's registration) as written by no property.
     private static Map<String, Map<String, List<PropInfo>>> getCellWriterMap(final BeanInfo entityInfo, final String defaultColumnFamilyName) {
         final Map<String, Map<String, List<PropInfo>>> cellWriterMap = new HashMap<>();
 
@@ -1450,7 +1471,8 @@ public final class HBaseExecutor {
                     } else if (familyTP != null && rowKeySetMethod != null && rowKeySetMethod.equals(entityInfo.getPropInfo(familyTP._1).setMethod)) {
                         // WHY: getCellWriterMap lists the row-key property like any other, but AnyPut.create never writes it (and
                         // the row key ignores mapped cells below), so a cell listed only for the row key is written by no property:
-                        // route it as such instead of dropping it.
+                        // route it as such instead of dropping it. (getFamilyColumnFieldNameMap already leaves out the row key it
+                        // knows; this covers a map built concurrently with the row key's registration.)
                         familyTP = null;
                     }
                 }
@@ -1973,7 +1995,8 @@ public final class HBaseExecutor {
      * @param <K> the row key type
      * @param targetEntityClass an entity class carrying a {@code @Table} annotation; must not be {@code null}
      * @return a cached typed mapper for the specified entity class
-     * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, is not a bean class, lacks a nonempty {@code @Table} name, or
+     * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, is not a bean class (a {@link Map}, even an
+     *         {@code @Entity}-annotated {@code Map} subclass, is not one), lacks a nonempty {@code @Table} name, or
      *         declares zero or multiple ID properties
      * @see HBaseMapper
      * @see #mapper(Class, String, NamingPolicy)
@@ -2037,7 +2060,8 @@ public final class HBaseExecutor {
      * @param namingPolicy the naming policy for column name conversion; {@code null} maps to {@link NamingPolicy#CAMEL_CASE}
      * @return a configured (non-cached) typed mapper for the specified entity class and table
      * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null} or is not a bean
-     *         class, has no ID property, or has more than one ID property; or if
+     *         class (a {@link Map}, even an {@code @Entity}-annotated {@code Map} subclass, is not one), has no ID property, or has more
+     *         than one ID property; or if
      *         {@code tableName} is {@code null} or empty
      * @see NamingPolicy
      * @see HBaseMapper
@@ -2063,7 +2087,8 @@ public final class HBaseExecutor {
      * @param rowKey the row key to check
      * @return {@code true} if the row has one or more cells, {@code false} otherwise
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
+     *         representation), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
      */
@@ -2239,7 +2264,8 @@ public final class HBaseExecutor {
      * @param rowKey the row key of the row to retrieve
      * @return the HBase Result containing the retrieved data, or a present-but-{@linkplain Result#isEmpty() empty} Result if the row does not exist
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
+     *         representation), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      */
@@ -2422,7 +2448,8 @@ public final class HBaseExecutor {
      * @param targetType the class to convert the result to
      * @return the converted object of the specified type, or the type's default value if the row does not exist
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes; also if {@code targetType} is
+     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
+     *         representation), or its byte representation is empty or exceeds 32,767 bytes; also if {@code targetType} is
      *         {@code null}, a result is requested as a {@link Map}, a scalar result contains more than one cell, or the target bean has invalid
      *         row-key metadata
      * @throws RuntimeException if converting a cell or row key, creating a target bean, or reading or assigning one of its properties fails
@@ -3221,7 +3248,8 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param rowKey the row key of the row to delete
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
+     *         representation), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
      */
@@ -4358,13 +4386,20 @@ public final class HBaseExecutor {
          * @param hbaseExecutor the executor that performs the underlying HBase operations
          * @param tableName the HBase table name to bind this mapper to; must not be {@code null} or empty
          * @param namingPolicy the naming policy for column name conversion; {@code null} maps to {@link NamingPolicy#CAMEL_CASE}
-         * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, is not a bean class, or has no or more than one
+         * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, is not a bean class (a {@link Map}, even an
+         *         {@code @Entity}-annotated {@code Map} subclass, is not one), or has no or more than one
          *         ID property; if {@code hbaseExecutor} is {@code null}; or if {@code tableName} is {@code null} or empty
          */
         HBaseMapper(final Class<T> targetEntityClass, final HBaseExecutor hbaseExecutor, final String tableName, final NamingPolicy namingPolicy)
                 throws IllegalArgumentException {
             N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method",
+                    ClassUtil.getCanonicalClassName(targetEntityClass));
+
+            // WHY: Beans.isBeanClass accepts an @Entity-annotated Map subclass, whose bean properties are its Map getters
+            // (keySet, values, entrySet, size, empty). Such a mapper could never read a row (toEntity rejects Map types), and
+            // its put mapped those getters instead of the entries, so reject a Map up front, as a plain Map already is.
+            N.checkArgument(!Map.class.isAssignableFrom(targetEntityClass), "{} is a Map, not an entity class with getter/setter method",
                     ClassUtil.getCanonicalClassName(targetEntityClass));
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
@@ -4504,7 +4539,8 @@ public final class HBaseExecutor {
          *
          * @param entityToPut the entity to store; must not be {@code null}
          * @throws IllegalArgumentException if {@code entityToPut} is {@code null}, is not a bean or has missing, multiple or unsupported row-key
-         *         properties, its row-key value is {@code null}, empty or exceeds 32,767 bytes, a column version is negative, or an encoded column
+         *         properties, its row-key value is {@code null} or an empty value wrapper (no byte representation), empty or exceeds 32,767 bytes,
+         *         a column version is negative, or an encoded column
          *         family exceeds 127 bytes; also if HBase rejects a mutation with no cells or a cell exceeds the configured maximum KeyValue size; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws NullPointerException if a versioned column collection or map contains a {@code null}
@@ -4513,6 +4549,8 @@ public final class HBaseExecutor {
          * @throws UncheckedIOException if acquiring the table or writing the supplied mutations fails with an {@link IOException}
          */
         public void put(final T entityToPut) throws IllegalArgumentException, NullPointerException, RuntimeException, UncheckedIOException {
+            N.checkArgNotNull(entityToPut, cs.entityToPut);
+
             hbaseExecutor.put(tableName, AnyPut.create(entityToPut, namingPolicy));
         }
 
@@ -4535,9 +4573,9 @@ public final class HBaseExecutor {
          * @param entitiesToPut the collection of entities to store; must not be {@code null} and
          *        must not contain {@code null} elements
          * @throws IllegalArgumentException if {@code entitiesToPut} is {@code null} or contains a {@code null} element, an entity is not a bean or
-         *         has missing, multiple or unsupported row-key properties, its row-key value is {@code null}, empty or exceeds 32,767 bytes, a column
-         *         version is negative, or an encoded column family exceeds 127 bytes; also if HBase rejects a mutation with no cells or a cell exceeds
-         *         the configured maximum KeyValue size; also
+         *         has missing, multiple or unsupported row-key properties, its row-key value is {@code null} or an empty value wrapper (no byte
+         *         representation), empty or exceeds 32,767 bytes, a column version is negative, or an encoded column family exceeds 127 bytes;
+         *         also if HBase rejects a mutation with no cells or a cell exceeds the configured maximum KeyValue size; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws NullPointerException if a versioned column collection or map contains a {@code null}
          *         {@code HBaseColumn}
@@ -4546,6 +4584,8 @@ public final class HBaseExecutor {
          */
         public void put(final Collection<? extends T> entitiesToPut)
                 throws IllegalArgumentException, NullPointerException, RuntimeException, UncheckedIOException {
+            N.checkArgNotNull(entitiesToPut, cs.entitiesToPut);
+
             hbaseExecutor.put(tableName, AnyPut.create(entitiesToPut, namingPolicy));
         }
 
@@ -4566,26 +4606,31 @@ public final class HBaseExecutor {
          * }</pre>
          *
          * @param entityToDelete the entity to delete; must not be {@code null}
-         * @throws IllegalArgumentException if {@code entityToDelete} is {@code null}, its row-key value is {@code null}, or the byte
-         *         representation of its row-key value is empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if {@code entityToDelete} is {@code null}, its class has multiple or unsupported row-key properties
+         *         (as for {@link #put(Object)}), its row-key value is {@code null} or an empty value wrapper (no byte representation), or the
+         *         byte representation of its row-key value is empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if reading an entity's row-key property or converting its value to bytes fails
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
          */
         public void delete(final T entityToDelete) throws IllegalArgumentException, RuntimeException, UncheckedIOException {
+            N.checkArgNotNull(entityToDelete, cs.entityToDelete);
+
             deleteByRowKey(getRowKey(entityToDelete));
         }
 
         // Reads the row key from the property that put(entity) writes it from (AnyPut.create): a property registered through
         // registerRowKeyProperty takes precedence over the ID property there, so it must here too, or delete(entity) would
         // remove a different row than the one put(entity) wrote.
-        @SuppressWarnings({ "unchecked", "deprecation" })
+        // WHY getRowKeySetMethod rather than a cache lookup: AnyPut.create resolves (and caches) the row-key property of the
+        // entity's own class. A subclass declaring its own @Id that had not been put or read yet had no cache entry, so it was
+        // deleted by the mapped class's ID property (another row), and by its own @Id only after a put or get of that class.
+        @SuppressWarnings("unchecked")
         private K getRowKey(final T entity) throws IllegalArgumentException {
             N.checkArgNotNull(entity, cs.entity);
 
-            final Method rowKeySetMethod = classRowKeySetMethodPool.get(entity.getClass());
-            final String propName = rowKeySetMethod == null || rowKeySetMethod == ClassUtil.SENTINEL_METHOD ? rowKeyPropName
-                    : Beans.getPropNameByMethod(rowKeySetMethod);
+            final Method rowKeySetMethod = getRowKeySetMethod(entity.getClass());
+            final String propName = rowKeySetMethod == null ? rowKeyPropName : Beans.getPropNameByMethod(rowKeySetMethod);
 
             return (K) Beans.getPropValue(entity, propName);
         }
@@ -4601,8 +4646,10 @@ public final class HBaseExecutor {
          *
          * @param entitiesToDelete the collection of entities to delete; {@code null} is treated as an
          *        empty collection and is a no-op
-         * @throws IllegalArgumentException if any element of {@code entitiesToDelete} is {@code null}, an element's row-key value is
-         *         {@code null}, or the byte representation of an entity's row-key value is empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if any element of {@code entitiesToDelete} is {@code null}, an element's class has multiple or
+         *         unsupported row-key properties, an element's row-key value is
+         *         {@code null} or an empty value wrapper (no byte representation), or the byte representation of an entity's row-key value is
+         *         empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if reading an entity's row-key property or converting its value to bytes fails
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
@@ -4620,7 +4667,8 @@ public final class HBaseExecutor {
          * }</pre>
          *
          * @param rowKey the row key of the entity to delete; must not be {@code null}
-         * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which
+         *         has no byte representation), or its byte representation is empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if converting a row key to bytes invokes a failing string conversion
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
@@ -4641,7 +4689,8 @@ public final class HBaseExecutor {
          *
          * @param rowKeys the collection of row keys to delete; {@code null} is treated as an empty
          *        collection and is a no-op
-         * @throws IllegalArgumentException if a row key is {@code null}, or its byte representation is empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if a row key is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has
+         *         no byte representation), or its byte representation is empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if converting a row key to bytes invokes a failing string conversion
          * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}

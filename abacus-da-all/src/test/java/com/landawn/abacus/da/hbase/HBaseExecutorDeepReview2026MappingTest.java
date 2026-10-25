@@ -1334,4 +1334,63 @@ class HBaseExecutorDeepReview2026MappingTest {
             this.id = id;
         }
     }
+
+    // ---- 2026-10-24 r2 sliceM ----
+
+    // ("user_name", "k") has no entry of its own (x registered family "user_name" first) and is listed for two properties: the
+    // row key userName (its SNAKE_CASE family) and userNAME (also "user_name" under SNAKE_CASE). AnyPut.create never writes the
+    // row key, so only userNAME writes that cell, yet it was marked contested and a SNAKE_CASE write of userNAME read back as
+    // null. (Under UPPER_CAMEL/SCREAMING_SNAKE/KEBAB its cell is one the row key registered itself, which ignores mapped cells.)
+    @Test
+    void cellSharedOnlyWithTheRowKeyReadsBackIntoItsOneWriter() {
+        final RowKeySharedCellEntity source = new RowKeySharedCellEntity();
+        source.setX("xv");
+        source.setUserName("rk");
+        source.setUserNAME("v");
+
+        assertAll(Arrays.stream(NamingPolicy.values()).map(policy -> (Executable) () -> {
+            final RowKeySharedCellEntity read = HBaseExecutor.toEntity(toResult(AnyPut.create(source, policy)), RowKeySharedCellEntity.class);
+
+            assertEquals("rk", read.getUserName(), policy.name());
+            assertEquals("xv", read.getX(), policy.name());
+
+            if (policy == NamingPolicy.CAMEL_CASE || policy == NamingPolicy.SNAKE_CASE || policy == NamingPolicy.NO_CHANGE) {
+                assertEquals("v", read.getUserNAME(), policy.name());
+            }
+        }));
+    }
+
+    public static class RowKeySharedCellEntity {
+        @ColumnFamily("user_name")
+        private String x;
+        @Id
+        @Column("k")
+        private String userName;
+        @Column("k")
+        private String userNAME;
+
+        public String getX() {
+            return x;
+        }
+
+        public void setX(final String x) {
+            this.x = x;
+        }
+
+        public String getUserName() {
+            return userName;
+        }
+
+        public void setUserName(final String userName) {
+            this.userName = userName;
+        }
+
+        public String getUserNAME() {
+            return userNAME;
+        }
+
+        public void setUserNAME(final String userNAME) {
+            this.userNAME = userNAME;
+        }
+    }
 }

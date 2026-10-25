@@ -195,6 +195,11 @@ public final class MongoCollectionExecutor {
     static final String _$EXPR = "$expr";
 
     /**
+     * The MongoDB {@code $literal} aggregation operator key.
+     */
+    static final String _$LITERAL = "$literal";
+
+    /**
      * The MongoDB {@code $group} aggregation stage key.
      */
     static final String _$GROUP = "$group";
@@ -913,8 +918,9 @@ public final class MongoCollectionExecutor {
      * and sorting, then converts the result to the target type. The sort parameter determines
      * which document is considered "first" when multiple documents match. For a single named field
      * and scalar {@code rowType}, the named value is converted directly; if it is absent or BSON null,
-     * the {@code Mono} completes empty instead of converting the implicitly projected {@code _id}.
-     * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
+     * the {@code Mono} completes empty instead of converting the implicitly projected {@code _id}. A dotted
+     * path that traverses a non-null value that is not a {@link Document} (such as an array) fails with a
+     * {@link ClassCastException} signalled through the publisher. Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
      * receive the raw projected document, matching {@code list}.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1189,7 +1195,9 @@ public final class MongoCollectionExecutor {
      * and pagination. This is the most comprehensive list method, suitable for complex
      * query requirements in reactive applications. When exactly one field is selected into a
      * scalar type, dotted paths are resolved and documents missing that value are not emitted
-     * (Reactive Streams does not permit {@code null} elements).</p>
+     * (Reactive Streams does not permit {@code null} elements). A dotted path that traverses a non-null value that
+     * is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the
+     * publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1867,6 +1875,9 @@ public final class MongoCollectionExecutor {
      * fields are ignored. The value is converted to {@code valueType} via
      * binary-aware scalar conversion: binary payloads can be read as byte arrays or readable {@link java.nio.ByteBuffer} values;
      * a BSON date requested as {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC;
+     * text enclosed in {@code [...]} requested as an array type whose elements accept text (such as {@code String[]} or
+     * {@code Object[]}) is parsed as the JSON array text earlier versions stored for an array ({@code "[a, b]"} becomes
+     * {@code {"a", "b"}} and {@code "[]"} an empty array; text that does not parse becomes the single element);
      * other values use {@link com.landawn.abacus.util.N#convert(Object, Class)}.
      * This is the underlying method delegated to by the
      * primitive-wrapper convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.).</p>
@@ -1999,7 +2010,8 @@ public final class MongoCollectionExecutor {
      *
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} containing
-     *         all matching documents (possibly empty), then completes
+     *         all matching documents (possibly empty), then completes; its columns are the fields of the returned documents,
+     *         so when no document matches it is empty and has no columns
      * @throws IllegalArgumentException if {@code filter} is null
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#query(Bson)
      */
@@ -2025,7 +2037,8 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} (possibly
-     *         empty) and then completes
+     *         empty) and then completes; when no document matches the Dataset is empty and has no columns (use
+     *         {@link #query(Collection, Bson, Class)} to keep named columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class
      *         nor a Map type
      */
@@ -2051,7 +2064,8 @@ public final class MongoCollectionExecutor {
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
-     * @return a Mono that emits a Dataset with typed rows within the specified range
+     * @return a Mono that emits a Dataset with typed rows within the specified range; when no document matches the Dataset is
+     *         empty and has no columns (use {@link #query(Collection, Bson, int, int, Class)} to keep named columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
      *         {@code rowType} is null, or if {@code rowType} is neither a bean class nor a Map type
      */
@@ -2254,7 +2268,9 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
-     * @return a Mono that emits a Dataset with projected and sorted typed rows
+     * @return a Mono that emits a Dataset with projected and sorted typed rows; when no document matches the Dataset is empty and
+     *         has no columns, since the field names inside a {@code Bson} projection are not known (use
+     *         {@link #query(Collection, Bson, Bson, Class)} to keep the selected columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if {@code rowType} is neither a bean class
      *         nor a Map type
      */
@@ -2283,7 +2299,9 @@ public final class MongoCollectionExecutor {
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
-     * @return a Mono that emits a Dataset with all specified constraints applied
+     * @return a Mono that emits a Dataset with all specified constraints applied; when no document matches the Dataset is empty
+     *         and has no columns, since the field names inside a {@code Bson} projection are not known (use
+     *         {@link #query(Collection, Bson, Bson, int, int, Class)} to keep the selected columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
      *         {@code rowType} is null, or if {@code rowType} is neither a bean class nor a Map type
      */
@@ -2779,9 +2797,9 @@ public final class MongoCollectionExecutor {
         List<Document> docs = null;
         boolean allDocuments = true;
 
-        for (final Object obj : objList) {
-            N.checkArgNotNull(obj, cs.obj);
+        checkNoNullElement(objList, cs.objList);
 
+        for (final Object obj : objList) {
             if (!(obj instanceof Document)) {
                 allDocuments = false;
             }
@@ -2981,6 +2999,12 @@ public final class MongoCollectionExecutor {
      * non-operator document is converted to a {@code $set} stage. Classic update operators such as
      * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
+     * <p>The field values of an entity, of a non-operator {@code Map} that is not a {@link Bson}, and of a name/value array are
+     * written literally (each wrapped in {@code $literal}), as the single-update overloads store them, so text such as
+     * {@code "$other"} is stored as is. The values of a non-operator {@link Document} (or another {@link Bson} document)
+     * are passed unchanged and evaluated as aggregation expressions, for example
+     * {@code new Document("total", new Document("$add", Arrays.asList("$price", "$tax")))}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: a pipeline-style update (MongoDB 4.2+).
@@ -3087,6 +3111,24 @@ public final class MongoCollectionExecutor {
      * @throws RuntimeException if a bean property getter cannot be accessed or throws while constructing a document
      */
     private static Bson toBson(final Object update) throws IllegalArgumentException, RuntimeException {
+        return toBson(update, false);
+    }
+
+    /**
+     * Normalizes the supplied update into a BSON update document, as {@link #toBson(Object)} does, optionally as a stage of
+     * an aggregation-update pipeline.
+     *
+     * @param update the update to normalize
+     * @param pipelineStage whether the result is a pipeline stage: then the values of a converted non-{@code Bson},
+     *        non-operator {@code update} (an entity, a {@code Map} or a name/value array) are each wrapped in
+     *        {@code {$literal: value}}
+     * @return the normalized BSON update
+     * @throws IllegalArgumentException if {@code update} is null, or if a non-Bson {@code update} cannot be converted from a Map, bean, or array of
+     *         String name/value pairs, or if the resulting document has a null field name, mixes operator and ordinary field names, or has no fields left
+     *         after removing {@code _id}
+     * @throws RuntimeException if a bean property getter cannot be accessed or throws while constructing a document
+     */
+    private static Bson toBson(final Object update, final boolean pipelineStage) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(update, cs.update);
 
         // Note: the second argument (isForUpdate) on MongoDBBase.toDocument is a dead flag, AND
@@ -3106,6 +3148,17 @@ public final class MongoCollectionExecutor {
             // A caller-supplied Document must not be mutated: strip _id from a copy.
             final Document docToUse = doc == update ? new Document(doc) : doc;
             docToUse.remove(MongoDBBase._ID);
+
+            if (pipelineStage && !(update instanceof Bson)) {
+                // In a pipeline, {$set: {f: v}} evaluates v as an aggregation expression: an entity's String "$other" became
+                // the value of field "other", "$missing" removed the field, and "$x" inside an array or a nested map was
+                // resolved too (proven live). The values of a converted entity/Map are data, so each one is written as a
+                // literal, as the classic {$set: ...} update stores them. Caller-built Bson stages stay expressions.
+                for (final Map.Entry<String, Object> entry : docToUse.entrySet()) {
+                    entry.setValue(new Document(_$LITERAL, entry.getValue()));
+                }
+            }
+
             bsonToUse = docToUse;
         } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
             if (isOperatorUpdate(dbObject.keySet())) {
@@ -3144,6 +3197,25 @@ public final class MongoCollectionExecutor {
     }
 
     /**
+     * Rejects a {@code null} element of a collection argument, naming the argument and the element's position.
+     *
+     * @param elements the collection argument (not {@code null})
+     * @param argName the name of the collection argument
+     * @throws IllegalArgumentException if {@code elements} contains {@code null}
+     */
+    private static void checkNoNullElement(final Collection<?> elements, final String argName) throws IllegalArgumentException {
+        int index = 0;
+
+        for (final Object element : elements) {
+            if (element == null) {
+                throw new IllegalArgumentException("'" + argName + "' element at index " + index + " cannot be null");
+            }
+
+            index++;
+        }
+    }
+
+    /**
      * Determines whether the top-level keys form an operator update and rejects MongoDB's invalid
      * mixed form (for example, {@code {$set: {...}, status: "active"}}).
      * @throws IllegalArgumentException if {@code keys} contains a null field name or mixes operator keys with ordinary field names
@@ -3175,6 +3247,10 @@ public final class MongoCollectionExecutor {
     /**
      * Normalizes the supplied update or batch into BSON update documents.
      *
+     * <p>The values of a converted entity, non-{@code Bson} map or name/value array are written literally
+     * ({@code {$set: {f: {$literal: v}}}}); a caller-built {@code Bson} element keeps its values as aggregation
+     * expressions.</p>
+     *
      * @param objList the batch of documents or updates
      * @return the normalized BSON updates
      * @throws IllegalArgumentException if {@code objList} is null or empty, contains null, or contains an element rejected by {@link #toBson(Object)}
@@ -3183,9 +3259,7 @@ public final class MongoCollectionExecutor {
     private List<Bson> toBson(final Collection<?> objList) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotEmpty(objList, cs.objList);
 
-        for (final Object update : objList) {
-            N.checkArgNotNull(update, cs.update);
-        }
+        checkNoNullElement(objList, cs.objList);
 
         // Document is itself a Bson, but a plain Document is not a complete update-pipeline stage.
         // Normalize every element so {field: value} becomes {$set: {field: value}}, while driver-built
@@ -3193,7 +3267,7 @@ public final class MongoCollectionExecutor {
         final List<Bson> docs = new ArrayList<>(objList.size());
 
         for (final Object update : objList) {
-            docs.add(toBson(update));
+            docs.add(toBson(update, true));
         }
 
         return docs;
@@ -3303,6 +3377,12 @@ public final class MongoCollectionExecutor {
      * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
      * non-operator document is converted to a {@code $set} stage. Classic update operators such as
      * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
+     *
+     * <p>The field values of an entity, of a non-operator {@code Map} that is not a {@link Bson}, and of a name/value array are
+     * written literally (each wrapped in {@code $literal}), as the single-update overloads store them, so text such as
+     * {@code "$other"} is stored as is. The values of a non-operator {@link Document} (or another {@link Bson} document)
+     * are passed unchanged and evaluated as aggregation expressions, for example
+     * {@code new Document("total", new Document("$add", Arrays.asList("$price", "$tax")))}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3851,10 +3931,7 @@ public final class MongoCollectionExecutor {
     public Mono<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options)
             throws IllegalArgumentException, RuntimeException, CodecConfigurationException, IllegalStateException {
         N.checkArgNotEmpty(entities, cs.entities);
-
-        for (final Object entity : entities) {
-            N.checkArgNotNull(entity, cs.entity);
-        }
+        checkNoNullElement(entities, cs.entities);
 
         final List<InsertOneModel<Document>> list = new ArrayList<>(entities.size());
 
@@ -3951,10 +4028,7 @@ public final class MongoCollectionExecutor {
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options)
             throws IllegalArgumentException, UnsupportedOperationException, CodecConfigurationException, IllegalStateException {
         N.checkArgNotEmpty(requests, cs.requests);
-
-        for (final WriteModel<? extends Document> request : requests) {
-            N.checkArgNotNull(request, cs.requests);
-        }
+        checkNoNullElement(requests, cs.requests);
 
         if (options == null) {
             return Mono.from(coll.bulkWrite(requests));
@@ -4152,6 +4226,12 @@ public final class MongoCollectionExecutor {
      * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
      * non-operator document is converted to a {@code $set} stage. Classic update operators such as
      * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
+     *
+     * <p>The field values of an entity, of a non-operator {@code Map} that is not a {@link Bson}, and of a name/value array are
+     * written literally (each wrapped in {@code $literal}), as the single-update overloads store them, so text such as
+     * {@code "$other"} is stored as is. The values of a non-operator {@link Document} (or another {@link Bson} document)
+     * are passed unchanged and evaluated as aggregation expressions, for example
+     * {@code new Document("total", new Document("$add", Arrays.asList("$price", "$tax")))}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4674,7 +4754,9 @@ public final class MongoCollectionExecutor {
      * Useful for getting unique values such as categories, tags, or statuses. Values are decoded by the driver
      * as {@code rowType}. A BSON {@code null} value is not emitted (Reactive Streams forbids {@code null} elements),
      * unlike the blocking {@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor#distinct(String, Class)}, which
-     * includes {@code null}.</p>
+     * includes {@code null}. This runs MongoDB's native {@code distinct} command, which unwinds an array-valued field:
+     * each array element is a separate distinct value (this includes Java array properties, which the
+     * {@link MongoDBBase} codec writes as BSON arrays).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4714,7 +4796,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Returns distinct values for the specified field among documents matching the filter.
      * Useful for getting unique values within a subset of documents. As with
-     * {@link #distinct(String, Class)}, a BSON {@code null} value is not emitted.</p>
+     * {@link #distinct(String, Class)}, a BSON {@code null} value is not emitted and an array-valued field is unwound:
+     * each array element is a separate distinct value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4971,7 +5054,7 @@ public final class MongoCollectionExecutor {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
+        return aggregateGroups(groupByPipeline(fieldNames, false, rowType), fieldNames, false, rowType);
     }
 
     /**
@@ -5039,7 +5122,7 @@ public final class MongoCollectionExecutor {
         N.checkArgNotEmpty(fieldName, cs.fieldName);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return aggregate(groupByPipeline(fieldName, true, rowType), rowType);
+        return aggregateGroups(groupByPipeline(fieldName, true, rowType), N.asList(fieldName), true, rowType);
     }
 
     /**
@@ -5110,7 +5193,81 @@ public final class MongoCollectionExecutor {
         N.checkArgNotEmpty(fieldNames, cs.fieldNames);
         N.checkArgNotNull(rowType, cs.rowType);
 
-        return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
+        return aggregateGroups(groupByPipeline(fieldNames, true, rowType), fieldNames, true, rowType);
+    }
+
+    /**
+     * Runs a grouping pipeline built by {@code groupByPipeline} and converts its rows to {@code rowType}, as
+     * {@link #aggregate(List, Class)} does, except that rows a single-value {@code rowType} cannot hold are rejected (see
+     * {@link #singleValueGroupRowError(Collection, boolean, Class)}).
+     *
+     * @param <T> the row type
+     * @param pipeline the grouping pipeline
+     * @param fieldNames the group fields (validated by {@code groupByPipeline})
+     * @param count whether the rows carry the group count
+     * @param rowType the requested row type
+     * @return the cold publisher of converted rows; a rejected row is signalled as {@link IllegalArgumentException}
+     */
+    private <T> Flux<T> aggregateGroups(final List<Document> pipeline, final Collection<String> fieldNames, final boolean count, final Class<T> rowType) {
+        final String error = singleValueGroupRowError(fieldNames, count, rowType);
+
+        if (error == null) {
+            return aggregate(pipeline, rowType);
+        }
+
+        return Flux.from(coll.aggregate(pipeline, Document.class)).<T> map(row -> {
+            throw new IllegalArgumentException(
+                    "Cannot convert document holding " + error + " to single-value type " + ClassUtil.getCanonicalClassName(rowType) + ": " + row);
+        });
+    }
+
+    /**
+     * Returns why a grouping row cannot be converted to the single-value {@code rowType}, or {@code null} when the rows
+     * convert normally (including every non-single-value {@code rowType}).
+     *
+     * <p>WHY: the key of a group field inside {@code _id} (such as {@code "_id.part"}, or {@code "_id"} itself) is projected
+     * back under {@code _id}, and the single-value conversion converts a row's sole non-{@code _id} field. So a single-value
+     * {@code rowType} received the count of {@code groupByAndCount("_id.part")} (and of {@code (["_id.part", "_id.q"])}) as
+     * if it were the group key, and {@code groupBy(["_id.part", "x"])} silently dropped the {@code _id} key and emitted only
+     * {@code x} (proven live), where the same calls without {@code _id} paths fail as documented. Only these
+     * {@code _id} cases are reported here: without an {@code _id} field the row keeps two or more non-{@code _id} fields
+     * and the conversion already rejects it with its own message.</p>
+     *
+     * @param fieldNames the validated group fields
+     * @param count whether the rows carry the group count
+     * @param rowType the requested row type
+     * @return the description of the values a row holds, or {@code null}
+     */
+    private static String singleValueGroupRowError(final Collection<String> fieldNames, final boolean count, final Class<?> rowType) {
+        if (rowType.isAssignableFrom(Document.class) || !isSingleValueType(rowType)) {
+            return null;
+        }
+
+        boolean idField = false;
+        boolean oneTopLevelField = true;
+        String topLevelField = null;
+
+        for (final String fieldName : fieldNames) {
+            final int dot = fieldName.indexOf('.');
+            final String first = dot < 0 ? fieldName : fieldName.substring(0, dot);
+
+            idField |= MongoDBBase._ID.equals(first);
+
+            if (topLevelField == null) {
+                topLevelField = first;
+            } else if (!topLevelField.equals(first)) {
+                oneTopLevelField = false;
+            }
+        }
+
+        if (!idField) {
+            return null;
+        } else if (count) {
+            return "the group key and the count";
+        } else {
+            // Fields under one top-level field (here _id) arrive as that single nested document, converted as a whole.
+            return oneTopLevelField ? null : "multiple group key fields";
+        }
     }
 
     private static List<Document> groupByPipeline(final String fieldName, final boolean count, final Class<?> rowType) {

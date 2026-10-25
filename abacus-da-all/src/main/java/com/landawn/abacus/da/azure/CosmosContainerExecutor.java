@@ -222,6 +222,10 @@ public class CosmosContainerExecutor {
 
     private static final List<String> COSMOS_LOGICAL_KEYWORDS = List.of("AND", "OR", "NOT");
 
+    // Keywords directly followed by an operand expression. Any other name or literal before AND/OR/BETWEEN in the condition
+    // completes an operand (clause keywords such as VALUE or TOP occur only inside subqueries, so there they are property names).
+    private static final Set<String> COSMOS_OPERAND_INTRODUCING_KEYWORDS = Set.of("AND", "OR", "NOT", "BETWEEN", "LIKE");
+
     // Cosmos DB SQL requires every property reference to be bound to the FROM source/alias; bare
     // identifiers (e.g. "category") are a syntax error. Building with this alias makes SqlBuilder
     // emit a Cosmos-valid form, e.g. SELECT * FROM entity c WHERE c.category = @p0.
@@ -1930,7 +1934,11 @@ public class CosmosContainerExecutor {
      * <p>{@code EXISTS} and {@code NOT EXISTS} subqueries supplied through {@code Filters.subQuery(...)} retain their own
      * identifiers, including array, unary, and parenthesized projections that omit {@code FROM}. Qualification with {@code c}
      * resumes for properties in the surrounding condition after the subquery closes. Use {@code Filters.subQuery(...)} for
-     * literal subquery SQL; {@code Filters.expr(...)} still applies the SQL builder's property mapping and naming policy.</p>
+     * literal subquery SQL; {@code Filters.expr(...)} still applies the SQL builder's property mapping and naming policy. A subquery
+     * built from an entity class ({@code Filters.subQuery(Product.class, List.of("id"), cond)}) is rendered as relational SQL with a
+     * quoted alias ({@code SELECT id AS "id" FROM product WHERE ...}), which Cosmos DB rejects as a syntax error; write it as Cosmos
+     * SQL text instead, such as {@code Filters.subQuery("SELECT VALUE 1 FROM t IN c.tags WHERE t = ?", List.of("x"))}, whose
+     * {@code ?} placeholders are bound like those of the surrounding condition.</p>
      *
      * <p>Within one {@code Filters.expr(...)}, the SQL builder cannot tell whether a backslash escapes a quote, so property names
      * after a backslash-escaped quote (as in {@code name = 'O\'Brien' AND bonusPoints > 1}) are qualified but not converted by the
@@ -2982,6 +2990,23 @@ public class CosmosContainerExecutor {
             final int conditionStart) {
         final char previousChar = previous < conditionStart ? 0 : query.charAt(previous);
 
+        // AND, OR and BETWEEN (also NOT BETWEEN) right after a complete operand are the binary keyword, so a sign, decimal point or
+        // bracket after them starts their right operand: "price BETWEEN -1 AND 1" and "price > 1 AND -price < 0" were read as
+        // arithmetic on a property named like the keyword (c["BETWEEN"] -1, c["AND"] -c.price), a syntax error. A property named
+        // and/or/between can follow only an operator, a parenthesis, or a keyword that introduces an operand, never an operand.
+        if (("AND".equals(identifier) || "OR".equals(identifier) || "BETWEEN".equals(identifier)) && followsCompleteCosmosOperand(query,
+                "BETWEEN".equals(identifier) ? skipPrecedingCosmosNot(query, previous, conditionStart) : previous, conditionStart)) {
+            return false;
+        }
+
+        // NOT before a sign or a decimal literal is the unary keyword (NOT -price > 0): read as a property, the bracket accessor
+        // turns it into the valid but unrelated arithmetic c["NOT"] - c.price, which silently matches nothing. Right after an operator
+        // (price = not - 1) it stays a property: a logical NOT there would negate a number, which is always undefined.
+        if ("NOT".equals(identifier) && "=<>!+-*/%~|&^?".indexOf(previousChar) < 0 && next + 1 < query.length()
+                && (query.charAt(next) == '-' || query.charAt(next) == '+' || query.charAt(next) == '.' && Character.isDigit(query.charAt(next + 1)))) {
+            return false;
+        }
+
         if (next < query.length()) {
             final char nextChar = query.charAt(next);
 
@@ -3025,6 +3050,54 @@ public class CosmosContainerExecutor {
         // On the right-hand side of an operator, clause keywords such as ORDER can also be
         // legitimate property names. Preserve actual literals and predicate operators.
         return "=<>!+-*/%".indexOf(previousChar) >= 0 && !isCosmosLiteralKeyword(identifier);
+    }
+
+    /**
+     * Whether the token ending at {@code previous} completes an operand: a closing parenthesis, bracket, brace or quote, a number,
+     * or a name (including a literal keyword or a property named like a keyword), but not a keyword that introduces an operand.
+     */
+    private static boolean followsCompleteCosmosOperand(final String query, final int previous, final int conditionStart) {
+        if (previous < conditionStart) {
+            return false;
+        }
+
+        final char previousChar = query.charAt(previous);
+
+        if (previousChar == ')' || previousChar == ']' || previousChar == '}' || previousChar == '\'' || previousChar == '"') {
+            return true;
+        }
+
+        if (!Character.isJavaIdentifierPart(previousChar)) {
+            return false;
+        }
+
+        int tokenStart = previous;
+
+        while (tokenStart > conditionStart && Character.isJavaIdentifierPart(query.charAt(tokenStart - 1))) {
+            tokenStart--;
+        }
+
+        // A path segment (c.not) or parameter (@not) is a name, whatever its spelling.
+        return tokenStart > conditionStart && (query.charAt(tokenStart - 1) == '.' || query.charAt(tokenStart - 1) == '@')
+                || !COSMOS_OPERAND_INTRODUCING_KEYWORDS.contains(query.substring(tokenStart, previous + 1).toUpperCase(Locale.ROOT));
+    }
+
+    /** Returns the end of the token before a {@code NOT} ending at {@code previous} ({@code x NOT BETWEEN}), else {@code previous}. */
+    private static int skipPrecedingCosmosNot(final String query, final int previous, final int conditionStart) {
+        final int notStart = previous - "NOT".length() + 1;
+
+        if (notStart < conditionStart || !query.regionMatches(true, notStart, "NOT", 0, "NOT".length()) || notStart > conditionStart
+                && (Character.isJavaIdentifierPart(query.charAt(notStart - 1)) || query.charAt(notStart - 1) == '.' || query.charAt(notStart - 1) == '@')) {
+            return previous;
+        }
+
+        int index = notStart - 1;
+
+        while (index >= conditionStart && Character.isWhitespace(query.charAt(index))) {
+            index--;
+        }
+
+        return index;
     }
 
     private static boolean isFollowedByCosmosFunctionName(final String query, final int start) {

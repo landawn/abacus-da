@@ -116,7 +116,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         (blocking) while the stream is consumed, so a page-fetch or row-mapping failure is thrown by the stream's terminal
      *         operation rather than reported by the future
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
@@ -160,7 +161,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         while the stream is consumed, so a page-fetch or row-mapping failure is thrown by the stream's terminal operation
      *         rather than reported by the future
      * @throws IllegalArgumentException if {@code query} or {@code rowMapper} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
@@ -255,7 +257,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         read into a single-value reference type), {@code get()} throws an {@code ExecutionException}
      *         whose cause is a {@link NullPointerException}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
@@ -311,7 +314,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         default value of {@code valueClass}, as described above, for a {@code NULL} column) when at least one row
      *         is returned, or {@code Nullable.empty()} if no row exists
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
@@ -367,7 +371,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         if no row exists; if a row exists but the converted value is {@code null}, {@code get()} throws
      *         an {@code ExecutionException} whose cause is a {@link NullPointerException}
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
@@ -461,7 +466,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param parameters the positional query parameters
      * @return a future that completes with a synchronous-style {@link ResultSet}
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */
@@ -506,7 +512,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param parameters a map of named parameter values keyed by parameter name
      * @return a future that completes with a synchronous-style {@link ResultSet}
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
      */

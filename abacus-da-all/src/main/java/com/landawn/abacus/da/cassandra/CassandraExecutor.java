@@ -29,6 +29,8 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -153,15 +155,18 @@ import lombok.experimental.Accessors;
  * unchanged and fails with a {@link CodecNotFoundException}.</p>
  *
  * <h2>Number and Blob Conversion</h2>
- * <p>A bind value is converted to its column's type only when that keeps the value: a {@code Double}, {@code Float} or
- * {@code BigDecimal} with a fractional part (for example {@code 1.5}) bound to an integer column ({@code tinyint},
- * {@code smallint}, {@code int}, {@code bigint}, {@code varint} or {@code counter}), and a finite number beyond the range of a
- * {@code float} or {@code double} column (for example {@code 1e300} for a {@code float}), are rejected with an
- * {@link IllegalArgumentException} naming the parameter, the value and the column's CQL type, instead of being bound truncated or
- * as {@code Infinity}. An exact conversion is bound ({@code 2.0} to an {@code int} column binds {@code 2}), and an integral value
- * out of the integer column's range fails with {@link ArithmeticException}. This check applies to binding only: a column value
- * read into a narrower target (a {@code double} column into an {@code int} property) is converted as {@code N.convert} converts it.
- * A {@code String} bound to a {@code blob} column (or written to a {@code blob} UDT field) is base64 text: it is decoded into the
+ * <p>A bind value converted to its column's type must keep its number: a number with a fractional part (for example a
+ * {@code Double}, {@code Float} or {@code BigDecimal} {@code 1.5}, or an abacus {@code Fraction} {@code 3/2}) bound to an integer
+ * column ({@code tinyint}, {@code smallint}, {@code int}, {@code bigint}, {@code varint} or {@code counter}), and a finite number
+ * beyond the range of a {@code float} or {@code double} column (for example {@code 1e300} for a {@code float}), are rejected with
+ * an {@link IllegalArgumentException} naming the parameter, the value and the column's CQL type, instead of being bound truncated
+ * or as {@code Infinity}. An exact conversion is bound ({@code 2.0} to an {@code int} column binds {@code 2}), as is a number
+ * rounded to the nearest {@code float} or {@code double} ({@code 0.1} to a {@code float} column binds {@code 0.1f}), and a value
+ * out of the integer column's range, or a {@code NaN} or infinite value for it, fails with {@link ArithmeticException}. This
+ * check applies to binding only: a column value read into a narrower target (a {@code double} column into an {@code int}
+ * property) is converted as {@code N.convert} converts it.
+ * A {@code String} bound to a {@code blob} column (or to a custom-type column, which the driver also binds from a
+ * {@link ByteBuffer}, or written to a {@code blob} UDT field) is base64 text: it is decoded into the
  * blob's bytes, and text that is not valid base64 is rejected with an {@link IllegalArgumentException}. A {@code blob} read into a
  * {@code String} target or bean property (including a nested dotted column and a UDT field read into a bean) is the base64 text
  * of the buffer's remaining bytes; the driver's buffer is not consumed. {@code byte[]} and {@link ByteBuffer} targets receive the
@@ -715,8 +720,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(resultSet, cs.resultSet);
 
-        final boolean isEntity = Beans.isBeanClass(targetClass);
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
+        // WHY: Beans.isBeanClass also accepts an @Entity-annotated Map subclass. Such a target is a map target, as for readRow and
+        // toList: typing its columns by its Map getters (isEmpty() -> "empty") turned a nested row into an Object[] (or a single value
+        // of the getter's type, failing strict Boolean conversion) instead of a map. Scalar values stayed raw either way (isMap).
+        final boolean isEntity = !isMap && Beans.isBeanClass(targetClass);
         final ColumnDefinitions columnDefinitions = resultSet.getColumnDefinitions();
         final int columnCount = columnDefinitions.size();
         // Only a sizing hint: a faulty ResultSet reporting a negative count must not fail the extraction.
@@ -874,7 +882,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     path that does not resolve, or whose last property is read-only, is ignored</li>
      * <li><strong>Type conversion:</strong> Automatic conversion between compatible types (see the class documentation for
      *     the {@code timestamp}, {@code date}, {@code inet} and {@code blob} rules; a {@code blob} read into a {@code String}
-     *     property is the base64 text of its bytes), for top-level and nested properties alike</li>
+     *     property is the base64 text of its bytes), for top-level and nested properties alike. A collection or map column read
+     *     into a property declared as a parameterized collection or map (for example {@code List<byte[]>} or
+     *     {@code Map<String, String>}) or as an object array has each element, key and value converted by the same rules for the
+     *     declared element type, nested containers included (a {@code list<timestamp>} into a {@code List<LocalDateTime>}, a
+     *     {@code set<inet>} into a {@code Set<String>}); the driver's collection is set unchanged when every element already has
+     *     its declared type, and otherwise a new one of the declared kind holding the converted elements in the driver's order.
+     *     A UDT or tuple element is kept as the driver decodes it; an element that cannot be converted fails the row as a
+     *     top-level value would</li>
      * <li><strong>Null values:</strong> a {@code NULL} column sets the property to the default value of its type:
      *     {@code null} for a wrapper or other reference type, the primitive default for a primitive property (for example,
      *     {@code 0} for an {@code int}), and an empty value for an {@code Optional}-like property</li>
@@ -955,7 +970,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             parameterType = propInfo.clazz;
 
             if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof Row)) {
-                propInfo.setPropValue(entity, toPropValue(parameterType, propValue));
+                propInfo.setPropValue(entity, toPropValue(propInfo, propValue));
             } else {
                 propInfo.setPropValue(entity, readRow(parameterType, (Row) propValue));
             }
@@ -966,7 +981,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Converts the value of a dotted (nested-path) column, which {@link BeanInfo#setPropValue(Object, String, Object, boolean)}
-     * stores, as {@link #toPropValue(Class, Object)} converts a top-level column value, for the class of the path's last
+     * stores, as {@link #toPropValue(PropInfo, Object)} converts a top-level column value, for the (element) type of the path's last
      * property. A path that does not resolve, or whose last property is read-only, keeps the value unchanged; the setter then
      * ignores it, as before.
      * @throws RuntimeException if {@code value} cannot be converted to the last property's class
@@ -985,7 +1000,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         final PropInfo leaf = chain.get(chain.size() - 1);
 
-        return isReadOnlyProperty(leaf) ? value : toPropValue(leaf.clazz, value);
+        return isReadOnlyProperty(leaf) ? value : toPropValue(leaf, value);
     }
 
     // A getter-only (computed) property, e.g. one inherited from an @Entity superclass (abacus-common 8.1.0), is in
@@ -1182,17 +1197,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Converts a bind value that the column's codec does not accept to the column's Java type {@code javaClass}, as
-     * {@link #prepareStatement(String, Object...)} binds it. Text for a {@code blob} column is base64-decoded into a buffer
-     * positioned at 0. Any other value is converted by {@link #convertValue(Object, Class)}; a value that conversion rejects with
-     * {@link ClassCastException} or {@link IllegalArgumentException} is returned unchanged, so the driver reports it (a
-     * {@link CodecNotFoundException}). A conversion that would change a number is rejected instead of bound: a {@code Double},
-     * {@code Float} or {@code BigDecimal} with a fractional part for an integer column ({@code tinyint}, {@code smallint},
-     * {@code int}, {@code bigint}, {@code varint} or {@code counter}), and a finite number beyond the range of a {@code float} or
-     * {@code double} column.
+     * {@link #prepareStatement(String, Object...)} binds it. Text for a {@code blob} (or custom-type) column is base64-decoded into
+     * a buffer positioned at 0. Any other value is converted by {@link #convertValue(Object, Class)}; a value that conversion rejects
+     * with {@link ClassCastException} or {@link IllegalArgumentException} is returned unchanged, so the driver reports it (a
+     * {@link CodecNotFoundException}). A conversion that would change a number is rejected instead of bound: a number with a
+     * fractional part (see {@link #isLossyNumberConversion(Object, Object)}) for an integer column ({@code tinyint},
+     * {@code smallint}, {@code int}, {@code bigint}, {@code varint} or {@code counter}), and a finite number beyond the range of a
+     * {@code float} or {@code double} column.
      *
      * @throws IllegalArgumentException if the conversion would change a number as described above, or text bound to a {@code blob}
      *         column is not valid base64; the message names the parameter, the value or problem, and the column's CQL type
-     * @throws ArithmeticException if an integral value is out of the range of its integer column
+     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it
      * @throws RuntimeException if the conversion fails otherwise
      */
     private static Object toBindValue(final Object value, final Class<?> javaClass, final DataType colType, final ColumnDefinitions variables,
@@ -1238,26 +1253,36 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Returns whether converting the bind value {@code source} produced a different number {@code converted}: a {@code Double},
-     * {@code Float} or {@code BigDecimal} with a fractional part converted to an integer type, or a finite number converted to an
-     * infinite {@code Float} or {@code Double}. (A non-finite value, or an integral value out of the integer type's range, already
-     * makes {@code N.convert} throw {@link ArithmeticException}; rounding to the nearest {@code float}/{@code double} is not a change.)
+     * Returns whether converting the bind value {@code source} produced a different number {@code converted}: a number with a
+     * fractional part (a {@code Double}, {@code Float}, {@code BigDecimal}, or another {@link Number} such as an abacus
+     * {@code Fraction} or {@code MutableDouble}) converted to an integer type, or a finite number converted to an infinite
+     * {@code Float} or {@code Double}. (A non-finite value, or an integral value out of the integer type's range, already makes
+     * {@code N.convert} throw {@link ArithmeticException}; rounding to the nearest {@code float}/{@code double} is not a change.)
      */
     private static boolean isLossyNumberConversion(final Object source, final Object converted) {
+        if (!(source instanceof final Number number)) {
+            return false;
+        }
+
+        // WHY (r2): the first version tested only Double/Float/BigDecimal sources. N.convert truncates any Number through
+        // intValue()/longValue(), so a Fraction 3/2 or MutableDouble 1.5 was still bound as 1; and it took every other Number for
+        // finite, so an infinite MutableDouble/MutableFloat/DoubleAdder bound to a float or double column (which stays Infinity)
+        // was rejected "without changing it: it would be bound as Infinity". Only BigDecimal and BigInteger values are finite
+        // whatever their double value (which overflows to Infinity for a huge value); any other number is as finite as its
+        // double value, and an integral one (Long, AtomicLong, MutableInt, ...) always has an integral double value.
         if (converted instanceof Float || converted instanceof Double) {
-            // An infinite Double/Float source stays infinite; any other number (BigDecimal, BigInteger, a finite Double) is finite.
-            return Double.isInfinite(((Number) converted).doubleValue()) && source instanceof final Number number
-                    && (!(number instanceof Double || number instanceof Float) || Double.isFinite(number.doubleValue()));
+            return Double.isInfinite(((Number) converted).doubleValue())
+                    && (number instanceof BigDecimal || number instanceof BigInteger || Double.isFinite(number.doubleValue()));
         } else if (converted instanceof Byte || converted instanceof Short || converted instanceof Integer || converted instanceof Long
                 || converted instanceof BigInteger) {
-            if (source instanceof Double || source instanceof Float) {
-                // A Float widens to double exactly.
-                final double d = ((Number) source).doubleValue();
-
-                return d != Math.rint(d);
-            } else if (source instanceof final BigDecimal decimal) {
+            if (number instanceof final BigDecimal decimal) {
                 return decimal.signum() != 0 && decimal.stripTrailingZeros().scale() > 0;
             }
+
+            // A Float widens to double exactly; a huge BigInteger gives Infinity, which rint keeps.
+            final double d = number.doubleValue();
+
+            return d != Math.rint(d);
         }
 
         return false;
@@ -1400,6 +1425,151 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 || (value instanceof LocalDate && (propClass == Instant.class || propClass == java.time.LocalDateTime.class
                         || propClass == java.time.ZonedDateTime.class || propClass == java.time.OffsetDateTime.class))
                 || (value instanceof InetAddress && propClass == String.class) ? decodeValue(value, propClass) : value;
+    }
+
+    /**
+     * Converts a driver-decoded value for {@code propInfo}, as {@link PropInfo#setPropValue(Object, Object)} then stores it. A
+     * collection or map for a property declared as a parameterized collection or map, or as an object array, has its elements
+     * (keys and values) converted to the declared element types (see {@link #toContainerValue(Type, Object)}); any other value is
+     * converted as {@link #toPropValue(Class, Object)} converts it.
+     * @throws RuntimeException if {@code value}, or one of its elements, cannot be converted to the property's (element) type
+     */
+    private static Object toPropValue(final PropInfo propInfo, final Object value) throws RuntimeException {
+        if (value instanceof Collection || value instanceof Map) {
+            // WHY: PropInfo.setPropValue stores a driver collection or map as is when the property's raw class accepts it (a List
+            // property, an ArrayList), so a List<byte[]> or List<String> property of a list<blob> column held ByteBuffers, a
+            // List<LocalDateTime> of a list<timestamp> held Instants and a Set<String> of a set<inet> held InetAddresses: heap
+            // pollution that failed with ClassCastException where the elements were used. The elements now get the conversions a
+            // top-level value of the element type gets. A container whose elements all fit is stored as before (no copy).
+            final Object converted = toContainerValue(propInfo.type, value);
+
+            if (converted != value) {
+                return propInfo.clazz.isInstance(converted) ? converted : N.convert(converted, propInfo.type);
+            }
+
+            return value;
+        }
+
+        return toPropValue(propInfo.clazz, value);
+    }
+
+    /**
+     * Converts the elements of a driver-decoded collection (for a collection or object-array {@code type}) or the keys and values of
+     * a map (for a map {@code type}) to the element types {@code type} declares, by {@link #toElementValue(Type, Object)}. Returns
+     * {@code value} itself when every element already fits (or {@code type} declares no element types); otherwise a new
+     * {@link ArrayList} (a {@link LinkedHashSet} for a set type, or a {@code Set} value of a type that a {@code LinkedHashSet}
+     * satisfies) or {@link LinkedHashMap} of the converted elements, in the driver's iteration order, which the caller converts to
+     * the declared container class if it is not one already.
+     * @throws RuntimeException if an element cannot be converted to its declared type
+     */
+    private static Object toContainerValue(final Type<?> type, final Object value) throws RuntimeException {
+        if (value instanceof final Collection<?> collection && (type.isCollection() || type.isObjectArray())) {
+            final Type<?> elementType = type.elementType();
+
+            if (elementType == null) {
+                return value;
+            }
+
+            List<Object> converted = null;
+            int index = 0;
+
+            for (final Object element : collection) {
+                final Object elementValue = toElementValue(elementType, element);
+
+                if (converted != null) {
+                    converted.add(elementValue);
+                } else if (elementValue != element) {
+                    // The first element that changes: copy the elements before it, which fit as they are.
+                    converted = new ArrayList<>(collection.size());
+                    final Iterator<?> iter = collection.iterator();
+
+                    for (int i = 0; i < index; i++) {
+                        converted.add(iter.next());
+                    }
+
+                    converted.add(elementValue);
+                }
+
+                index++;
+            }
+
+            if (converted == null) {
+                return value;
+            }
+
+            return type.isSet() || (collection instanceof Set && type.javaType().isAssignableFrom(LinkedHashSet.class)) ? new LinkedHashSet<>(converted)
+                    : converted;
+        } else if (value instanceof final Map<?, ?> map && type.isMap()) {
+            final List<Type<?>> parameterTypes = type.parameterTypes();
+
+            if (parameterTypes.size() != 2) {
+                return value;
+            }
+
+            final Type<?> keyType = parameterTypes.get(0);
+            final Type<?> valueType = parameterTypes.get(1);
+            Map<Object, Object> converted = null;
+            int index = 0;
+
+            for (final Map.Entry<?, ?> entry : map.entrySet()) {
+                final Object key = toElementValue(keyType, entry.getKey());
+                final Object entryValue = toElementValue(valueType, entry.getValue());
+
+                if (converted != null) {
+                    converted.put(key, entryValue);
+                } else if (key != entry.getKey() || entryValue != entry.getValue()) {
+                    converted = new LinkedHashMap<>();
+                    final Iterator<? extends Map.Entry<?, ?>> iter = map.entrySet().iterator();
+
+                    for (int i = 0; i < index; i++) {
+                        final Map.Entry<?, ?> previous = iter.next();
+                        converted.put(previous.getKey(), previous.getValue());
+                    }
+
+                    converted.put(key, entryValue);
+                }
+
+                index++;
+            }
+
+            return converted == null ? value : converted;
+        }
+
+        return value;
+    }
+
+    /**
+     * Converts one element (or map key or value) of a driver-decoded collection or map to {@code type}, as a top-level column value
+     * of that type is converted ({@link #decodeValue(Object, Class)}): for example a {@code blob} to {@code byte[]} or base64 text, a
+     * {@code timestamp} to a {@code LocalDateTime} in the JVM default zone, an {@code inet} to its address text. A nested
+     * collection or map is converted element by element ({@link #toContainerValue(Type, Object)}) and then to {@code type}'s
+     * container class (for example a {@code String[]}) if it is not one already; a single value for a collection or map
+     * {@code type} is converted by {@code N.convert} to that type, element type included. Returns {@code value} itself when it
+     * already is a {@code type} (a nested container: when its elements also fit), and keeps a {@code null}, a UDT value and a tuple
+     * value as the driver decodes them, as a UDT or tuple column is set.
+     * @throws RuntimeException if {@code value} cannot be converted to {@code type}
+     */
+    private static Object toElementValue(final Type<?> type, final Object value) throws RuntimeException {
+        if (value == null) {
+            return null;
+        }
+
+        final Class<?> cls = type.javaType();
+
+        if (value instanceof Collection || value instanceof Map) {
+            final Object converted = toContainerValue(type, value);
+
+            return cls.isInstance(converted) ? converted : N.convert(converted, type);
+        }
+
+        if (cls.isInstance(value) || value instanceof UdtValue || value instanceof TupleValue) {
+            return value;
+        }
+
+        // WHY (r2 verify): a scalar for a parameterized collection or map element type (a set<int> column into a List<List<Long>>
+        // property) is converted to that full type, as PropInfo.setPropValue's N.convert of the whole container did before; the raw
+        // class (N.convert(3, List.class)) dropped the element type and stored a List<Integer> in it.
+        return type.isCollection() || type.isMap() ? N.convert(value, type) : decodeValue(value, cls);
     }
 
     /**
@@ -1608,7 +1778,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param whereClause the WHERE condition
      * @return an instance of {@code targetClass} populated with data from the single matching row,
      *         or {@code null} when no row matches
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code whereClause} contains a relation unsupported by CQL
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code whereClause} contains a relation unsupported by CQL,
+     *         or a condition value is rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in the class
+     *         documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one row matches the WHERE condition
@@ -1660,7 +1832,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *         value of {@code valueClass}: the primitive default, the empty value of an {@code Optional}-like type, or {@code null})
      *         when at least one row is returned; {@code Nullable.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForSingleNonNull(Class, String, Object...)
@@ -1721,7 +1894,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *         one row is returned; {@code Optional.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if a row is returned but the converted column value is
@@ -1787,8 +1961,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed parameter
-     *         markers, the supplied parameter count or names do not match the prepared statement, or {@code targetClass} is a single-value type
-     *         but the first row does not have exactly one column
+     *         markers, the supplied parameter count or names do not match the prepared statement, a parameter value is rejected when
+     *         converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation), or {@code targetClass} is a
+     *         single-value type but the first row does not have exactly one column
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if the first row maps to a null value, which {@link Optional#of(Object)} cannot contain
@@ -1855,7 +2030,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return a Stream of mapped objects
      * @throws IllegalArgumentException if {@code query} or {@code rowMapper} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
      * @see #stream(Class, String, Object...)
@@ -1999,7 +2175,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the parameter values (can be individual values, arrays, collections, maps, or entities)
      * @return the raw ResultSet from Cassandra
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation)
      * @throws AllNodesFailedException if every node tried by the driver fails to execute the request
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
@@ -2044,7 +2221,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return the raw ResultSet from Cassandra
      * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
-     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
+     *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation)
      * @throws AllNodesFailedException if every node tried by the driver fails to execute the request
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
@@ -2407,9 +2585,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>A value the column's codec does not accept is converted to the column's Java type; one the conversion rejects is bound
      * unchanged, and the driver then fails with a {@link CodecNotFoundException}. A conversion that would change a number is
-     * rejected (see <i>Number and Blob Conversion</i> in the class documentation): a {@code Double}, {@code Float} or
-     * {@code BigDecimal} with a fractional part for an integer column, and a finite number beyond the range of a {@code float} or
-     * {@code double} column. A {@code String} for a {@code blob} column is decoded as base64.</p>
+     * rejected (see <i>Number and Blob Conversion</i> in the class documentation): a number with a fractional part (such as a
+     * {@code Double}, {@code Float}, {@code BigDecimal} or {@code Fraction}) for an integer column, and a finite number beyond the
+     * range of a {@code float} or {@code double} column. A {@code String} for a {@code blob} column is decoded as base64.</p>
      *
      * @param query the CQL text or mapper identifier
      * @param parameters positional values, a single positional array/collection, or a named map/bean
@@ -2417,7 +2595,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if {@code query} is {@code null}, an unmapped query contains malformed or mixed
      *         parameter markers, named values cannot be resolved, the positional value count does not match, a value's
      *         conversion to its column's type would change the number, or text for a {@code blob} column is not valid base64
-     * @throws ArithmeticException if an integral value is out of the range of its integer column
+     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it
      * @throws RuntimeException if the driver fails to prepare the resolved CQL or the session is closed, a bean property
      *         getter fails, or the driver rejects a bound value
      */
@@ -2994,7 +3172,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * case-insensitively or in its snake_case form, as {@link CassandraExecutor#toEntity(Row, Class)} matches a column)
          * or to the property declaring it as its {@code @Column} name. A field without a matching property is written as
          * {@code null} and ignored when decoding; a read-only (for example getter-only) property is written from its getter
-         * but ignored when decoding.</p>
+         * but ignored when decoding. A field value decoded into a bean property is converted as
+         * {@link CassandraExecutor#toEntity(Row, Class)} converts a column value, including the elements of a collection or map
+         * field read into a parameterized collection, map or object-array property.</p>
          *
          * <p>A {@code byte[]} field value is accepted for a CQL {@code blob}. A registered codec for that
          * Java type takes precedence; otherwise the bytes are wrapped in a {@link ByteBuffer} for the
@@ -3139,7 +3319,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                             if (propInfo != null && !isReadOnlyProperty(propInfo)) {
                                 // Read by position for the same reason as the Map branch above.
-                                propInfo.setPropValue(targetBean, toPropValue(propInfo.clazz, udtValue.getObject(i)));
+                                propInfo.setPropValue(targetBean, toPropValue(propInfo, udtValue.getObject(i)));
                             }
                         }
 

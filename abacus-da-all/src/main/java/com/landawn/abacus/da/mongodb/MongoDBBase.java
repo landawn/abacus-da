@@ -145,7 +145,8 @@ import com.mongodb.client.MongoIterable;
  * <h3>BSON Type Mapping:</h3>
  * <ul>
  *   <li>Java String &rarr; BSON String</li>
- *   <li>Java primitives &rarr; BSON numeric types</li>
+ *   <li>Java numeric primitives and their wrappers &rarr; BSON numeric types (a {@code short} or {@code byte} as int32, a
+ *       {@code float} as double); a {@code boolean} &rarr; BSON boolean; a {@code char} &rarr; a one-character BSON string</li>
  *   <li>Java Date &rarr; BSON DateTime</li>
  *   <li>Java collections &rarr; BSON arrays</li>
  *   <li>Java arrays other than {@code byte[]} (such as {@code String[]}, {@code int[]}, {@code ByteBuffer[]} or an array of
@@ -1401,7 +1402,8 @@ public abstract class MongoDBBase {
      * @param rowType the Class representing the target entity type; must not be {@code null}
      * @return an entity instance populated with data from the document, or {@code null} if {@code doc} is {@code null}
      * @throws IllegalArgumentException if {@code rowType} is null, or a non-null {@code doc} cannot be mapped to its bean properties or identifier
-     *         type
+     *         type, or {@code doc} is non-null and {@code rowType} is a {@link Map} type (also an {@code @Entity}-annotated {@code Map}
+     *         subclass), which is no entity: {@link #toMap(Document, IntFunction)} copies a document into a map
      * @throws RuntimeException if a property conversion overflows its target numeric range, a registered converter or type handler throws,
      *         a bean constructor or property setter cannot be accessed or throws while populating the result, or a requested collection or
      *         map property cannot be constructed or populated (for example an element-typed container that rejects a {@code null} element)
@@ -1414,6 +1416,15 @@ public abstract class MongoDBBase {
 
         if (doc == null) {
             return null;
+        }
+
+        // Beans.isBeanClass is also true for an @Entity-annotated Map subclass, which Beans.mapToBean then treats as an
+        // immutable bean of its Map accessors (keySet, size, ...) and fails with a misleading UnsupportedOperationException
+        // ("No all arguments constructor found"). Reject every Map type alike: Beans.mapToBean rejects a plain one (HashMap)
+        // with IllegalArgumentException as well.
+        if (Map.class.isAssignableFrom(rowType)) {
+            throw new IllegalArgumentException("Not a bean class: " + ClassUtil.getCanonicalClassName(rowType)
+                    + " - a Map type is not an entity; use toMap(Document, IntFunction) to copy a Document into a Map");
         }
 
         return toEntity(doc, rowType, propConversions(N.typeOf(rowType)), false);
@@ -2039,6 +2050,13 @@ public abstract class MongoDBBase {
      * implementations and bean rows may be mixed. A map target creates every row's map with one factory: when the first
      * non-null row is a Document, {@link IntFunctions#ofMap(Class)} with the row's size, including registered map
      * creators, as for a Document result; otherwise {@code N.newMap(Class)}, as for other rows.</p>
+     *
+     * <p>When the rows are documents (maps), an object-array or {@link Collection} {@code rowType} is a single-value target like
+     * a scalar one: each row's sole non-{@code _id} field (or its {@code _id}) is converted to it, so a projected BSON array
+     * field reads into a {@code String[]} or {@code List}, and a row with several non-{@code _id} fields is rejected with
+     * {@link IllegalArgumentException}. {@link #stream(MongoCursor, Class)} instead returns the field values of each document
+     * positionally for such a type ({@code {_id: 7, a: 1}} as {@code [7, 1]}). Other rows must already be instances of such a
+     * {@code rowType}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2669,7 +2687,8 @@ public abstract class MongoDBBase {
      * @param selectPropNames collection of property names to include in the Dataset; null to include all
      * @param findIterable the MongoDB query result to extract data from; must not be {@code null}
      * @param rowType the target type for each row in the Dataset; must be non-null and be an entity class with getter/setter methods or assignable to Map
-     * @return a Dataset containing the selected properties with typed rows
+     * @return a Dataset containing the selected properties with typed rows; when {@code findIterable} yields no document it is empty,
+     *         with {@code selectPropNames} as its columns when that is not empty and no columns otherwise
      * @throws IllegalArgumentException if findIterable is null, or rowType is null or unsupported (not a bean class and not assignable
      *         to Map), or if the selected columns or fetched rows cannot be converted into a consistent Dataset, or if a null row, or a
      *         row that is neither a Map nor a bean, is present while column names are inferred from Map rows
@@ -2828,11 +2847,17 @@ public abstract class MongoDBBase {
      * // A null rowList is treated exactly like an empty one; the row type is validated up front:
      * MongoDB.extractData(null, (List<?>) null, Map.class).size(); // returns 0
      * MongoDB.extractData(null, docs, (Class<?>) null);            // throws IllegalArgumentException ("rowType")
+     *
+     * // Without rows the selected names are still the columns:
+     * MongoDB.extractData(Arrays.asList("name", "city"), Collections.emptyList(), Map.class).columnNames(); // returns [name, city]
      * }</pre>
      *
      * @param selectPropNames collection of property names to include in the Dataset (null to include all)
      * @param rowList the list of objects to extract data from; may be {@code null} or empty, in which
-     *                case an empty Dataset is returned
+     *                case an empty Dataset is returned: its columns are {@code selectPropNames} when that is not empty (named,
+     *                and rejected when duplicated or null, as with rows), and it has no columns otherwise. A list holding only
+     *                {@code null} rows is read like an empty one when {@code selectPropNames} is null or empty, and gives one
+     *                row of {@code null} values per element otherwise, as {@code null} rows do among other rows
      * @param rowType the target type for each row in the resulting Dataset; must not be {@code null}
      * @return a Dataset containing the extracted properties as typed rows
      * @throws IllegalArgumentException if {@code rowType} is null, or the selected columns or row values cannot be converted into a
@@ -2923,7 +2948,10 @@ public abstract class MongoDBBase {
                 } else {
                     return N.newDataset(selectPropNames, newRowList);
                 }
-            } else if (Beans.isBeanClass(rowType)) {
+            } else if (Beans.isBeanClass(rowType) && !Map.class.isAssignableFrom(rowType)) {
+                // Not for a Map row type: Beans.isBeanClass is also true for an @Entity-annotated Map subclass, whose bean rows
+                // were then copied into it with Beans.copyAs (UnsupportedOperationException: it is no bean of settable
+                // properties); such a row type takes the last branch, exactly as Map.class or HashMap.class does.
                 // A non-Document Map row (for example BasicDBObject) must still become the requested bean; the
                 // first-row dispatch above only recognized Document instances as documents. Null rows stay null.
                 final List<Object> newRowList = new ArrayList<>(rowList.size());
@@ -2965,8 +2993,13 @@ public abstract class MongoDBBase {
                     return N.newDataset(selectPropNames, datasetRows);
                 }
             }
-        } else {
+        } else if (N.isEmpty(selectPropNames)) {
             return N.newEmptyDataset();
+        } else {
+            // No (non-null) row: the selected names are still the columns, named exactly as the branches above name them (the
+            // same N.newDataset call, so duplicate or null names fail alike). A column-less Dataset made a query that matched
+            // nothing fail on getColumn(...) for a projected field, and its columns depended on whether any document matched.
+            return N.newDataset(selectPropNames, rowList == null ? Collections.emptyList() : rowList);
         }
     }
 
@@ -3093,7 +3126,21 @@ public abstract class MongoDBBase {
      * @see #stream(MongoCursor, Class)
      */
     public static Stream<Document> stream(final MongoCursor<Document> cursor) {
-        return Stream.of(cursor).onClose(Fn.close(cursor));
+        return Stream.of(cursor).onClose(closeHandler(cursor));
+    }
+
+    /**
+     * Returns the close handler of a stream over {@code cursor}: it closes the cursor once (as {@link Fn#close(AutoCloseable)}
+     * does), through {@link #closeCursor(MongoCursor)}. A {@code null} cursor is ignored.
+     *
+     * @param cursor the cursor the stream reads, possibly {@code null}
+     * @return the close handler
+     */
+    private static Runnable closeHandler(final MongoCursor<?> cursor) {
+        // Not Fn.close(cursor): a stream closed on an interrupted thread (for example by a task cancelled with cancel(true) while
+        // it consumed the stream) closed the cursor with the interrupt status set, which skips killCursors, so the server cursor
+        // stayed open until its idle timeout (proven live for the executors' streams). closeCursor clears and restores the status.
+        return Fn.close(new CursorScope<>(cursor));
     }
 
     /**
@@ -3143,10 +3190,10 @@ public abstract class MongoDBBase {
         // itself (Object, Bson, Map, Document) gets the row as-is. readRow's scalar fallback would otherwise reject a
         // multi-field document requested as Object/Bson, and return the sole value of a single-field one.
         if (rowType != null && rowType.isAssignableFrom(Document.class)) {
-            return (Stream<T>) Stream.of(cursor).onClose(Fn.close(cursor));
+            return (Stream<T>) Stream.of(cursor).onClose(closeHandler(cursor));
         }
 
-        return Stream.of(cursor).map(it -> readRow(it, rowType)).onClose(Fn.close(cursor));
+        return Stream.of(cursor).map(it -> readRow(it, rowType)).onClose(closeHandler(cursor));
     }
 
     @SuppressWarnings("deprecation")
@@ -3330,7 +3377,7 @@ public abstract class MongoDBBase {
         /** The Java class this codec handles. */
         private final Class<T> cls;
 
-        /** {@code true} when {@link #cls} is a bean class; encoding switches between document and string forms accordingly. */
+        /** {@code true} when {@link #cls} is a bean class, encoded in the document form; other values use the binary, array or string form. */
         private final boolean isEntityClass;
 
         /** {@link DocumentCodec} used to encode/decode the BSON document representation of beans. */

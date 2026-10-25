@@ -346,9 +346,10 @@ public final class AsyncDynamoDBExecutor {
      * @param targetEntityClass the entity class to create a mapper for. Must be annotated with one of
      *                          the supported {@code @Table} annotations. Must not be null.
      * @return a cached async {@link Mapper} instance for the specified entity class, never null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is null, is not a bean class, is missing the {@code @Table} annotation,
-     *         has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id} fields, or
-     *         has two IDs that map to the same attribute name
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, is not a bean class, is a {@link Map} type (an
+     *         entity-annotated {@code Map} subclass included), is missing the {@code @Table} annotation, has no ID property (no
+     *         {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id} fields, or has two IDs that map
+     *         to the same attribute name
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) throws IllegalArgumentException {
         N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
@@ -415,9 +416,10 @@ public final class AsyncDynamoDBExecutor {
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
      * @param namingPolicy the naming policy for converting property names to attribute names. If null, defaults to CAMEL_CASE.
      * @return a new async Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if targetEntityClass is null, tableName is null or empty, targetEntityClass is not a bean class, the
-     *         entity has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id}
-     *         fields, or two IDs map to the same attribute name
+     * @throws IllegalArgumentException if targetEntityClass is null, tableName is null or empty, targetEntityClass is not a bean class or
+     *         is a {@link Map} type (an entity-annotated {@code Map} subclass included), the entity has no ID property (no {@code @Id}
+     *         field and no fallback property named {@code id}) or more than two {@code @Id} fields, or two IDs map to the same attribute
+     *         name
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) throws IllegalArgumentException {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -1722,6 +1724,7 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Important Notes:</b></p>
      * <ul>
      * <li>Auto-paginates only when the caller has not set {@code exclusiveStartKey}</li>
+     * <li>A {@code limit} set on the request is only the page size: auto-pagination still reads every matching item</li>
      * <li>May perform multiple API calls for large result sets</li>
      * <li>Results are loaded entirely into memory</li>
      * <li>Consider using {@link #stream(QueryRequest)} for large datasets</li>
@@ -1778,6 +1781,8 @@ public final class AsyncDynamoDBExecutor {
      * <ul>
      * <li>Automatically fetches all pages of results when {@code exclusiveStartKey} is NOT set on
      *     the request; if the caller has set it, only the single page returned is materialized</li>
+     * <li>A {@code limit} set on the request is only the page size, not a cap on the result: auto-pagination still fetches
+     *     every matching item (use {@link #stream(QueryRequest, Class)} with {@code Stream.limit(...)} to stop early)</li>
      * <li>Continues until no more items are available</li>
      * <li>All results loaded into memory at once</li>
      * <li>May timeout for very large result sets</li>
@@ -1924,7 +1929,9 @@ public final class AsyncDynamoDBExecutor {
      *
      * // Typical: rows materialized into a Dataset (here as raw attribute-name -> value maps)
      * CompletableFuture<Dataset> future = executor.query(queryRequest);
-     * Dataset ds = future.get();   // ds.size() == number of matching rows; empty Dataset when none match
+     * Dataset ds = future.get();   // one row per matching item; empty Dataset when none match
+     * // Edge: matching items without any attribute (e.g. a projection of attributes they lack) give an empty Dataset too,
+     * // because a Dataset without columns has no rows
      *
      * future.thenAccept(dataset -> {
      *         // Group sales by product and sum amounts. Map rows hold numeric (N) attributes as their
@@ -1944,7 +1951,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @return a CompletableFuture containing a Dataset with results materialized under the same
-     *         pagination behavior as {@link #list(QueryRequest)}
+     *         pagination behavior as {@link #list(QueryRequest)}; empty when the query matches nothing, and also when no returned
+     *         item has any attribute, because a Dataset without columns has no rows
      * @throws IllegalArgumentException if queryRequest is null
      * @see #query(QueryRequest, Class)
      */
@@ -1986,7 +1994,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p><b>Automatic pagination:</b> When the caller has not set {@code exclusiveStartKey} on the
      * request, all pages are fetched and concatenated into the returned Dataset; if it was set,
-     * only the single page returned by DynamoDB is materialized.</p>
+     * only the single page returned by DynamoDB is materialized. A {@code limit} set on the request is only the page size:
+     * auto-pagination still fetches every matching item.</p>
      *
      * <p><b>Threading note:</b> response conversion runs on {@code CompletableFuture}'s default asynchronous executor
      * (normally the common {@link java.util.concurrent.ForkJoinPool}; see the class documentation). Auto-pagination composes the
@@ -2000,7 +2009,8 @@ public final class AsyncDynamoDBExecutor {
      *                    or a single-value type) can be turned into a Dataset, so this method throws for it before any request
      *                    is sent
      * @return a CompletableFuture that completes with a {@link Dataset} containing the query
-     *         results (possibly empty)
+     *         results (possibly empty; for a {@link Map} type also when no returned item has any attribute, because a Dataset
+     *         without columns has no rows)
      * @throws IllegalArgumentException if queryRequest or targetClass is null, or targetClass is neither a {@link Map} type nor a
      *         bean class (thrown by this call, before any request is sent, even if the query would match nothing)
      */
@@ -2702,8 +2712,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>Entity-based key operations validate every ID before creating a future or contacting
      * DynamoDB. Each ID must convert to a non-empty String, finite Number, or non-empty binary
-     * value; null, Boolean, collection, map, and empty String/binary IDs are rejected with
-     * {@link IllegalArgumentException}.</p>
+     * value; null, Boolean, collection, map, array (other than {@code byte[]}, the binary key), and empty String/binary IDs are
+     * rejected with {@link IllegalArgumentException}.</p>
      *
      * <p><b>Thread Safety:</b> instances of this class are thread-safe and can be shared
      * across multiple threads.</p>
@@ -2726,7 +2736,7 @@ public final class AsyncDynamoDBExecutor {
      *     .thenAccept(response -> System.out.println("User saved"));
      * }</pre>
      *
-     * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
+     * @param <T> the type of entity this mapper handles. Must be a valid bean class (not a {@link Map} type) with getter/setter methods
      *            and one field annotated with {@code @Id} for a simple key (or, with no {@code @Id} field, a
      *            property named {@code id}), or two {@code @Id} fields for a composite partition-and-sort key.
      * @author haiyangli
@@ -2762,14 +2772,18 @@ public final class AsyncDynamoDBExecutor {
          * @param namingPolicy the policy for converting property names to attribute names.
          *                    If null, defaults to CAMEL_CASE.
          * @throws IllegalArgumentException if targetEntityClass or dynamoDBExecutor is null, tableName is null or empty, targetEntityClass
-         *         is not a bean class or has no ID property (no {@code @Id} field and no fallback property named {@code id}) or more than
-         *         two {@code @Id} fields, or two IDs map to the same attribute name
+         *         is not a bean class, is a {@link Map} type (an entity-annotated {@code Map} subclass included), or has no ID property
+         *         (no {@code @Id} field and no fallback property named {@code id}) or more than two {@code @Id} fields, or two IDs map to
+         *         the same attribute name
          */
         Mapper(final Class<T> targetEntityClass, final AsyncDynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy)
                 throws IllegalArgumentException {
             N.checkArgNotNull(targetEntityClass, cs.targetEntityClass);
-            N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method",
-                    ClassUtil.getCanonicalClassName(targetEntityClass));
+            // Beans.isBeanClass also accepts an @Entity-annotated Map subclass, but toItem and the row readers treat a Map as its
+            // entries (toEntity rejects a Map type), so such a mapper validated a key read from an ID property that it never sent
+            // (the item lacked the key).
+            N.checkArgument(Beans.isBeanClass(targetEntityClass) && !Map.class.isAssignableFrom(targetEntityClass),
+                    "{} is not an entity class with getter/setter method", ClassUtil.getCanonicalClassName(targetEntityClass));
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 

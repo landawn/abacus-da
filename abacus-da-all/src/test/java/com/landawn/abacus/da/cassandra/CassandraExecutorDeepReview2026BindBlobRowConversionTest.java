@@ -14,12 +14,24 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.DoubleAdder;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -50,6 +62,9 @@ import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecReg
 import com.datastax.oss.protocol.internal.ProtocolConstants;
 import com.datastax.oss.protocol.internal.response.result.ColumnSpec;
 import com.datastax.oss.protocol.internal.response.result.RawType;
+import com.landawn.abacus.util.Fraction;
+import com.landawn.abacus.util.MutableDouble;
+import com.landawn.abacus.util.MutableFloat;
 import com.landawn.abacus.util.N;
 
 /**
@@ -509,5 +524,249 @@ class CassandraExecutorDeepReview2026BindBlobRowConversionTest {
         public void setNested(final Text nested) {
             this.nested = nested;
         }
+    }
+
+    // ---- 2026-10-24 r2 sliceH ----
+
+    // The lossy-bind rule tested only Double, Float and BigDecimal sources: any other fractional Number (an abacus Fraction or
+    // MutableDouble, a DoubleAdder), which N.convert truncates the same way, was still bound as 1, and an infinite Number other
+    // than a Double or Float (which stays infinite in a float or double column) was rejected "without changing it".
+    @Test
+    void r2_otherFractionalNumbersBoundToIntegerColumnsAreRejected() {
+        final DoubleAdder adder = new DoubleAdder();
+        adder.add(1.5);
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final Object value : new Object[] { Fraction.of(3, 2), MutableDouble.of(1.5), MutableFloat.of(-2.5f), adder }) {
+            for (final DataType type : new DataType[] { DataTypes.SMALLINT, DataTypes.INT, DataTypes.BIGINT, DataTypes.VARINT }) {
+                checks.add(() -> {
+                    try (Fixture fixture = new Fixture(type)) {
+                        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> fixture.executor.execute(UPDATE, value),
+                                value + " -> " + type);
+                        assertTrue(e.getMessage().contains("parameter 'v' (index 0)"), e.getMessage());
+                        assertTrue(e.getMessage().contains("CQL type " + type.asCql(false, true) + " without changing it"), e.getMessage());
+                        assertEquals(0, fixture.binds.size());
+                    }
+                });
+            }
+        }
+
+        assertAll(checks);
+    }
+
+    @Test
+    void r2_infiniteNumbersOfOtherTypesStayInfiniteInFloatAndDoubleColumns() {
+        final DoubleAdder negativeInfinity = new DoubleAdder();
+        negativeInfinity.add(Double.NEGATIVE_INFINITY);
+
+        assertAll(() -> assertEquals(Float.POSITIVE_INFINITY, boundValue(DataTypes.FLOAT, MutableDouble.of(Double.POSITIVE_INFINITY))),
+                () -> assertEquals(Double.NEGATIVE_INFINITY, boundValue(DataTypes.DOUBLE, MutableDouble.of(Double.NEGATIVE_INFINITY))),
+                () -> assertEquals(Double.POSITIVE_INFINITY, boundValue(DataTypes.DOUBLE, MutableFloat.of(Float.POSITIVE_INFINITY))),
+                () -> assertEquals(Float.NEGATIVE_INFINITY, boundValue(DataTypes.FLOAT, negativeInfinity)),
+                // Pins: a finite one beyond the float range is still rejected; integral values of these types still bind.
+                () -> assertRejected(DataTypes.FLOAT, MutableDouble.of(1e300), "float"), () -> assertEquals(2, boundValue(DataTypes.INT, Fraction.of(4, 2))),
+                () -> assertEquals(-3L, boundValue(DataTypes.BIGINT, MutableDouble.of(-3.0))),
+                () -> assertEquals(1L << 40, boundValue(DataTypes.BIGINT, new AtomicLong(1L << 40))),
+                () -> assertEquals(1.5f, boundValue(DataTypes.FLOAT, Fraction.of(3, 2))));
+    }
+
+    // A collection or map column read into a parameterized container property kept the driver's element types (heap pollution):
+    // a List<byte[]> held ByteBuffers, a List<LocalDateTime> Instants, a Set<String> InetAddresses, and they failed with
+    // ClassCastException where used; an array property (String[], byte[][]) got N.convert's per-element results ("/127.0.0.1", null).
+    @Test
+    void r2_collectionColumnElementsAreConvertedToTheDeclaredElementType() throws UnknownHostException {
+        final InetAddress local = InetAddress.getByAddress(new byte[] { 127, 0, 0, 1 });
+        final InetAddress other = InetAddress.getByAddress(new byte[] { 10, 0, 0, 2 });
+        final Instant first = Instant.parse("2020-01-02T03:04:05Z");
+        final Instant second = Instant.parse("2021-06-07T08:09:10.123Z");
+        final RawType blob = RawType.PRIMITIVES.get(ProtocolConstants.DataType.BLOB);
+        final RawType inet = RawType.PRIMITIVES.get(ProtocolConstants.DataType.INET);
+        final RawType timestamp = RawType.PRIMITIVES.get(ProtocolConstants.DataType.TIMESTAMP);
+        final ProtocolVersion v = ProtocolVersion.DEFAULT;
+        final ByteBuffer blobs = TypeCodecs.listOf(TypeCodecs.BLOB).encode(List.of(ByteBuffer.wrap(BYTES)), v);
+        final ByteBuffer hosts = TypeCodecs.setOf(TypeCodecs.INET).encode(new LinkedHashSet<>(List.of(local, other)), v);
+        final ByteBuffer stamps = TypeCodecs.listOf(TypeCodecs.TIMESTAMP).encode(List.of(first, second), v);
+        final Map<String, InetAddress> hostMap = new LinkedHashMap<>();
+        hostMap.put("a", local);
+        hostMap.put("b", other);
+
+        final Containers c = CassandraExecutor.toEntity(containerRow(
+                new String[] { "blobs", "blobText", "blobArray", "stamps", "hosts", "sortedHosts", "hostArray", "hostMap", "longs", "nestedStamps" },
+                new RawType[] { new RawType.RawList(blob), new RawType.RawList(blob), new RawType.RawList(blob), new RawType.RawList(timestamp),
+                        new RawType.RawSet(inet), new RawType.RawSet(inet), new RawType.RawSet(inet),
+                        new RawType.RawMap(RawType.PRIMITIVES.get(ProtocolConstants.DataType.VARCHAR), inet),
+                        new RawType.RawList(RawType.PRIMITIVES.get(ProtocolConstants.DataType.INT)), new RawType.RawList(new RawType.RawList(timestamp)) },
+                blobs, blobs.duplicate(), blobs.duplicate(), stamps, hosts, hosts.duplicate(), hosts.duplicate(),
+                TypeCodecs.mapOf(TypeCodecs.TEXT, TypeCodecs.INET).encode(hostMap, v), TypeCodecs.listOf(TypeCodecs.INT).encode(List.of(1, 2), v),
+                TypeCodecs.listOf(TypeCodecs.listOf(TypeCodecs.TIMESTAMP)).encode(List.of(List.of(first), List.of(second)), v)), Containers.class);
+        final LocalDateTime firstLocal = LocalDateTime.ofInstant(first, ZoneId.systemDefault());
+        final LocalDateTime secondLocal = LocalDateTime.ofInstant(second, ZoneId.systemDefault());
+
+        assertAll(() -> {
+            assertEquals(1, c.blobs.size());
+            assertArrayEquals(BYTES, assertInstanceOf(byte[].class, (Object) c.blobs.get(0)));
+        }, () -> assertEquals(List.of(BASE64), c.blobText), () -> {
+            assertEquals(1, c.blobArray.length);
+            assertArrayEquals(BYTES, c.blobArray[0]);
+        }, () -> assertEquals(List.of(firstLocal, secondLocal), c.stamps),
+                // The driver's iteration order is kept (a LinkedHashSet/LinkedHashMap), and a sorted declared type is honored.
+                () -> assertEquals(List.of("127.0.0.1", "10.0.0.2"), new ArrayList<>(c.hosts)), () -> assertInstanceOf(LinkedHashSet.class, c.hosts),
+                () -> assertEquals(new TreeSet<>(List.of("127.0.0.1", "10.0.0.2")), c.sortedHosts), () -> assertInstanceOf(TreeSet.class, c.sortedHosts),
+                () -> assertArrayEquals(new String[] { "127.0.0.1", "10.0.0.2" }, c.hostArray),
+                () -> assertEquals(List.of("a", "b"), new ArrayList<>(c.hostMap.keySet())),
+                () -> assertEquals(List.of("127.0.0.1", "10.0.0.2"), new ArrayList<>(c.hostMap.values())), () -> assertEquals(List.of(1L, 2L), c.longs),
+                () -> assertEquals(List.of(List.of(firstLocal), List.of(secondLocal)), c.nestedStamps));
+    }
+
+    @Test
+    void r2_nestedPathAndUdtBeanContainerPropertiesConvertTheirElements() throws UnknownHostException {
+        final InetAddress local = InetAddress.getByAddress(new byte[] { 127, 0, 0, 1 });
+        final ContainerHolder holder = CassandraExecutor.toEntity(
+                containerRow(new String[] { "inner.hosts" }, new RawType[] { new RawType.RawSet(RawType.PRIMITIVES.get(ProtocolConstants.DataType.INET)) },
+                        TypeCodecs.setOf(TypeCodecs.INET).encode(Set.of(local), ProtocolVersion.DEFAULT)),
+                ContainerHolder.class);
+
+        final UserDefinedType listType = fieldType(DataTypes.listOf(DataTypes.BLOB));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(listType, Map.class);
+        final CassandraExecutor.UDTCodec<BlobList> beanCodec = CassandraExecutor.UDTCodec.create(listType, BlobList.class);
+        final BlobList decoded = beanCodec.decode(mapCodec.encode(Map.of("v", List.of(ByteBuffer.wrap(BYTES))), ProtocolVersion.V4), ProtocolVersion.V4);
+
+        assertAll(() -> assertEquals(Set.of("127.0.0.1"), holder.inner.hosts), () -> {
+            assertEquals(1, decoded.v.size());
+            assertArrayEquals(BYTES, assertInstanceOf(byte[].class, (Object) decoded.v.get(0)));
+        });
+    }
+
+    /** Pins: a container whose elements already have the declared type is the driver's own instance (no copy); UDT elements are kept. */
+    @Test
+    void r2_containersWhoseElementsFitAreSetUnchanged() {
+        final List<Object> buffers = new ArrayList<>(List.of(ByteBuffer.wrap(BYTES)));
+        final List<Object> instants = new ArrayList<>(List.of(Instant.EPOCH));
+        final List<Object> texts = new ArrayList<>(List.of("a"));
+        final List<Object> udts = new ArrayList<>(List.of(fieldType(DataTypes.TEXT).newValue("x")));
+        final Fits fits = CassandraExecutor.toEntity(rows(new String[] { "buffers", "instants", "raw", "objects", "texts", "udts" }, DataTypes.BLOB,
+                new Object[][] { { buffers, instants, buffers, instants, texts, udts } }).one(), Fits.class);
+
+        assertAll(() -> assertSame(buffers, fits.buffers), () -> assertSame(instants, fits.instants), () -> assertSame(buffers, fits.raw),
+                () -> assertSame(instants, fits.objects), () -> assertSame(texts, fits.texts), () -> assertSame(udts, fits.udts));
+    }
+
+    @Test
+    void r2_anElementThatCannotBeConvertedFailsTheRowAsATopLevelValueDoes() {
+        final RuntimeException topLevel = assertThrows(RuntimeException.class,
+                () -> CassandraExecutor.toEntity(rows(new String[] { "number" }, DataTypes.TEXT, new Object[][] { { "abc" } }).one(), NumberHolder.class));
+        final RuntimeException element = assertThrows(RuntimeException.class, () -> CassandraExecutor
+                .toEntity(rows(new String[] { "numbers" }, DataTypes.TEXT, new Object[][] { { new ArrayList<>(List.of("abc")) } }).one(), NumberHolder.class));
+
+        assertEquals(topLevel.getClass(), element.getClass());
+    }
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass, and extractData tested it before the Map check: the columns were
+    // typed by the Map's getters, so a nested row became an Object[], and one in a column named like a getter ("empty", from
+    // isEmpty()) was read as that getter's boolean (IllegalArgumentException), instead of a map as for any other map target.
+    @Test
+    void r2_extractDataTreatsAnEntityAnnotatedMapAsAMapTarget() {
+        final Row ada = rows(new String[] { "value" }, DataTypes.TEXT, new Object[][] { { "Ada" } }).one();
+        final Row grace = rows(new String[] { "value" }, DataTypes.TEXT, new Object[][] { { "Grace" } }).one();
+        final Object[][] values = { { ada, grace, "x" } };
+        final String[] names = { "nested", "empty", "name" };
+
+        assertAll(() -> {
+            final com.landawn.abacus.util.Dataset dataset = CassandraExecutor.extractData(rows(names, DataTypes.TEXT, values), R2HEntityMap.class);
+            assertEquals(Map.of("value", "Ada"), dataset.getColumn("nested").get(0));
+            assertEquals(Map.of("value", "Grace"), dataset.getColumn("empty").get(0));
+            assertEquals("x", dataset.getColumn("name").get(0));
+        },
+                // Pins: a plain Map target and toList for the same class give these shapes.
+                () -> assertEquals(Map.of("value", "Ada"),
+                        CassandraExecutor.extractData(rows(names, DataTypes.TEXT, values), LinkedHashMap.class).getColumn("nested").get(0)),
+                () -> assertEquals(Map.of("value", "Grace"),
+                        CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), R2HEntityMap.class).get(0).get("empty")));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2HEntityMap extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
+
+    /** A real driver row (as the driver decodes it) of the given raw column types. */
+    private static Row containerRow(final String[] names, final RawType[] types, final ByteBuffer... values) {
+        final List<ColumnDefinition> definitions = new ArrayList<>();
+
+        for (int i = 0; i < names.length; i++) {
+            definitions.add(new DefaultColumnDefinition(new ColumnSpec("ks", "t", names[i], i, types[i]), AttachmentPoint.NONE));
+        }
+
+        return new DefaultRow(DefaultColumnDefinitions.valueOf(definitions), Arrays.asList(values), AttachmentPoint.NONE);
+    }
+
+    public static class Containers {
+        public List<byte[]> blobs;
+        public List<String> blobText;
+        public byte[][] blobArray;
+        public List<LocalDateTime> stamps;
+        public Set<String> hosts;
+        public SortedSet<String> sortedHosts;
+        public String[] hostArray;
+        public Map<String, String> hostMap;
+        public List<Long> longs;
+        public List<List<LocalDateTime>> nestedStamps;
+    }
+
+    public static class ContainerHolder {
+        public Containers inner;
+    }
+
+    public static class BlobList {
+        public List<byte[]> v;
+    }
+
+    @SuppressWarnings("rawtypes")
+    public static class Fits {
+        public List<ByteBuffer> buffers;
+        public List<Instant> instants;
+        public List raw;
+        public List<Object> objects;
+        public List<String> texts;
+        public List<Text> udts;
+    }
+
+    public static class NumberHolder {
+        public Integer number;
+        public List<Integer> numbers;
+    }
+
+    // ---- 2026-10-24 r2 verify5 ----
+
+    // A scalar element for a parameterized container element type was converted to the raw class (N.convert(3, List.class)), so
+    // a set<int> column into a List<List<Long>> property became [[3], [1]] holding Integers, where the HEAD code (setPropValue's
+    // N.convert of the whole set to the declared type) gave [[3L], [1L]]; likewise a map<text, int> into a Map<String, List<Long>>.
+    @Test
+    void r2verify5_scalarElementsForContainerElementTypesGetTheFullDeclaredType() {
+        final RawType intType = RawType.PRIMITIVES.get(ProtocolConstants.DataType.INT);
+        final RawType bigintType = RawType.PRIMITIVES.get(ProtocolConstants.DataType.BIGINT);
+        final ProtocolVersion v = ProtocolVersion.DEFAULT;
+        final Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put("b", 2);
+        counts.put("a", 1);
+
+        final NestedElements n = CassandraExecutor.toEntity(containerRow(new String[] { "longLists", "textLists", "longListMap" },
+                new RawType[] { new RawType.RawSet(intType), new RawType.RawSet(bigintType),
+                        new RawType.RawMap(RawType.PRIMITIVES.get(ProtocolConstants.DataType.VARCHAR), intType) },
+                TypeCodecs.setOf(TypeCodecs.INT).encode(new LinkedHashSet<>(List.of(3, 1)), v),
+                TypeCodecs.setOf(TypeCodecs.BIGINT).encode(new LinkedHashSet<>(List.of(3L, 1L)), v),
+                TypeCodecs.mapOf(TypeCodecs.TEXT, TypeCodecs.INT).encode(counts, v)), NestedElements.class);
+
+        assertAll(() -> assertEquals(List.of(List.of(3L), List.of(1L)), n.longLists), () -> assertInstanceOf(Long.class, n.longLists.get(0).get(0)),
+                () -> assertEquals(List.of(List.of("3"), List.of("1")), n.textLists), () -> assertInstanceOf(String.class, n.textLists.get(0).get(0)),
+                () -> assertEquals(List.of("b", "a"), new ArrayList<>(n.longListMap.keySet())),
+                () -> assertEquals(List.of(List.of(2L), List.of(1L)), new ArrayList<>(n.longListMap.values())),
+                () -> assertInstanceOf(Long.class, n.longListMap.get("b").get(0)));
+    }
+
+    public static class NestedElements {
+        public List<List<Long>> longLists;
+        public List<List<String>> textLists;
+        public Map<String, List<Long>> longListMap;
     }
 }

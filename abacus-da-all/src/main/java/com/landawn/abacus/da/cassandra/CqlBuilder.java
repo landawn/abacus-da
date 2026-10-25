@@ -24,6 +24,7 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -171,7 +172,8 @@ import com.landawn.abacus.util.u.Optional;
  * {@code minus(...)} with a {@code String} or a {@code CqlBuilder} argument and {@code unionSelect(...)},
  * {@code unionAllSelect(...)}, {@code intersectSelect(...)}, {@code exceptSelect(...)} and {@code minusSelect(...)}; and the
  * {@code groupBy(...)} overloads that take a {@link SortDirection} ({@code groupBy(String, SortDirection)},
- * {@code groupBy(Collection, SortDirection)} and {@code groupBy(Map)}), because CQL GROUP BY has no ASC/DESC; and
+ * {@code groupBy(Collection, SortDirection)} and {@code groupBy(Map)}), with the inherited {@code groupByAsc(...)} and
+ * {@code groupByDesc(...)} shortcuts that delegate to them, because CQL GROUP BY has no ASC/DESC; and
  * {@code distinctOn(...)} and {@code distinctRow()} (CQL has only a plain {@code DISTINCT}, see {@code distinct()}). These throw
  * {@link IllegalArgumentException}: a condition passed to {@code append(...)} (hence {@code appendIf(...)} and
  * {@code appendIfOrElse(...)}), {@code where(...)} or {@code Dsl.renderCondition(...)} that is a HAVING clause, a set-operation
@@ -215,13 +217,21 @@ import com.landawn.abacus.util.u.Optional;
  * other expressions, including one string that holds more than a name ({@code "desc, limit"}, {@code "desc DESC"},
  * {@code "desc = desc + 1"}; pass the names as separate arguments, and a direction as a {@link SortDirection}, instead),
  * to aliases, to raw expression text ({@code Filters.expr(...)} and the sort list of a {@code Criteria} or appended
- * {@code OrderBy}/{@code GroupBy} clause, which reach the builder as expression text), or to {@code null},
+ * {@code OrderBy}/{@code GroupBy} clause, which reach the builder as expression text), to the column list that a
+ * sub-entity property expands to (for an entity whose {@code addr} property is a bean, {@code select("addr")} renders
+ * {@code addr.street AS "addr.street", addr.desc AS "addr.desc"}), or to {@code null},
  * {@code nan} and {@code infinity}, which are also literal values ({@code SELECT NULL FROM t} is valid CQL); quote such a
  * name yourself. A non-reserved keyword such as {@code group}, {@code value}, {@code key} or {@code ttl} is valid
  * unquoted and is rendered unquoted. Mapping a property or entity to a quoted name, for example
  * {@code @Column("\"desc\"")} or {@code @Table("\"order\"")}, or passing the quoted name (the Java string
  * {@code "\"desc\""}), still works, but is no longer needed for a reserved keyword: a quoted name is rendered verbatim
  * by every naming policy, and is case-sensitive in CQL.</p>
+ *
+ * <p>The named-parameter DSLs ({@code NSB}, {@code NSC}, {@code NAC}, {@code NLC}) name a value's marker after its
+ * property or column, unquoted, so a reserved-keyword column gets a reserved marker ({@code UPDATE t SET "desc" = :desc}),
+ * which Cassandra's own parser rejects as well. A {@link CassandraExecutor} prepares CQL text through {@link ParsedCql},
+ * which replaces every named marker with {@code ?}, so such a statement runs there unchanged; to hand it to the driver
+ * yourself, use a positional DSL ({@code PSC}, ...) or {@code ParsedCql.parse(cql).parameterizedCql()}.</p>
  *
  * @see com.landawn.abacus.query.Filters
  * @see CassandraExecutor
@@ -991,7 +1001,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * ({@code 253402300800000} for {@code +10000-01-01T00:00:00Z}), the other CQL {@code timestamp} literal form, which
      * Cassandra accepts for any representable value. A {@link LocalDateTime} has no zone: it is rendered as the instant it denotes in the JVM
      * default time zone, which is the instant the same value stores when bound as a parameter (the executors convert a
-     * bound {@code LocalDateTime} in the JVM default zone). A {@code byte[]} is rendered as a CQL {@code blob} constant in lower-case hex
+     * bound {@code LocalDateTime} in the JVM default zone). A {@link LocalTime} is rendered as a quoted CQL {@code time}
+     * literal that always carries the seconds, as Cassandra's {@code hh:mm:ss[.fffffffff]} format requires ({@code '12:00:00'}
+     * for {@code 12:00}; {@code '09:30:00.000001'} keeps its fraction). A {@code byte[]} is rendered as a CQL {@code blob} constant in lower-case hex
      * ({@code 0x01ff}; an empty array renders {@code 0x}), a {@link ByteBuffer} likewise from its remaining bytes
      * (its position is not changed), and an {@link InetAddress} as a quoted {@code inet} literal of its
      * {@link InetAddress#getHostAddress() host address} without an IPv6 scope suffix (for example {@code '127.0.0.1'}
@@ -1053,6 +1065,20 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             // JVM default zone (N.convert(localDateTime, Date.class) in the driver 3 executor), so the raw literal denotes the
             // same instant as the bound value: the wall-clock time read in the JVM default zone, rendered in UTC.
             appendTimestampLiteral(localDateTime.atZone(ZoneId.systemDefault()).toInstant().truncatedTo(ChronoUnit.MILLIS));
+        } else if (propValue instanceof final LocalTime localTime) {
+            // WHY: the parent inlines LocalTime.toString(), which leaves out zero seconds ('12:00' for 12:00, '00:00' for
+            // midnight), and Cassandra's time literal requires them: "Unable to coerce '12:00' to a formatted time (long)"
+            // (TimeType, format hh:mm:ss[.fffffffff], Cassandra 5.0). So every whole-minute LocalTime, the type driver 4 maps
+            // to a time column, was rejected inlined although it binds fine. Add the seconds; any fraction is kept as rendered.
+            final String time = localTime.toString();
+
+            _sb.append('\'').append(time);
+
+            if (time.length() == 5) { // "HH:mm": second and nano-of-second are both zero
+                _sb.append(":00");
+            }
+
+            _sb.append('\'');
         } else if (propValue instanceof final byte[] bytes) {
             // The parent renders a byte[] as the quoted text '[1, 2]', which Cassandra rejects for a blob column.
             // A CQL blob constant is 0x followed by hex digits ("0x" alone is the empty blob).

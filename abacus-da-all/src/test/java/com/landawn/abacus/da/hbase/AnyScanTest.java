@@ -867,4 +867,28 @@ public class AnyScanTest extends TestBase {
                 // a present wrapper is still converted through its value
                 () -> assertArrayEquals(Bytes.toBytes("a"), AnyScan.create().withStartRow(java.util.Optional.of("a")).getStartRow()));
     }
+
+    // ---- 2026-10-24 r2 sliceN ----
+
+    /**
+     * Pins the documented prefix-scan caveat: the computed bounds are a forward scan's ({@code [prefix, next-prefix)}) and are
+     * not swapped by {@code setReversed(true)}, called before or after. A reversed scan reads from its start row (upper bound)
+     * down to its stop row (lower bound, exclusive), and here the stop row sorts above the start row, so no row qualifies.
+     */
+    @Test
+    public void testPrefixScanBounds_areNotSwappedForAReversedScan_r2sliceN() {
+        final AnyScan reversedAfter = AnyScan.create().setStartStopRowForPrefixScan("user_").setReversed(true);
+        final AnyScan reversedBefore = AnyScan.create().setReversed(true).setStartStopRowForPrefixScan("user_");
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertTrue(reversedAfter.isReversed()), //
+                () -> assertTrue(reversedBefore.isReversed()), //
+                () -> assertArrayEquals(Bytes.toBytes("user_"), reversedAfter.getStartRow()),
+                () -> assertArrayEquals(Bytes.toBytes("user`"), reversedAfter.getStopRow()),
+                () -> assertArrayEquals(Bytes.toBytes("user_"), reversedBefore.getStartRow()),
+                () -> assertArrayEquals(Bytes.toBytes("user`"), reversedBefore.getStopRow()), () -> assertTrue(reversedAfter.includeStartRow()), //
+                () -> assertFalse(reversedAfter.includeStopRow()),
+                // the reversed range (stop, start] is empty: the stop row sorts above the start row
+                () -> assertTrue(Bytes.compareTo(reversedAfter.getStopRow(), reversedAfter.getStartRow()) > 0));
+    }
 }

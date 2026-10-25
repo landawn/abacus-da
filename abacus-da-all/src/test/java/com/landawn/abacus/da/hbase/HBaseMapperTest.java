@@ -727,4 +727,126 @@ public class HBaseMapperTest extends TestBase {
                 () -> assertThrows(IllegalArgumentException.class,
                         () -> m.mapper.put((java.util.Collection) Arrays.asList(new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("rk"))))));
     }
+
+    // ---- 2026-10-24 r2 sliceM ----
+
+    // put(entity) writes the row keyed by the row-key property of the entity's own class (AnyPut.create resolves it per class).
+    // delete(entity) looked that property up in a cache only: for a subclass declaring its own @Id that had not been put or read
+    // yet, it fell back to the mapped class's "id" property and deleted another row ("ID-1" instead of "KEY-1").
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testDelete_subclassWithItsOwnIdBeforeAnyPut_usesTheRowKeyThatPutWrites_r2sliceM() throws Exception {
+        final Mocks m = new Mocks();
+        final HBaseMapper<ConventionalIdBase, String> mapper = m.executor.mapper(ConventionalIdBase.class, "t", null);
+        final OwnIdSubclass entity = new OwnIdSubclass();
+        entity.setId("ID-1");
+        entity.setKey("KEY-1");
+        entity.setName("n");
+
+        mapper.delete(entity); // first use of OwnIdSubclass in this JVM: nothing cached for it yet
+        mapper.delete(Arrays.asList(entity));
+        mapper.put(entity);
+
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Delete> deleteCaptor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Delete.class);
+        final org.mockito.ArgumentCaptor<List> deletesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        final org.mockito.ArgumentCaptor<org.apache.hadoop.hbase.client.Put> putCaptor = org.mockito.ArgumentCaptor
+                .forClass(org.apache.hadoop.hbase.client.Put.class);
+        verify(m.table).delete(deleteCaptor.capture());
+        verify(m.table).delete(deletesCaptor.capture());
+        verify(m.table).put(putCaptor.capture());
+
+        final List<org.apache.hadoop.hbase.client.Delete> deletes = deletesCaptor.getValue();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("KEY-1", Bytes.toString(putCaptor.getValue().getRow())),
+                () -> assertEquals("KEY-1", Bytes.toString(deleteCaptor.getValue().getRow())), () -> assertEquals(1, deletes.size()),
+                () -> assertEquals("KEY-1", Bytes.toString(deletes.get(0).getRow())));
+    }
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass, so a mapper was created for one although it can never read a row
+    // (toEntity rejects Map types) and its put mapped the Map getters (keySet, values, entrySet, size, empty) instead of the entries.
+    @Test
+    public void testMapper_entityAnnotatedMapSubclass_isRejected_r2sliceM() throws Exception {
+        final Mocks m = new Mocks();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(com.landawn.abacus.util.Beans.isBeanClass(EntityMapWithTable.class), "precondition: accepted as a bean class"),
+                () -> assertThrows(IllegalArgumentException.class, () -> m.executor.mapper(EntityMapWithTable.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> m.executor.mapper(EntityMapWithTable.class, "t", NamingPolicy.CAMEL_CASE)),
+                () -> assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toEntity(Result.EMPTY_RESULT, EntityMapWithTable.class)));
+    }
+
+    // delete(null) reported the helper's parameter name ("entity") instead of delete's own ("entityToDelete").
+    @Test
+    public void testDelete_nullEntity_messageNamesTheParameter_r2sliceM() throws Exception {
+        final Mocks m = new Mocks();
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> m.mapper.delete((User) null));
+
+        assertTrue(e.getMessage().contains("entityToDelete"), e.getMessage());
+    }
+
+    // ---- 2026-10-24 r2 main ----
+    // put(null) and put((Collection) null) reported the helper's parameter names ("entity" / "entities").
+    @Test
+    public void testPut_nullArgument_messageNamesTheParameter_r2main() throws Exception {
+        final Mocks m = new Mocks();
+        final IllegalArgumentException single = assertThrows(IllegalArgumentException.class, () -> m.mapper.put((User) null));
+        final IllegalArgumentException batch = assertThrows(IllegalArgumentException.class, () -> m.mapper.put((java.util.Collection<User>) null));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(single.getMessage().contains("entityToPut"), single.getMessage()),
+                () -> assertTrue(batch.getMessage().contains("entitiesToPut"), batch.getMessage()));
+    }
+
+    // Only used by testDelete_subclassWithItsOwnIdBeforeAnyPut_usesTheRowKeyThatPutWrites_r2sliceM: the row-key cache is
+    // process-wide, and that test needs OwnIdSubclass to be uncached when it starts.
+    public static class ConventionalIdBase {
+        private String id;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    public static class OwnIdSubclass extends ConventionalIdBase {
+        @Id
+        private String key;
+
+        public String getKey() {
+            return key;
+        }
+
+        public void setKey(final String key) {
+            this.key = key;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @Table("entity_maps")
+    public static class EntityMapWithTable extends java.util.HashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        @Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
 }

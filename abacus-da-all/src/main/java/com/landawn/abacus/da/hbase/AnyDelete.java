@@ -157,11 +157,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * whose timestamp is in the future relative to the server clock are not affected.</p>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyDelete(final Object rowKey) throws IllegalArgumentException, RuntimeException {
-        super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
+        super(new Delete(toNonNullRowKeyBytes(rowKey)));
         delete = (Delete) mutation;
     }
 
@@ -176,12 +177,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyDelete(final Object rowKey, final long timestamp) throws IllegalArgumentException, RuntimeException {
-        super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp));
+        super(new Delete(toNonNullRowKeyBytes(rowKey), timestamp));
         delete = (Delete) mutation;
     }
 
@@ -234,12 +235,27 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  no-timestamp {@code addFamily}, {@code addColumn} and {@code addColumns}
      *                  overloads then throw {@code IllegalArgumentException}
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
-     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is an empty value wrapper (which
+     *         converts to no bytes) or converts to an empty byte array
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException, RuntimeException {
-        super(new Delete(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
+        super(new Delete(toNonNullRowKeyBytes(rowKey), timestamp, N.checkArgNotNull(familyMap, cs.familyMap)));
         delete = (Delete) mutation;
+    }
+
+    // WHY: an empty value wrapper (an empty Optional, a Nullable or Holder of null...) passes the null check but converts to
+    // null bytes, on which the Delete(byte[]) / Delete(byte[], long) constructors failed with a NullPointerException on
+    // row.length (and Delete(byte[], long, NavigableMap) with a bare one from its null check), while the sliced of(Object, int,
+    // int) overloads (and AnyGet/AnyPut) reject the same key with an IllegalArgumentException.
+    private static byte[] toNonNullRowKeyBytes(final Object rowKey) throws IllegalArgumentException, RuntimeException {
+        final byte[] row = toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey));
+
+        if (row == null) {
+            throw new IllegalArgumentException("Row key has no byte representation (an empty value wrapper converts to no bytes): " + rowKey);
+        }
+
+        return row;
     }
 
     /**
@@ -282,11 +298,15 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * // Edge: an empty byte[] row key throws IllegalArgumentException ("Row length is 0")
      * AnyDelete.of(new byte[0]);                     // throws IllegalArgumentException
+     *
+     * // Edge: an empty value wrapper has no byte representation and is rejected like null
+     * AnyDelete.of(Optional.empty());                // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @return a new AnyDelete instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, long)
      * @see #addColumn(String, String)
@@ -324,8 +344,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  reused as the exact version timestamp by no-timestamp {@code addColumn} and
      *                  as an inclusive upper bound by no-timestamp {@code addColumns}/{@code addFamily}
      * @return a new AnyDelete instance configured for timestamp-based deletion
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #addFamily(String, long)
@@ -449,7 +469,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists;
      *                  retained by reference
      * @return a new AnyDelete instance with the specified configuration
-     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} converts to an empty byte array
+     * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is an empty value wrapper (which
+     *         converts to no bytes) or converts to an empty byte array
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #of(Delete)
@@ -637,7 +658,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *               the client's default {@code KeyValueCodec})
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
-     *         this call added is removed again first, so the failed call leaves no empty family behind
+     *         this call added is removed again first, so the failed call adds no empty family (cells already queued for the family may
+     *         already have been discarded, as a successful call would)
      * @see #addFamily(String, long)
      * @see #addFamilyVersion(String, long)
      */
@@ -674,7 +696,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
+     *         maximum size; a family entry this call added is removed again first, so the failed call adds no empty family (cells already
+     *         queued for the family may already have been discarded, as a successful call would)
      * @see #addFamily(String)
      * @see #addFamilyVersion(String, long)
      */
@@ -709,7 +732,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *               default {@code KeyValueCodec})
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
-     *         this call added is removed again first, so the failed call leaves no empty family behind
+     *         this call added is removed again first, so the failed call adds no empty family (cells already queued for the family may
+     *         already have been discarded, as a successful call would)
      * @see #addFamily(String)
      * @see #addFamily(byte[], long)
      */
@@ -741,7 +765,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
      * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
+     *         maximum size; a family entry this call added is removed again first, so the failed call adds no empty family (cells already
+     *         queued for the family may already have been discarded, as a successful call would)
      * @see #addFamily(byte[])
      * @see #addFamilyVersion(byte[], long)
      */
@@ -1119,7 +1144,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     // add that then fails (a family over 127 bytes, an oversized row or qualifier...) leaves an EMPTY cell list behind: isEmpty()
     // turns false while size() stays 0, and a caller that catches the exception and still sends this delete gets a delete the
     // server decodes as a whole-row delete. Remove the family entry this call created, if it is still empty, and rethrow the
-    // original exception; an entry that existed before the call is never touched.
+    // original exception; an entry that existed before the call is never touched (HBase's addFamily may already have cleared its
+    // cells, as it does on success; that happens only for a row or family the family-map factory accepted unchecked).
     private AnyDelete addDeleteMarker(final byte[] family, final Runnable adder) {
         final NavigableMap<byte[], List<Cell>> familyCellMap = delete.getFamilyCellMap();
         final boolean familyExisted = familyCellMap.containsKey(family);

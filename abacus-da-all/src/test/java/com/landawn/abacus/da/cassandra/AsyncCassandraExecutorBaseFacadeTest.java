@@ -850,4 +850,86 @@ public class AsyncCassandraExecutorBaseFacadeTest extends CassandraExecutorBaseT
         ContinuableFuture<Stream<TestEntity>> asyncStream5 = executor.async().stream(TestEntity.class, stmt);
         assertNotNull(asyncStream5);
     }
+
+    // ---- 2026-10-24 r2 sliceG ----
+
+    /**
+     * The async update(entity) / batchUpdate(entities, type) build their default property list themselves: for an
+     * {@code @Entity}-annotated Map subclass (a bean class to Beans.isBeanClass) they used the class's getters (a bogus "empty"
+     * column, the entries lost) while the sync twins set the Map's non-key entries.
+     */
+    @Test
+    public void testR2SliceG_asyncUpdateOfMapEntitySetsItsEntriesLikeSync() {
+        final R2GKeyedMapEntity entity = new R2GKeyedMapEntity();
+        entity.setId(7L);
+        entity.put("name", "x");
+        entity.put("displayName", "Ada");
+
+        final R2GKeyedMapEntity keyOnly = new R2GKeyedMapEntity();
+        keyOnly.setId(1L);
+
+        final RecordingExecutor recording = new RecordingExecutor() {
+            @Override
+            protected TestStatement prepareBatchUpdateStatement(final java.util.Collection<?> entities, final java.util.Collection<String> propNamesToUpdate,
+                    final TestBatchType type) {
+                for (final Object e : entities) {
+                    final SP cp = prepareUpdate(e, propNamesToUpdate);
+                    recorded.add("batch " + cp.query() + " " + cp.parameters());
+                }
+
+                return new TestStatement();
+            }
+        };
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = recording.recordingAsync();
+
+        recording.update(entity);
+        async.update(entity);
+        recording.batchUpdate(List.of(entity), TestBatchType.LOGGED);
+        async.batchUpdate(List.of(entity), TestBatchType.LOGGED);
+
+        final String update = "UPDATE r2g_map_rows SET name = :name, display_name = :displayName WHERE id = :id [x, Ada, 7]";
+        final IllegalArgumentException syncKeyOnly = assertThrows(IllegalArgumentException.class, () -> recording.update(keyOnly));
+
+        // The recording async facade also logs the execution of the batch statement ("statement").
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(List.of(update, update, "batch " + update, "batch " + update, "statement"), recording.recorded),
+                () -> assertEquals(syncKeyOnly.getMessage(), assertThrows(IllegalArgumentException.class, () -> async.update(keyOnly)).getMessage()),
+                () -> assertEquals(syncKeyOnly.getMessage(),
+                        assertThrows(IllegalArgumentException.class, () -> async.batchUpdate(List.of(keyOnly), TestBatchType.LOGGED)).getMessage()));
+    }
+
+    /** Pins the "or is not a bean class" @throws clauses: a non-bean target class fails at the call site, before any CQL is run. */
+    @Test
+    public void testR2SliceG_asyncWritesRejectANonBeanTargetClassAtTheCallSite() {
+        final RecordingExecutor recording = new RecordingExecutor();
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = recording.recordingAsync();
+        final Map<String, Object> props = new LinkedHashMap<>();
+        props.put("name", "x");
+        final Condition cond = Filters.eq("id", 1L);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(
+                        assertThrows(IllegalArgumentException.class, () -> async.insert(String.class, props)).getMessage().startsWith("Not a bean class")),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> async.update(String.class, props, cond)).getMessage()
+                        .startsWith("Not a bean class")),
+                () -> assertTrue(
+                        assertThrows(IllegalArgumentException.class, () -> async.delete(String.class, cond)).getMessage().startsWith("Not a bean class")),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> async.delete(String.class, Arrays.asList("name"), cond)).getMessage()
+                        .startsWith("Not a bean class")),
+                () -> assertEquals(List.of(), recording.recorded));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table("r2g_map_rows")
+    public static class R2GKeyedMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        public Long getId() {
+            return (Long) get("id");
+        }
+
+        public void setId(final Long id) {
+            put("id", id);
+        }
+    }
 }

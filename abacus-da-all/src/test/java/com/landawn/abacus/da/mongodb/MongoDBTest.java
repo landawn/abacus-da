@@ -201,6 +201,34 @@ public class MongoDBTest extends MockitoTestBase {
 
     // ---- end 2026-10-02 verifyME ----
 
+    // ---- 2026-10-24 r2 sliceS ----
+
+    @Test
+    public void testArrayPropertyNeedsFrameworkCodecRegistry_r2sliceS() {
+        // Pins the collectionExecutor(MongoCollection)/collectionMapper(MongoCollection, Class) docs: the framework registry
+        // (the one given to db()) stores a String[] as a BSON array, while a collection with the driver's default registry
+        // (used as-is) cannot encode a non-byte[] array or a nested bean at all.
+        final org.mockito.ArgumentCaptor<org.bson.codecs.configuration.CodecRegistry> registry = org.mockito.ArgumentCaptor
+                .forClass(org.bson.codecs.configuration.CodecRegistry.class);
+        verify(mockMongoDatabase).withCodecRegistry(registry.capture());
+
+        final org.bson.codecs.EncoderContext ctx = org.bson.codecs.EncoderContext.builder().build();
+        final Document withArray = new Document("tags", new String[] { "a", "b" });
+        final org.bson.BsonDocument encoded = new org.bson.BsonDocument();
+        new org.bson.codecs.DocumentCodec(registry.getValue()).encode(new org.bson.BsonDocumentWriter(encoded), withArray, ctx);
+        final org.bson.codecs.DocumentCodec driverDefault = new org.bson.codecs.DocumentCodec(com.mongodb.MongoClientSettings.getDefaultCodecRegistry());
+
+        Assertions.assertAll(
+                () -> Assertions.assertEquals(new org.bson.BsonArray(java.util.List.of(new org.bson.BsonString("a"), new org.bson.BsonString("b"))),
+                        encoded.get("tags")),
+                () -> Assertions.assertThrows(org.bson.codecs.configuration.CodecConfigurationException.class,
+                        () -> driverDefault.encode(new org.bson.BsonDocumentWriter(new org.bson.BsonDocument()), withArray, ctx)),
+                () -> Assertions.assertThrows(org.bson.codecs.configuration.CodecConfigurationException.class, () -> driverDefault
+                        .encode(new org.bson.BsonDocumentWriter(new org.bson.BsonDocument()), new Document("child", new TestEntity()), ctx)));
+    }
+
+    // ---- end 2026-10-24 r2 sliceS ----
+
     // Test entity class
     private static class TestEntity {
         private String id;

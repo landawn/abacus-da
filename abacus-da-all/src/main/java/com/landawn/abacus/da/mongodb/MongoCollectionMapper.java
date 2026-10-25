@@ -2771,9 +2771,12 @@ public final class MongoCollectionMapper<T> {
      * Updates a single entity using multiple update entities as a pipeline.
      * 
      * <p>This method applies multiple mapped entities in sequence as an aggregation-update
-     * pipeline. Each ordinary entity is converted to a literal {@code $set} stage. If the mapper's
-     * row type itself implements {@link Bson}, an operator document may pass through and must obey
-     * the stage restrictions below.</p>
+     * pipeline. Each ordinary entity is written as a literal {@code $set} stage: every value is wrapped in
+     * {@code $literal} and stored as given, as by {@link #updateOne(Bson, Object)}, so text such as {@code "$other"}
+     * (also inside an array, collection or map property) is not read as a field path. If the mapper's row type
+     * itself implements {@link Bson} (such as {@link Document}), an element passes through as a caller-built stage
+     * whose values are evaluated as aggregation expressions: an operator document is used as the stage and must obey
+     * the stage restrictions below, and a non-operator document is wrapped in {@code $set}.</p>
      *
      * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
      * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
@@ -2817,8 +2820,8 @@ public final class MongoCollectionMapper<T> {
      * Pipeline updates allow complex transformations while options provide control over upsert
      * behavior, validation, and other advanced update features.</p>
      *
-     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
-     * documented by {@link #updateOne(Bson, Collection)}.</p>
+     * <p>This overload uses the same aggregation-update pipeline, literal entity values and permitted-stage
+     * restrictions documented by {@link #updateOne(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2930,8 +2933,10 @@ public final class MongoCollectionMapper<T> {
      * Updates all entities matching the filter using multiple update entities as a pipeline.
      * 
      * <p>This method applies a pipeline of mapped entities to all matching documents. Each ordinary
-     * entity is converted to a literal {@code $set} stage. If the mapper's row type itself implements
-     * {@link Bson}, an operator document may pass through and must obey the stage restrictions below.</p>
+     * entity is written as a literal {@code $set} stage, its values stored as given (as by
+     * {@link #updateMany(Bson, Object)}), exactly as described for {@link #updateOne(Bson, Collection)}. If the mapper's
+     * row type itself implements {@link Bson}, an element passes through as a caller-built stage whose values are
+     * evaluated as aggregation expressions; an operator document must obey the stage restrictions below.</p>
      *
      * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
      * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
@@ -2975,8 +2980,8 @@ public final class MongoCollectionMapper<T> {
      * It enables complex multi-stage transformations across multiple documents with fine-grained
      * control over the update behavior.</p>
      *
-     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
-     * documented by {@link #updateMany(Bson, Collection)}.</p>
+     * <p>This overload uses the same aggregation-update pipeline, literal entity values and permitted-stage
+     * restrictions documented by {@link #updateMany(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3572,9 +3577,10 @@ public final class MongoCollectionMapper<T> {
      * Finds and updates a single entity atomically using a pipeline of update operations.
      *
      * <p>This method performs atomic find-and-update using an aggregation-update pipeline. Each
-     * ordinary mapped entity is converted to a literal {@code $set} stage. If the mapper's row type
-     * itself implements {@link Bson}, an operator document may pass through and must obey the stage
-     * restrictions below.</p>
+     * ordinary mapped entity is written as a literal {@code $set} stage, its values stored as given (as by
+     * {@link #findOneAndUpdate(Bson, Object)}), exactly as described for {@link #updateOne(Bson, Collection)}. If the
+     * mapper's row type itself implements {@link Bson}, an element passes through as a caller-built stage whose values
+     * are evaluated as aggregation expressions; an operator document must obey the stage restrictions below.</p>
      *
      * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
      * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
@@ -3622,8 +3628,8 @@ public final class MongoCollectionMapper<T> {
      * flexibility in atomic operations. It enables complex transformations with precise control
      * over return behavior, upsert operations, and field projections.</p>
      *
-     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
-     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
+     * <p>This overload uses the same aggregation-update pipeline, literal entity values and permitted-stage
+     * restrictions documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

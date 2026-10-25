@@ -635,4 +635,98 @@ public class AnyDeleteTest extends TestBase {
             assertTrue(delete.getFamilyCellMap().containsKey(Bytes.toBytes("cf")));
         }));
     }
+
+    // ---- 2026-10-24 r2 sliceP ----
+
+    /** Every add* overload for a {@code null} family (byte[] and String forms). */
+    private static List<java.util.function.Consumer<AnyDelete>> nullFamilyAdders() {
+        final byte[] q = Bytes.toBytes("q");
+
+        return Arrays.asList(d -> d.addFamily((String) null), d -> d.addFamily((String) null, 5L), d -> d.addFamily((byte[]) null),
+                d -> d.addFamily((byte[]) null, 5L), d -> d.addFamilyVersion((String) null, 5L), d -> d.addFamilyVersion((byte[]) null, 5L),
+                d -> d.addColumn((String) null, "q"), d -> d.addColumn((String) null, "q", 5L), d -> d.addColumn((byte[]) null, q),
+                d -> d.addColumn((byte[]) null, q, 5L), d -> d.addColumns((String) null, "q"), d -> d.addColumns((String) null, "q", 5L),
+                d -> d.addColumns((byte[]) null, q), d -> d.addColumns((byte[]) null, q, 5L));
+    }
+
+    /**
+     * Verifies the failed-add cleanup for the other failure the {@code @throws} names ("the cell exceeds HBase's maximum size"):
+     * of(rowKey, ts, familyMap) does not check the row length, so every add* then fails building its KeyValue ("Row &gt; 32767").
+     * The entry the call created is removed for a named family and for a {@code null} family (a {@code null} key in the
+     * BYTES_COMPARATOR map), and the exception is HBase's own, unwrapped.
+     */
+    @Test
+    public void testFailedAdd_oversizedRowFromFamilyMapFactory_removesTheNewEntry_r2sliceP() {
+        final byte[] longRow = new byte[Short.MAX_VALUE + 1];
+        Arrays.fill(longRow, (byte) 'r');
+
+        final List<java.util.function.Consumer<AnyDelete>> adders = new java.util.ArrayList<>(addersFor("cf"));
+        adders.addAll(nullFamilyAdders());
+
+        org.junit.jupiter.api.Assertions.assertAll(adders.stream().map(adder -> (org.junit.jupiter.api.function.Executable) () -> {
+            final AnyDelete delete = AnyDelete.of(longRow, 7L, new TreeMap<byte[], List<Cell>>(Bytes.BYTES_COMPARATOR));
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> adder.accept(delete));
+
+            assertEquals("Row > " + Short.MAX_VALUE, e.getMessage());
+            assertEquals(org.apache.hadoop.hbase.KeyValue.class.getName(), e.getStackTrace()[0].getClassName());
+            assertTrue(delete.isEmpty());
+            assertEquals(0, delete.numFamilies());
+        }));
+    }
+
+    /**
+     * Pins the addFamily {@code @throws} wording "cells already queued for the family may already have been discarded": HBase's
+     * addFamily clears an existing family's cells BEFORE it builds the family marker (as a successful call replaces them), so when
+     * that build fails (here a row the family-map factory accepted unchecked) the family stays, emptied; the wrapper leaves such a
+     * pre-existing entry as HBase leaves it. The column/version adders only append, so a failure leaves the queued cell in place.
+     */
+    @Test
+    public void testFailedAddFamily_onFamilyWithQueuedCells_discardsThemAsHBaseDoes_r2sliceP() {
+        final byte[] longRow = new byte[Short.MAX_VALUE + 1];
+        Arrays.fill(longRow, (byte) 'r');
+        final List<java.util.function.Consumer<AnyDelete>> adders = addersFor("cf");
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(java.util.stream.IntStream.range(0, adders.size()).mapToObj(i -> (org.junit.jupiter.api.function.Executable) () -> {
+                    final NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+                    final List<Cell> queued = new java.util.ArrayList<>();
+                    queued.add(new org.apache.hadoop.hbase.KeyValue(Bytes.toBytes("row"), Bytes.toBytes("cf"), Bytes.toBytes("x"), 3L,
+                            org.apache.hadoop.hbase.KeyValue.Type.DeleteColumn));
+                    familyMap.put(Bytes.toBytes("cf"), queued);
+                    final AnyDelete delete = AnyDelete.of(longRow, 7L, familyMap);
+
+                    assertThrows(IllegalArgumentException.class, () -> adders.get(i).accept(delete));
+                    assertSame(queued, delete.getFamilyCellMap().get(Bytes.toBytes("cf")));
+                    assertEquals(1, delete.numFamilies());
+                    // addersFor: indexes 0-3 are the addFamily overloads
+                    assertEquals(i < 4 ? 0 : 1, delete.size(), "adder #" + i);
+                }));
+    }
+
+    /**
+     * An empty value wrapper row key converts to null bytes (HBaseExecutor.toRowKeyBytes) and used to reach new Delete(...), which
+     * failed with a bare NullPointerException (row.length, or the family-map constructor's null check) in of(Object),
+     * of(Object, long) and of(Object, long, NavigableMap). It is now rejected with an IllegalArgumentException, like a null row key
+     * and like the sliced overloads; a present wrapper still delegates to its value.
+     */
+    @Test
+    public void testOf_emptyValueWrapperRowKey_throwsIllegalArgument_r2sliceP() {
+        final List<Object> emptyWrappers = Arrays.asList(java.util.Optional.empty(), java.util.OptionalInt.empty(), com.landawn.abacus.util.u.Optional.empty(),
+                com.landawn.abacus.util.u.Nullable.empty(), com.landawn.abacus.util.u.Nullable.of(null), com.landawn.abacus.util.Holder.of(null));
+
+        org.junit.jupiter.api.Assertions.assertAll(emptyWrappers.stream()
+                .flatMap(rowKey -> java.util.stream.Stream.<org.junit.jupiter.api.function.Executable> of(
+                        () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(rowKey)).getMessage().contains("empty value wrapper")),
+                        () -> assertTrue(
+                                assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(rowKey, 5L)).getMessage().contains("empty value wrapper")),
+                        () -> assertTrue(assertThrows(IllegalArgumentException.class,
+                                () -> AnyDelete.of(rowKey, 5L, new TreeMap<byte[], List<Cell>>(Bytes.BYTES_COMPARATOR))).getMessage()
+                                        .contains("empty value wrapper")),
+                        // the sliced overloads already rejected it through HBase's row check
+                        () -> assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(rowKey, 0, 1)),
+                        () -> assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(rowKey, 0, 1, 5L)))));
+
+        assertArrayEquals(Bytes.toBytes("row"), AnyDelete.of(java.util.Optional.of("row")).getRow());
+        assertArrayEquals(Bytes.toBytes("row"), AnyDelete.of(java.util.Optional.of("row"), 5L).getRow());
+    }
 }

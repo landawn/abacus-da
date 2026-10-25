@@ -1329,6 +1329,86 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
                 () -> assertEquals("SELECT * FROM test_item c WHERE c.name = 'c.$type' AND c[\"$\"] = 1", queries.get(2)));
     }
 
+    // ---- 2026-10-24 r2 sliceE ----
+
+    /**
+     * Regression: AND, OR and BETWEEN followed by a sign, a decimal point or a bracket were read as arithmetic on a property named
+     * like the keyword, so {@code score BETWEEN -1 AND 1} became {@code c.score c["BETWEEN"] -1 AND 1} and
+     * {@code score > 1 AND -score < 0} became {@code c.score > 1 c["AND"] -c.score < 0}, which Cosmos DB rejects; an IS NULL operand
+     * after such an AND swallowed the whole preceding predicate. After a complete operand those words are the keyword; a property
+     * named like one is still qualified where an operand is expected.
+     */
+    @Test
+    public void testLogicalKeywordBeforeSignedOrLiteralOperandIsNotQualified_r2sliceE() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("score BETWEEN -1 AND 1"), Filters.expr("score NOT BETWEEN -1 AND +1"),
+                Filters.expr("score > 1 AND -score < 0"), Filters.expr("score = 1 or .5 < score"), Filters.expr("score = 1 AND [1, 2] = tags"),
+                Filters.expr("score = 1 AND -score IS NULL"), Filters.expr("score = order AND -score < 0"), Filters.expr("(score)OR -1 > score"),
+                Filters.expr("order - 1 > 0 AND between - 1 > 0"), Filters.expr("score = value AND -score < 0 OR score = in OR -1 > score"));
+        final List<String> screaming = captureConditionQueries(new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE),
+                Filters.expr("score BETWEEN -1 AND 1"), Filters.expr("score > 1 and -score < 0"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.score BETWEEN -1 AND 1", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score NOT BETWEEN -1 AND +1", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score > 1 AND -c.score < 0", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 1 or .5 < c.score", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 1 AND [1, 2] = c.tags", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = 1 AND IS_NULL(-c.score)", queries.get(5)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"order\"] AND -c.score < 0", queries.get(6)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.score)OR -1 > c.score", queries.get(7)),
+                // Where an operand is expected, a keyword-named property followed by arithmetic is still a property.
+                () -> assertEquals("SELECT * FROM test_item c WHERE c[\"order\"] - 1 > 0 AND c[\"between\"] - 1 > 0", queries.get(8)),
+                // A keyword-named property (value, in) also completes the operand before AND/OR.
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"value\"] AND -c.score < 0 OR c.score = c[\"in\"] OR -1 > c.score",
+                        queries.get(9)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.SCORE BETWEEN -1 AND 1", screaming.get(0)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.SCORE > 1 AND -c.SCORE < 0", screaming.get(1)));
+    }
+
+    /**
+     * Regression: NOT before a sign or decimal literal was read as a property named NOT ({@code NOT -score > 0} became
+     * {@code c["NOT"] -c.score > 0}), valid arithmetic on a missing property that silently matches nothing. A path or comparison on a
+     * property named {@code not} is still qualified.
+     */
+    @Test
+    public void testUnaryNotBeforeSignedOperandIsNotQualified_r2sliceE() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("NOT -score > 0"), Filters.expr("score > 1 AND not +score > 5"),
+                Filters.expr("NOT .5 > score"), Filters.expr("NOT -score IS NULL"), Filters.expr("not.x = 1 AND not = 2"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE NOT -c.score > 0", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score > 1 AND not +c.score > 5", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE NOT .5 > c.score", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(-c.score)", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c[\"not\"].x = 1 AND c[\"not\"] = 2", queries.get(4)));
+    }
+
+    /** Pins the subquery-as-SQL-text form the Condition-based streamItems Javadoc recommends: its {@code ?} is bound as a parameter. */
+    @Test
+    public void testSubqueryTextWithParametersIsBound_r2sliceE() {
+        assertEquals("SELECT * FROM test_item c WHERE EXISTS (SELECT VALUE 1 FROM t IN c.tags WHERE t = @p0) [x]",
+                renderQueryOrFailure_coverageDC(Filters.exists(Filters.subQuery("SELECT VALUE 1 FROM t IN c.tags WHERE t = ?", List.of("x")))));
+    }
+
+    // ---- 2026-10-24 r2verify2 ----
+
+    /**
+     * Regression of the NOT-before-sign rule above: right after an operator, a property named {@code not} followed by a sign
+     * ({@code score = not - 1}) was read as the logical keyword ({@code c.score = not - 1}, NOT of a number: always undefined, so the
+     * query silently matched nothing) instead of {@code c.score = c["not"] - 1}. At the start of an operand NOT stays the keyword.
+     */
+    @Test
+    public void testPropertyNamedNotAfterOperatorBeforeSignIsQualified_r2verify2() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("score = not - 1"), Filters.expr("score > not + .5"),
+                Filters.expr("score * not - 1 > 0 AND NOT -score > 0"), Filters.expr("-not - 1 > 0"), Filters.expr("score || not - 1 = 'x'"),
+                Filters.expr("(score ?? not - 1) > 0"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] - 1", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score > c[\"not\"] + .5", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score * c[\"not\"] - 1 > 0 AND NOT -c.score > 0", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE -c[\"not\"] - 1 > 0", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score || c[\"not\"] - 1 = 'x'", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.score ?? c[\"not\"] - 1) > 0", queries.get(5)));
+    }
+
     public static class ReservedWordItem {
         private String id;
         private int value;

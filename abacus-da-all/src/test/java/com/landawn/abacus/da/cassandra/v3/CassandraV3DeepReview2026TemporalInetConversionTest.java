@@ -482,4 +482,308 @@ class CassandraV3DeepReview2026TemporalInetConversionTest {
             return java.time.LocalDate.EPOCH;
         }
     }
+
+    // ---- 2026-10-24 r2 sliceK ----
+
+    private static final LocalDate FIRST = LocalDate.fromYearMonthDay(1, 1, 1);
+    private static final LocalDate EARLY = LocalDate.fromYearMonthDay(999, 3, 1);
+    private static final LocalDate LATE = LocalDate.fromYearMonthDay(10000, 1, 1);
+
+    /**
+     * The driver's {@code LocalDate.toString()} has no four-digit year outside 1000-9999 ({@code "1-01-01"} for the common
+     * {@code 0001-01-01} sentinel), and {@code N.convert} parsed that text: such a {@code date} column could not be read into a
+     * {@code java.time.LocalDate} ({@code DateTimeParseException}) or a {@code Date}, {@code Timestamp} or {@code Calendar}
+     * ({@code IllegalArgumentException}), on any read path. The 4.x executor, which decodes a {@code java.time.LocalDate}, reads it.
+     */
+    @Test
+    void r2sliceK_dateColumnsOutsideTheFourDigitYearsReadIntoDateTargets() throws Exception {
+        final java.time.LocalDate firstDay = java.time.LocalDate.of(1, 1, 1);
+        final java.time.LocalDate earlyDay = java.time.LocalDate.of(999, 3, 1);
+        final long firstMillis = firstDay.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        final long earlyMillis = earlyDay.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+
+        try (CassandraTestFixture fixture = new CassandraTestFixture()) {
+            when(fixture.session.execute(any(Statement.class))).thenAnswer(invocation -> rows(DataType.date(), FIRST, EARLY, LATE));
+            when(fixture.session.executeAsync(any(Statement.class))).thenAnswer(invocation -> future(rows(DataType.date(), FIRST, EARLY, LATE)));
+
+            assertAll(() -> assertEquals(firstDay, fixture.executor.findFirst(java.time.LocalDate.class, QUERY).get()),
+                    () -> assertEquals(List.of(firstDay, earlyDay, java.time.LocalDate.of(10000, 1, 1)),
+                            fixture.executor.list(java.time.LocalDate.class, QUERY)),
+                    () -> assertEquals(firstDay, fixture.executor.queryForSingleValue(java.time.LocalDate.class, QUERY).get()),
+                    () -> assertEquals(firstDay, fixture.executor.findFirst(java.time.LocalDate[].class, QUERY).get()[0]),
+                    () -> assertEquals(firstDay, fixture.executor.async().findFirst(java.time.LocalDate.class, QUERY).get().get()),
+                    () -> assertEquals(firstMillis, fixture.executor.findFirst(Date.class, QUERY).get().getTime()),
+                    () -> assertEquals(firstMillis, fixture.executor.findFirst(java.sql.Timestamp.class, QUERY).get().getTime()),
+                    () -> assertEquals(firstMillis, fixture.executor.findFirst(java.sql.Date.class, QUERY).get().getTime()),
+                    () -> assertEquals(firstMillis, fixture.executor.findFirst(java.util.Calendar.class, QUERY).get().getTimeInMillis()),
+                    () -> assertEquals(List.of(earlyDay), CassandraExecutor.toList(rows(DataType.date(), EARLY), java.time.LocalDate.class)), () -> {
+                        final DayParts bean = CassandraExecutor.toEntity(dayParts(EARLY).one(), DayParts.class);
+                        assertEquals(earlyDay, bean.getDay());
+                        assertEquals(earlyMillis, bean.getDate().getTime());
+                    }, () -> assertEquals(List.of(earlyDay), CassandraExecutor.extractData(dayParts(EARLY), DayParts.class).getColumn("day")),
+                    () -> assertEquals(earlyDay,
+                            CassandraExecutor
+                                    .toEntity(rows(new String[] { "nested.day" }, DataType.date(), new Object[][] { { EARLY } }).one(), DayHolder.class)
+                                    .getNested()
+                                    .getDay()),
+                    () -> {
+                        final UserType userType = userType(new CodecRegistry(), "day", DataType.date(), "date", DataType.date());
+                        final UDTValue raw = userType.newValue().setDate("day", FIRST).setDate("date", FIRST);
+                        final DayParts parts = CassandraExecutor.UDTCodec.create(userType, DayParts.class)
+                                .deserialize(TypeCodec.userType(userType).serialize(raw, ProtocolVersion.V4), ProtocolVersion.V4);
+                        assertEquals(firstDay, parts.getDay());
+                        assertEquals(firstMillis, parts.getDate().getTime());
+                    });
+        }
+    }
+
+    /** Pins: a four-digit year converts as before, a String target keeps the driver's text, and a Date target supports 1 to 9999. */
+    @Test
+    void r2sliceK_dateColumnConversionsKeepTheirOtherBehavior() {
+        final long startOfDay = DAY.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+
+        assertAll(() -> assertEquals(List.of(DAY), CassandraExecutor.toList(rows(DataType.date(), DATE), java.time.LocalDate.class)),
+                () -> assertEquals(startOfDay, CassandraExecutor.toList(rows(DataType.date(), DATE), Date.class).get(0).getTime()),
+                () -> assertEquals(startOfDay, CassandraExecutor.toList(rows(DataType.date(), DATE), java.util.Calendar.class).get(0).getTimeInMillis()),
+                () -> assertEquals(List.of("2023-11-14", "1-01-01"), CassandraExecutor.toList(rows(DataType.date(), DATE, FIRST), String.class)),
+                () -> assertSame(FIRST, CassandraExecutor.toList(rows(DataType.date(), FIRST), LocalDate.class).get(0)), () -> org.junit.jupiter.api.Assertions
+                        .assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList(rows(DataType.date(), LATE), Date.class)));
+    }
+
+    private static ResultSet dayParts(final LocalDate value) {
+        return rows(new String[] { "day", "date" }, DataType.date(), new Object[][] { { value, value } });
+    }
+
+    public static class DayParts {
+        private java.time.LocalDate day;
+        private Date date;
+
+        public java.time.LocalDate getDay() {
+            return day;
+        }
+
+        public void setDay(final java.time.LocalDate day) {
+            this.day = day;
+        }
+
+        public Date getDate() {
+            return date;
+        }
+
+        public void setDate(final Date date) {
+            this.date = date;
+        }
+    }
+
+    public static class DayHolder {
+        private DayParts nested;
+
+        public DayParts getNested() {
+            return nested;
+        }
+
+        public void setNested(final DayParts nested) {
+            this.nested = nested;
+        }
+    }
+
+    /**
+     * {@code PropInfo.setPropValue} stored a driver collection or map as is when the property's raw class accepted it, so a typed
+     * container property held the driver's element types (heap pollution, {@code ClassCastException} where an element was used): a
+     * {@code List<byte[]>} or {@code List<String>} of a {@code list<blob>} held {@code ByteBuffer}s, a {@code List<LocalDateTime>}
+     * of a {@code list<timestamp>} held {@code Date}s, a {@code Set<String>} of a {@code set<inet>} held {@code InetAddress}es, a
+     * {@code List<java.time.LocalDate>} of a {@code list<date>} held driver {@code LocalDate}s, a {@code List<LocalTime>} of a
+     * {@code list<time>} held {@code Long} nanoseconds. Elements now convert as a top-level value of the element type does.
+     */
+    @Test
+    void r2sliceK_typedContainerPropertiesConvertTheirElements() throws Exception {
+        final InetAddress v4 = InetAddress.getByAddress(new byte[] { 127, 0, 0, 1 });
+        final LocalTime clock = LocalTime.of(1, 2, 3, 456_789_000);
+        final LocalDateTime stamp = LocalDateTime.ofInstant(TIMESTAMP.toInstant(), ZoneId.systemDefault());
+        final ResultSet result = typedRow(new String[] { "blobs", "blobTexts", "stamps", "hosts", "days", "clocks", "byName", "nestedBlobs", "hostArray" },
+                new DataType[] { DataType.list(DataType.blob()), DataType.list(DataType.blob()), DataType.list(DataType.timestamp()),
+                        DataType.set(DataType.inet()), DataType.list(DataType.date()), DataType.list(DataType.time()),
+                        DataType.map(DataType.text(), DataType.date()), DataType.list(DataType.list(DataType.blob())), DataType.list(DataType.inet()) },
+                new Object[] { new java.util.ArrayList<>(List.of(ByteBuffer.wrap(new byte[] { 1, 2 }))),
+                        new java.util.ArrayList<>(List.of(ByteBuffer.wrap(new byte[] { 1, 2 }))), new java.util.ArrayList<>(List.of(TIMESTAMP)),
+                        new java.util.LinkedHashSet<>(List.of(v4)), new java.util.ArrayList<>(List.of(DATE)),
+                        new java.util.ArrayList<>(List.of(clock.toNanoOfDay())), new java.util.LinkedHashMap<>(java.util.Map.of("a", DATE)),
+                        new java.util.ArrayList<>(List.of(new java.util.ArrayList<>(List.of(ByteBuffer.wrap(new byte[] { 3 }))))),
+                        new java.util.ArrayList<>(List.of(v4)) });
+        final Bag bag = CassandraExecutor.toEntity(result.one(), Bag.class);
+        // The same rules for a dotted (nested-path) column and a UDT field read into a bean property.
+        final ResultSet nested = typedRow(new String[] { "inner.blobs" }, new DataType[] { DataType.list(DataType.blob()) },
+                new Object[] { new java.util.ArrayList<>(List.of(ByteBuffer.wrap(new byte[] { 4 }))) });
+        final UserType userType = userType(new CodecRegistry(), "hosts", DataType.set(DataType.inet()), "clocks", DataType.list(DataType.time()));
+        final UDTValue raw = userType.newValue().setSet("hosts", java.util.Set.of(v4)).setList("clocks", List.of(clock.toNanoOfDay()));
+        final Bag decoded = CassandraExecutor.UDTCodec.create(userType, Bag.class)
+                .deserialize(TypeCodec.userType(userType).serialize(raw, ProtocolVersion.V4), ProtocolVersion.V4);
+
+        assertAll(() -> assertArrayEquals(new byte[] { 1, 2 }, bag.getBlobs().get(0)), () -> assertEquals(List.of("AQI="), bag.getBlobTexts()),
+                () -> assertEquals(List.of(stamp), bag.getStamps()), () -> assertEquals(java.util.Set.of("127.0.0.1"), bag.getHosts()),
+                () -> assertEquals(java.util.LinkedHashSet.class, bag.getHosts().getClass()), () -> assertEquals(List.of(DAY), bag.getDays()),
+                () -> assertEquals(List.of(clock), bag.getClocks()), () -> assertEquals(java.util.Map.of("a", DAY), bag.getByName()),
+                () -> assertArrayEquals(new byte[] { 3 }, bag.getNestedBlobs().get(0).get(0)),
+                () -> assertArrayEquals(new String[] { "127.0.0.1" }, bag.getHostArray()),
+                () -> assertArrayEquals(new byte[] { 4 }, CassandraExecutor.toEntity(nested.one(), BagHolder.class).getInner().getBlobs().get(0)),
+                () -> assertEquals(java.util.Set.of("127.0.0.1"), decoded.getHosts()), () -> assertEquals(List.of(clock), decoded.getClocks()));
+    }
+
+    /** Pins: a container whose elements already have the declared types (or that declares none) is set as the driver's instance. */
+    @Test
+    void r2sliceK_containersWhoseElementsFitAreSetUnchanged() {
+        final List<Object> longs = new java.util.ArrayList<>(List.of(1L, 2L));
+        final java.util.Map<String, Object> raw = new java.util.LinkedHashMap<>(java.util.Map.of("a", 1L));
+        final ResultSet result = typedRow(new String[] { "longs", "raw", "anyList" },
+                new DataType[] { DataType.list(DataType.bigint()), DataType.map(DataType.text(), DataType.bigint()), DataType.list(DataType.blob()) },
+                new Object[] { longs, raw, new java.util.ArrayList<>(List.of(ByteBuffer.wrap(new byte[] { 1 }))) });
+        final Fits fits = CassandraExecutor.toEntity(result.one(), Fits.class);
+
+        assertAll(() -> assertSame(longs, fits.getLongs()), () -> assertSame(raw, fits.getRaw()),
+                () -> assertEquals(ByteBuffer.wrap(new byte[] { 1 }), fits.getAnyList().get(0)));
+    }
+
+    private static ResultSet typedRow(final String[] names, final DataType[] types, final Object[] values) {
+        final ColumnDefinitions columns = mock(ColumnDefinitions.class);
+        when(columns.size()).thenReturn(names.length);
+        final Row row = mock(Row.class);
+        when(row.getColumnDefinitions()).thenReturn(columns);
+
+        for (int i = 0; i < names.length; i++) {
+            when(columns.getName(i)).thenReturn(names[i]);
+            when(columns.getType(i)).thenReturn(types[i]);
+            when(row.getObject(i)).thenReturn(values[i]);
+        }
+
+        final ResultSet result = mock(ResultSet.class);
+        when(result.getColumnDefinitions()).thenReturn(columns);
+        when(result.one()).thenReturn(row);
+        return result;
+    }
+
+    public static class Bag {
+        private List<byte[]> blobs;
+        private List<String> blobTexts;
+        private List<LocalDateTime> stamps;
+        private java.util.Set<String> hosts;
+        private List<java.time.LocalDate> days;
+        private List<LocalTime> clocks;
+        private java.util.Map<String, java.time.LocalDate> byName;
+        private List<List<byte[]>> nestedBlobs;
+        private String[] hostArray;
+
+        public List<byte[]> getBlobs() {
+            return blobs;
+        }
+
+        public void setBlobs(final List<byte[]> blobs) {
+            this.blobs = blobs;
+        }
+
+        public List<String> getBlobTexts() {
+            return blobTexts;
+        }
+
+        public void setBlobTexts(final List<String> blobTexts) {
+            this.blobTexts = blobTexts;
+        }
+
+        public List<LocalDateTime> getStamps() {
+            return stamps;
+        }
+
+        public void setStamps(final List<LocalDateTime> stamps) {
+            this.stamps = stamps;
+        }
+
+        public java.util.Set<String> getHosts() {
+            return hosts;
+        }
+
+        public void setHosts(final java.util.Set<String> hosts) {
+            this.hosts = hosts;
+        }
+
+        public List<java.time.LocalDate> getDays() {
+            return days;
+        }
+
+        public void setDays(final List<java.time.LocalDate> days) {
+            this.days = days;
+        }
+
+        public List<LocalTime> getClocks() {
+            return clocks;
+        }
+
+        public void setClocks(final List<LocalTime> clocks) {
+            this.clocks = clocks;
+        }
+
+        public java.util.Map<String, java.time.LocalDate> getByName() {
+            return byName;
+        }
+
+        public void setByName(final java.util.Map<String, java.time.LocalDate> byName) {
+            this.byName = byName;
+        }
+
+        public List<List<byte[]>> getNestedBlobs() {
+            return nestedBlobs;
+        }
+
+        public void setNestedBlobs(final List<List<byte[]>> nestedBlobs) {
+            this.nestedBlobs = nestedBlobs;
+        }
+
+        public String[] getHostArray() {
+            return hostArray;
+        }
+
+        public void setHostArray(final String[] hostArray) {
+            this.hostArray = hostArray;
+        }
+    }
+
+    public static class BagHolder {
+        private Bag inner;
+
+        public Bag getInner() {
+            return inner;
+        }
+
+        public void setInner(final Bag inner) {
+            this.inner = inner;
+        }
+    }
+
+    public static class Fits {
+        private List<Long> longs;
+        private java.util.Map<String, Object> raw;
+        private List<?> anyList;
+
+        public List<Long> getLongs() {
+            return longs;
+        }
+
+        public void setLongs(final List<Long> longs) {
+            this.longs = longs;
+        }
+
+        public java.util.Map<String, Object> getRaw() {
+            return raw;
+        }
+
+        public void setRaw(final java.util.Map<String, Object> raw) {
+            this.raw = raw;
+        }
+
+        public List<?> getAnyList() {
+            return anyList;
+        }
+
+        public void setAnyList(final List<?> anyList) {
+            this.anyList = anyList;
+        }
+    }
 }

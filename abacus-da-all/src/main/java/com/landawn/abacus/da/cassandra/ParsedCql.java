@@ -329,6 +329,13 @@ public final class ParsedCql {
                     final int embeddedMarkerIndex = literalState[1] == 0 && (prevCurlyDepth > 0 || word.indexOf('{') >= 0)
                             ? indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth)
                             : -1;
+                    // Inside braces, a ':name' token right after an arithmetic operator is a marker (see the native-marker
+                    // branch below), and it may be a map KEY ("{-:k: 1}"), with SqlParser gluing the separator to it.
+                    final boolean nativeMarkerAfterOperatorInBraces = prevCurlyDepth > 0 && tokens.followsArithmeticOperator();
+                    // WHY: such a key may also carry its glued value marker ("{-:k::v}"). The embedded branch would keep
+                    // ":k" as a field name, leaving that marker in the CQL uncounted, so the native-marker branch takes it.
+                    final boolean nativeKeyWithEmbeddedValue = nativeMarkerAfterOperatorInBraces && embeddedMarkerIndex > 0 && !dollarQuotedToken
+                            && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER;
 
                     if (!dollarQuotedToken && word.equals(SK.QUESTION_MARK)) {
                         countOfParameter++;
@@ -397,7 +404,7 @@ public final class ParsedCql {
                                 && indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth) >= 0) {
                             type |= 2;
                         }
-                    } else if (embeddedMarkerIndex >= 0) {
+                    } else if (embeddedMarkerIndex >= 0 && !nativeKeyWithEmbeddedValue) {
                         // Without whitespace, a UDT field separator and its named marker are tokenized together,
                         // for example "{street::street". Preserve the first ':' and replace only the marker.
                         final int markerIndex = embeddedMarkerIndex;
@@ -430,7 +437,11 @@ public final class ParsedCql {
                             if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
                             } else {
-                                final int parameterNameEnd = namedParameterNameEnd(word, 1);
+                                // WHY: after an operator inside braces the marker may be a map KEY ("{-:k: 1}", "{1 * :k:2}")
+                                // with the key/value separator (and an unspaced value) glued to it. Ending the name there keeps
+                                // the separator in the CQL; otherwise ":k:" became the marker "k:" and the CQL "{-? 1}".
+                                final int parameterNameEnd = nativeMarkerAfterOperatorInBraces ? literalNamedParameterNameEnd(word)
+                                        : namedParameterNameEnd(word, 1);
                                 final String namedParameter = word.substring(1, parameterNameEnd);
 
                                 if (Strings.isEmpty(namedParameter)) {
@@ -446,6 +457,23 @@ public final class ParsedCql {
                                 word = SK.QUESTION_MARK + word.substring(parameterNameEnd);
 
                                 type |= 2;
+
+                                if (nativeKeyWithEmbeddedValue) {
+                                    // The rest of the glued pair ("?::v}") holds the value marker after the separator.
+                                    final int valueMarkerIndex = indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth);
+
+                                    if (valueMarkerIndex >= 0) {
+                                        final int valueNameEnd = namedParameterNameEnd(word, valueMarkerIndex + 2);
+                                        final String valueName = word.substring(valueMarkerIndex + 2, valueNameEnd);
+
+                                        if (Strings.isEmpty(valueName)) {
+                                            throw new IllegalArgumentException("Invalid named parameter in literal token: " + word);
+                                        }
+
+                                        localNamedParameters.put(countOfParameter++, valueName);
+                                        word = word.substring(0, valueMarkerIndex + 1) + SK.QUESTION_MARK + word.substring(valueNameEnd);
+                                    }
+                                }
                             }
                         }
                     }
@@ -703,6 +731,30 @@ public final class ParsedCql {
         int end = word.length();
 
         while (end > parameterNameStart && word.charAt(end - 1) == '}') {
+            end--;
+        }
+
+        return end;
+    }
+
+    /**
+     * Returns the end of the name of a {@code :name} token that follows an arithmetic operator inside braces, where it
+     * may be a map key. An unquoted name ends before a glued map key/value separator ({@code k} in {@code :k:2}, and
+     * in <code>:k&#125;:</code> for a key that closes a nested literal); without one, only trailing braces are excluded,
+     * as in {@link #namedParameterNameEnd(String, int)}. A quoted name
+     * ({@code :"k"}) needs no check (SqlParser ends the token at its closing quote), and a {@code ':'} directly after
+     * the prefix ({@code ::x}) stays part of the name, as outside braces.
+     */
+    private static int literalNamedParameterNameEnd(final String word) {
+        final int separatorIndex = word.length() > 2 && word.charAt(1) != '"' ? word.indexOf(_PREFIX_OF_NAMED_PARAMETER, 2) : -1;
+
+        if (separatorIndex < 0) {
+            return namedParameterNameEnd(word, 1);
+        }
+
+        int end = separatorIndex;
+
+        while (end > 1 && word.charAt(end - 1) == '}') {
             end--;
         }
 

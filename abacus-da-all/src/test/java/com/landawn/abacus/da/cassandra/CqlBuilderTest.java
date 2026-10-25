@@ -1210,4 +1210,119 @@ public class CqlBuilderTest extends TestBase {
                                 .build()
                                 .query()));
     }
+
+    // ---- 2026-10-24 r2 sliceI ----
+
+    /**
+     * Regression: a raw (SCCB/ACCB/LCCB) builder inlined a LocalTime as LocalTime.toString(), which leaves out zero seconds
+     * ('09:00', midnight '00:00'); Cassandra 5.0's time literal requires hh:mm:ss[.fffffffff] and rejected it ("Unable to
+     * coerce '09:00' to a formatted time (long)"). Every inlining path (SET, WHERE, IN, INSERT, batch INSERT) now keeps the
+     * seconds; times that already had seconds or a fraction, java.sql.Time and bound values are unchanged.
+     */
+    @SuppressWarnings("deprecation")
+    @Test
+    public void test_r2sliceI_rawLocalTimeLiteralAlwaysCarriesSeconds() {
+        org.junit.jupiter.api.Assertions
+                .assertAll(
+                        () -> assertEquals("UPDATE t SET opens_at = '09:00:00' WHERE id = 1",
+                                SCCB.update("t").set("opensAt", java.time.LocalTime.of(9, 0)).where(Filters.eq("id", 1)).build().query()),
+                        () -> assertEquals("SELECT id FROM t WHERE at IN ('00:00:00', '23:59:00')",
+                                SCCB.select("id")
+                                        .from("t")
+                                        .where(Filters.in("at", N.asList(java.time.LocalTime.MIDNIGHT, java.time.LocalTime.of(23, 59))))
+                                        .build()
+                                        .query()),
+                        () -> assertEquals("INSERT INTO t (id, at) VALUES (1, '12:00:00')",
+                                SCCB.insert(N.asMap("id", 1, "at", java.time.LocalTime.NOON)).into("t").build().query()),
+                        () -> assertEquals("BEGIN BATCH INSERT INTO t (at) VALUES ('08:00:00'); APPLY BATCH",
+                                SCCB.batchInsert(N.asList(N.asMap("at", java.time.LocalTime.of(8, 0)))).into("t").build().query()),
+                        () -> assertEquals("UPDATE t SET AT = '07:15:00' WHERE ID = 1",
+                                ACCB.update("t").set("at", java.time.LocalTime.of(7, 15)).where(Filters.eq("id", 1)).build().query()),
+                        // Pins (unchanged): seconds or a fraction already present, java.sql.Time, and a bound LocalTime.
+                        () -> assertEquals("INSERT INTO t (a, b, c, d) VALUES ('09:30:05', '09:30:00.000001', '09:00:00.500', '12:00:00')",
+                                SCCB.insert(N.asMap("a", java.time.LocalTime.of(9, 30, 5), "b", java.time.LocalTime.of(9, 30, 0, 1000), "c",
+                                        java.time.LocalTime.of(9, 0, 0, 500_000_000), "d", java.sql.Time.valueOf("12:00:00"))).into("t").build().query()),
+                        () -> {
+                            final SP sp = PSC.update("t").set("at", java.time.LocalTime.of(9, 0)).where(Filters.eq("id", 1)).build();
+                            assertEquals("UPDATE t SET at = ? WHERE id = ?", sp.query());
+                            assertEquals(N.asList(java.time.LocalTime.of(9, 0), 1), sp.parameters());
+                        });
+    }
+
+    /** An {@code @Entity}-annotated Map subclass, which {@code Beans.isBeanClass} accepts like an entity bean. */
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table("map_rows")
+    public static class R2sliceIMapEntity extends java.util.LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        static R2sliceIMapEntity of(final Object id, final Object name) {
+            final R2sliceIMapEntity row = new R2sliceIMapEntity();
+            row.put("id", id);
+            row.put("name", name);
+            return row;
+        }
+    }
+
+    /**
+     * Pin (cross-cutting alert, unchanged): every entity-taking entry point (insert, insert with exclusions, batchInsert,
+     * set(entity), set(entity, excluded)) reads an {@code @Entity}-annotated Map subclass as a map of its entries, keeping a
+     * zero key, instead of as a bean (whose only "property" would be the Map's {@code isEmpty} getter).
+     */
+    @Test
+    public void test_r2sliceI_entityAnnotatedMapSubclassIsReadAsItsEntries() {
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final SP sp = PSC.insert(R2sliceIMapEntity.of(0, "a")).into("t").build();
+            assertEquals("INSERT INTO t (id, name) VALUES (?, ?)", sp.query());
+            assertEquals(N.asList(0, "a"), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.insert(R2sliceIMapEntity.of(0, "a"), N.asSet("name")).into(R2sliceIMapEntity.class).build();
+            assertEquals("INSERT INTO map_rows (id) VALUES (?)", sp.query());
+            assertEquals(N.asList(0), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.batchInsert(N.asList(R2sliceIMapEntity.of(0, "a"), R2sliceIMapEntity.of(1, "b"))).into("t").build();
+            assertEquals("BEGIN BATCH INSERT INTO t (id, name) VALUES (?, ?); INSERT INTO t (id, name) VALUES (?, ?); APPLY BATCH", sp.query());
+            assertEquals(N.asList(0, "a", 1, "b"), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.update("t").set(R2sliceIMapEntity.of(0, "a")).where(Filters.eq("id", 0)).build();
+            assertEquals("UPDATE t SET id = ?, name = ? WHERE id = ?", sp.query());
+            assertEquals(N.asList(0, "a", 0), sp.parameters());
+        }, () -> {
+            final SP sp = PSC.update("t").set(R2sliceIMapEntity.of(0, "a"), N.asSet("id")).where(Filters.eq("id", 0)).build();
+            assertEquals("UPDATE t SET name = ? WHERE id = ?", sp.query());
+            assertEquals(N.asList("a", 0), sp.parameters());
+        });
+    }
+
+    /**
+     * Pin for the class Javadoc: the inherited groupByAsc(...)/groupByDesc(...) shortcuts delegate to the GROUP BY overloads
+     * that take a SortDirection, so they fail with the same UnsupportedOperationException (CQL GROUP BY has no ASC/DESC),
+     * and a closed builder still reports IllegalStateException first.
+     */
+    @Test
+    public void test_r2sliceI_groupByAscAndDescShortcutsAreUnsupported() {
+        final com.landawn.abacus.da.cassandra.CqlBuilder closed = PSC.select("a").from("t");
+        closed.build();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByAsc("a")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByAsc("a", "b")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByAsc(N.asList("a"))),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByDesc("a")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByDesc("a", "b")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> PSC.select("a").from("t").groupByDesc(N.asList("a"))),
+                () -> assertThrows(IllegalStateException.class, () -> closed.groupByAsc("a")),
+                () -> assertThrows(IllegalStateException.class, () -> closed.groupByDesc("a", "b")));
+    }
+
+    /**
+     * Pin for the class Javadoc: a named-parameter DSL names the marker of a reserved-keyword column after it ({@code :desc}),
+     * which Cassandra's parser rejects; ParsedCql, through which the executors prepare CQL text, turns it into {@code ?}.
+     */
+    @Test
+    public void test_r2sliceI_namedMarkerOfReservedKeywordColumnIsRewrittenByParsedCql() {
+        final String cql = NSC.update("t").set("desc").where(Filters.eq("order", 1)).build().query();
+
+        assertEquals("UPDATE t SET \"desc\" = :desc WHERE \"order\" = :order", cql);
+        assertEquals("UPDATE t SET \"desc\" = ? WHERE \"order\" = ?", ParsedCql.parse(cql).parameterizedCql());
+        assertEquals("UPDATE t SET \"desc\" = ? WHERE \"order\" = ?", PSC.update("t").set("desc").where(Filters.eq("order", 1)).build().query());
+    }
 }

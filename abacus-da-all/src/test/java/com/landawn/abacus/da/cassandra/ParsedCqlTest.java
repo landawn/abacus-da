@@ -1258,4 +1258,33 @@ public class ParsedCqlTest extends TestBase {
                 () -> assertIbatisParsed("UPDATE t SET m = {'a': -1, '+': :v} WHERE k = :k", "UPDATE t SET m = {'a': -1, '+': ?} WHERE k = ?", "v", "k"),
                 () -> assertIbatisParsed("UPDATE t SET u = {f: (int) :x} WHERE k = :k", "UPDATE t SET u = {f: (int) :x} WHERE k = ?", "k"));
     }
+
+    // ---- 2026-10-24 r2 sliceJ ----
+
+    @Test
+    public void testParse_NativeMapKeyMarkerAfterArithmeticOperator_keepsGluedSeparator() {
+        // Regression: after an arithmetic operator inside braces a ':name' token may be a map KEY, and SqlParser glues the
+        // key/value separator (and an unspaced value) to it. The name ran to the end of the token, so the valid
+        // "{-:k: 1}" became the marker "k:" and the invalid CQL "{-? 1}" ("{1 * :k:2, 3: 4}" -> "k:2" and "{1 * ?, 3: 4}");
+        // with a glued value marker ("{-:k::v}") the key stayed a native marker in the CQL, uncounted.
+        assertAll(() -> assertIbatisParsed("UPDATE t SET m = {-:k: 1} WHERE id = :id", "UPDATE t SET m = {-?: 1} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {1 + :k: 'v'} WHERE id = :id", "UPDATE t SET m = {1 + ?: 'v'} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {1 * :k:2, 3: 4} WHERE id = :id", "UPDATE t SET m = {1 * ?:2, 3: 4} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k: :v} WHERE id = :id", "UPDATE t SET m = {-?: ?} WHERE id = ?", "k", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k:-:v} WHERE id = :id", "UPDATE t SET m = {-?:-?} WHERE id = ?", "k", "v", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k::v, 2 % :j::w} WHERE id = :id", "UPDATE t SET m = {-?:?, 2 % ?:?} WHERE id = ?", "k", "v", "j",
+                        "w", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k:{-:j:1}} WHERE id = :id", "UPDATE t SET m = {-?:{-?:1}} WHERE id = ?", "k", "j", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {{-:k}: 1} WHERE id = :id", "UPDATE t SET m = {{-?}: 1} WHERE id = ?", "k", "id"),
+                // The three marker styles of the same statement give the same parameterized CQL.
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET m = {-?: 1, 1 + ?:?} WHERE id = ?").parameterizedCql(),
+                        ParsedCql.parse("UPDATE t SET m = {-:k: 1, 1 + :j::v} WHERE id = :id").parameterizedCql()),
+                () -> assertEquals(ParsedCql.parse("UPDATE t SET m = {-#{k}: 1, 1 + #{j}:#{v}} WHERE id = #{id}").parameterizedCql(),
+                        ParsedCql.parse("UPDATE t SET m = {-:k: 1, 1 + :j::v} WHERE id = :id").parameterizedCql()),
+                // Pins: a quoted key name, a spaced separator, a value after a field separator and markers outside braces are unchanged.
+                () -> assertIbatisParsed("UPDATE t SET m = {-:\"K\": 1} WHERE id = :id", "UPDATE t SET m = {-?: 1} WHERE id = ?", "\"K\"", "id"),
+                () -> assertIbatisParsed("UPDATE t SET m = {-:k : 1} WHERE id = :id", "UPDATE t SET m = {-? : 1} WHERE id = ?", "k", "id"),
+                () -> assertIbatisParsed("UPDATE t SET u = {f: :x, g::y} WHERE id = :id", "UPDATE t SET u = {f: ?, g:?} WHERE id = ?", "x", "y", "id"),
+                () -> assertIbatisParsed("UPDATE t SET c = c - :x WHERE id = :id", "UPDATE t SET c = c - ? WHERE id = ?", "x", "id"));
+    }
 }

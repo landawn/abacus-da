@@ -134,12 +134,26 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the append operation
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyAppend(final Object rowKey) throws IllegalArgumentException, RuntimeException {
-        super(new Append(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
+        super(new Append(toNonNullRowKeyBytes(rowKey)));
         append = (Append) mutation;
+    }
+
+    // WHY: an empty value wrapper (an empty Optional, a Nullable or Holder of null...) passes the null check but converts to
+    // null bytes, on which the Append(byte[]) constructor failed with a NullPointerException on row.length, while the sliced
+    // overload of(Object, int, int) rejects the same key with an IllegalArgumentException.
+    private static byte[] toNonNullRowKeyBytes(final Object rowKey) throws IllegalArgumentException, RuntimeException {
+        final byte[] row = toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey));
+
+        if (row == null) {
+            throw new IllegalArgumentException("Row key has no byte representation (an empty value wrapper converts to no bytes): " + rowKey);
+        }
+
+        return row;
     }
 
     /**
@@ -233,11 +247,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * AnyAppend numKey = AnyAppend.of(1001L);                // returns a new AnyAppend; numeric key encoded to bytes
      * AnyAppend.of((Object) null);                           // throws IllegalArgumentException (null row key)
+     * AnyAppend.of(Optional.empty());                        // throws IllegalArgumentException (converts to no bytes)
      * }</pre>
      *
      * @param rowKey the row key to append data to; converted to bytes automatically
      * @return a new AnyAppend instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (such as an empty {@code Optional}, which
+     *         converts to no bytes), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #addColumn(String, String, Object)
      */

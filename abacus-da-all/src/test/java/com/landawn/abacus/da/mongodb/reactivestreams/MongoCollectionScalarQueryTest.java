@@ -306,4 +306,30 @@ public class MongoCollectionScalarQueryTest extends MongoCollectionExecutorTestS
 
         StepVerifier.create(result).verifyComplete();
     }
+
+    // ---- 2026-10-24 r2 sliceU ----
+
+    // Pins the queryForSingleValue Javadoc: bracketed text read as String[]/Object[] is parsed as JSON array text (also verified
+    // live on the reactive path), text that does not parse is the single element.
+    @Test
+    public void testQueryForSingleValueParsesBracketedTextIntoTextArrays_r2sliceU() {
+        final Bson filter = new Document("id", 1);
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+
+        final Object[][] cases = { { "[a, b]", String[].class, new String[] { "a", "b" } }, { "[]", String[].class, new String[0] },
+                { "[x", String[].class, new String[] { "[x" } }, { "[\"a\", \"b, c\"]", Object[].class, new Object[] { "a", "b, c" } },
+                { "plain", Object[].class, new Object[] { "plain" } } };
+        final java.util.List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final Object[] c : cases) {
+            stubEmits(mockFindPublisher, new Document("id", 1).append("value", c[0]));
+            final Object actual = executor.queryForSingleValue("value", filter, (Class<?>) c[1]).block();
+            checks.add(() -> org.junit.jupiter.api.Assertions.assertArrayEquals((Object[]) c[2], (Object[]) actual, String.valueOf(c[0])));
+            checks.add(() -> org.junit.jupiter.api.Assertions.assertEquals(c[1], actual.getClass(), String.valueOf(c[0])));
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
 }

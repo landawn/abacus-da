@@ -428,6 +428,34 @@ public class AnyMutationTest extends TestBase {
         assertNull(put.getAttribute(org.apache.hadoop.hbase.security.visibility.VisibilityConstants.VISIBILITY_LABELS_ATTR_KEY));
     }
 
+    // ---- 2026-10-24 r2 sliceP ----
+
+    /**
+     * Pins the has(family, qualifier[, ts], Object value) docs: an empty value wrapper encodes to null bytes like null, so it throws
+     * NullPointerException once a queued cell matches family and qualifier (whatever the timestamp: the value is compared first),
+     * and returns false when none does; the read never adds a family entry. A present wrapper compares by its content.
+     */
+    @Test
+    public void testHas_emptyValueWrapper_behavesLikeNull_r2sliceP() {
+        final AnyPut put = AnyPut.of("row").addColumn("cf", "q", 5L, "v");
+        final List<Object> emptyWrappers = Arrays.asList(null, java.util.Optional.empty(), java.util.OptionalInt.empty(),
+                com.landawn.abacus.util.u.Optional.empty(), com.landawn.abacus.util.u.Nullable.empty(), com.landawn.abacus.util.Holder.of(null));
+
+        org.junit.jupiter.api.Assertions.assertAll(emptyWrappers.stream().map(w -> (org.junit.jupiter.api.function.Executable) () -> {
+            assertThrows(NullPointerException.class, () -> put.has("cf", "q", w));
+            assertThrows(NullPointerException.class, () -> put.has("cf", "q", 5L, w));
+            assertThrows(NullPointerException.class, () -> put.has("cf", "q", 6L, w));
+            assertFalse(put.has("cf", "other", w));
+            assertFalse(put.has("cf", "other", 5L, w));
+            assertFalse(put.has("missing", "q", w));
+            assertFalse(put.has("missing", "q", 5L, w));
+            assertEquals(1, put.numFamilies());
+        }));
+
+        assertTrue(put.has("cf", "q", java.util.Optional.of("v")));
+        assertTrue(put.has("cf", "q", 5L, java.util.Optional.of("v")));
+    }
+
     private static final class TestMutation extends AnyMutation<TestMutation> {
         protected TestMutation(final org.apache.hadoop.hbase.client.Mutation mutation) {
             super(mutation);

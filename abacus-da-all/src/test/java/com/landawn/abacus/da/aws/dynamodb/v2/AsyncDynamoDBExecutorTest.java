@@ -2502,4 +2502,159 @@ public class AsyncDynamoDBExecutorTest extends MockitoTestBase {
     public static class AnnotatedMapRow_applyDdb extends java.util.LinkedHashMap<String, Object> {
         private static final long serialVersionUID = 1L;
     }
+
+    // ---- 2026-10-24 r2 sliceD ----
+
+    /**
+     * Pins the documented page-size meaning of a request's limit in the auto-paginating list/query overloads: with limit=1 and
+     * no exclusiveStartKey, every call still reads both pages (each request carrying limit 1) and returns every matching item,
+     * as the sync executor documents.
+     */
+    @Test
+    public void testListAndQueryTreatRequestLimitAsPageSizeAndReadEveryPage_r2sliceD() throws Exception {
+        final Map<String, AttributeValue> lek = Map.of("id", AttributeValue.fromS("1"));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenAnswer(invocation -> {
+            final QueryRequest request = invocation.getArgument(0);
+            return CompletableFuture.completedFuture(request.exclusiveStartKey().isEmpty()
+                    ? QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).lastEvaluatedKey(lek).build()
+                    : QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2")))).build());
+        });
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").limit(1).build();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(List.of("1", "2"),
+                asyncExecutor.list(queryRequest, TestEntity.class).get(5, java.util.concurrent.TimeUnit.SECONDS).stream().map(TestEntity::getId).toList()),
+                () -> assertEquals(2, asyncExecutor.list(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS).size()),
+                () -> assertEquals(2, asyncExecutor.query(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS).size()),
+                () -> assertEquals(2, asyncExecutor.query(queryRequest, TestEntity.class).get(5, java.util.concurrent.TimeUnit.SECONDS).size()));
+
+        final ArgumentCaptor<QueryRequest> requests = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDbAsyncClient, times(8)).query(requests.capture());
+        assertEquals(java.util.Collections.nCopies(8, 1), requests.getAllValues().stream().map(QueryRequest::limit).toList());
+    }
+
+    /**
+     * Pins the documented empty-Dataset edge of query(QueryRequest) and query(QueryRequest, Map type): two matching items that
+     * have no attribute (for example a projection of attributes they lack) give a Dataset with no columns and therefore no
+     * rows, while list(...) still returns two (empty) maps and a bean row type still gives two rows.
+     */
+    @Test
+    public void testQueryOfItemsWithoutAttributesIsEmptyOnlyForMapRows_r2sliceD() throws Exception {
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(Map.of(), Map.of())).count(2).build()));
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").projectionExpression("missingAttr").build();
+
+        final Dataset mapRows = asyncExecutor.query(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        final Dataset typedMapRows = asyncExecutor.query(queryRequest, HashMap.class).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        final Dataset beanRows = asyncExecutor.query(queryRequest, TestEntity.class).get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(0, mapRows.size()), () -> assertTrue(mapRows.columnNames().isEmpty()),
+                () -> assertEquals(0, typedMapRows.size()), () -> assertEquals(2, beanRows.size()),
+                () -> assertEquals(List.of(Map.of(), Map.of()), asyncExecutor.list(queryRequest).get(5, java.util.concurrent.TimeUnit.SECONDS)));
+    }
+
+    /**
+     * Pins the Mapper class doc's ID rule for arrays: an array ID other than byte[] (here String[]) is rejected with an
+     * IllegalArgumentException before any future is created, on every entity-key operation, while a byte[] ID is the binary
+     * key and is sent as B.
+     */
+    @Test
+    public void testMapperRejectsNonByteArrayIdButSendsByteArrayIdAsBinaryKey_r2sliceD() throws Exception {
+        final AsyncDynamoDBExecutor.Mapper<ArrayIdEntity_r2sliceD> mapper = asyncExecutor.mapper(ArrayIdEntity_r2sliceD.class, "TestTable", null);
+        final ArrayIdEntity_r2sliceD entity = new ArrayIdEntity_r2sliceD();
+        entity.setId(new String[] { "a" });
+        entity.setName("n");
+
+        final List<org.junit.jupiter.api.function.Executable> calls = List.of(() -> mapper.getItem(entity), () -> mapper.getItem(entity, true),
+                () -> mapper.putItem(entity), () -> mapper.updateItem(entity), () -> mapper.deleteItem(entity), () -> mapper.batchGetItem(List.of(entity)),
+                () -> mapper.batchPutItem(List.of(entity)), () -> mapper.batchDeleteItem(List.of(entity)));
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (final org.junit.jupiter.api.function.Executable call : calls) {
+            checks.add(() -> assertEquals("DynamoDB key attribute 'id' must be scalar, not java.lang.String[]",
+                    assertThrows(IllegalArgumentException.class, call).getMessage()));
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+        verifyNoInteractions(mockDynamoDbAsyncClient);
+
+        final AsyncDynamoDBExecutor.Mapper<BinaryIdEntity_r2sliceD> binaryMapper = asyncExecutor.mapper(BinaryIdEntity_r2sliceD.class, "TestTable", null);
+        final BinaryIdEntity_r2sliceD binaryEntity = new BinaryIdEntity_r2sliceD();
+        binaryEntity.setId(new byte[] { 1, 2 });
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
+        assertNull(binaryMapper.getItem(binaryEntity).get(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        final ArgumentCaptor<GetItemRequest> sent = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(mockDynamoDbAsyncClient).getItem(sent.capture());
+        assertEquals(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[] { 1, 2 }), sent.getValue().key().get("id").b());
+    }
+
+    public static class ArrayIdEntity_r2sliceD {
+        @com.landawn.abacus.annotation.Id
+        private String[] id;
+        private String name;
+
+        public String[] getId() {
+            return id;
+        }
+
+        public void setId(final String[] id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    public static class BinaryIdEntity_r2sliceD {
+        @com.landawn.abacus.annotation.Id
+        private byte[] id;
+
+        public byte[] getId() {
+            return id;
+        }
+
+        public void setId(final byte[] id) {
+            this.id = id;
+        }
+    }
+
+    /**
+     * Beans.isBeanClass accepts an @Entity-annotated Map subclass, so the async Mapper constructor used to build a mapper for one.
+     * Its key came from the @Id field while toItem writes a Map's entries, so putItem sent an item without its key. Both mapper
+     * factories now reject such a class with the "is not an entity class" message, before any request; a bean entity still maps.
+     */
+    @Test
+    public void testMapperRejectsEntityAnnotatedMapSubclass_r2sliceD() {
+        final String expected = MapRowEntity_r2sliceD.class.getCanonicalName() + " is not an entity class with getter/setter method";
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(expected,
+                        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(MapRowEntity_r2sliceD.class, "T", null)).getMessage()),
+                () -> assertEquals(expected,
+                        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(MapRowEntity_r2sliceD.class)).getMessage()),
+                () -> assertNotNull(asyncExecutor.mapper(TestEntity.class, "T", null)));
+        verifyNoInteractions(mockDynamoDbAsyncClient);
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table(name = "T")
+    public static class MapRowEntity_r2sliceD extends java.util.LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
 }

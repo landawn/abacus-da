@@ -50,8 +50,12 @@ import com.landawn.abacus.util.N;
  *       next lexicographically greater row.</li>
  *   <li><b>Stop row</b> is <i>exclusive</i> by default and can be flipped with
  *       {@link #withStopRow(Object, boolean)}.</li>
+ *   <li><b>Open bounds</b>: a {@code null} start or stop row, or one that converts to no bytes (an empty
+ *       {@code Optional}/{@code Nullable}/{@code OptionalInt} and the like, a {@code Holder} of {@code null}), is
+ *       stored as the empty row, which leaves that end of the range unbounded.</li>
  *   <li><b>Prefix scans</b> can be configured via {@link #setStartStopRowForPrefixScan(Object)}
- *       which translates the prefix into appropriate start/stop bounds without server-side filtering.</li>
+ *       which translates the prefix into appropriate start/stop bounds without server-side filtering.
+ *       The computed bounds are those of a forward scan; they are not swapped for a reversed scan.</li>
  *   <li><b>Reversed scans</b> ({@link #setReversed(boolean)}) swap the natural traversal order: the
  *       scanner starts at the start row (now treated as the upper bound) and moves backwards toward
  *       the stop row.</li>
@@ -1217,11 +1221,20 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * HBase documents that combining a prefix scan with explicit start/stop rows yields undefined
      * results, so use one or the other.</p>
      *
+     * <p>The computed bounds are those of a forward scan, and HBase does not swap them for a
+     * {@linkplain #setReversed(boolean) reversed} scan (before or after this call). A reversed scan
+     * treats the start row (here the prefix itself) as its upper bound and the stop row as its lower
+     * bound. For a non-empty prefix, the rows that extend it sort above that start row and are never
+     * returned, and unless the prefix consists only of {@code 0xFF} bytes the computed stop row sorts
+     * above the start row as well, so the scan returns no rows at all. For a reversed scan over a
+     * prefix, set the start and stop rows explicitly.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Any object is converted to row-key bytes, so a String prefix works directly.
      * AnyScan scan = AnyScan.create().setStartStopRowForPrefixScan("user_");   // returns this scan
      * byte[] sr = scan.getStartRow();                                          // returns the bytes of "user_" (inclusive lower bound)
+     * byte[] st = scan.getStopRow();                                           // returns the bytes of "user`" (exclusive upper bound)
      *
      * // A pre-converted byte[] prefix is passed through unchanged.
      * AnyScan scan2 = AnyScan.create().setStartStopRowForPrefixScan(Bytes.toBytes("user_"));
@@ -1229,6 +1242,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * // A null prefix is tolerated and resets the scan to the full row range.
      * AnyScan cleared = AnyScan.create().setStartStopRowForPrefixScan((Object) null);   // no exception
      * int len = cleared.getStartRow().length;                                           // returns 0
+     *
+     * // Edge: the bounds are not swapped for a reversed scan, so this reversed scan returns no rows.
+     * AnyScan reversed = AnyScan.create().setStartStopRowForPrefixScan("user_").setReversed(true);
+     * byte[] upper = reversed.getStartRow();   // still returns the bytes of "user_"
      * }</pre>
      *
      * @param rowPrefix the row key prefix; passed through {@link HBaseExecutor#toRowKeyBytes(Object)} (a {@code byte[]} input is returned as-is).

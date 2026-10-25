@@ -1040,6 +1040,12 @@ public final class AsyncMongoCollectionExecutor {
      * filtering, and sorting. The projection parameter allows for complex field inclusion/exclusion patterns
      * beyond simple field name lists.</p>
      *
+     * <p>Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the
+     * raw projected document. For a single-value {@code rowType}, the document's sole non-{@code _id} field is
+     * converted; a matched document that has only its {@code _id} (for example because it lacks the projected field)
+     * has its {@code _id} converted instead. Use {@link #findFirst(Collection, Bson, Bson, Class)} to get
+     * {@link Optional#empty()} in that case.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson projection = Projections.fields(Projections.include("name", "email"), Projections.excludeId());
@@ -1335,6 +1341,14 @@ public final class AsyncMongoCollectionExecutor {
      * combined with filtering and sorting. The projection parameter provides more control than
      * simple field name lists.</p>
      *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted. A document
+     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
+     * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
+     * returned document has the projected field, but its converted {@code _id} when none does. Use
+     * {@link #list(Collection, Bson, Bson, Class)} to always get {@code null} for a missing field. Result types that
+     * can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected
+     * documents.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson projection = Projections.fields(Projections.include("name", "dept"), Projections.excludeId());
@@ -1371,6 +1385,14 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method provides maximum control over the find operation with BSON projection,
      * filtering, sorting, and pagination. This is the most flexible list retrieval method.</p>
+     *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted. A document
+     * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
+     * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
+     * returned document has the projected field, but its converted {@code _id} when none does. Use
+     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field. Result
+     * types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw
+     * projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1953,7 +1975,10 @@ public final class AsyncMongoCollectionExecutor {
      * fields are ignored. The value is converted to {@code valueType} via
      * binary-aware scalar conversion: binary payloads can be read as byte arrays or readable {@link java.nio.ByteBuffer} values;
      * a BSON date requested as {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC;
-     * other values use {@link com.landawn.abacus.util.N#convert(Object, Class)}.</p>
+     * text enclosed in {@code [...]} requested as an array type whose elements accept text (such as {@code String[]} or
+     * {@code Object[]}) is parsed as the JSON array text earlier versions stored for an array ({@code "[a, b]"} becomes
+     * {@code {"a", "b"}}; text that does not parse becomes the single element); other values use
+     * {@link com.landawn.abacus.util.N#convert(Object, Class)}.</p>
      *
      * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()} when no nonempty document is found.
      * For a matched document, the {@code Nullable} holds the converted field value. A missing or BSON {@code null} field
@@ -2066,7 +2091,8 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command.</p>
      *
      * @param filter the query filter to match documents (must not be null)
-     * @return a ContinuableFuture that completes with a Dataset containing the query results
+     * @return a ContinuableFuture that completes with a Dataset containing the query results; its columns are the fields of the
+     *         returned documents, so when no document matches it is empty and has no columns
      * @throws IllegalArgumentException if {@code filter} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
@@ -2098,7 +2124,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
-     * @return a ContinuableFuture that completes with a typed Dataset containing the query results
+     * @return a ContinuableFuture that completes with a typed Dataset containing the query results; when no document matches it
+     *         is empty and has no columns (use {@link #query(Collection, Bson, Class)} to keep named columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
@@ -2134,7 +2161,8 @@ public final class AsyncMongoCollectionExecutor {
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
-     * @return a ContinuableFuture that completes with a typed Dataset containing the paginated results
+     * @return a ContinuableFuture that completes with a typed Dataset containing the paginated results; when no document matches
+     *         it is empty and has no columns (use {@link #query(Collection, Bson, int, int, Class)} to keep named columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
@@ -2326,7 +2354,9 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification (null for natural order)
      * @param rowType the Class object representing the row type
-     * @return a ContinuableFuture that completes with a typed Dataset containing projected and sorted results
+     * @return a ContinuableFuture that completes with a typed Dataset containing projected and sorted results; when no document
+     *         matches it is empty and has no columns, since the field names inside a {@code Bson} projection are not known (use
+     *         {@link #query(Collection, Bson, Bson, Class)} to keep the selected columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
@@ -2366,7 +2396,9 @@ public final class AsyncMongoCollectionExecutor {
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
-     * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
+     * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results; when no document
+     *         matches it is empty and has no columns, since the field names inside a {@code Bson} projection are not known (use
+     *         {@link #query(Collection, Bson, Bson, int, int, Class)} to keep the selected columns)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
@@ -2676,6 +2708,12 @@ public final class AsyncMongoCollectionExecutor {
      * <p>Uses BSON projection for advanced field selection including computed fields,
      * combined with sorting for ordered stream processing.</p>
      *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted; a document
+     * that has only its {@code _id} (for example because it lacks the projected field) has its {@code _id}
+     * converted instead. Use {@link #stream(Collection, Bson, Bson, Class)} to get {@code null} for a missing field.
+     * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw
+     * projected documents.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson projection = Projections.computed("fullName", 
@@ -2717,6 +2755,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>Complete stream method using BSON projection for advanced field selection
      * combined with sorting and pagination for full control.</p>
+     *
+     * <p>For a single-value {@code rowType}, each document's sole non-{@code _id} field is converted; a document
+     * that has only its {@code _id} (for example because it lacks the projected field) has its {@code _id}
+     * converted instead. Use {@link #stream(Collection, Bson, Bson, int, int, Class)} to get {@code null} for a
+     * missing field. Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
+     * receive the raw projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3252,6 +3296,12 @@ public final class AsyncMongoCollectionExecutor {
      * non-operator document is converted to a {@code $set} stage. Classic update operators such as
      * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
+     * <p>The field values of an entity, of a non-operator {@code Map} that is not a {@link Bson}, and of a name/value array are
+     * written literally (each wrapped in {@code $literal}), as the single-update overloads store them, so text such as
+     * {@code "$other"} is stored as is. The values of a non-operator {@link Document} (or another {@link Bson} document)
+     * are passed unchanged and evaluated as aggregation expressions, for example
+     * {@code new Document("total", new Document("$add", Arrays.asList("$price", "$tax")))}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
@@ -3419,6 +3469,12 @@ public final class AsyncMongoCollectionExecutor {
      * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
      * non-operator document is converted to a {@code $set} stage. Classic update operators such as
      * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
+     *
+     * <p>The field values of an entity, of a non-operator {@code Map} that is not a {@link Bson}, and of a name/value array are
+     * written literally (each wrapped in {@code $literal}), as the single-update overloads store them, so text such as
+     * {@code "$other"} is stored as is. The values of a non-operator {@link Document} (or another {@link Bson} document)
+     * are passed unchanged and evaluated as aggregation expressions, for example
+     * {@code new Document("total", new Document("$add", Arrays.asList("$price", "$tax")))}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4206,6 +4262,12 @@ public final class AsyncMongoCollectionExecutor {
      * non-operator document is converted to a {@code $set} stage. Classic update operators such as
      * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
+     * <p>The field values of an entity, of a non-operator {@code Map} that is not a {@link Bson}, and of a name/value array are
+     * written literally (each wrapped in {@code $literal}), as the single-update overloads store them, so text such as
+     * {@code "$other"} is stored as is. The values of a non-operator {@link Document} (or another {@link Bson} document)
+     * are passed unchanged and evaluated as aggregation expressions, for example
+     * {@code new Document("total", new Document("$add", Arrays.asList("$price", "$tax")))}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(Updates.set("status", "active"), Updates.set("modified", new Date()));
@@ -4645,7 +4707,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking operation to get all distinct values of a
      * specific field across all documents in the collection. Returns the values as a
-     * stream of the specified type.</p>
+     * stream of the specified type. This runs MongoDB's native {@code distinct} command, which unwinds an
+     * array-valued field: each array element is a separate distinct value (this includes Java array properties,
+     * which the {@link MongoDBBase} codec writes as BSON arrays).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4683,7 +4747,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking operation to get distinct values of a specific
      * field, but only from documents matching the provided filter. Returns the values as
-     * a stream of the specified type.</p>
+     * a stream of the specified type. As with {@link #distinct(String, Class)}, an array-valued field is
+     * unwound: each array element is a separate distinct value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4763,7 +4828,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking aggregation operation with automatic
      * deserialization of results to the specified type. Useful when the aggregation
-     * output matches a known document structure.</p>
+     * output matches a known document structure. Result types that can directly hold a {@link Document}
+     * (such as {@code Object} or {@link Bson}) receive the raw output documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

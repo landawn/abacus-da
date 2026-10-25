@@ -1897,4 +1897,217 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
             this.from = from;
         }
     }
+
+    // ---- 2026-10-24 r2 sliceL ----
+
+    private static final FieldList R2SLICEL_PAIR = FieldList.of(Field.of("a", StandardSQLTypeName.INT64), Field.of("b", StandardSQLTypeName.STRING));
+
+    /**
+     * A STRUCT cell mapped to an {@code Object} property (or {@code Serializable}, the non-Iterable types the record already
+     * is) keeps the raw record, as {@code queryForSingleValue(Object.class, ...)} does. It was read as a single-value row:
+     * a STRUCT of two or more fields failed the whole row with "Field count must be 1 to map a row to the single-value type:
+     * java.lang.Object" (toEntity, bean-class toList and extractData, records), and a one-field STRUCT silently became the
+     * text of its first field. A Collection-typed property still receives the field values.
+     */
+    @Test
+    public void testStructCellReadsIntoObjectPropertyAsRawRecord_r2sliceL() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("payload", StandardSQLTypeName.STRUCT, R2SLICEL_PAIR));
+        // The client's shape of a top-level STRUCT cell: the record carries its sub-schema.
+        final FieldValueList struct = FieldValueList.of(Arrays.asList(verifyCell("1"), verifyCell("x")), R2SLICEL_PAIR);
+        final FieldValueList row = FieldValueList.of(Arrays.asList(verifyCell("7"), FieldValue.of(FieldValue.Attribute.RECORD, struct)), fields);
+        final FieldList oneField = FieldList.of(Field.of("a", StandardSQLTypeName.INT64));
+        final FieldList oneFieldFields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("payload", StandardSQLTypeName.STRUCT, oneField));
+        final FieldValueList oneFieldStruct = FieldValueList.of(Arrays.asList(verifyCell("1")), oneField);
+        final FieldValueList oneFieldRow = FieldValueList.of(Arrays.asList(verifyCell("7"), FieldValue.of(FieldValue.Attribute.RECORD, oneFieldStruct)),
+                oneFieldFields);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final R2SliceLObjectHolder holder = BigQueryExecutor.toEntity(fields, row, R2SliceLObjectHolder.class);
+            org.junit.jupiter.api.Assertions.assertSame(struct, holder.getPayload(), "Object property");
+            assertEquals("x", ((FieldValueList) holder.getPayload()).get("b").getStringValue());
+            assertEquals(7L, holder.getId());
+        }, () -> org.junit.jupiter.api.Assertions.assertSame(struct, BigQueryExecutor.toEntity(fields, row, R2SliceLSerializableHolder.class).getPayload(),
+                "Serializable property"),
+                () -> org.junit.jupiter.api.Assertions.assertSame(struct, BigQueryExecutor.toEntity(fields, row, R2SliceLObjectRecord.class).payload(),
+                        "record component"),
+                () -> org.junit.jupiter.api.Assertions.assertSame(oneFieldStruct,
+                        BigQueryExecutor.toEntity(oneFieldFields, oneFieldRow, R2SliceLObjectHolder.class).getPayload(), "one-field STRUCT"),
+                () -> {
+                    fixBqStubResult(fields, row);
+                    org.junit.jupiter.api.Assertions.assertSame(struct,
+                            BigQueryExecutor.toList(mockTableResult, R2SliceLObjectHolder.class).get(0).getPayload(), "toList bean rows");
+                    org.junit.jupiter.api.Assertions.assertSame(struct,
+                            BigQueryExecutor.extractData(mockTableResult, R2SliceLObjectHolder.class).getColumn("payload").get(0), "bean-class Dataset");
+                },
+                // Unchanged: a Collection-typed property gets the field values, not the FieldValue wrappers, and the
+                // single-value Object read, which the property now matches, keeps the record.
+                () -> assertEquals(Arrays.asList("1", "x"), BigQueryExecutor.toEntity(fields, row, R2SliceLListHolder.class).getPayload(), "List property"),
+                () -> {
+                    final FieldList single = FieldList.of(fields.get(1));
+                    final List<FieldValueList> rows = Arrays
+                            .asList(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, struct)), single));
+                    when(mockTableResult.getSchema()).thenReturn(Schema.of(single));
+                    when(mockTableResult.getTotalRows()).thenReturn(1L);
+                    when(mockTableResult.getValues()).thenReturn(rows);
+                    when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+                    org.junit.jupiter.api.Assertions.assertSame(struct, executor.queryForSingleValue(Object.class, "SELECT payload FROM t").orElse(null),
+                            "queryForSingleValue(Object.class)");
+                });
+    }
+
+    /**
+     * {@code Beans.isBeanClass} accepts an {@code @Entity}-annotated {@code Map} subclass, so the public {@code toEntity} mapped
+     * such a target as a bean: its entries stayed empty and only a column matching a bean property was assigned, while
+     * {@code toList}, {@code stream}, {@code extractData} and {@code N.convert} fill the same class with one entry per column.
+     */
+    @Test
+    public void testToEntityOfAnnotatedMapSubclassFillsItsEntries_r2sliceL() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("code", StandardSQLTypeName.INT64), Field.of("label", StandardSQLTypeName.STRING));
+        final FieldValueList row = FieldValueList.of(Arrays.asList(verifyCell("1"), verifyCell("L")), fields);
+        final Map<String, Object> expected = new LinkedHashMap<>();
+        expected.put("code", "1");
+        expected.put("label", "L");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final R2SliceLMapEntity entity = BigQueryExecutor.toEntity(fields, row, R2SliceLMapEntity.class);
+            assertEquals(expected, entity);
+            assertNull(entity.getLabel(), "bean property not assigned");
+        }, () -> assertEquals(expected, BigQueryExecutor.toEntity(Schema.of(fields), row, R2SliceLMapEntity.class), "Schema overload"),
+                () -> assertEquals(expected, BigQueryExecutor.toEntity(row, R2SliceLMapEntity.class), "schema-from-row overload"), () -> {
+                    fixBqStubResult(fields, row);
+                    assertEquals(BigQueryExecutor.toList(mockTableResult, R2SliceLMapEntity.class).get(0),
+                            BigQueryExecutor.toEntity(fields, row, R2SliceLMapEntity.class), "same as a toList row");
+                }, () -> org.junit.jupiter.api.Assertions.assertInstanceOf(R2SliceLMapEntity.class,
+                        BigQueryExecutor.toEntity(fields, row, R2SliceLMapEntity.class)));
+    }
+
+    /**
+     * Pins the class Javadoc: the fields of a STRUCT read into a typed {@code Map}/{@code Collection} property are converted
+     * from their cell text, without the native TIMESTAMP/BYTES decoding, while the same STRUCT mapped to a bean is decoded.
+     */
+    @Test
+    public void testStructFieldsOfTypedContainerPropertyAreConvertedFromText_r2sliceL() throws Exception {
+        final FieldList sub = FieldList.of(Field.of("seenAt", StandardSQLTypeName.TIMESTAMP));
+        final FieldList fields = FieldList.of(Field.of("times", StandardSQLTypeName.STRUCT, sub), Field.of("visit", StandardSQLTypeName.STRUCT, sub));
+        final FieldValue cell = FieldValue.of(FieldValue.Attribute.RECORD, FieldValueList.of(Arrays.asList(verifyCell("1718900000.5")), sub));
+
+        assertThrows(RuntimeException.class, () -> BigQueryExecutor.toEntity(FieldList.of(fields.get(0)),
+                FieldValueList.of(Arrays.asList(cell), FieldList.of(fields.get(0))), R2SliceLTimesHolder.class));
+        assertEquals(java.time.Instant.ofEpochSecond(1_718_900_000L, 500_000_000L),
+                BigQueryExecutor
+                        .toEntity(FieldList.of(fields.get(1)), FieldValueList.of(Arrays.asList(cell), FieldList.of(fields.get(1))), R2SliceLTimesHolder.class)
+                        .getVisit()
+                        .getSeenAt());
+    }
+
+    public static class R2SliceLObjectHolder {
+        private long id;
+        private Object payload;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public Object getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final Object payload) {
+            this.payload = payload;
+        }
+    }
+
+    public static class R2SliceLSerializableHolder {
+        private java.io.Serializable payload;
+
+        public java.io.Serializable getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final java.io.Serializable payload) {
+            this.payload = payload;
+        }
+    }
+
+    public static class R2SliceLListHolder {
+        private List<Object> payload;
+
+        public List<Object> getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final List<Object> payload) {
+            this.payload = payload;
+        }
+    }
+
+    public record R2SliceLObjectRecord(long id, Object payload) {
+    }
+
+    public static class R2SliceLTimesHolder {
+        private Map<String, java.time.Instant> times;
+        private Visit visit;
+
+        public Map<String, java.time.Instant> getTimes() {
+            return times;
+        }
+
+        public void setTimes(final Map<String, java.time.Instant> times) {
+            this.times = times;
+        }
+
+        public Visit getVisit() {
+            return visit;
+        }
+
+        public void setVisit(final Visit visit) {
+            this.visit = visit;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2SliceLMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        private String label;
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(final String label) {
+            this.label = label;
+        }
+    }
+
+    // ---- 2026-10-24 r2 main ----
+
+    /**
+     * An {@code Iterable<Long>} property is not given the raw STRUCT record: the record's elements are {@code FieldValue}
+     * wrappers, so the property held them and failed with ClassCastException only when iterated. It fails at read time
+     * again, as before the raw-record rule for {@code Object}/{@code Serializable} properties.
+     */
+    @Test
+    public void testStructCellIntoIterablePropertyIsNotTheRawRecord_r2main() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("payload", StandardSQLTypeName.STRUCT, R2SLICEL_PAIR));
+        final FieldValueList struct = FieldValueList.of(Arrays.asList(verifyCell("1"), verifyCell("x")), R2SLICEL_PAIR);
+        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, struct)), fields);
+
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toEntity(fields, row, R2MainIterableHolder.class));
+    }
+
+    public static class R2MainIterableHolder {
+        private Iterable<Long> payload;
+
+        public Iterable<Long> getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final Iterable<Long> payload) {
+            this.payload = payload;
+        }
+    }
 }

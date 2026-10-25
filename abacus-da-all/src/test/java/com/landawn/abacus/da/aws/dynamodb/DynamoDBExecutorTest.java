@@ -1512,4 +1512,96 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
         private static final long serialVersionUID = 1L;
     }
 
+    // ---- 2026-10-24 r2 sliceA ----
+
+    /**
+     * An @Entity-annotated Map subclass is read as a Map everywhere (readRow, the row mappers, query(QueryRequest, Class)), but
+     * toItem/toUpdateItem took it as a bean (Beans.isBeanClass accepts it) and wrote the Map's own getters (keySet, values,
+     * entrySet, size, empty) instead of its entries. It is now written like any other Map (naming policy and NULL for a null
+     * value included), and the written item reads back into an equal instance of the subclass.
+     */
+    @Test
+    public void testToItem_EntityAnnotatedMapSubclassIsWrittenAsMap_r2sliceA() {
+        final AnnotatedMapRow_applyDdb row = new AnnotatedMapRow_applyDdb();
+        row.put("id", "1");
+        row.put("userName", "x");
+        row.put("note", null);
+
+        final Map<String, AttributeValue> expectedItem = new LinkedHashMap<>();
+        expectedItem.put("id", new AttributeValue().withS("1"));
+        expectedItem.put("userName", new AttributeValue().withS("x"));
+        expectedItem.put("note", new AttributeValue().withNULL(true));
+        final Map<String, AttributeValueUpdate> expectedUpdate = new LinkedHashMap<>();
+        expectedUpdate.put("id", new AttributeValueUpdate(new AttributeValue().withS("1"), AttributeAction.PUT));
+        expectedUpdate.put("user_name", new AttributeValueUpdate(new AttributeValue().withS("x"), AttributeAction.PUT));
+        expectedUpdate.put("note", new AttributeValueUpdate(new AttributeValue().withNULL(true), AttributeAction.PUT));
+
+        final Map<String, AttributeValue> item = DynamoDBExecutor.toItem(row);
+        final Object readBack = DynamoDBExecutor.toList(new QueryResult().withItems(List.of(item)), AnnotatedMapRow_applyDdb.class).get(0);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expectedItem, item),
+                () -> assertEquals(List.of("id", "userName", "note"), new ArrayList<>(item.keySet())),
+                () -> assertEquals(List.of("id", "user_name", "note"), new ArrayList<>(DynamoDBExecutor.toItem(row, NamingPolicy.SNAKE_CASE).keySet())),
+                () -> assertEquals(expectedUpdate, DynamoDBExecutor.toUpdateItem(row, NamingPolicy.SNAKE_CASE)),
+                () -> assertEquals(List.of("id", "userName", "note"), new ArrayList<>(DynamoDBExecutor.toUpdateItem(row).keySet())),
+                () -> assertTrue(readBack instanceof AnnotatedMapRow_applyDdb, String.valueOf(readBack)), () -> assertEquals(row, readBack));
+    }
+
+    // ---- 2026-10-24 r2verify1 ----
+
+    /**
+     * Beans.isBeanClass accepts an @Entity-annotated Map subclass, so both public toEntity overloads mapped an item to it as a
+     * bean whose only properties are its Map accessors (and its own fields): every attribute was silently dropped and an empty
+     * map returned (or UnsupportedOperationException for a class without fields). They now reject every Map type with the
+     * IllegalArgumentException a plain Map already got; a null item still returns null, and the row readers still fill such a
+     * class with the item's attributes.
+     */
+    @Test
+    public void testToEntityRejectsEntityAnnotatedMapSubclass_r2verify1() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", new AttributeValue().withS("1"));
+        item.put("name", new AttributeValue().withS("x"));
+        final Map<String, Object> expectedRow = new LinkedHashMap<>();
+        expectedRow.put("id", "1");
+        expectedRow.put("name", "x");
+        final String reason = " - Map implementations are never treated as beans";
+        final String withIdMessage = "Not a bean class: " + EntityMapWithId_r2verify1.class.getCanonicalName() + reason;
+
+        final Object row = DynamoDBExecutor.toList(new QueryResult().withItems(List.of(item)), EntityMapWithId_r2verify1.class).get(0);
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(
+                        () -> assertEquals(withIdMessage,
+                                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity(item, EntityMapWithId_r2verify1.class))
+                                        .getMessage()),
+                        () -> assertEquals(withIdMessage,
+                                assertThrows(IllegalArgumentException.class,
+                                        () -> DynamoDBExecutor.toEntity(new GetItemResult().withItem(item), EntityMapWithId_r2verify1.class)).getMessage()),
+                        () -> assertEquals("Not a bean class: " + AnnotatedMapRow_applyDdb.class.getCanonicalName() + reason,
+                                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity(item, AnnotatedMapRow_applyDdb.class))
+                                        .getMessage()),
+                        // Unchanged: a plain Map type fails alike, and a missing item is null.
+                        () -> assertEquals("Not a bean class: java.util.LinkedHashMap" + reason,
+                                assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity(item, LinkedHashMap.class)).getMessage()),
+                        () -> assertNull(DynamoDBExecutor.toEntity((Map<String, AttributeValue>) null, EntityMapWithId_r2verify1.class)),
+                        () -> assertNull(DynamoDBExecutor.toEntity(new GetItemResult(), EntityMapWithId_r2verify1.class)),
+                        () -> assertTrue(row instanceof EntityMapWithId_r2verify1, String.valueOf(row)), () -> assertEquals(expectedRow, row));
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class EntityMapWithId_r2verify1 extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
+
 }

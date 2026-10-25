@@ -806,4 +806,133 @@ public class BigQueryMutationTest extends BigQueryExecutorTestSupport {
             this.label = label;
         }
     }
+
+    // ---- 2026-10-24 r2 sliceL ----
+
+    private QueryJobConfiguration r2SliceLCapture(final org.junit.jupiter.api.function.Executable call) throws Throwable {
+        org.mockito.Mockito.clearInvocations(mockBigQuery);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        call.execute();
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery).query(captor.capture());
+        return captor.getValue();
+    }
+
+    /**
+     * insert(entity) writes an {@code @Entity}-annotated {@code Map} subclass from its entries, and the SQL builder's
+     * set(entity) renders its SET clause from them too, but update/delete read the key values (and update the null filter)
+     * through its bean accessors: the WHERE clause took the bean field ({@code id = 5}) instead of the inserted key entry
+     * ({@code id = 1}), so the statement targeted another row (or none), and a null entry was bound as an untyped null
+     * (IllegalArgumentException) instead of being left out like a null property.
+     */
+    @Test
+    public void testUpdateAndDeleteOfAnnotatedMapSubclassUseItsEntries_r2sliceL() throws Exception {
+        final R2SliceLKeyedMapEntity entity = new R2SliceLKeyedMapEntity();
+        entity.setId(5L);
+        entity.put("id", 1);
+        entity.put("name", "n");
+        entity.put("note", null);
+
+        final R2SliceLKeyedMapEntity noKeyEntry = new R2SliceLKeyedMapEntity();
+        noKeyEntry.setId(5L);
+        noKeyEntry.put("name", "n");
+
+        final R2SliceLKeyedMapEntity nothingToSet = new R2SliceLKeyedMapEntity();
+        nothingToSet.put("id", 1);
+        nothingToSet.put("name", null);
+
+        final LinkedHashMap<String, Object> plainMap = new LinkedHashMap<>();
+        plainMap.put("id", 1);
+        plainMap.put("name", "n");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final QueryJobConfiguration config = r2SliceLCapture(() -> executor.update(entity));
+            assertEquals("UPDATE keyed_map SET name = ? WHERE id = ?", config.getQuery());
+            assertEquals(java.util.Arrays.asList("n", "1"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = r2SliceLCapture(() -> executor.update(entity, N.asSet("id")));
+            assertEquals("UPDATE keyed_map SET name = ? WHERE id = ?", config.getQuery());
+            assertEquals(java.util.Arrays.asList("n", "1"), sliceLParameterTexts(config));
+        }, () -> {
+            final QueryJobConfiguration config = r2SliceLCapture(() -> executor.delete(entity));
+            assertEquals("DELETE FROM keyed_map WHERE id = ?", config.getQuery());
+            assertEquals(java.util.Arrays.asList("1"), sliceLParameterTexts(config));
+        }, () -> {
+            final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.update(noKeyEntry));
+            assertEquals("No property value specified in entity for key names: [id]", ex.getMessage());
+        }, () -> {
+            final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.delete(noKeyEntry));
+            assertEquals("No property value specified in entity for key names: [id]", ex.getMessage());
+        }, () -> {
+            final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.update(nothingToSet));
+            assertEquals("No non-null non-key properties to update in the given entity", ex.getMessage());
+        },
+                // Unchanged: insert uses the same entries; a plain Map is still rejected as an entity.
+                () -> {
+                    final R2SliceLKeyedMapEntity toInsert = new R2SliceLKeyedMapEntity();
+                    toInsert.setId(5L);
+                    toInsert.put("id", 1);
+                    toInsert.put("name", "n");
+                    final QueryJobConfiguration config = r2SliceLCapture(() -> executor.insert(toInsert));
+                    assertEquals("INSERT INTO keyed_map (id, name) VALUES (?, ?)", config.getQuery());
+                    assertEquals(java.util.Arrays.asList("1", "n"), sliceLParameterTexts(config));
+                }, () -> assertThrows(IllegalArgumentException.class, () -> executor.update(plainMap, N.asSet("id"))),
+                () -> assertThrows(IllegalArgumentException.class, () -> executor.delete(plainMap)));
+    }
+
+    /**
+     * Pins the class Javadoc's Parameter Binding note: a BigDecimal (a bean property included) binds as BIGNUMERIC.
+     */
+    @Test
+    public void testBigDecimalBindsAsBigNumericParameter_r2sliceL() throws Throwable {
+        final R2SliceLPricedEntity priced = new R2SliceLPricedEntity();
+        priced.setId(1L);
+        priced.setPrice(new java.math.BigDecimal("12.50"));
+
+        final QueryJobConfiguration config = r2SliceLCapture(() -> executor.insert(priced));
+
+        assertTrue(config.getQuery().endsWith(" (id, price) VALUES (?, ?)"), config.getQuery());
+        assertEquals(com.google.cloud.bigquery.StandardSQLTypeName.BIGNUMERIC, config.getPositionalParameters().get(1).getType());
+        assertEquals("12.50", config.getPositionalParameters().get(1).getValue());
+        assertEquals(com.google.cloud.bigquery.StandardSQLTypeName.BIGNUMERIC,
+                BigQueryExecutor.buildQueryParameterValue(java.math.BigDecimal.ONE).get(0).getType());
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table("keyed_map")
+    public static class R2SliceLKeyedMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        @com.landawn.abacus.annotation.Id
+        private Long id;
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+    }
+
+    public static class R2SliceLPricedEntity {
+        private long id;
+        private java.math.BigDecimal price;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public java.math.BigDecimal getPrice() {
+            return price;
+        }
+
+        public void setPrice(final java.math.BigDecimal price) {
+            this.price = price;
+        }
+    }
 }

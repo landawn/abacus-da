@@ -135,7 +135,11 @@ import com.landawn.abacus.util.stream.Stream;
  * enums, and {@code UUID} &mdash; is bound as a {@code STRING} parameter, so use
  * {@code java.sql.Date}/{@code java.sql.Timestamp} to bind native DATE/TIMESTAMP values).
  * {@code java.sql.Time} binds as a native {@code TIME}, preserving milliseconds and using ASCII digits
- * independently of the JVM's formatting locale.
+ * independently of the JVM's formatting locale. A {@link BigDecimal} binds as {@code BIGNUMERIC}, which BigQuery does not
+ * implicitly coerce to {@code NUMERIC}: it compares with a {@code NUMERIC} column, but inserting it into or assigning it to
+ * one (including a {@code BigDecimal} property written by {@link #insert(Object)} or {@link #update(Object)}) is rejected;
+ * for such a column bind {@code QueryParameterValue.numeric(value)}, write {@code CAST(? AS NUMERIC)}, or declare the
+ * column {@code BIGNUMERIC}.
  * {@code null} parameters must be wrapped in a {@link QueryParameterValue} so the SQL type is
  * known.</p>
  *
@@ -152,8 +156,12 @@ import com.landawn.abacus.util.stream.Stream;
  * columns, and a {@code REPEATED STRUCT} column mapped to a collection or array of beans maps each element
  * like a {@code STRUCT} bean property. A {@code STRUCT} cell mapped to a {@code Map} or {@code Collection} bean property
  * with typed elements (e.g. {@code Map<String, Long>} or {@code List<Long>}) is converted to those element types; structured
- * values in {@code Map<String, String>} or {@code List<String>} properties become JSON text. A
- * {@code REPEATED STRUCT} element mapped to a collection or array element type, as in {@code List<List<Long>>}, becomes
+ * values in {@code Map<String, String>} or {@code List<String>} properties become JSON text. The fields of such a
+ * {@code STRUCT} are converted from their cell text without the native decoding described above, so, for example, a
+ * {@code TIMESTAMP} (epoch seconds) or {@code BYTES} (base64) field cannot be read into a {@code Map<String, Instant>} or
+ * {@code Map<String, byte[]>} property; map such a {@code STRUCT} to a bean instead. A {@code STRUCT} cell mapped to an
+ * {@code Object} or {@code Serializable} bean property receives the raw {@link FieldValueList}, as
+ * {@code queryForSingleValue(Object.class, ...)} does; an {@code Iterable} property is not supported for a {@code STRUCT} cell. A {@code REPEATED STRUCT} element mapped to a collection or array element type, as in {@code List<List<Long>>}, becomes
  * the list of its field values first, like a {@code STRUCT} cell mapped to a {@code Collection} property, and a
  * {@code STRUCT} cell or element mapped to a generic bean type (e.g. a {@code Box<Long>} property or a
  * {@code List<Box<java.time.Instant>>} element) is mapped with its type arguments. A property declared with a type variable
@@ -439,8 +447,9 @@ public class BigQueryExecutor {
      * no top-level property matches. Nested {@code STRUCT} values are converted recursively, with the sub-schema of
      * their field in {@code fields}, into the property's declared type (including the element types of a {@code Map} or
      * {@code Collection} property such as {@code Map<String, Long>}, and the type arguments of a generic bean property such as
-     * {@code Box<Long>}); {@code REPEATED} values are converted to the property's
-     * collection or array type. {@code BYTES}, {@code TIMESTAMP}, {@code TIME} and {@code DATE} cells are decoded for binary,
+     * {@code Box<Long>}); an {@code Object} property (or one of another non-{@code Collection} type that a
+     * {@link FieldValueList} is an instance of) receives a {@code STRUCT} value as the raw {@code FieldValueList}.
+     * {@code REPEATED} values are converted to the property's collection or array type. {@code BYTES}, {@code TIMESTAMP}, {@code TIME} and {@code DATE} cells are decoded for binary,
      * date/time, {@code java.sql.Time} and {@code com.google.cloud.Date} properties as described under <i>Result Value Conversion</i> in
      * the class documentation.
      * A property declared with a type variable that {@code targetClass} binds (e.g. {@code T value} inherited by
@@ -449,6 +458,9 @@ public class BigQueryExecutor {
      * property, or a field restricted by {@code @AccessFieldByMethod} without a setter) is ignored, whatever its
      * {@code @JsonXmlField} direction (an explicit {@code DESERIALIZE_ONLY} cannot make it writable); a dotted column is
      * ignored when its terminal property is read-only.
+     * A {@code targetClass} that is a {@code Map} (an {@code @Entity}-annotated {@code Map} subclass, which counts as a bean
+     * class) receives one entry per column, as from {@link #toMap(FieldList, FieldValueList, IntFunction)}, like the
+     * {@code Map} rows of {@link #toList(TableResult, Class)}; its bean properties are not assigned.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -480,12 +492,20 @@ public class BigQueryExecutor {
      * @see #toEntity(Schema, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
     public static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final Class<T> targetClass)
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(fields, cs.fields);
         N.checkArgNotNull(fieldValueList, cs.fieldValueList);
         checkFieldCount(fields, fieldValueList);
         N.checkArgument(Beans.isBeanClass(targetClass), "{} is not a valid entity class with getter/setter method", targetClass);
+
+        // Beans.isBeanClass accepts an @Entity-annotated Map subclass, which every other read (toList, stream, extractData,
+        // N.convert, STRUCT properties) fills from the row's columns as a Map. Mapping it as a bean left its entries empty
+        // and wrote only the columns that happen to match its bean properties.
+        if (Map.class.isAssignableFrom(targetClass)) {
+            return (T) toMap(fields, fieldValueList, IntFunctions.ofMap((Class<Map>) targetClass));
+        }
 
         return toEntity(fields, fieldValueList, ParserUtil.getBeanInfo(targetClass));
     }
@@ -597,6 +617,17 @@ public class BigQueryExecutor {
      */
     private static Object readStructProperty(final Field field, final FieldValueList struct, final PropInfo propInfo) throws RuntimeException {
         if (FieldValueList.class.isAssignableFrom(propInfo.clazz)) {
+            return struct;
+        }
+
+        // A property type the record already is, other than an Iterable (so Object or Serializable), keeps the raw record,
+        // as queryForSingleValue does for such a value class (readSingleValue). WHY: readRow maps to such a type as a
+        // single-value row, so an Object property failed the whole row with "Field count must be 1 ..." for a STRUCT of
+        // two or more fields and silently held only the first field's text for a one-field STRUCT. (An Object property
+        // took the raw record until the assignability test was narrowed to FieldValueList for List-typed properties.) An
+        // Iterable or Collection property is not given the record: its elements are FieldValue wrappers, so an
+        // Iterable<Long> property would hold FieldValue elements and fail with ClassCastException only when iterated.
+        if (propInfo.clazz.isInstance(struct) && !Iterable.class.isAssignableFrom(propInfo.clazz)) {
             return struct;
         }
 
@@ -1785,7 +1816,9 @@ public class BigQueryExecutor {
      * the configured naming policy. All non-null properties of the entity will be
      * included in the INSERT statement, including id properties holding {@code 0}: BigQuery does not generate ids, so the
      * SQL convention of leaving out a zero-valued id for the database to generate is not applied (a {@code null} id is left
-     * out like any other {@code null} property).
+     * out like any other {@code null} property). An {@code @Entity}-annotated {@code Map} subclass is inserted from its
+     * entries (not its bean properties), into the table of its class; a {@code null} entry value is kept, and is rejected
+     * as an untyped {@code null} parameter.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1944,7 +1977,9 @@ public class BigQueryExecutor {
      * <p>
      * This method performs an UPDATE operation using the entity's primary key fields (identified
      * by @Id annotations or naming conventions) as the WHERE clause criteria. All non-null
-     * non-key properties of the entity are included in the SET clause.
+     * non-key properties of the entity are included in the SET clause. An {@code @Entity}-annotated {@code Map} subclass
+     * takes its key names from its class and every value, key values included, from its entries, as {@link #insert(Object)}
+     * writes it.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1996,7 +2031,8 @@ public class BigQueryExecutor {
      * <p>
      * This method performs an UPDATE operation using the specified primary key field names
      * as the WHERE clause criteria. All non-null properties except the primary keys are included
-     * in the SET clause with values from the entity.
+     * in the SET clause with values from the entity. The key values and the SET values of an {@code @Entity}-annotated
+     * {@code Map} subclass are its entries (its {@code null} entries are left out), as {@link #insert(Object)} writes it.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2055,10 +2091,15 @@ public class BigQueryExecutor {
 
         final Class<?> targetClass = entity.getClass();
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
+        // An @Entity-annotated Map subclass (which ParserUtil accepts as a bean; a plain Map is rejected above) is read from
+        // its entries, as insert(entity) writes it and the builder's set(entity) renders it. WHY: reading the key values and
+        // the null filter through its bean accessors mixed the two views: the WHERE clause took a bean field instead of the
+        // inserted key entry (updating another row, or none), and a null entry was not left out but bound as an untyped null.
+        final Map<?, ?> mapEntity = entity instanceof Map ? (Map<?, ?>) entity : null;
         final List<Condition> conds = new ArrayList<>(primaryKeyNames.size());
 
         for (final String keyName : primaryKeyNames) {
-            final Object propVal = entityInfo.getPropValue(entity, keyName);
+            final Object propVal = mapEntity == null ? entityInfo.getPropValue(entity, keyName) : mapEntity.get(keyName);
 
             // Fail fast with a clear message (mirroring entityToCondition): a null/empty key value
             // would otherwise surface as a generic error from buildQueryParameterValue.
@@ -2077,11 +2118,23 @@ public class BigQueryExecutor {
         final Set<String> excludedPropNames = new HashSet<>(primaryKeyNames);
         boolean hasNonNullProp = false;
 
-        for (final PropInfo propInfo : entityInfo.propInfoList) {
-            if (propInfo.getPropValue(entity) == null) {
-                excludedPropNames.add(propInfo.name);
-            } else if (!excludedPropNames.contains(propInfo.name)) {
-                hasNonNullProp = true;
+        if (mapEntity == null) {
+            for (final PropInfo propInfo : entityInfo.propInfoList) {
+                if (propInfo.getPropValue(entity) == null) {
+                    excludedPropNames.add(propInfo.name);
+                } else if (!excludedPropNames.contains(propInfo.name)) {
+                    hasNonNullProp = true;
+                }
+            }
+        } else {
+            for (final Map.Entry<?, ?> entry : mapEntity.entrySet()) {
+                if (entry.getValue() == null) {
+                    if (entry.getKey() instanceof final String key) {
+                        excludedPropNames.add(key);
+                    }
+                } else if (!excludedPropNames.contains(entry.getKey())) {
+                    hasNonNullProp = true;
+                }
             }
         }
 
@@ -2182,7 +2235,9 @@ public class BigQueryExecutor {
      * Deletes a BigQuery table record using an entity's primary key fields.
      * <p>
      * This method performs a DELETE operation using the entity's primary key fields as the
-     * WHERE clause criteria. The entity must have valid primary key values set.
+     * WHERE clause criteria. The entity must have valid primary key values set. The key values of an
+     * {@code @Entity}-annotated {@code Map} subclass are its entries for the key names of its class, as
+     * {@link #insert(Object)} writes it.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2471,7 +2526,7 @@ public class BigQueryExecutor {
         }
 
         if (keyNames.size() == 1) {
-            final Object propVal = Beans.getPropValue(entity, keyNames.get(0));
+            final Object propVal = keyValueOf(entity, keyNames.get(0));
 
             if (propVal == null || (propVal instanceof CharSequence) && Strings.isEmpty(((CharSequence) propVal))) {
                 throw new IllegalArgumentException("No property value specified in entity for key names: " + keyNames);
@@ -2483,7 +2538,7 @@ public class BigQueryExecutor {
             Object propVal = null;
 
             for (final String keyName : keyNames) {
-                propVal = Beans.getPropValue(entity, keyName);
+                propVal = keyValueOf(entity, keyName);
 
                 if (propVal == null || (propVal instanceof CharSequence) && Strings.isEmpty(((CharSequence) propVal))) {
                     throw new IllegalArgumentException("No property value specified in entity for key names: " + keyNames);
@@ -2498,6 +2553,13 @@ public class BigQueryExecutor {
 
             return Filters.and(conds);
         }
+    }
+
+    // An @Entity-annotated Map subclass (accepted as a bean class by Beans/ParserUtil; a plain Map is rejected by the
+    // key-name lookup) is keyed by its entries, as insert(entity) writes it: its bean accessors would delete by a field that
+    // was never inserted.
+    private static Object keyValueOf(final Object entity, final String keyName) {
+        return entity instanceof Map ? ((Map<?, ?>) entity).get(keyName) : Beans.getPropValue(entity, keyName);
     }
 
     /**
@@ -3593,7 +3655,8 @@ public class BigQueryExecutor {
      *   <li>Strings, primitives and their boxed counterparts, {@link BigDecimal},
      *       {@code java.util.Date}, {@code java.sql.Date}/{@code Time}/{@code Timestamp},
      *       {@code com.google.cloud.Date}, {@code com.google.cloud.Timestamp}, and {@code byte[]}
-     *       are mapped to their canonical BigQuery types; a {@link ByteBuffer} binds its remaining bytes as
+     *       are mapped to their canonical BigQuery types ({@link BigDecimal} to {@code BIGNUMERIC}, see <i>Parameter Binding</i>
+     *       in the class documentation); a {@link ByteBuffer} binds its remaining bytes as
      *       {@code BYTES} without changing its position. {@code java.sql.Time} preserves milliseconds in its
      *       native {@code TIME} parameter, using ASCII digits regardless of the JVM's formatting locale.</li>
      *   <li>Arrays, collections, maps, and beans are serialised to JSON via

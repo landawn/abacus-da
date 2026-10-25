@@ -4319,6 +4319,271 @@ public class MongoDBBaseTest extends MockitoTestBase {
 
     // ---- end 2026-10-24 apply-mongo ----
 
+    // ---- 2026-10-24 r2 sliceT ----
+
+    /** The column names and the rows (as maps) of {@code ds}. */
+    private static List<Object> r2sliceTShape(final Dataset ds) {
+        return Arrays.asList(new ArrayList<>(ds.columnNames()), ds.toList(Map.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testExtractDataReadsAnEntityAnnotatedMapRowTypeLikeMapClass_r2sliceT() {
+        // Beans.isBeanClass is also true for an @Entity-annotated Map subclass, so with a first row that is not a Map extractData took
+        // its bean-target branch and copied each bean row into the Map subclass with Beans.copyAs: UnsupportedOperationException ("No
+        // all arguments constructor found"), or, for a subclass declaring a property of its own, one row of its Map accessors
+        // ([keySet, values, entrySet, size, owner, empty], all null) with the bean's values lost. It now reads like HashMap.class.
+        final NoIdEntity bean = new NoIdEntity();
+        bean.setValue("a");
+        final List<Object> rows = Arrays.asList(bean, new Document("value", "b"));
+        final MongoIterable<Object> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(iterable, rows);
+        final List<Object> expected = Arrays.asList(Arrays.asList("value"),
+                Arrays.asList(Collections.singletonMap("value", "a"), Collections.singletonMap("value", "b")));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(rows, HashMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(rows, R2SliceTEntityMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(rows, R2SliceTOwnedMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(Arrays.asList("value"), rows, R2SliceTEntityMap.class))),
+                () -> assertEquals(expected, r2sliceTShape(MongoDBBase.extractData(iterable, R2SliceTOwnedMap.class))));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToEntityRejectsEntityAnnotatedMapSubclassesLikeEveryMapType_r2sliceT() {
+        // toEntity mapped an @Entity-annotated Map subclass (Beans.isBeanClass accepts it) as a bean of its Map accessors: it threw a
+        // misleading UnsupportedOperationException ("No all arguments constructor found"), or, for a subclass declaring a settable
+        // property, silently returned a map without the document's entries ({} with owner = "x"). Every Map type is now rejected
+        // alike (a plain HashMap already was, by Beans.mapToBean); readRow/toList/stream read a document into such a map.
+        final Document doc = new Document("owner", "x").append("a", 1);
+        final MongoIterable<Document> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(iterable, Arrays.asList(doc));
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(
+                        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(doc, R2SliceTEntityMap.class)).getMessage().contains("toMap")),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(doc, R2SliceTOwnedMap.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(doc, HashMap.class)),
+                () -> assertNull(MongoDBBase.toEntity(null, R2SliceTOwnedMap.class)),
+                // Unchanged: the row readers copy the document's entries into such a map.
+                () -> assertEquals(new LinkedHashMap<>(doc), MongoDBBase.readRow(doc, R2SliceTOwnedMap.class)),
+                () -> assertEquals(Arrays.asList(new LinkedHashMap<>(doc)), MongoDBBase.toList(iterable, R2SliceTOwnedMap.class)));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListReadsAnArrayOrCollectionRowTypeFromTheSoleFieldUnlikeStream_r2sliceT() {
+        // Pins the documented difference (decided not to change, 2026-09-27): for document rows toList treats an Object[]/String[]/List
+        // row type as a single-value target, while stream(MongoCursor, Class) (readRow) returns the field values positionally.
+        final Document single = new Document("_id", 7).append("tags", Arrays.asList("x", "y"));
+        final Document multi = new Document("_id", 7).append("a", 1);
+        final MongoIterable<Document> singleRows = org.mockito.Mockito.mock(MongoIterable.class);
+        final MongoIterable<Document> multiRows = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(singleRows, Arrays.asList(single));
+        MongoIterableStubs.stubRows(multiRows, Arrays.asList(new Document("_id", 7).append("a", 1).append("b", 2)));
+        final MongoCursor<Document> cursor = org.mockito.Mockito.mock(MongoCursor.class);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(multi);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertArrayEquals(new String[] { "x", "y" }, MongoDBBase.toList(singleRows, String[].class).get(0)),
+                () -> assertEquals(Arrays.asList("x", "y"), MongoDBBase.toList(singleRows, List.class).get(0)),
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(multiRows, Object[].class)),
+                () -> assertArrayEquals(new Object[] { 7, 1 }, MongoDBBase.stream(cursor, Object[].class).first().orElseThrow()));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testStreamsCloseTheirCursorWithTheInterruptStatusCleared_r2sliceT() {
+        // stream(MongoIterable[, Class]) and stream(MongoCursor[, Class]) closed the cursor with Fn.close(cursor) on the calling thread
+        // as is. Closed on an interrupted thread (a task cancelled with cancel(true) while consuming the stream), the sync driver skips
+        // killCursors and the server cursor stays open until its idle timeout (proven live for the executors' streams, slice Q). The
+        // cursor is now closed once, through closeCursor, and the interrupt status is restored.
+        final List<R2SliceTRecordingCursor> opened = new ArrayList<>();
+        final MongoIterable<Document> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            final R2SliceTRecordingCursor cursor = new R2SliceTRecordingCursor(Arrays.asList(new Document("value", "a"), new Document("value", "b")));
+            opened.add(cursor);
+            return cursor;
+        }).when(iterable).iterator();
+
+        final Map<String, java.util.function.Supplier<Stream<?>>> streams = new LinkedHashMap<>();
+        streams.put("stream(iterable)", () -> MongoDBBase.stream(iterable));
+        streams.put("stream(iterable, Map)", () -> MongoDBBase.stream(iterable, Map.class));
+        streams.put("stream(iterable, NoIdEntity)", () -> MongoDBBase.stream(iterable, NoIdEntity.class));
+        streams.put("stream(cursor)", () -> MongoDBBase.stream(iterable.iterator()));
+        streams.put("stream(cursor, Document)", () -> MongoDBBase.stream(iterable.iterator(), Document.class));
+        streams.put("stream(cursor, null)", () -> MongoDBBase.stream(iterable.iterator(), null));
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> checks = streams.entrySet().stream().map(e -> () -> {
+            final String label = e.getKey();
+            opened.clear();
+            final Stream<?> stream = e.getValue().get();
+            assertNotNull(stream.iterator().next(), label);
+
+            Thread.currentThread().interrupt();
+
+            try {
+                stream.close();
+                stream.close();
+                assertTrue(Thread.currentThread().isInterrupted(), label + ": interrupt status restored");
+            } finally {
+                Thread.interrupted();
+            }
+
+            assertEquals(1, opened.size(), label + ": cursors opened");
+            assertEquals(1, opened.get(0).closeCount, label + ": close calls");
+            assertTrue(!opened.get(0).interruptedAtClose, label + ": cursor closed on an interrupted thread");
+        });
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testExtractDataWithoutRowsKeepsTheSelectedColumns_r2sliceT() {
+        // Without a (non-null) row, extractData returned a Dataset without any column even when names were selected, so a projected
+        // query that matched nothing (sync and reactive query(fields, ...) both end here) failed on getColumn("name") with
+        // IllegalArgumentException, and its columns depended on whether a document matched. The selected names are now the columns,
+        // named and validated by the same N.newDataset call as with rows.
+        final List<String> names = Arrays.asList("name", "address.city");
+        final List<String> flatNames = Arrays.asList("value");
+        final List<Object> noRows = new ArrayList<>();
+        final MongoIterable<Document> none = org.mockito.Mockito.mock(MongoIterable.class);
+        MongoIterableStubs.stubRows(none, Collections.emptyList());
+
+        final com.mongodb.client.MongoCollection<Document> collection = org.mockito.Mockito.mock(com.mongodb.client.MongoCollection.class);
+        final FindIterable<Document> found = org.mockito.Mockito.mock(FindIterable.class);
+        when(collection.find(org.mockito.ArgumentMatchers.any(Bson.class))).thenReturn(found);
+        when(found.projection(org.mockito.ArgumentMatchers.any())).thenReturn(found);
+        when(found.sort(org.mockito.ArgumentMatchers.any())).thenReturn(found);
+        when(found.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(found);
+        when(found.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(found);
+        MongoIterableStubs.stubRows(found, Collections.emptyList());
+        final MongoCollectionExecutor sync = new MongoDB(org.mockito.Mockito.mock(com.mongodb.client.MongoDatabase.class)).collectionExecutor(collection);
+
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> reactiveCollection = org.mockito.Mockito
+                .mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+        final com.mongodb.reactivestreams.client.FindPublisher<Document> publisher = org.mockito.Mockito
+                .mock(com.mongodb.reactivestreams.client.FindPublisher.class);
+        when(reactiveCollection.find(org.mockito.ArgumentMatchers.any(Bson.class))).thenReturn(publisher);
+        when(publisher.projection(org.mockito.ArgumentMatchers.any())).thenReturn(publisher);
+        when(publisher.sort(org.mockito.ArgumentMatchers.any())).thenReturn(publisher);
+        when(publisher.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(publisher);
+        when(publisher.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(publisher);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            reactor.core.publisher.Flux.<Document> empty().subscribe((org.reactivestreams.Subscriber<? super Document>) invocation.getArgument(0));
+            return null;
+        }).when(publisher).subscribe(org.mockito.ArgumentMatchers.any());
+        final com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutor reactive = new com.landawn.abacus.da.mongodb.reactivestreams.MongoDB(
+                org.mockito.Mockito.mock(com.mongodb.reactivestreams.client.MongoDatabase.class)).collectionExecutor(reactiveCollection);
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> perRowType = java.util.stream.Stream
+                .of(Map.class, HashMap.class, Document.class, NoIdEntity.class, R2SliceTOwnedMap.class)
+                .map(rowType -> () -> {
+                    final Dataset ds = MongoDBBase.extractData(names, noRows, rowType);
+                    assertEquals(names, ds.columnNames(), rowType.getSimpleName());
+                    assertEquals(0, ds.size(), rowType.getSimpleName());
+                });
+
+        final java.util.stream.Stream<org.junit.jupiter.api.function.Executable> paths = java.util.stream.Stream.of(
+                () -> assertEquals(names, MongoDBBase.extractData(names, (List<?>) null, Map.class).columnNames()),
+                () -> assertEquals(names, MongoDBBase.extractData(names, none, NoIdEntity.class).columnNames()),
+                () -> assertTrue(MongoDBBase.extractData(names, noRows, Map.class).getColumn("name").isEmpty()),
+                // The order of the selected names is kept, as with rows.
+                () -> assertEquals(Arrays.asList("b", "a"),
+                        MongoDBBase.extractData(new java.util.LinkedHashSet<>(Arrays.asList("b", "a")), noRows, Map.class).columnNames()),
+                // The executors (sync: dotted names through fetchAll, flat names through the MongoIterable overload; reactive both).
+                () -> assertEquals(names, sync.query(names, new Document(), Map.class).columnNames()),
+                () -> assertEquals(flatNames, sync.query(flatNames, new Document(), NoIdEntity.class).columnNames()),
+                () -> assertEquals(names, reactive.query(names, new Document(), Map.class).block().columnNames()),
+                () -> assertEquals(flatNames, reactive.query(flatNames, new Document(), NoIdEntity.class).block().columnNames()),
+                // Names are validated as with rows: duplicates fail whether or not a row exists.
+                () -> assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(Arrays.asList("a", "a"), noRows, Map.class)),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> MongoDBBase.extractData(Arrays.asList("a", "a"), Arrays.asList(new Document("a", 1)), Map.class)),
+                // Null rows give rows of nulls, as among other rows.
+                () -> assertEquals(2, MongoDBBase.extractData(names, Arrays.asList(null, null), Map.class).size()),
+                // Unchanged: without selected names the empty Dataset has no columns.
+                () -> assertTrue(MongoDBBase.extractData(null, noRows, Map.class).columnNames().isEmpty()),
+                () -> assertTrue(MongoDBBase.extractData(Collections.emptyList(), noRows, Map.class).columnNames().isEmpty()),
+                () -> assertTrue(MongoDBBase.extractData(none, Map.class).columnNames().isEmpty()));
+
+        org.junit.jupiter.api.Assertions.assertAll(java.util.stream.Stream.concat(perRowType, paths));
+    }
+
+    /** A cursor over {@code rows} recording how often it was closed and whether the closing thread was interrupted. */
+    private static final class R2SliceTRecordingCursor implements MongoCursor<Document> {
+        private final List<Document> rows;
+        private int position;
+        int closeCount;
+        boolean interruptedAtClose;
+
+        R2SliceTRecordingCursor(final List<Document> rows) {
+            this.rows = rows;
+        }
+
+        @Override
+        public void close() {
+            closeCount++;
+            interruptedAtClose = Thread.currentThread().isInterrupted();
+        }
+
+        @Override
+        public boolean hasNext() {
+            return position < rows.size();
+        }
+
+        @Override
+        public Document next() {
+            if (!hasNext()) {
+                throw new java.util.NoSuchElementException();
+            }
+
+            return rows.get(position++);
+        }
+
+        @Override
+        public int available() {
+            return rows.size() - position;
+        }
+
+        @Override
+        public Document tryNext() {
+            return hasNext() ? next() : null;
+        }
+
+        @Override
+        public com.mongodb.ServerCursor getServerCursor() {
+            return null;
+        }
+
+        @Override
+        public com.mongodb.ServerAddress getServerAddress() {
+            return null;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2SliceTEntityMap extends HashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    public static class R2SliceTOwnedMap extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+        private String owner;
+
+        public String getOwner() {
+            return owner;
+        }
+
+        public void setOwner(final String owner) {
+            this.owner = owner;
+        }
+    }
+
+    // ---- end 2026-10-24 r2 sliceT ----
+
     public static class BinaryEntity {
         private ByteBuffer buffer;
         private byte[] bytes;

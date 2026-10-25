@@ -575,7 +575,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>For a single-value {@code T} (such as {@code String}) with exactly one selected field, the emitted value is that
      * field's value converted to {@code T} (a dotted path such as {@code "address.city"} is resolved); when the matched
-     * document's value is missing or {@code null}, the {@code Mono} completes empty, as if no document had matched.</p>
+     * document's value is missing or {@code null}, the {@code Mono} completes empty, as if no document had matched. A
+     * dotted path that traverses a non-null value that is not a {@link Document} (such as an array) fails with a
+     * {@link ClassCastException} signalled through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -712,7 +714,8 @@ public final class MongoCollectionMapper<T> {
      * <p>For a single-value {@code T} (such as {@code String}) with exactly one selected field, the emitted value is that
      * field's value converted to {@code T} (a dotted path such as {@code "address.city"} is resolved); when the first
      * matched document's value is missing or {@code null}, the {@code Mono} completes empty, as if no document had
-     * matched.</p>
+     * matched. A dotted path that traverses a non-null value that is not a {@link Document} (such as an array) fails with
+     * a {@link ClassCastException} signalled through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -945,7 +948,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>For a single-value {@code T} (such as {@code String}) with exactly one selected field, each emission is that
      * field's value converted to {@code T} (a dotted path such as {@code "address.city"} is resolved); a document whose
-     * value is missing or {@code null} is not emitted, because Reactive Streams forbids {@code null} elements.</p>
+     * value is missing or {@code null} is not emitted, because Reactive Streams forbids {@code null} elements. A dotted
+     * path that traverses a non-null value that is not a {@link Document} (such as an array) fails with a
+     * {@link ClassCastException} signalled through the publisher.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2502,6 +2507,12 @@ public final class MongoCollectionMapper<T> {
      * <p>Updates the first matching document using values from multiple entities.
      * This is useful for partial updates from multiple sources or complex update logic.</p>
      *
+     * <p><b>Literal values:</b> each converted element (an entity, or a non-operator {@code Map} that is not a {@link Bson}) becomes
+     * a {@code $set} stage whose field values are written literally (each wrapped in {@code $literal}), as
+     * {@link #updateOne(Bson, Object)} stores them, so text such as {@code "$other"} is stored as is. When {@code T} is
+     * itself a {@link Bson} type such as {@link Document}, an element's values are not wrapped and are evaluated as
+     * aggregation expressions.</p>
+     *
      * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
      * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
      * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
@@ -2540,8 +2551,8 @@ public final class MongoCollectionMapper<T> {
      * <p>Updates the first matching document using values from multiple entities,
      * with support for custom update options like upsert.</p>
      *
-     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
-     * documented by {@link #updateOne(Bson, Collection)}.</p>
+     * <p>This overload uses the same aggregation-update pipeline, literal entity values and permitted-stage
+     * restrictions documented by {@link #updateOne(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2659,6 +2670,12 @@ public final class MongoCollectionMapper<T> {
      * <p>Updates all matching documents using values from multiple entities.
      * This enables complex bulk updates with data from multiple sources.</p>
      *
+     * <p><b>Literal values:</b> each converted element (an entity, or a non-operator {@code Map} that is not a {@link Bson}) becomes
+     * a {@code $set} stage whose field values are written literally (each wrapped in {@code $literal}), as
+     * {@link #updateMany(Bson, Object)} stores them, so text such as {@code "$other"} is stored as is. When {@code T}
+     * is itself a {@link Bson} type such as {@link Document}, an element's values are not wrapped and are evaluated as
+     * aggregation expressions.</p>
+     *
      * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
      * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
      * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
@@ -2697,8 +2714,8 @@ public final class MongoCollectionMapper<T> {
      * <p>Updates all matching documents using values from multiple entities,
      * with support for custom update options in bulk operations.</p>
      *
-     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
-     * documented by {@link #updateMany(Bson, Collection)}.</p>
+     * <p>This overload uses the same aggregation-update pipeline, literal entity values and permitted-stage
+     * restrictions documented by {@link #updateMany(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3342,6 +3359,12 @@ public final class MongoCollectionMapper<T> {
      * of objects. This is useful when updates come from multiple sources or need to
      * be aggregated from various entities.</p>
      *
+     * <p><b>Literal values:</b> each converted element (an entity, or a non-operator {@code Map} that is not a {@link Bson}) becomes
+     * a {@code $set} stage whose field values are written literally (each wrapped in {@code $literal}), as
+     * {@link #findOneAndUpdate(Bson, Object)} stores them, so text such as {@code "$other"} is stored as is. When
+     * {@code T} is itself a {@link Bson} type such as {@link Document}, an element's values are not wrapped and are
+     * evaluated as aggregation expressions.</p>
+     *
      * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
      * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
      * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
@@ -3382,8 +3405,8 @@ public final class MongoCollectionMapper<T> {
      * options for controlling the operation behavior, including upsert and return
      * document preferences.</p>
      *
-     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
-     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
+     * <p>This overload uses the same aggregation-update pipeline, literal entity values and permitted-stage
+     * restrictions documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

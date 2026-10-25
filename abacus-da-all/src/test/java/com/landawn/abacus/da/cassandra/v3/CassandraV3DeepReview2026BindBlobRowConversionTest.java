@@ -484,4 +484,231 @@ class CassandraV3DeepReview2026BindBlobRowConversionTest {
             this.nested = nested;
         }
     }
+
+    // ---- 2026-10-24 r2 sliceK ----
+
+    /**
+     * The lossy check tested only {@code Double}, {@code Float} and {@code BigDecimal} sources, but {@code N.convert} truncates any
+     * {@link Number}: an abacus {@code Fraction} {@code 3/2}, a {@code MutableDouble}/{@code MutableFloat} {@code 1.5} or a
+     * {@code DoubleAdder} {@code 1.5} was still bound as {@code 1} to an integer column (and as 1 ns to a {@code time} column).
+     */
+    @Test
+    void r2sliceK_fractionalNumbersOfEveryTypeAreRejectedForIntegerColumns() {
+        final DataType[] integerTypes = { DataType.tinyint(), DataType.smallint(), DataType.cint(), DataType.bigint(), DataType.varint(), DataType.counter(),
+                DataType.time() };
+        final java.util.concurrent.atomic.DoubleAdder adder = new java.util.concurrent.atomic.DoubleAdder();
+        adder.add(1.5);
+        final Object[] fractions = { com.landawn.abacus.util.Fraction.of(3, 2), com.landawn.abacus.util.MutableDouble.of(1.5),
+                com.landawn.abacus.util.MutableFloat.of(-1.5f), adder };
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final DataType type : integerTypes) {
+            for (final Object value : fractions) {
+                checks.add(() -> {
+                    try (CassandraTestFixture fixture = new CassandraTestFixture()) {
+                        fixture.columns(type, "v");
+                        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> fixture.executor.execute(UPDATE, value),
+                                value + " -> " + type);
+                        assertTrue(e.getMessage().contains("parameter 'v' (index 0)"), e.getMessage());
+                        assertTrue(e.getMessage().contains("CQL type " + type), e.getMessage());
+                        assertTrue(e.getMessage().contains("it would be bound as"), e.getMessage());
+                        assertEquals(0, fixture.values.size());
+                    }
+                });
+            }
+        }
+
+        assertAll(checks);
+    }
+
+    /**
+     * Every source other than {@code Double}/{@code Float} was taken for finite, so an infinite {@code MutableDouble},
+     * {@code MutableFloat} or {@code DoubleAdder} bound to a {@code float} or {@code double} column, which keeps the value
+     * ({@code Infinity}), was rejected "without changing it: it would be bound as Infinity".
+     */
+    @Test
+    void r2sliceK_infiniteNumbersOfEveryTypeBindToFloatingColumns() {
+        final java.util.concurrent.atomic.DoubleAdder infinite = new java.util.concurrent.atomic.DoubleAdder();
+        infinite.add(Double.POSITIVE_INFINITY);
+
+        assertAll(
+                () -> assertEquals(Double.POSITIVE_INFINITY,
+                        boundValue(DataType.cdouble(), com.landawn.abacus.util.MutableDouble.of(Double.POSITIVE_INFINITY))),
+                () -> assertEquals(Float.POSITIVE_INFINITY, boundValue(DataType.cfloat(), com.landawn.abacus.util.MutableDouble.of(Double.POSITIVE_INFINITY))),
+                () -> assertEquals(Float.NEGATIVE_INFINITY, boundValue(DataType.cfloat(), com.landawn.abacus.util.MutableFloat.of(Float.NEGATIVE_INFINITY))),
+                () -> assertEquals(Double.POSITIVE_INFINITY, boundValue(DataType.cdouble(), infinite)),
+                () -> assertEquals(Float.NaN, boundValue(DataType.cfloat(), com.landawn.abacus.util.MutableDouble.of(Double.NaN))));
+    }
+
+    /** Pins: exact values of other number types bind, a finite one beyond the float range and a non-finite one for an integer fail. */
+    @Test
+    void r2sliceK_otherNumberTypesKeepTheirExactAndFailingConversions() {
+        assertAll(() -> assertEquals(2, boundValue(DataType.cint(), com.landawn.abacus.util.Fraction.of(4, 2))),
+                () -> assertEquals(2, boundValue(DataType.cint(), com.landawn.abacus.util.MutableDouble.of(2.0))),
+                () -> assertEquals(7L, boundValue(DataType.bigint(), new java.util.concurrent.atomic.AtomicLong(7))),
+                () -> assertEquals(BigInteger.valueOf(7), boundValue(DataType.varint(), com.landawn.abacus.util.MutableInt.of(7))),
+                () -> assertEquals(3L, boundValue(DataType.time(), com.landawn.abacus.util.Fraction.of(6, 2))),
+                () -> assertEquals(1.5d, boundValue(DataType.cdouble(), com.landawn.abacus.util.Fraction.of(3, 2))),
+                () -> assertRejected(DataType.cfloat(), com.landawn.abacus.util.MutableDouble.of(1e300), "float"),
+                () -> assertThrows(ArithmeticException.class, () -> boundValue(DataType.cint(), com.landawn.abacus.util.MutableDouble.of(Double.NaN))),
+                () -> assertThrows(ArithmeticException.class, () -> boundValue(DataType.bigint(), com.landawn.abacus.util.MutableDouble.of(1e300))));
+    }
+
+    /**
+     * A collection or map column read into a parameterized container property kept the driver's element types (heap pollution,
+     * {@code ClassCastException} where an element was used), on real driver 3 rows: a {@code List<byte[]>} held {@code ByteBuffer}s,
+     * a {@code List<LocalDateTime>} {@code Date}s, a {@code Set<String>} {@code InetAddress}es, a {@code List<Long>} {@code Integer}s;
+     * an array property ({@code String[]}, {@code byte[][]}) got {@code N.convert}'s per-element results ({@code "/127.0.0.1"},
+     * {@code null}). The v4 twin is {@code cassandra.CassandraExecutorDeepReview2026BindBlobRowConversionTest} (r2 sliceH).
+     */
+    @Test
+    void r2sliceK_collectionColumnElementsAreConvertedToTheDeclaredElementType() throws Exception {
+        final java.net.InetAddress local = java.net.InetAddress.getByAddress(new byte[] { 127, 0, 0, 1 });
+        final java.net.InetAddress other = java.net.InetAddress.getByAddress(new byte[] { 10, 0, 0, 2 });
+        final java.util.Date first = new java.util.Date(1_577_934_245_000L);
+        final java.util.Date second = new java.util.Date(1_623_053_350_123L);
+        final ProtocolVersion v = ProtocolVersion.V4;
+        final ByteBuffer blobs = TypeCodec.list(TypeCodec.blob()).serialize(List.of(ByteBuffer.wrap(BYTES)), v);
+        final ByteBuffer hosts = TypeCodec.set(TypeCodec.inet()).serialize(new java.util.LinkedHashSet<>(List.of(local, other)), v);
+        final ByteBuffer stamps = TypeCodec.list(TypeCodec.timestamp()).serialize(List.of(first, second), v);
+        final Map<String, java.net.InetAddress> hostMap = new java.util.LinkedHashMap<>();
+        hostMap.put("a", local);
+        hostMap.put("b", other);
+
+        final Containers c = CassandraExecutor.toEntity(driverRow(
+                new String[] { "blobs", "blobText", "blobArray", "stamps", "hosts", "sortedHosts", "hostArray", "hostMap", "longs", "nestedStamps" },
+                new DataType[] { DataType.list(DataType.blob()), DataType.list(DataType.blob()), DataType.list(DataType.blob()),
+                        DataType.list(DataType.timestamp()), DataType.set(DataType.inet()), DataType.set(DataType.inet()), DataType.set(DataType.inet()),
+                        DataType.map(DataType.text(), DataType.inet()), DataType.list(DataType.cint()), DataType.list(DataType.list(DataType.timestamp())) },
+                blobs, blobs.duplicate(), blobs.duplicate(), stamps, hosts, hosts.duplicate(), hosts.duplicate(),
+                TypeCodec.map(TypeCodec.varchar(), TypeCodec.inet()).serialize(hostMap, v), TypeCodec.list(TypeCodec.cint()).serialize(List.of(1, 2), v),
+                TypeCodec.list(TypeCodec.list(TypeCodec.timestamp())).serialize(List.of(List.of(first), List.of(second)), v)), Containers.class);
+        final java.time.LocalDateTime firstLocal = java.time.LocalDateTime.ofInstant(first.toInstant(), java.time.ZoneId.systemDefault());
+        final java.time.LocalDateTime secondLocal = java.time.LocalDateTime.ofInstant(second.toInstant(), java.time.ZoneId.systemDefault());
+
+        assertAll(() -> {
+            assertEquals(1, c.blobs.size());
+            assertArrayEquals(BYTES, assertInstanceOf(byte[].class, (Object) c.blobs.get(0)));
+        }, () -> assertEquals(List.of(BASE64), c.blobText), () -> {
+            assertEquals(1, c.blobArray.length);
+            assertArrayEquals(BYTES, c.blobArray[0]);
+        }, () -> assertEquals(List.of(firstLocal, secondLocal), c.stamps),
+                // The driver's iteration order is kept (a LinkedHashSet/LinkedHashMap), and a sorted declared type is honored.
+                () -> assertEquals(List.of("127.0.0.1", "10.0.0.2"), new ArrayList<>(c.hosts)), () -> assertInstanceOf(java.util.LinkedHashSet.class, c.hosts),
+                () -> assertEquals(new java.util.TreeSet<>(List.of("127.0.0.1", "10.0.0.2")), c.sortedHosts),
+                () -> assertInstanceOf(java.util.TreeSet.class, c.sortedHosts), () -> assertArrayEquals(new String[] { "127.0.0.1", "10.0.0.2" }, c.hostArray),
+                () -> assertEquals(List.of("a", "b"), new ArrayList<>(c.hostMap.keySet())),
+                () -> assertEquals(List.of("127.0.0.1", "10.0.0.2"), new ArrayList<>(c.hostMap.values())), () -> assertEquals(List.of(1L, 2L), c.longs),
+                () -> assertEquals(List.of(List.of(firstLocal), List.of(secondLocal)), c.nestedStamps));
+    }
+
+    @Test
+    void r2sliceK_nestedPathAndUdtBeanContainerPropertiesConvertTheirElements() throws Exception {
+        final java.net.InetAddress local = java.net.InetAddress.getByAddress(new byte[] { 127, 0, 0, 1 });
+        final ContainerHolder holder = CassandraExecutor.toEntity(driverRow(new String[] { "inner.hosts" }, new DataType[] { DataType.set(DataType.inet()) },
+                TypeCodec.set(TypeCodec.inet()).serialize(java.util.Set.of(local), ProtocolVersion.V4)), ContainerHolder.class);
+
+        final UserType listType = userType(new CodecRegistry(), "v", DataType.list(DataType.blob()));
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(listType, Map.class);
+        final CassandraExecutor.UDTCodec<BlobList> beanCodec = CassandraExecutor.UDTCodec.create(listType, BlobList.class);
+        final BlobList decoded = beanCodec.deserialize(mapCodec.serialize(Map.of("v", List.of(ByteBuffer.wrap(BYTES))), ProtocolVersion.V4),
+                ProtocolVersion.V4);
+
+        assertAll(() -> assertEquals(java.util.Set.of("127.0.0.1"), holder.inner.hosts), () -> {
+            assertEquals(1, decoded.v.size());
+            assertArrayEquals(BYTES, assertInstanceOf(byte[].class, (Object) decoded.v.get(0)));
+        });
+    }
+
+    /** Pins: a container whose elements already have the declared type is the driver's own instance (no copy); UDT elements are kept. */
+    @Test
+    void r2sliceK_containersWhoseElementsFitAreSetUnchanged() throws Exception {
+        final List<Object> buffers = new ArrayList<>(List.of(ByteBuffer.wrap(BYTES)));
+        final List<Object> dates = new ArrayList<>(List.of(new java.util.Date(0)));
+        final List<Object> texts = new ArrayList<>(List.of("a"));
+        final List<Object> udts = new ArrayList<>(List.of(userType(new CodecRegistry(), "v", DataType.text()).newValue().setString("v", "x")));
+        final Fits fits = CassandraExecutor.toEntity(rows(new String[] { "buffers", "dates", "raw", "objects", "texts", "udts" }, DataType.blob(),
+                new Object[][] { { buffers, dates, buffers, dates, texts, udts } }).one(), Fits.class);
+
+        assertAll(() -> assertSame(buffers, fits.buffers), () -> assertSame(dates, fits.dates), () -> assertSame(buffers, fits.raw),
+                () -> assertSame(dates, fits.objects), () -> assertSame(texts, fits.texts), () -> assertSame(udts, fits.udts));
+    }
+
+    @Test
+    void r2sliceK_anElementThatCannotBeConvertedFailsTheRowAsATopLevelValueDoes() {
+        final RuntimeException topLevel = assertThrows(RuntimeException.class,
+                () -> CassandraExecutor.toEntity(rows(new String[] { "number" }, DataType.text(), new Object[][] { { "abc" } }).one(), NumberHolder.class));
+        final RuntimeException element = assertThrows(RuntimeException.class, () -> CassandraExecutor
+                .toEntity(rows(new String[] { "numbers" }, DataType.text(), new Object[][] { { new ArrayList<>(List.of("abc")) } }).one(), NumberHolder.class));
+
+        assertEquals(topLevel.getClass(), element.getClass());
+    }
+
+    public static class Containers {
+        public List<byte[]> blobs;
+        public List<String> blobText;
+        public byte[][] blobArray;
+        public List<java.time.LocalDateTime> stamps;
+        public java.util.Set<String> hosts;
+        public java.util.SortedSet<String> sortedHosts;
+        public String[] hostArray;
+        public Map<String, String> hostMap;
+        public List<Long> longs;
+        public List<List<java.time.LocalDateTime>> nestedStamps;
+    }
+
+    public static class ContainerHolder {
+        public Containers inner;
+    }
+
+    public static class BlobList {
+        public List<byte[]> v;
+    }
+
+    @SuppressWarnings("rawtypes")
+    public static class Fits {
+        public List<ByteBuffer> buffers;
+        public List<java.util.Date> dates;
+        public List raw;
+        public List<Object> objects;
+        public List<String> texts;
+        public List<Text> udts;
+    }
+
+    public static class NumberHolder {
+        public Integer number;
+        public List<Integer> numbers;
+    }
+
+    // ---- 2026-10-24 r2 verify5 ----
+
+    // A scalar element for a parameterized container element type was converted to the raw class (N.convert(3, List.class)), so
+    // a set<int> column into a List<List<Long>> property became [[3], [1]] holding Integers, where the HEAD code (setPropValue's
+    // N.convert of the whole set to the declared type) gave [[3L], [1L]]; likewise a map<text, int> into a Map<String, List<Long>>.
+    // The v4 twin is cassandra.CassandraExecutorDeepReview2026BindBlobRowConversionTest (r2 verify5).
+    @Test
+    void r2verify5_scalarElementsForContainerElementTypesGetTheFullDeclaredType() throws Exception {
+        final ProtocolVersion v = ProtocolVersion.V4;
+        final Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        counts.put("b", 2);
+        counts.put("a", 1);
+
+        final NestedElements n = CassandraExecutor.toEntity(driverRow(new String[] { "longLists", "textLists", "longListMap" },
+                new DataType[] { DataType.set(DataType.cint()), DataType.set(DataType.bigint()), DataType.map(DataType.text(), DataType.cint()) },
+                TypeCodec.set(TypeCodec.cint()).serialize(new java.util.LinkedHashSet<>(List.of(3, 1)), v),
+                TypeCodec.set(TypeCodec.bigint()).serialize(new java.util.LinkedHashSet<>(List.of(3L, 1L)), v),
+                TypeCodec.map(TypeCodec.varchar(), TypeCodec.cint()).serialize(counts, v)), NestedElements.class);
+
+        assertAll(() -> assertEquals(List.of(List.of(3L), List.of(1L)), n.longLists), () -> assertInstanceOf(Long.class, n.longLists.get(0).get(0)),
+                () -> assertEquals(List.of(List.of("3"), List.of("1")), n.textLists), () -> assertInstanceOf(String.class, n.textLists.get(0).get(0)),
+                () -> assertEquals(List.of("b", "a"), new ArrayList<>(n.longListMap.keySet())),
+                () -> assertEquals(List.of(List.of(2L), List.of(1L)), new ArrayList<>(n.longListMap.values())),
+                () -> assertInstanceOf(Long.class, n.longListMap.get("b").get(0)));
+    }
+
+    public static class NestedElements {
+        public List<List<Long>> longLists;
+        public List<List<String>> textLists;
+        public Map<String, List<Long>> longListMap;
+    }
 }

@@ -459,6 +459,107 @@ public class CassandraExecutorBaseStatementTest extends CassandraExecutorBaseTes
         private static final long serialVersionUID = 1L;
     }
 
+    // ---- 2026-10-24 r2 sliceF ----
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass. With a key accessor (here the conventional Long "id"),
+    // update(entity) and batchUpdate(entities, type) set the Map's own getters (UPDATE r2f_map_rows SET empty = :empty WHERE
+    // id = :id) and lost the entries, and update(entity, names) rejected an entry name ("not found in bean class"). As for insert,
+    // a Map entity's entries are its columns.
+    @Test
+    public void test_r2sliceF_updateMapEntitySetsItsEntries() {
+        final R2FKeyedMapEntity entity = new R2FKeyedMapEntity();
+        entity.setId(7L);
+        entity.put("name", "x");
+        entity.put("displayName", "Ada");
+
+        final RecordingExecutor recording = new RecordingExecutor() {
+            @Override
+            protected TestStatement prepareBatchUpdateStatement(final Collection<?> entities, final Collection<String> propNamesToUpdate,
+                    final TestBatchType type) {
+                for (final Object e : entities) {
+                    final SP cp = prepareUpdate(e, propNamesToUpdate);
+                    recorded.add("batch " + cp.query() + " " + cp.parameters());
+                }
+
+                return new TestStatement();
+            }
+        };
+
+        recording.update(entity);
+        recording.update(entity, List.of("displayName"));
+        recording.recordingAsync().update(entity, List.of("name"));
+        recording.batchUpdate(List.of(entity), TestBatchType.LOGGED);
+        recording.batchUpdate(List.of(entity), List.of("name"), TestBatchType.LOGGED);
+
+        final R2FKeyedMapEntity keyOnly = new R2FKeyedMapEntity();
+        keyOnly.setId(1L);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(List.of("UPDATE r2f_map_rows SET name = :name, display_name = :displayName WHERE id = :id [x, Ada, 7]",
+                        "UPDATE r2f_map_rows SET display_name = :displayName WHERE id = :id [Ada, 7]",
+                        "UPDATE r2f_map_rows SET name = :name WHERE id = :id [x, 7]",
+                        "batch UPDATE r2f_map_rows SET name = :name, display_name = :displayName WHERE id = :id [x, Ada, 7]",
+                        "batch UPDATE r2f_map_rows SET name = :name WHERE id = :id [x, 7]"), recording.recorded),
+                () -> assertEquals("UPDATE r2f_map_rows SET NAME = :name, DISPLAY_NAME = :displayName WHERE ID = :id",
+                        new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE).exposedPrepareUpdate(entity, List.of("name", "displayName")).query()),
+                // A listed name without an entry is rejected (as an unknown bean property is), not bound as null.
+                () -> assertEquals("No entry for property: missing in Map entity of class: " + R2FKeyedMapEntity.class.getCanonicalName(),
+                        assertThrows(IllegalArgumentException.class, () -> recording.update(entity, List.of("missing"))).getMessage()),
+                () -> assertThrows(IllegalArgumentException.class, () -> recording.update(entity, List.of("id"))),
+                () -> assertEquals("No non-key entry to update in Map entity of class: " + R2FKeyedMapEntity.class.getCanonicalName(),
+                        assertThrows(IllegalArgumentException.class, () -> recording.update(keyOnly)).getMessage()));
+    }
+
+    // Pins the update(String, Object...) overload note: with only the query, or the query and one Collection<String>, Java binds the
+    // call to update(Object) / update(Object, Collection), which reject the String as a non-bean entity before any CQL runs.
+    @Test
+    public void test_r2sliceF_updateQueryOverloadResolution() {
+        final RecordingExecutor recording = new RecordingExecutor();
+        final String query = "UPDATE people SET display_name = ? WHERE account_id = ?";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(
+                assertThrows(IllegalArgumentException.class, () -> recording.update("UPDATE people SET display_name = 'x' WHERE account_id = 1")).getMessage()
+                        .startsWith("Not a bean class: java.lang.String")),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> recording.update(query, Arrays.asList("x", "1"))).getMessage()
+                        .startsWith("Not a bean class: java.lang.String")),
+                () -> assertEquals(List.of(), recording.recorded));
+
+        recording.update(query, new Object[] { "x", 1L });
+        recording.update(query, "x", 1L);
+
+        assertEquals(List.of(query + " [x, 1]", query + " [x, 1]"), recording.recorded);
+    }
+
+    // Pins the update docs: a null property value is bound as null (it clears the column), while insert leaves it out.
+    @Test
+    public void test_r2sliceF_updateBindsNullPropertyValues() {
+        final NamingEntity entity = new NamingEntity();
+        entity.setAccountId(1L);
+
+        final RecordingExecutor recording = new RecordingExecutor();
+        recording.update(entity);
+        recording.update(entity, List.of("displayName"));
+        recording.insert(entity);
+
+        assertEquals(Arrays.asList("UPDATE people SET display_name = :displayName WHERE account_id = :accountId [null, 1]",
+                "UPDATE people SET display_name = :displayName WHERE account_id = :accountId [null, 1]",
+                "INSERT INTO people (account_id) VALUES (:accountId) [1]"), recording.recorded);
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @Table("r2f_map_rows")
+    public static class R2FKeyedMapEntity extends LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        public Long getId() {
+            return (Long) get("id");
+        }
+
+        public void setId(final Long id) {
+            put("id", id);
+        }
+    }
+
     private static java.util.stream.Stream<NamingCase> namingPolicies() {
         return java.util.stream.Stream.of(
                 new NamingCase(NamingPolicy.SNAKE_CASE, "account_id", "display_name", "account_id AS \"accountId\", display_name AS \"displayName\""),

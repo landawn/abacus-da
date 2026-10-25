@@ -849,4 +849,187 @@ public class MongoCollectionMutationTest extends MongoCollectionExecutorTestSupp
         Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, reversedInvalidUpdate));
         verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
     }
+
+    // ---- 2026-10-24 r2 sliceQ ----
+
+    public static class PipelineInner {
+        private String city;
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+    }
+
+    public static class PipelineEntity {
+        private String note;
+        private String[] tags;
+        private PipelineInner inner;
+        private java.util.Map<String, Object> meta;
+
+        public String getNote() {
+            return note;
+        }
+
+        public void setNote(final String note) {
+            this.note = note;
+        }
+
+        public String[] getTags() {
+            return tags;
+        }
+
+        public void setTags(final String[] tags) {
+            this.tags = tags;
+        }
+
+        public PipelineInner getInner() {
+            return inner;
+        }
+
+        public void setInner(final PipelineInner inner) {
+            this.inner = inner;
+        }
+
+        public java.util.Map<String, Object> getMeta() {
+            return meta;
+        }
+
+        public void setMeta(final java.util.Map<String, Object> meta) {
+            this.meta = meta;
+        }
+    }
+
+    private static PipelineEntity pipelineEntity() {
+        final PipelineInner inner = new PipelineInner();
+        inner.setCity("$x");
+        final java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("k", "$other");
+        final PipelineEntity entity = new PipelineEntity();
+        entity.setNote("$other");
+        entity.setTags(new String[] { "$x", "plain" });
+        entity.setInner(inner);
+        entity.setMeta(meta);
+        return entity;
+    }
+
+    /** The stage as the collection's codec registry encodes it (what the server receives). */
+    private static org.bson.BsonDocument encoded(final Object stage) {
+        return ((Bson) stage).toBsonDocument(org.bson.BsonDocument.class, MongoDBBase.codecRegistry);
+    }
+
+    /**
+     * r2 sliceQ (main-agent decision, live-proven by slice S): the pipeline-update overloads wrapped a converted entity as
+     * {@code {$set: doc}}, and the server evaluates every value of a pipeline {@code $set} as an aggregation expression: an
+     * entity's String {@code "$other"} became the value of field {@code other}, {@code "$x"} inside a {@code String[]} or a
+     * nested map was resolved, and {@code "$missingField"} removed the field. The values of a converted entity, non-Bson map or
+     * name/value array are now written as {@code {$literal: value}}; caller-built Bson stages are unchanged.
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testPipelineUpdatesWriteConvertedEntityValuesLiterally_r2sliceQ() {
+        final Document filter = new Document("name", "a");
+        final org.bson.BsonDocument expectedEntityStage = org.bson.BsonDocument.parse("{$set: {note: {$literal: '$other'}, tags: {$literal: ['$x', 'plain']},"
+                + " inner: {$literal: {city: '$x'}}, meta: {$literal: {k: '$other'}}}}");
+        final java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+        map.put("_id", "id-1");
+        map.put("status", "$other");
+        map.put("codes", java.util.Arrays.asList("$x", 1));
+
+        final org.mockito.ArgumentCaptor<List> updateOneCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        final org.mockito.ArgumentCaptor<List> updateManyCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        final org.mockito.ArgumentCaptor<List> findOneAndUpdateCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+
+        executor.updateOne(filter, Arrays.asList(pipelineEntity()));
+        executor.updateMany(filter, Arrays.asList(map), new com.mongodb.client.model.UpdateOptions());
+        executor.findOneAndUpdate(filter, java.util.Collections.singletonList(new Object[] { "note", "$missingField" }), new FindOneAndUpdateOptions(),
+                Document.class);
+
+        verify(mockCollection).updateOne(any(Bson.class), updateOneCaptor.capture());
+        verify(mockCollection).updateMany(any(Bson.class), updateManyCaptor.capture(), any(com.mongodb.client.model.UpdateOptions.class));
+        verify(mockCollection).findOneAndUpdate(any(Bson.class), findOneAndUpdateCaptor.capture(), any(FindOneAndUpdateOptions.class));
+
+        Assertions.assertAll( //
+                () -> Assertions.assertEquals(expectedEntityStage, encoded(updateOneCaptor.getValue().get(0)), "entity stage"),
+                () -> Assertions.assertEquals(org.bson.BsonDocument.parse("{$set: {status: {$literal: '$other'}, codes: {$literal: ['$x', 1]}}}"),
+                        encoded(updateManyCaptor.getValue().get(0)), "map stage (_id stripped)"),
+                () -> Assertions.assertEquals(org.bson.BsonDocument.parse("{$set: {note: {$literal: '$missingField'}}}"),
+                        encoded(findOneAndUpdateCaptor.getValue().get(0)), "name/value array stage"),
+                () -> Assertions.assertEquals("$other", map.get("status"), "caller map unchanged"));
+    }
+
+    /** Pins what the literal wrapping must leave alone: caller-built Bson stages, operator maps and the single-update overloads. */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testPipelineUpdatesKeepBsonStagesAsExpressions_r2sliceQ() {
+        final Document filter = new Document("name", "a");
+        final Document computedStage = new Document("$set", new Document("total", new Document("$add", Arrays.asList("$a", "$b"))));
+        final Document plainDocument = new Document("total", new Document("$add", Arrays.asList("$a", "$b"))).append("_id", 1);
+        final java.util.Map<String, Object> operatorMap = new java.util.LinkedHashMap<>();
+        operatorMap.put("$set", new Document("copy", "$a"));
+
+        final org.mockito.ArgumentCaptor<List> pipelineCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        final org.mockito.ArgumentCaptor<Bson> classicCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+
+        executor.updateOne(filter, Arrays.asList(computedStage, plainDocument, operatorMap));
+        executor.updateOne(filter, pipelineEntity());
+
+        verify(mockCollection).updateOne(any(Bson.class), pipelineCaptor.capture());
+        verify(mockCollection).updateOne(any(Bson.class), classicCaptor.capture());
+
+        final List<Object> pipeline = pipelineCaptor.getValue();
+
+        Assertions.assertAll( //
+                () -> Assertions.assertSame(computedStage, pipeline.get(0), "operator Document stage passed as is"),
+                () -> Assertions.assertEquals(org.bson.BsonDocument.parse("{$set: {total: {$add: ['$a', '$b']}}}"), encoded(pipeline.get(1)),
+                        "plain Document stays an expression ($set-wrapped, _id stripped)"),
+                () -> Assertions.assertEquals(org.bson.BsonDocument.parse("{$set: {copy: '$a'}}"), encoded(pipeline.get(2)), "operator Map stage"),
+                () -> Assertions.assertEquals(
+                        org.bson.BsonDocument.parse("{$set: {note: '$other', tags: ['$x', 'plain'], inner: {city: '$x'}, meta: {k: '$other'}}}"),
+                        encoded(classicCaptor.getValue()), "classic single-entity update (already literal) unchanged"));
+    }
+
+    /**
+     * r2 sliceQ: a null element of a collection argument was reported under the wrong name: "'requests' cannot be null" (the list
+     * itself was not null), "'obj'"/"'update'" (no such parameter) or "'entity'". The message now names the argument and the
+     * element's index; the exception type (IllegalArgumentException) is unchanged and nothing is sent.
+     */
+    @Test
+    public void testNullCollectionElementsAreReportedByArgumentAndIndex_r2sliceQ() {
+        final Document filter = new Document("name", "a");
+        final Document doc = new Document("name", "x");
+
+        Assertions.assertAll( //
+                () -> Assertions
+                        .assertEquals("'requests' element at index 1 cannot be null",
+                                Assertions
+                                        .assertThrows(IllegalArgumentException.class,
+                                                () -> executor.bulkWrite(Arrays.asList(new com.mongodb.client.model.InsertOneModel<>(doc), null)))
+                                        .getMessage()),
+                () -> Assertions.assertEquals("'entities' element at index 1 cannot be null", Assertions
+                        .assertThrows(IllegalArgumentException.class, () -> executor.bulkInsert(Arrays.asList(doc, null)))
+                        .getMessage()),
+                () -> Assertions
+                        .assertEquals("'objList' element at index 2 cannot be null",
+                                Assertions.assertThrows(IllegalArgumentException.class, () -> executor.insertMany(Arrays.asList(doc, new TestEntity(), null)))
+                                        .getMessage()),
+                () -> Assertions
+                        .assertEquals("'objList' element at index 1 cannot be null",
+                                Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, Arrays.asList(doc, null)))
+                                        .getMessage()),
+                () -> Assertions.assertEquals("'objList' element at index 0 cannot be null",
+                        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, Arrays.asList((Object) null))).getMessage()),
+                () -> Assertions.assertEquals("'objList' element at index 1 cannot be null",
+                        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, Arrays.asList(doc, null)))
+                                .getMessage()));
+
+        verify(mockCollection, never()).bulkWrite(anyList());
+        verify(mockCollection, never()).insertMany(anyList());
+        verify(mockCollection, never()).updateOne(any(Bson.class), anyList());
+        verify(mockCollection, never()).updateMany(any(Bson.class), anyList());
+        verify(mockCollection, never()).findOneAndUpdate(any(Bson.class), anyList());
+    }
 }

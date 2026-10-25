@@ -312,8 +312,9 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p>The collection is used as-is, including its codec registry: unlike a collection obtained by name, it
      * does not receive this instance's framework codec registry, so writing an entity with a nested bean
-     * property fails with {@code CodecConfigurationException} unless the collection comes from {@link #db()}
-     * (or its own registry can encode that bean).</p>
+     * property, or with an array property other than {@code byte[]} (such as a {@code String[]}, which the
+     * framework registry stores as a BSON array), fails with {@code CodecConfigurationException} unless the
+     * collection comes from {@link #db()} (or its own registry can encode that value).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -441,8 +442,9 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p>The collection is used as-is, including its codec registry: unlike a collection obtained by name, it
      * does not receive this instance's framework codec registry, so writing an entity with a nested bean
-     * property fails with {@code CodecConfigurationException} unless the collection comes from {@link #db()}
-     * (or its own registry can encode that bean).</p>
+     * property, or with an array property other than {@code byte[]} (such as a {@code String[]}, which the
+     * framework registry stores as a BSON array), fails with {@code CodecConfigurationException} unless the
+     * collection comes from {@link #db()} (or its own registry can encode that value).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

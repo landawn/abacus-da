@@ -852,4 +852,40 @@ public class DynamoDBMapperTest extends DynamoDBExecutorTestSupport {
             this.partition_key = partition_key;
         }
     }
+
+    // ---- 2026-10-24 r2 sliceD ----
+
+    /**
+     * Beans.isBeanClass accepts an @Entity-annotated Map subclass, so the Mapper constructor used to build a mapper for one. Its
+     * key came from the @Id field while toItem writes a Map's entries, so putItem sent an item without its key. Both mapper
+     * factories now reject such a class with the "is not an entity class" message, before any request; a bean entity still maps.
+     */
+    @Test
+    public void testMapperRejectsEntityAnnotatedMapSubclass_r2sliceD() {
+        final String expected = MapRowEntity_r2sliceD.class.getCanonicalName() + " is not an entity class with getter/setter method";
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(expected,
+                        assertThrows(IllegalArgumentException.class, () -> executor.mapper(MapRowEntity_r2sliceD.class, "T", null)).getMessage()),
+                () -> assertEquals(expected, assertThrows(IllegalArgumentException.class, () -> executor.mapper(MapRowEntity_r2sliceD.class)).getMessage()),
+                () -> assertNotNull(executor.mapper(TestEntity.class, "T", null)));
+        org.mockito.Mockito.verifyNoInteractions(mockDynamoDBClient);
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @com.landawn.abacus.annotation.Table(name = "T")
+    public static class MapRowEntity_r2sliceD extends java.util.LinkedHashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+    }
 }

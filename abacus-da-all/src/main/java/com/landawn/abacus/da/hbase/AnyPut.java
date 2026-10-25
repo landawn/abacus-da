@@ -178,6 +178,9 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *     pass a {@code Put} or {@code AnyPut} directly instead (for example to {@link #of(Put)} or {@link HBaseExecutor#put(String, Put)}).
  *     The collection factories and {@link #toPut(Collection)} pass a {@code Put} or {@code AnyPut} element through unchanged and
  *     reject any other operation element.</li>
+ * <li><strong>Maps are not entities</strong>: a {@link Map}, including an {@code @Entity}-annotated {@code Map} subclass, is
+ *     rejected with an {@link IllegalArgumentException} (its entries are not mapped to columns); add its entries with
+ *     {@link #addColumn(String, String, Object)} instead.</li>
  * </ul>
  *
  * <h3>Performance Considerations:</h3>
@@ -205,11 +208,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Package-private constructor backing {@link #of(Object)}.
      *
      * @param rowKey the row key, converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyPut(final Object rowKey) throws IllegalArgumentException, RuntimeException {
-        super(new Put(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey))));
+        super(new Put(toNonNullRowKeyBytes(rowKey)));
         put = (Put) mutation;
     }
 
@@ -218,12 +222,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key, converted to bytes
      * @param timestamp the default timestamp for columns added without an explicit timestamp
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyPut(final Object rowKey, final long timestamp) throws IllegalArgumentException, RuntimeException {
-        super(new Put(toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey)), timestamp));
+        super(new Put(toNonNullRowKeyBytes(rowKey), timestamp));
         put = (Put) mutation;
     }
 
@@ -268,7 +272,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key, converted to bytes
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyPut(final Object rowKey, final boolean rowIsImmutable) throws IllegalArgumentException, RuntimeException {
@@ -282,8 +287,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key, converted to bytes
      * @param timestamp the default timestamp for columns added without an explicit timestamp
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyPut(final Object rowKey, final long timestamp, final boolean rowIsImmutable) throws IllegalArgumentException, RuntimeException {
@@ -368,11 +373,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * // Edge: an empty byte[] row key is rejected (row length is 0).
      * AnyPut.of(new byte[0]);             // throws IllegalArgumentException
+     *
+     * // Edge: an empty value wrapper converts to no bytes and is rejected like null.
+     * AnyPut.of(Optional.empty());        // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.); must not be {@code null}
      * @return a new AnyPut instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (such as an empty {@code Optional}, which
+     *         converts to no bytes), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, long)
      * @see #of(ByteBuffer)
@@ -411,8 +420,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the specified default timestamp
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #addColumn(String, String, long, Object)
@@ -529,7 +538,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key for the put operation, automatically converted to bytes; must not be {@code null}
      * @param rowIsImmutable true if the row key byte array is guaranteed to be immutable
      * @return a new AnyPut instance with immutability control
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, long, boolean)
      * @see #of(Object)
@@ -563,8 +573,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowIsImmutable {@code true} if the row-key byte array is guaranteed not to be
      *                       modified after this Put is created
      * @return a new AnyPut with timestamp and immutability control
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, boolean)
      * @see #of(Object, long)
@@ -702,7 +712,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>An HBase operation is not an entity: a {@link Put} (or any other
      * {@link org.apache.hadoop.hbase.client.Operation} or {@link org.apache.hadoop.hbase.client.Row}) or an {@code Any*} wrapper
-     * such as an {@code AnyPut} is rejected; pass the {@code Put} or {@code AnyPut} directly instead.</p>
+     * such as an {@code AnyPut} is rejected; pass the {@code Put} or {@code AnyPut} directly instead. Neither is a {@link Map},
+     * even an {@code @Entity}-annotated {@code Map} subclass: it is rejected as not a bean.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -739,11 +750,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @param entity the Java object to convert to a put operation; must not be null, must
-     *               have a row-key property, and must not be an HBase operation or an {@code Any*} wrapper
+     *               have a row-key property, and must not be an HBase operation, an {@code Any*} wrapper or a {@code Map}
      * @return a new AnyPut populated from the entity
      * @throws IllegalArgumentException if {@code entity} is {@code null} or an HBase operation ({@code Operation}/{@code Row}) or {@code Any*}
-     *         wrapper, an entity to convert is not a bean or has missing, multiple or unsupported row-key properties, its row-key value is null,
-     *         empty or exceeds 32,767 bytes, a column version is negative, or an encoded column family exceeds 127 bytes
+     *         wrapper, an entity to convert is not a bean (a {@code Map} never is) or has missing, multiple or unsupported row-key properties,
+     *         its row-key value is null, empty or exceeds 32,767 bytes, a column version is negative, or an encoded column family exceeds 127
+     *         bytes
      * @throws NullPointerException if a versioned column collection or map contains a null {@code HBaseColumn}
      * @throws RuntimeException if reading an entity property or converting a row key or column value to bytes fails
      * @see #create(Object, NamingPolicy)
@@ -796,6 +808,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, cs.namingPolicy);
         checkNotOperation(entity);
+        checkNotMap(entity);
 
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(entity.getClass());
 
@@ -992,6 +1005,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, cs.namingPolicy);
         checkNotOperation(entity);
+        checkNotMap(entity);
 
         if (selectPropNames == null) {
             return create(entity, namingPolicy);
@@ -1118,6 +1132,19 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         return new AnyPut(put, (Void) null);
     }
 
+    // WHY: an empty value wrapper (an empty Optional, a Nullable or Holder of null...) passes the null check but converts to
+    // null bytes, on which the Put(byte[]) / Put(byte[], long) constructors failed with a NullPointerException on row.length,
+    // while the other row-key overloads (and AnyGet/AnyRowMutations) reject the same key with an IllegalArgumentException.
+    private static byte[] toNonNullRowKeyBytes(final Object rowKey) throws IllegalArgumentException, RuntimeException {
+        final byte[] row = toRowKeyBytes(N.checkArgNotNull(rowKey, cs.rowKey));
+
+        if (row == null) {
+            throw new IllegalArgumentException("Row key has no byte representation (an empty value wrapper converts to no bytes): " + rowKey);
+        }
+
+        return row;
+    }
+
     // WHY: an HBase operation (Put, Get, Delete, Increment, Append, Scan, RowMutations...) and every Any* wrapper look like beans
     // to the property introspection, whose row key would be the operation id (getId()/setId()): mapping one failed with a
     // misleading "row key property value is null" error, or, with an operation id set, built a garbage Put whose cells were
@@ -1127,6 +1154,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
             throw new IllegalArgumentException("Cannot map " + ClassUtil.getCanonicalClassName(entity.getClass())
                     + " as an entity: AnyPut.create maps the properties of an entity bean, not an HBase operation. Pass the Put or AnyPut directly"
                     + " (for example to AnyPut.of(Put) or HBaseExecutor.put) instead");
+        }
+    }
+
+    // WHY: Beans.isBeanClass accepts an @Entity-annotated Map subclass, whose bean "properties" are its Map getters: with an id
+    // property, such a Map was written as the cells keySet/values/entrySet/size/empty and its entries never became columns. A
+    // plain Map is already rejected (ParserUtil.getBeanInfo: "Map implementations are never treated as beans"); reject every
+    // Map the same way, before the bean introspection, instead of writing garbage cells.
+    private static void checkNotMap(final Object entity) throws IllegalArgumentException {
+        if (entity instanceof Map) {
+            throw new IllegalArgumentException("Cannot map " + ClassUtil.getCanonicalClassName(entity.getClass())
+                    + " as an entity: AnyPut.create maps the properties of an entity bean, and a Map (even an @Entity-annotated Map subclass) is"
+                    + " not one. Add its entries as columns instead (for example with AnyPut.of(rowKey).addColumn(family, qualifier, value))");
         }
     }
 

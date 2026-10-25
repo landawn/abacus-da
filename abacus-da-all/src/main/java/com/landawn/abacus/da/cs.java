@@ -307,6 +307,11 @@ public final class cs { // NOSONAR
     public static final String entities = "entities";
 
     /**
+     * Parameter name for a collection of entity objects to put.
+     */
+    public static final String entitiesToPut = "entitiesToPut";
+
+    /**
      * Parameter name for an entity object.
      */
     public static final String entity = "entity";
@@ -315,6 +320,16 @@ public final class cs { // NOSONAR
      * Parameter name for Class objects representing entity types.
      */
     public static final String entityClass = "entityClass";
+
+    /**
+     * Parameter name for an entity object to delete.
+     */
+    public static final String entityToDelete = "entityToDelete";
+
+    /**
+     * Parameter name for an entity object to put.
+     */
+    public static final String entityToPut = "entityToPut";
 
     /**
      * Parameter name for a table name or expression.
