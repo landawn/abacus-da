@@ -1,7 +1,7 @@
 # abacus-da
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all)
-[![Javadoc](https://img.shields.io/badge/API-Javadoc-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all)
+[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.9.1)
+[![Javadocs](https://img.shields.io/badge/javadoc-2.9.1-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.9.1/index.html)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE.txt)
 
 **abacus-da** is a Java data-access toolkit for MongoDB, Cassandra, DynamoDB, HBase,
