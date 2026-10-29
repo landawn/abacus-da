@@ -135,7 +135,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after; converted via {@link HBaseExecutor#toRowKeyBytes(Object)}
      *                 ({@code null} is stored as the empty, unbounded row)
-     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
@@ -151,7 +152,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after (inclusive); {@code null} is stored as the empty, unbounded row
      * @param stopRow row to stop scanner before (exclusive); {@code null} is stored as the empty, unbounded row
-     * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} or {@code stopRow} is an HBase operation or {@code Any*} wrapper
+     *         (bare or held by a present value wrapper; see {@link HBaseExecutor#toRowKeyBytes(Object)}), or either converted row key exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow}, {@code stopRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).withStopRow(stopRow)} instead.
      */
@@ -168,7 +170,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after; {@code null} is stored as the empty, unbounded row
      * @param filter the {@link Filter} to apply to the scan
-     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).setFilter(filter)} instead.
      */
@@ -324,7 +327,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after; {@code null} is stored as the empty, unbounded row
      * @return a new AnyScan instance configured with the specified start row
-     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
@@ -359,7 +363,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param startRow row to start scanner at or after (inclusive); {@code null} is stored as the empty, unbounded row
      * @param stopRow row to stop scanner before (exclusive); {@code null} is stored as the empty, unbounded row
      * @return a new AnyScan instance configured with the specified start and stop rows
-     * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} or {@code stopRow} is an HBase operation or {@code Any*} wrapper
+     *         (bare or held by a present value wrapper; see {@link HBaseExecutor#toRowKeyBytes(Object)}), or either converted row key exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow}, {@code stopRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).withStopRow(stopRow)} instead.
      */
@@ -383,7 +388,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param startRow row to start scanner at or after; {@code null} is stored as the empty, unbounded row
      * @param filter the filter to apply to the scan
      * @return a new AnyScan instance configured with the specified start row and filter
-     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).setFilter(filter)} instead.
      */
@@ -691,7 +697,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>The supplied map is validated to be non-{@code null} before being passed to
      * {@link Scan#setFamilyMap(Map)}, which simply stores the reference.</p>
      *
-     * @param familyMap the complete family-to-qualifiers mapping; must not be {@code null}
+     * @param familyMap the complete family-to-qualifiers mapping; must not be {@code null}. It is retained by
+     *                  reference, so order it by {@code Bytes.BYTES_COMPARATOR}, as HBase's own family map is: with a
+     *                  {@code HashMap} (identity-keyed {@code byte[]}) a later {@code addFamily}/{@code addColumn} adds a
+     *                  duplicate family entry, and with a naturally ordered map (a plain {@code new TreeMap<>()}) every
+     *                  later {@code addFamily}/{@code addColumn} call throws {@link ClassCastException}
      * @return this {@link AnyScan} instance for method chaining
      * @throws IllegalArgumentException if {@code familyMap} is {@code null}
      * @see #getFamilyMap()
@@ -1022,7 +1032,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                 stored as the empty row and leaves the scan with an open lower bound
      *                 ({@link #getStartRow()} then returns an empty array)
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @see #withStartRow(Object, boolean)
      * @see #includeStartRow()
@@ -1053,7 +1064,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                 empty row and leaves the scan with an open lower bound
      * @param inclusive {@code true} to include the start row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code startRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code startRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code startRow} to bytes invokes a failing string conversion
      * @see #withStartRow(Object)
      * @see #includeStartRow()
@@ -1133,7 +1145,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                stored as the empty row and leaves the scan with an open upper bound
      *                ({@link #getStopRow()} then returns an empty array)
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code stopRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code stopRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code stopRow} to bytes invokes a failing string conversion
      * @see #withStopRow(Object, boolean)
      * @see #includeStopRow()
@@ -1164,7 +1177,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                empty row and leaves the scan with an open upper bound
      * @param inclusive {@code true} to include the stop row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code stopRow} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code stopRow} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code stopRow} to bytes invokes a failing string conversion
      * @see #withStopRow(Object)
      * @see #includeStopRow()
@@ -1196,7 +1210,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param rowPrefix the row prefix; converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @return this {@link AnyScan} instance for method chaining
-     * @throws IllegalArgumentException if the converted {@code rowPrefix} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowPrefix} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code rowPrefix} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowPrefix} to bytes invokes a failing string conversion
      * @deprecated Since HBase 2.5.0, scheduled for removal in 4.0.0. The name is misleading because
      *             no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(Object)} instead.
@@ -1231,7 +1246,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Any object is converted to row-key bytes, so a String prefix works directly.
+     * // The prefix value is converted to row-key bytes (as by HBaseExecutor.toRowKeyBytes), so a String prefix works directly.
      * AnyScan scan = AnyScan.create().setStartStopRowForPrefixScan("user_");   // returns this scan
      * byte[] sr = scan.getStartRow();                                          // returns the bytes of "user_" (inclusive lower bound)
      * byte[] st = scan.getStopRow();                                           // returns the bytes of "user`" (exclusive upper bound)
@@ -1252,7 +1267,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                  May be {@code null}, in which case the start and stop rows are reset to the
      *                  empty (unbounded) row keys
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if the converted {@code rowPrefix} exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowPrefix} is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or the converted {@code rowPrefix} exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowPrefix} to bytes invokes a failing string conversion
      * @see Scan#setStartStopRowForPrefixScan(byte[])
      */
@@ -1374,7 +1390,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>
      * A positive value splits rows containing more cells across multiple {@code Result} objects.
      * Callers can use {@code Result.mayHaveMoreCellsInRow()} to recognize such fragments. This
-     * setting is incompatible with a filter whose {@link Filter#hasFilterRow()} returns true.
+     * setting is incompatible with a filter whose {@link Filter#hasFilterRow()} returns true: with such
+     * a filter set, this method throws for any value (including {@code -1}), and once a positive batch is
+     * set, {@link AnyQuery#setFilter(Filter)} rejects such a filter with {@link IncompatibleFilterException}.
      * A value of {@code -1} means no explicit batch limit (the default).
      * </p>
      *
@@ -1701,17 +1719,22 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * will automatically close after returning this many rows.
      * </p>
      *
+     * <p>Only a positive limit bounds the scan: HBase sends no row limit to the server for {@code 0} or a
+     * negative value (the default {@code -1} means no limit). {@code 0} does not mean "no rows" either: HBase's
+     * synchronous scanner, which {@link HBaseExecutor} uses, then returns only the rows of its first server
+     * response (none or many, up to the caching and maximum-result-size bounds) and closes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyScan scan = AnyScan.create().setLimit(100);   // returns this scan (at most 100 rows)
      * int limit = scan.getLimit();                     // returns 100
      *
-     * // A limit of 0 is stored as-is; this wrapper performs no range validation.
-     * AnyScan none = AnyScan.create().setLimit(0);
-     * int zero = none.getLimit();    // returns 0
+     * // A limit of 0 is stored as-is; this wrapper performs no range validation, and 0 is not "no rows".
+     * AnyScan zeroLimit = AnyScan.create().setLimit(0);
+     * int zero = zeroLimit.getLimit();   // returns 0
      * }</pre>
      *
-     * @param limit the maximum number of rows to return
+     * @param limit the maximum number of rows to return; only a positive value limits the scan
      * @return this AnyScan instance for method chaining
      * @see #getLimit()
      * @see #setOneRowLimit()

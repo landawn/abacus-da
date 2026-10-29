@@ -294,6 +294,8 @@ public final class AsyncDynamoDBExecutor {
      * @see DynamoDBExecutor#async(DynamoDbAsyncClient)
      */
     public DynamoDBExecutor sync(final DynamoDbClient dynamoDBSyncClient) throws IllegalArgumentException {
+        N.checkArgNotNull(dynamoDBSyncClient, cs.dynamoDBSyncClient);
+
         return new DynamoDBExecutor(dynamoDBSyncClient);
     }
 
@@ -308,7 +310,9 @@ public final class AsyncDynamoDBExecutor {
      * uses CAMEL_CASE naming policy by default for attribute name conversion.</p>
      *
      * <p>Entity classes must be annotated with @Table, @javax.persistence.Table, or @jakarta.persistence.Table
-     * to specify the DynamoDB table name. ID fields must be annotated with appropriate key annotations.</p>
+     * to specify the DynamoDB table name. The ID properties are those annotated with {@code @Id} or {@code @ReadOnlyId} (or a
+     * JPA {@code @Id}); when no property is annotated, a property named {@code id} of type {@code int}/{@code Integer},
+     * {@code long}/{@code Long}, {@code String}, {@code java.sql.Timestamp} or {@code UUID} is the ID by convention.</p>
      *
      * <p><b>Async Benefits:</b></p>
      * <ul>
@@ -734,8 +738,11 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type to convert the item to
      * @param getItemRequest the complete GetItemRequest with all parameters configured. Must not be null.
-     * @param targetClass the class to convert the item to (entity beans need a public no-arg constructor;
-     *                    {@code Map.class} and primitive-wrapper types are also supported). Must not be null.
+     * @param targetClass the class to convert the item to: an entity class, which needs a no-args constructor, a builder, or a
+     *                    constructor taking all its properties in declaration order (as a record's canonical constructor does), a
+     *                    {@code Map} class, an object-array or collection class, or a single-value type for an item with exactly one
+     *                    attribute (a returned item with any other attribute count then fails the future with
+     *                    {@link IllegalArgumentException}). Must not be null.
      * @return a {@code CompletableFuture} that completes with the item converted to {@code T}
      *         (or {@code null} for reference types when the item does not exist; a primitive
      *         {@code targetClass} yields its default value such as {@code 0} or {@code false}, and an
@@ -2008,9 +2015,10 @@ public final class AsyncDynamoDBExecutor {
      *                    each item to an entity whose properties are the columns. No other row type (an array, a collection
      *                    or a single-value type) can be turned into a Dataset, so this method throws for it before any request
      *                    is sent
-     * @return a CompletableFuture that completes with a {@link Dataset} containing the query
-     *         results (possibly empty; for a {@link Map} type also when no returned item has any attribute, because a Dataset
-     *         without columns has no rows)
+     * @return a CompletableFuture that completes with a {@link Dataset} containing the query results. When the query matches
+     *         nothing the Dataset is empty and has no columns, for a bean class too (its properties become the columns only of a
+     *         non-empty result); for a {@link Map} type it is empty also when no returned item has any attribute, because a
+     *         Dataset without columns has no rows
      * @throws IllegalArgumentException if queryRequest or targetClass is null, or targetClass is neither a {@link Map} type nor a
      *         bean class (thrown by this call, before any request is sent, even if the query would match nothing)
      */
@@ -2169,7 +2177,10 @@ public final class AsyncDynamoDBExecutor {
      * the consuming thread. If a page request fails, the stream operation throws the request's
      * failure (typically an {@code SdkException}) unwrapped from the page future. If that wait is
      * interrupted, the stream operation fails with a runtime exception and the consumer thread's
-     * interrupt status is preserved.</p>
+     * interrupt status is preserved. Items are converted to {@code targetClass} while the stream is consumed too, so a
+     * conversion failure (for example an {@link IllegalArgumentException} for a single-value type and an item with more than
+     * one attribute) is also thrown by the stream operation; neither kind of failure is reported through the returned
+     * {@code CompletableFuture}, which completes normally.</p>
      *
      * @param <T> the type of objects in the stream
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
@@ -2572,7 +2583,9 @@ public final class AsyncDynamoDBExecutor {
      * thread, so terminal operations block. If a page request fails, the stream operation throws the
      * request's failure (typically an {@code SdkException}) unwrapped from the page future. If a page
      * wait is interrupted, the stream operation fails with a runtime exception and the consumer
-     * thread's interrupt status is preserved.</p>
+     * thread's interrupt status is preserved. Item conversion to {@code targetClass} also runs while the stream is consumed,
+     * so its failures are thrown by the stream operation as well; neither kind of failure is reported through the returned
+     * {@code CompletableFuture}, which completes normally.</p>
      *
      * @param <T> the type of objects in the stream
      * @param scanRequest the complete ScanRequest with all parameters. Must not be null.
@@ -2736,9 +2749,11 @@ public final class AsyncDynamoDBExecutor {
      *     .thenAccept(response -> System.out.println("User saved"));
      * }</pre>
      *
-     * @param <T> the type of entity this mapper handles. Must be a valid bean class (not a {@link Map} type) with getter/setter methods
-     *            and one field annotated with {@code @Id} for a simple key (or, with no {@code @Id} field, a
-     *            property named {@code id}), or two {@code @Id} fields for a composite partition-and-sort key.
+     * @param <T> the type of entity this mapper handles. Must be a valid bean class (not a {@link Map} type) with getter methods, read
+     *            back through a no-args constructor and setters, a builder, or a constructor taking all its properties in
+     *            declaration order (as a record's canonical constructor does), and one field annotated with {@code @Id} for a
+     *            simple key (or, with no {@code @Id} field, a property named {@code id} of a conventional ID type, as described on
+     *            {@link AsyncDynamoDBExecutor#mapper(Class)}), or two {@code @Id} fields for a composite partition-and-sort key.
      * @author haiyangli
      * @since 1.0
      */
@@ -2753,8 +2768,8 @@ public final class AsyncDynamoDBExecutor {
         /**
          * Constructs a new Mapper instance for the specified entity class and DynamoDB table.
          *
-         * <p>This constructor validates that the entity class is a proper bean class with
-         * getter/setter methods and one or two fields annotated with {@code @Id} for the primary key
+         * <p>This constructor validates that the entity class is a proper bean class (setters are optional: a record or
+         * builder-based bean is accepted) and has one or two fields annotated with {@code @Id} for the primary key
          * (a class with no {@code @Id} field falls back to a property named {@code id}).
          * The naming policy determines how Java property names are converted to DynamoDB attribute names.</p>
          *
@@ -2952,6 +2967,12 @@ public final class AsyncDynamoDBExecutor {
          * <li>Eventually consistent reads by default</li>
          * </ul>
          *
+         * <p><b>Unprocessed keys:</b> keys that DynamoDB leaves unprocessed (for example under throttling or the 16 MB
+         * response limit) are not retried: their items are silently missing from the returned list, as for every
+         * {@code batchGetItem} overload of {@link AsyncDynamoDBExecutor}. Call the executor's
+         * {@link AsyncDynamoDBExecutor#dynamoDBAsyncClient() client} directly to detect and retry them. DynamoDB returns the
+         * items in no particular order, so the list does not follow the order of {@code entities}.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> userKeys = Arrays.asList(
@@ -2968,8 +2989,9 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param entities collection of entity instances with key attributes set. Must not be null.
-         * @return a CompletableFuture containing a list of retrieved entities (may be fewer than requested);
-         *         result-mapping failures complete the future exceptionally
+         * @return a CompletableFuture containing the list of retrieved entities, never {@code null}; it may be smaller than the input
+         *         because keys without an item and keys DynamoDB leaves unprocessed contribute nothing; result-mapping failures
+         *         complete the future exceptionally
          * @throws IllegalArgumentException if {@code entities} (or any element in it) is null, or an ID is null, empty, or not a supported
          *         scalar key value
          * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
@@ -3006,8 +3028,9 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entities collection of entity instances with key attributes set. Must not be null.
          * @param returnConsumedCapacity "INDEXES", "TOTAL", or "NONE", forwarded to the service (not returned here)
-         * @return a CompletableFuture containing a list of retrieved entities;
-         *         result-mapping failures complete the future exceptionally
+         * @return a CompletableFuture containing the list of retrieved entities, never {@code null}; it may be smaller than the input
+         *         because keys without an item and keys DynamoDB leaves unprocessed contribute nothing (see
+         *         {@link #batchGetItem(Collection)}); result-mapping failures complete the future exceptionally
          * @throws IllegalArgumentException if {@code entities} (or any element in it) is null, or an ID is null, empty, or not a supported
          *         scalar key value
          * @throws RuntimeException if an entity property accessor or value converter fails while constructing the request
@@ -3046,7 +3069,8 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param batchGetItemRequest the complete BatchGetItemRequest. Must not be null.
-         * @return a CompletableFuture containing a list of retrieved entities from this mapper's table
+         * @return a CompletableFuture containing the list of retrieved entities from this mapper's table, never {@code null}; items
+         *         of keys DynamoDB leaves unprocessed are not included (see {@link #batchGetItem(Collection)})
          * @throws IllegalArgumentException if {@code batchGetItemRequest} is null or the request specifies a different table name
          */
         public CompletableFuture<List<T>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) throws IllegalArgumentException {
@@ -3504,7 +3528,8 @@ public final class AsyncDynamoDBExecutor {
          * exclusive start key; otherwise only the requested page is materialized. Queries are
          * efficient for retrieving items with a specific partition key value and optional sort key
          * conditions. Completing the returned future early (for example with {@code cancel(...)}) stops the
-         * pagination, as for {@link AsyncDynamoDBExecutor#list(QueryRequest, Class)}.</p>
+         * pagination, as for {@link AsyncDynamoDBExecutor#list(QueryRequest, Class)}. If the request names no table, this
+         * mapper's table is used.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3537,7 +3562,9 @@ public final class AsyncDynamoDBExecutor {
          * which provides additional functionality for data manipulation and analysis beyond
          * a simple list. Datasets support operations like filtering, mapping, and aggregation.
          * Pagination, and stopping it by completing the returned future early, work as for
-         * {@link AsyncDynamoDBExecutor#query(QueryRequest, Class)}.</p>
+         * {@link AsyncDynamoDBExecutor#query(QueryRequest, Class)}: all pages are materialized when the request has no
+         * {@code exclusiveStartKey}, otherwise only the single returned page. If the request names no table, this mapper's
+         * table is used.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3558,7 +3585,8 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param queryRequest the QueryRequest specifying query parameters. Must not be null.
-         * @return a CompletableFuture containing a Dataset of matching entities
+         * @return a CompletableFuture containing a Dataset of matching entities, whose columns are the entity properties, except that a
+         *         query matching nothing gives an empty Dataset without any columns
          * @throws IllegalArgumentException if {@code queryRequest} is null or the request specifies a different table name
          */
         public CompletableFuture<Dataset> query(final QueryRequest queryRequest) throws IllegalArgumentException {
@@ -3570,7 +3598,11 @@ public final class AsyncDynamoDBExecutor {
          *
          * <p>This method performs a query operation and returns results as a Stream for
          * efficient processing of large result sets. The Stream allows lazy evaluation
-         * and can handle pagination automatically for large queries.</p>
+         * and can handle pagination automatically for large queries. An {@code exclusiveStartKey} on the request is only
+         * the starting point: unlike {@link #list(QueryRequest)}, the stream still continues to the last page. Pages are
+         * fetched, and failures thrown, while the stream is consumed, as for
+         * {@link AsyncDynamoDBExecutor#stream(QueryRequest, Class)}. If the request names no table, this mapper's table is
+         * used.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

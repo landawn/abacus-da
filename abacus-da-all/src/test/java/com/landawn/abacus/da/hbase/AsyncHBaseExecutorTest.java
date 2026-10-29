@@ -665,6 +665,54 @@ public class AsyncHBaseExecutorTest extends TestBase {
         verify(sync).delete(eq("tbl"), same(anyDeletes));
     }
 
+    // ---- 2026-10-27 sliceN ----
+
+    /**
+     * Pins the scan examples' "Negative" case: the future completes with a lazy stream even for a missing table, and the
+     * failure of the first row fetch surfaces from the consuming terminal operation as HBase's own
+     * {@code java.io.UncheckedIOException} (its {@code ResultScanner} iterator wraps the IOException), not as
+     * {@code com.landawn.abacus.exception.UncheckedIOException}.
+     */
+    @Test
+    public void testScan_firstFetchFailure_surfacesAsJavaIoUncheckedIOExceptionOnConsumption_sliceN() throws Exception {
+        final Connection conn = mock(Connection.class);
+        final org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        final org.apache.hadoop.hbase.TableNotFoundException missing = new org.apache.hadoop.hbase.TableNotFoundException("badTable");
+        final java.util.concurrent.atomic.AtomicInteger fetches = new java.util.concurrent.atomic.AtomicInteger();
+        final org.apache.hadoop.hbase.client.ResultScanner scanner = new org.apache.hadoop.hbase.client.ResultScanner() {
+            @Override
+            public Result next() throws java.io.IOException {
+                fetches.incrementAndGet();
+                throw missing;
+            }
+
+            @Override
+            public void close() {
+            }
+
+            @Override
+            public boolean renewLease() {
+                return false;
+            }
+
+            @Override
+            public org.apache.hadoop.hbase.client.metrics.ScanMetrics getScanMetrics() {
+                return null;
+            }
+        };
+        when(conn.getTable(any(org.apache.hadoop.hbase.TableName.class))).thenReturn(table);
+        when(table.getScanner(any(Scan.class))).thenReturn(scanner);
+
+        final AsyncHBaseExecutor async = newAsync(new HBaseExecutor(conn));
+
+        try (com.landawn.abacus.util.stream.Stream<Result> s = async.scan("badTable", AnyScan.create()).get()) {
+            assertEquals(0, fetches.get(), "the future must complete before any row is fetched");
+
+            final java.io.UncheckedIOException e = assertThrows(java.io.UncheckedIOException.class, s::count);
+            assertSame(missing, e.getCause());
+        }
+    }
+
     private AsyncHBaseExecutor newAsync(final HBaseExecutor sync) {
         return new AsyncHBaseExecutor(sync, new AsyncExecutor(2, 4, 30L, java.util.concurrent.TimeUnit.SECONDS));
     }

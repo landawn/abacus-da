@@ -58,7 +58,11 @@ import com.landawn.abacus.util.u.Optional;
  *   <li><b>Pool:</b> Sessions are held in a bounded {@link LinkedBlockingQueue} (capacity 8192).
  *       Each operation polls the queue without blocking and opens a fresh OGM session via
  *       {@link SessionFactory#openSession()} (a cheap in-memory operation) when the queue is
- *       empty.</li>
+ *       empty. A session keeps the factory configuration it was opened with (event listeners, load
+ *       strategy, entity instantiator, transaction manager factory): an event listener registered on or
+ *       deregistered from the {@link SessionFactory}, or one of those settings changed on it, after the
+ *       executor has pooled sessions reaches only sessions opened later, while the pooled ones keep the
+ *       old configuration. Configure the factory before the executor's first operation.</li>
  *   <li><b>Release:</b> Any transaction left open on the session is rolled back, then
  *       {@link Session#clear()} is invoked before the
  *       session is offered back to the queue. If the queue is full the session is silently dropped
@@ -106,6 +110,27 @@ import com.landawn.abacus.util.u.Optional;
  * <p>A {@code depth} of {@code -1} (unlimited) is accepted by the {@code load}/{@code loadAll} overloads for
  * node-entity classes only: for a relationship-entity class Neo4j-OGM rejects any negative {@code depth} with an
  * {@link IllegalArgumentException} before querying the database.</p>
+ *
+ * <h2>Filter Arguments</h2>
+ * <p>Neo4j-OGM resolves the {@link Filter}s it is given in place, against the class it loads or counts: it records
+ * that class as a filter's owner type unless one is set, replaces the property name by the mapped name (an
+ * {@code @Property} name, for example), and sets the converter and relationship details. It also re-indexes a single
+ * {@code Filter} to {@code 0}, because it wraps it in a new {@link Filters} object. So that this never reaches the
+ * caller's objects, the {@code loadAll} overloads that take a {@code Filter} or {@code Filters} and
+ * {@link #count(Class, Iterable)} hand Neo4j-OGM copies: a single {@code Filter} as one copy, the filters of a
+ * {@code Filters} object or any other iterable as copies in a new {@code Filters} object, each indexed by its position.
+ * The caller's {@code Filter} and {@code Filters} objects are therefore neither resolved nor re-indexed: a filter can
+ * be reused for another class, and a {@code Filters} object still sends each of its filters under a parameter of its
+ * own after one of them was passed to a single-{@code Filter} overload. Each copy is resolved exactly as its original
+ * would be.</p>
+ * <p>An argument is passed to Neo4j-OGM as it is, and so still modified in place, when one of its filters cannot be
+ * copied faithfully: an instance of a {@code Filter} subclass, a filter whose nested path holds an instance of a
+ * {@code Filter.NestedPathSegment} subclass, or a {@code null} element (Neo4j-OGM then throws a
+ * {@code NullPointerException}). Every argument is passed as it is (with a warning logged once) if the Neo4j-OGM
+ * {@code Filter} and {@code Filter.NestedPathSegment} classes on the classpath do not declare exactly the fields of
+ * Neo4j-OGM 5.0.10, or if the filter's private comparison function, which a copy reads reflectively and shares, cannot
+ * be accessed. A filter passed as it is keeps the resolution of the first class it is used with, and a {@code Filters}
+ * object it belongs to can then send two of its filters under one parameter name, the last value winning.</p>
  *
  * <h2>Null Arguments</h2>
  * <p>A {@code null} argument that Neo4j-OGM can never accept is rejected up front with an
@@ -169,7 +194,7 @@ import com.landawn.abacus.util.u.Optional;
  * naturally to Neo4j-OGM users, rather than wholesale adopting the abacus "house" CRUD vocabulary
  * ({@code list}/{@code insert}/{@code update}/{@code delete}) used by the
  * {@code Condition}-based executors such as Cassandra and BigQuery. It does, however, apply a few
- * abacus conventions where they improve the API: the single-row reader is exposed as
+ * abacus conventions where they improve the API: the single-result reader is exposed as
  * {@code findOnly(Class, String, Map)}, which returns a {@link com.landawn.abacus.util.u.Optional}
  * instead of OGM's {@code queryForObject} raw {@code null}; the OGM {@code countEntitiesOfType(Class)} is exposed as a {@code count(Class)}
  * overload; and OGM's {@code resolveGraphIdFor(Object)} is surfaced as the more conventional
@@ -228,6 +253,8 @@ public final class Neo4jExecutor {
      * <p>
      * Use this to access OGM features not surfaced by the executor (for example, direct
      * configuration introspection or opening sessions that are not pooled by this executor).
+     * Changing the factory's configuration (such as registering an event listener) after the executor's
+     * first operation does not reach the sessions already pooled; see the class documentation.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -468,7 +495,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @return collection of loaded node entities, or an empty collection if no nodes are found
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
@@ -505,7 +534,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of loaded node entities with relationships, may be empty if no nodes found
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
@@ -546,7 +577,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @return collection of loaded node entities sorted as specified, may be empty if no nodes found
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}
@@ -584,7 +617,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of loaded node entities with relationships, sorted as specified
@@ -624,7 +659,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return collection of loaded node entities for the specified page, may be empty
@@ -663,7 +700,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
@@ -705,7 +744,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
@@ -749,7 +790,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param ids primary-index values, or native graph IDs for a class without a primary index, each of the ID field's
+     *            Java type: an ID of another type (such as an {@code Integer} for a {@code Long} ID) never matches, so its
+     *            entity is silently missing from the result ({@link #load(Class, Serializable)} rejects such an ID instead)
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
@@ -1389,7 +1432,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @return collection of nodes matching the filter criteria, may be empty
      * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
@@ -1401,7 +1445,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy));
     }
 
     /**
@@ -1424,7 +1470,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered nodes with relationships, may be empty
      * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is
@@ -1438,7 +1485,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter, depth));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy, depth));
     }
 
     /**
@@ -1464,7 +1513,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @return collection of filtered, sorted nodes, may be empty
      * @throws IllegalArgumentException if {@code targetClass} or {@code filter} is {@code null}
@@ -1479,7 +1529,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter, sortOrder));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy, sortOrder));
     }
 
     /**
@@ -1503,7 +1555,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered, sorted nodes with relationships, may be empty
@@ -1520,7 +1573,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter, sortOrder, depth));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy, sortOrder, depth));
     }
 
     /**
@@ -1544,7 +1599,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
@@ -1560,7 +1616,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter, pagination));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy, pagination));
     }
 
     /**
@@ -1583,7 +1641,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
@@ -1601,7 +1660,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter, pagination, depth));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy, pagination, depth));
     }
 
     /**
@@ -1627,7 +1688,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
@@ -1645,7 +1707,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter, sortOrder, pagination));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy, sortOrder, pagination));
     }
 
     /**
@@ -1670,7 +1734,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}
+     * @param filter the filter criteria to apply when loading nodes; must not be {@code null}. A copy of it is sent, so
+     *               it is not modified, unless it cannot be copied faithfully (see "Filter Arguments" in the class documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
@@ -1690,7 +1755,9 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filter, cs.filter);
 
-        return withSession(session -> session.loadAll(targetClass, filter, sortOrder, pagination, depth));
+        final Filter filterCopy = FilterCopier.copyOrSelf(filter);
+
+        return withSession(session -> session.loadAll(targetClass, filterCopy, sortOrder, pagination, depth));
     }
 
     /**
@@ -1719,7 +1786,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @return collection of entities matching the combined filter expression, possibly empty
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
@@ -1731,7 +1800,9 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy));
     }
 
     /**
@@ -1757,7 +1828,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered nodes with relationships, may be empty
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}; also thrown by Neo4j-OGM if {@code depth} is negative for a
@@ -1770,7 +1843,9 @@ public final class Neo4jExecutor {
     public <T> Collection<T> loadAll(final Class<T> targetClass, final Filters filters, final int depth) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters, depth));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy, depth));
     }
 
     /**
@@ -1799,7 +1874,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @return collection of filtered, sorted nodes, may be empty
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}
@@ -1813,7 +1890,9 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters, sortOrder));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy, sortOrder));
     }
 
     /**
@@ -1840,7 +1919,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
      * @return collection of filtered, sorted nodes with relationships, may be empty
@@ -1856,7 +1937,9 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters, sortOrder, depth));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy, sortOrder, depth));
     }
 
     /**
@@ -1882,7 +1965,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
@@ -1897,7 +1982,9 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters, pagination));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy, pagination));
     }
 
     /**
@@ -1922,7 +2009,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite for node-entity classes only)
@@ -1939,7 +2028,9 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters, pagination, depth));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy, pagination, depth));
     }
 
     /**
@@ -1967,7 +2058,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
@@ -1984,7 +2077,9 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters, sortOrder, pagination));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy, sortOrder, pagination));
     }
 
     /**
@@ -2012,7 +2107,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
-     *                or empty, in which case every node of {@code targetClass} is loaded
+     *                or empty, in which case every node of {@code targetClass} is loaded. Copies of its filters are
+     *                sent, so they are not modified, unless one of them cannot be copied faithfully (see "Filter Arguments" in the class
+     *                documentation)
      * @param sortOrder the sort order specification for results; may be {@code null} for no ordering
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
@@ -2031,7 +2128,9 @@ public final class Neo4jExecutor {
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return withSession(session -> session.loadAll(targetClass, filters, sortOrder, pagination, depth));
+        final Filters filtersCopy = FilterCopier.copiesOf(filters);
+
+        return withSession(session -> session.loadAll(targetClass, filtersCopy, sortOrder, pagination, depth));
     }
 
     /**
@@ -2148,9 +2247,10 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
-     *               entities to delete; must not be {@code null}
-     * @throws IllegalArgumentException if {@code object} is {@code null}; also thrown by Neo4j-OGM if {@code object} (or one of its
-     *         elements) is not an instance of a mapped entity class
+     *               entities to delete; must not be {@code null}. A {@code null} element of an array or
+     *               {@code Iterable} fails with a {@link NullPointerException} before anything is deleted
+     * @throws IllegalArgumentException if {@code object} is {@code null}; also thrown by Neo4j-OGM, before anything is
+     *         deleted, if {@code object} (or one of its elements) is not an instance of a mapped entity class
      * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #deleteAll(Class)
      */
@@ -2197,14 +2297,18 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query and returns the single result row mapped to {@code targetClass}, wrapped
+     * Executes a Cypher query and returns its single result mapped to {@code targetClass}, wrapped
      * in an {@link Optional}.
      * <p>
-     * Delegates to {@link Session#queryForObject(Class, String, Map)}. The query must return
-     * exactly zero or one row; if multiple rows are returned the underlying OGM session raises a
+     * Delegates to {@link Session#queryForObject(Class, String, Map)}. The query must produce
+     * zero or one result; if it produces more, the underlying OGM session raises a
      * {@link RuntimeException}. The method name reflects this cardinality requirement: it does not
-     * silently select the first row. Add a {@code LIMIT 1} clause or a uniqueness constraint to the
-     * Cypher when the query could otherwise return multiple rows.
+     * silently select the first result. Neo4j-OGM counts the results that {@link #stream(Class, String, Map)}
+     * would return: for a basic value type every row is one result, but for a mapped entity class the results
+     * are the distinct entities of that class in the whole result, not its rows. Rows that repeat the same
+     * node therefore count once, while a single row that returns two such nodes ({@code RETURN p, friend})
+     * counts twice. Add a {@code LIMIT 1} clause or a uniqueness constraint to the Cypher when the query
+     * could otherwise produce several results.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2226,17 +2330,22 @@ public final class Neo4jExecutor {
      *
      * @param <T> the result type
      * @param targetClass the target class &mdash; either a mapped OGM entity class or a basic value
-     *                   type (e.g. {@code Long.class} for an aggregate result)
+     *                   type (e.g. {@code Long.class} for an aggregate result); pass the wrapper class, not a
+     *                   primitive class such as {@code long.class}, with which every non-{@code null} result fails (and,
+     *                   for a numeric primitive class, a {@code null} value too, because it is read as zero)
      * @param cypher the Cypher query string with {@code $name} parameter placeholders; must not be
      *               {@code null} or empty
      * @param parameters named parameters bound by the OGM session; may be empty but must not be
      *                   {@code null}
      * @return an {@link Optional} describing the single mapped result, or an empty {@code Optional} if
-     *         the query returns no rows or its single row's value is {@code null} (for example {@code RETURN null})
+     *         there is no result (no rows or, for an entity class, no entity of that class in the result) or the
+     *         single value is {@code null} (for example {@code RETURN null})
      * @throws IllegalArgumentException if {@code targetClass}, {@code cypher}, or {@code parameters} is {@code null}
      * @throws RuntimeException if {@code cypher} is empty or {@code targetClass} is a void type (Neo4j-OGM rejects these
      *         with a plain {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; if the
-     *         query returns more than one row; or if the result cannot be mapped to {@code targetClass}
+     *         query produces more than one result (counted as described above); or if the result cannot be mapped to
+     *         {@code targetClass} (Neo4j-OGM throws a {@code MappingException}, also for a result of a primitive
+     *         {@code targetClass} as described above, because the value it maps is boxed)
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
@@ -2359,11 +2468,21 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query and maps each row to an instance of {@code targetClass}.
+     * Executes a Cypher query and maps its result to instances of {@code targetClass}.
      * <p>
      * Delegates to {@link Session#query(Class, String, Map)}. {@code targetClass} is typically an
      * OGM-mapped entity class for queries that return whole nodes, but may also be a basic value
-     * type when the {@code RETURN} clause produces a single scalar per row.
+     * type when the {@code RETURN} clause produces a single scalar per row. The two are mapped differently:
+     * <ul>
+     *   <li>For a basic value type, every row must have exactly one column, and the stream holds one
+     *       converted value per row.</li>
+     *   <li>For a mapped entity class, Neo4j-OGM does not map row by row: the stream holds every distinct
+     *       entity of {@code targetClass} among the nodes (or, for a relationship-entity class, the relationships)
+     *       that the result returns in any column of any row, also inside returned paths and lists, once each, in
+     *       the order of first appearance. A node returned by several rows appears once, {@code RETURN p, friend}
+     *       yields both nodes, and scalar columns and entities of other classes are ignored, so
+     *       {@code RETURN p.name} yields an empty stream.</li>
+     * </ul>
      * <p>
      * The Cypher executes immediately and the result rows are fully fetched. The borrowed session
      * is cleared and returned to the pool before this method returns; the returned stream lazily
@@ -2381,13 +2500,15 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the result row type
-     * @param targetClass the target class &mdash; an OGM-mapped entity class or a basic value type
+     * @param targetClass the target class &mdash; an OGM-mapped entity class or a basic value type; a numeric primitive
+     *                    class such as {@code long.class} turns a {@code null} value into zero, a wrapper class keeps it
+     *                    {@code null}
      * @param cypher the Cypher query string with {@code $name} parameter placeholders; must not be
      *               {@code null} or empty
      * @param parameters named parameters bound by the OGM session; may be empty but must not be
      *                   {@code null}
-     * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; it does
-     *         not retain the borrowed session
+     * @return a {@link Stream} over the already-fetched results mapped to {@code targetClass} as described above;
+     *         it does not retain the borrowed session
      * @throws IllegalArgumentException if {@code targetClass}, {@code cypher}, or {@code parameters} is {@code null}
      * @throws RuntimeException if {@code cypher} is empty or {@code targetClass} is a void type (Neo4j-OGM rejects these
      *         with a plain {@code RuntimeException}); if the database cannot be reached or Neo4j rejects the query; or if
@@ -2417,19 +2538,20 @@ public final class Neo4jExecutor {
      * <p>
      * Neo4j-OGM names each filter's Cypher parameter after the filter's property and its index
      * ({@code <property>_<index>}), and only {@link Filters#add(Filter)} assigns that index: a filter never added to a
-     * {@code Filters} object has the index {@code 0}. A {@code Filters} argument (as in the second example below) is
-     * passed to Neo4j-OGM as it is, and Neo4j-OGM resolves its filters in place, as it does every filter it is given
-     * (owner type, property name, converter and relationship details; for a relationship-entity count it also shortens
-     * a filter's nested path). The filters of any other non-empty iterable, such as a plain {@code List}, are sent as
-     * copies in a new {@code Filters} object, each copy indexed by its position: two filters on the same property get
-     * distinct parameters ({@code age > $age_0 AND age < $age_1}), and the caller's {@code Filter} objects are not
-     * modified (neither re-indexed nor resolved). Such an iterable is passed on as it is &mdash; so two of its filters on
-     * the same property share one parameter, the last value wins and the count is silently wrong &mdash; if it contains a
-     * {@code null} element (Neo4j-OGM then throws a {@code NullPointerException}), an instance of a {@code Filter}
-     * subclass, or a filter whose nested path holds an instance of a {@code Filter.NestedPathSegment} subclass. Every
-     * iterable is passed on as it is (with a warning logged once) if the Neo4j-OGM {@code Filter} and
-     * {@code Filter.NestedPathSegment} classes on the classpath do not declare exactly the fields of Neo4j-OGM 5.0.10, or
-     * if the filter's private comparison function, which the copy reads reflectively, cannot be accessed.
+     * {@code Filters} object has the index {@code 0}. Neo4j-OGM also resolves the filters it is given in place (owner
+     * type, property name, converter and relationship details; for a relationship-entity count it also shortens a
+     * filter's nested path). The filters of a non-empty iterable &mdash; a {@code Filters} object (as in the second
+     * example below) or any other iterable, such as a plain {@code List} &mdash; are therefore sent as copies in a new
+     * {@code Filters} object, each copy indexed by its position: two filters on the same property get distinct
+     * parameters ({@code age > $age_0 AND age < $age_1}), and the caller's {@code Filter} and {@code Filters} objects are
+     * not modified (neither re-indexed nor resolved). An empty iterable is passed on as it is. So is an iterable that
+     * contains a {@code null} element (Neo4j-OGM then throws a {@code NullPointerException}), an instance of a
+     * {@code Filter} subclass, or a filter whose nested path holds an instance of a {@code Filter.NestedPathSegment}
+     * subclass: Neo4j-OGM then resolves its filters in place, and two filters of a plain list on the same property share
+     * one parameter, the last value wins and the count is silently wrong. Every iterable is passed on as it is (with a
+     * warning logged once) if the Neo4j-OGM {@code Filter} and {@code Filter.NestedPathSegment} classes on the classpath
+     * do not declare exactly the fields of Neo4j-OGM 5.0.10, or if the filter's private comparison function, which the
+     * copy reads reflectively, cannot be accessed (see "Filter Arguments" in the class documentation).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2460,8 +2582,8 @@ public final class Neo4jExecutor {
      * @param targetClass the OGM-mapped class whose entities are counted
      * @param filters OGM {@link Filter}s whose {@link org.neo4j.ogm.cypher.BooleanOperator}s define
      *                how each filter is joined to the preceding one; pass an empty iterable to
-     *                count all entities of {@code targetClass}. A {@link Filters} object is used as it is,
-     *                the filters of any other iterable are copied as described above. Unlike the
+     *                count all entities of {@code targetClass}. The filters of a {@link Filters} object or of
+     *                any other iterable are copied as described above. Unlike the
      *                {@link Filters} overloads of {@code loadAll}, a {@code null} iterable is <i>not</i>
      *                accepted here
      * @return the number of entities of {@code targetClass} that satisfy the supplied filter
@@ -2478,6 +2600,8 @@ public final class Neo4jExecutor {
         N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(filters, cs.filters);
 
+        // WHY: OGM resolves the filters it is given in place, and only Filters.add indexes them (the filters of a plain list
+        // share one parameter name); copies indexed by position avoid both without touching the caller's objects (FilterCopier)
         final Iterable<Filter> indexedFilters = FilterCopier.indexedCopiesOf(filters);
 
         return withSession(session -> session.count(targetClass, indexedFilters));
@@ -2779,16 +2903,21 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Copies the filters of a plain iterable into a new {@link Filters} object for {@link #count(Class, Iterable)}.
+     * Copies the filter arguments of {@link #count(Class, Iterable)} and of the {@code Filter}/{@code Filters} overloads of
+     * {@code loadAll} before they are handed to Neo4j-OGM.
      */
     private static final class FilterCopier {
-        // WHY: Neo4j-OGM names a filter's Cypher parameter <property>_<index> and only Filters.add assigns the index, so all
-        // filters of a plain list keep index 0 and two of them on the same property share one parameter (the last value
-        // wins and the count is silently wrong). new Filters(filters) would fix the names but re-index - and so mutate -
-        // the caller's own Filter objects, which can make another Filters object they belong to collide; faithful copies are
-        // indexed instead. Filter (5.0.10) offers no copy API and no getter for its comparison function, so the function is
-        // read reflectively, and only when Filter and NestedPathSegment declare exactly the fields of 5.0.10: a copy made
-        // under another layout could silently drop state that a different OGM version renders.
+        // WHY: Neo4j-OGM mutates the filters it is given: it resolves them in place against the loaded/counted class (owner
+        // type, @Property name, converter, relationship details; for a relationship entity it also rewrites the first boolean
+        // operator and the nested path), and a single Filter passed to loadAll is re-indexed to 0 by Filters.add. A caller's
+        // filter then keeps the first class's resolution, and a Filters object it belongs to sends two filters under one
+        // <property>_<index> parameter (the last value wins: silently wrong results). Only Filters.add assigns the index, so
+        // the filters of a plain list all keep index 0 and collide the same way, and new Filters(filters) would re-index -
+        // and so mutate - the caller's filters. Faithful copies are handed to OGM instead. Filter (5.0.10) offers no copy API
+        // and no getter for its comparison function, so the function is read reflectively, and only when Filter and
+        // NestedPathSegment declare exactly the fields of 5.0.10: a copy made under another layout could silently drop state
+        // that a different OGM version renders. Sharing the function is faithful for every FilterFunction, OGM's or a custom
+        // one: the 5.0.10 interface hands it the rendering filter's parameter namer and value transformer on each call.
         private static final Set<String> FILTER_FIELDS = Set.of("index", "propertyName", "booleanOperator", "negated", "ownerEntityType",
                 "nestedEntityTypeLabel", "nestedPropertyName", "nestedPropertyType", "relationshipType", "relationshipDirection", "propertyConverter",
                 "nestedRelationshipEntity", "function", "nestedPath");
@@ -2803,12 +2932,43 @@ public final class Neo4jExecutor {
         }
 
         /**
-         * Returns {@code filters} itself when it is a {@link Filters} object, empty, or holds a filter that cannot be
-         * copied faithfully; otherwise a new {@code Filters} object of copies of its filters, indexed by position.
+         * Returns a new {@code Filters} object of copies of the filters of {@code filters} (a {@link Filters} object or any
+         * other iterable), indexed by position, or {@code filters} itself when it is empty or holds a filter that cannot be
+         * copied faithfully.
          */
         static Iterable<Filter> indexedCopiesOf(final Iterable<Filter> filters) {
-            if (filters instanceof Filters || FUNCTION_FIELD == null) {
-                return filters;
+            final Filters copies = copiesOrNull(filters);
+
+            return copies == null ? filters : copies;
+        }
+
+        /**
+         * {@link #indexedCopiesOf(Iterable)} for the {@code Filters} argument of {@code loadAll}, which may be {@code null}
+         * (returned as it is).
+         */
+        static Filters copiesOf(final Filters filters) {
+            if (filters == null) {
+                return null;
+            }
+
+            final Filters copies = copiesOrNull(filters);
+
+            return copies == null ? filters : copies;
+        }
+
+        /**
+         * Returns a copy of {@code filter}, or {@code filter} itself when it cannot be copied faithfully (Neo4j-OGM then
+         * resolves and re-indexes it in place, as it always has).
+         */
+        static Filter copyOrSelf(final Filter filter) {
+            final Filter copy = FUNCTION_FIELD == null ? null : copyOf(filter);
+
+            return copy == null ? filter : copy;
+        }
+
+        private static Filters copiesOrNull(final Iterable<Filter> filters) {
+            if (FUNCTION_FIELD == null) {
+                return null;
             }
 
             final Filters copies = new Filters();
@@ -2816,14 +2976,15 @@ public final class Neo4jExecutor {
             for (final Filter filter : filters) {
                 final Filter copy = copyOf(filter);
 
+                // All or nothing: adding an uncopyable original to the new Filters object would re-index it.
                 if (copy == null) {
-                    return filters;
+                    return null;
                 }
 
                 copies.add(copy);
             }
 
-            return copies.isEmpty() ? filters : copies;
+            return copies.isEmpty() ? null : copies;
         }
 
         /**
@@ -2892,8 +3053,8 @@ public final class Neo4jExecutor {
             try {
                 if (!FILTER_FIELDS.equals(instanceFieldNames(Filter.class)) || !SEGMENT_FIELDS.equals(instanceFieldNames(Filter.NestedPathSegment.class))) {
                     logger.warn("Neo4j-OGM's Filter or Filter.NestedPathSegment class does not have the fields of Neo4j-OGM 5.0.10;"
-                            + " count(Class, Iterable<Filter>) passes the filters of a plain iterable to Neo4j-OGM as they are, so filters on the"
-                            + " same property in it share one Cypher parameter");
+                            + " loadAll and count pass their filter arguments to Neo4j-OGM as they are, which resolves and re-indexes them in"
+                            + " place, and filters on the same property in a plain iterable share one Cypher parameter");
 
                     return null;
                 }
@@ -2903,8 +3064,9 @@ public final class Neo4jExecutor {
 
                 return field;
             } catch (final NoSuchFieldException | RuntimeException e) {
-                logger.warn("Cannot read the comparison function of a Neo4j-OGM Filter; count(Class, Iterable<Filter>) passes the filters of a plain"
-                        + " iterable to Neo4j-OGM as they are, so filters on the same property in it share one Cypher parameter", e);
+                logger.warn("Cannot read the comparison function of a Neo4j-OGM Filter; loadAll and count pass their filter arguments to"
+                        + " Neo4j-OGM as they are, which resolves and re-indexes them in place, and filters on the same property in a plain"
+                        + " iterable share one Cypher parameter", e);
 
                 return null;
             }

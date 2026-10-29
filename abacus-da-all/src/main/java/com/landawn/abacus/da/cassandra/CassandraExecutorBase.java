@@ -88,7 +88,8 @@ import com.landawn.abacus.util.stream.Stream;
  * <ul>
  * <li><strong>Prepared statement cache:</strong> subclasses are expected to cache the
  *     {@code PreparedStatement} returned by their {@link #prepare(String)} implementation so that
- *     repeated calls with the same CQL string reuse a single prepared statement.</li>
+ *     repeated calls with the same CQL string reuse a single prepared statement. The shipped executors
+ *     cache only CQL text of at most {@link #POOLABLE_LENGTH} characters.</li>
  * <li><strong>ParsedCql cache:</strong> {@link #parseCql(String)} consults the optional
  *     {@link CqlMapper} first (allowing pre-registered, named CQL fragments) and falls back to
  *     {@link ParsedCql#parse(String)} for ad-hoc CQL. Subclasses should reuse the
@@ -99,7 +100,14 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><strong>Entity-to-CQL mapping:</strong> entity properties are mapped to columns through the
  *     configured {@link NamingPolicy} (see below). Primary-key columns are discovered through
  *     {@code @Id} annotations or {@link #registerKeys(Class, Collection)}, or else by convention from a
- *     property named {@code id} (see {@link #getKeyNames(Class)}).</li>
+ *     property named {@code id} (see {@link #getKeyNames(Class)}). A property whose type is a bean class, or a
+ *     collection of a bean class, is a <i>sub-entity</i> unless it is annotated with {@code @Column}, and the
+ *     generated statements leave it out without an error: an entity {@code insert} or {@code update} does not
+ *     write it, and a query that selects all properties ({@code get}, {@code findFirst}, {@code list},
+ *     {@code query} or {@code stream} with {@code null} {@code selectPropNames}) does not read it. Naming it
+ *     explicitly renders the columns of its class under that class's table name (for a property of class
+ *     {@code Addr}, {@code addr.street}), not a column of this table. Annotate a bean property that maps to a
+ *     UDT (through a {@code UDTCodec}) or to a column of a registered type codec with {@code @Column}.</li>
  * </ul>
  *
  * <h2>Generic Type Parameters</h2>
@@ -111,8 +119,9 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><strong>{@code ST}:</strong> driver statement type (for example
  *     {@code com.datastax.oss.driver.api.core.cql.Statement}).</li>
  * <li><strong>{@code PS}:</strong> driver prepared-statement type.</li>
- * <li><strong>{@code BT}:</strong> driver batch-type enum (for example
- *     {@code com.datastax.oss.driver.api.core.cql.BatchType}).</li>
+ * <li><strong>{@code BT}:</strong> driver batch type (for example
+ *     {@code com.datastax.oss.driver.api.core.cql.BatchType}, an interface with the constants {@code LOGGED},
+ *     {@code UNLOGGED} and {@code COUNTER}, or the 3.x driver's {@code BatchStatement.Type} enum).</li>
  * </ul>
  *
  * <h2>Parameter Binding</h2>
@@ -133,7 +142,13 @@ import com.landawn.abacus.util.stream.Stream;
  * with {@link IllegalArgumentException} a conversion that would change the value instead of binding it: a number with a
  * fractional part for an integer column (for example {@code 1.5} for an {@code int} column), a finite number beyond the range
  * of a {@code float} or {@code double} column, and text that is not valid base64 for a {@code blob} column. A number out of an
- * integer column's range, or a {@code NaN} or infinite value for it, fails with {@link ArithmeticException}. The concrete
+ * integer column's range, or a {@code NaN} or infinite value for it or for a {@code decimal} column, fails with
+ * {@link ArithmeticException}. A JDK or abacus value for a {@code blob} column other than a {@code ByteBuffer}, a {@code byte[]}
+ * or base64 text (a {@code Boolean} or a number, for example) is not converted: it is bound unchanged, and the driver rejects it
+ * unless a registered codec accepts it. A value of an application class is converted by {@code N.convert}, which applies a
+ * converter registered for its class with {@code N.registerConverter}; a conversion that yields no blob content (as one without
+ * a converter usually does) leaves the value unchanged as well. An empty {@code Optional}-like value ({@code Optional},
+ * {@code Nullable}, {@code Holder}, ...) binds {@code NULL}, and a present one binds its content by these rules. The concrete
  * executors' class documentation has the full rules.</p>
  *
  * <h2>Boolean Conversion</h2>
@@ -192,7 +207,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @param <RS> driver result-set type ({@code Iterable<RW>})
  * @param <ST> driver statement type
  * @param <PS> driver prepared-statement type
- * @param <BT> driver batch-type enum
+ * @param <BT> driver batch type
  *
  * @see CassandraExecutor
  * @see com.landawn.abacus.da.cassandra.v3.CassandraExecutor
@@ -943,7 +958,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method generates an INSERT statement based on the entity's properties
      * and executes it. All non-null insertable properties of the entity will be included in
-     * the INSERT statement, primary-key properties too, also when a key value is {@code 0}.</p>
+     * the INSERT statement, primary-key properties too, also when a key value is {@code 0}. A bean-typed property that is
+     * not annotated with {@code @Column} is a sub-entity and is not written (see <i>Entity-to-CQL mapping</i> in the class
+     * documentation).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1023,7 +1040,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param entities the collection of entities to insert
-     * @param type the batch type
+     * @param type the batch type; {@code null} is treated as {@code LOGGED} by the shipped executors
      * @return the result set from the batch INSERT operation
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, contains a {@code null} element,
      *         or contains an entity that is not a supported bean or exposes no insertable properties (enforced by the
@@ -1061,7 +1078,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param targetClass the entity class
      * @param propsList the collection of property maps to insert
-     * @param type the batch type
+     * @param type the batch type; {@code null} is treated as {@code LOGGED} by the shipped executors
      * @return the result set from the batch INSERT operation
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or {@code propsList} is {@code null} or
      *         empty or contains a {@code null} or empty map (enforced by the shipped executors' batch-statement
@@ -1084,8 +1101,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method generates an UPDATE statement based on the entity's non-key properties
      * and executes it. The primary key fields are used in the WHERE clause to identify
-     * the record to update. By default, all non-key properties are updated. A {@code null} property value is
-     * bound as {@code null}, which clears that column (unlike {@link #insert(Object)}, which leaves {@code null}
+     * the record to update. By default, all non-key properties are updated, except a sub-entity (a bean-typed property that is
+     * not annotated with {@code @Column}; see <i>Entity-to-CQL mapping</i> in the class documentation). A {@code null} property
+     * value is bound as {@code null}, which clears that column (unlike {@link #insert(Object)}, which leaves {@code null}
      * properties out). A {@link Map} entity (an {@code @Entity}-annotated {@code Map} subclass whose class declares the key
      * properties) sets every entry that is not a key.</p>
      *
@@ -1309,7 +1327,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param entities the collection of entities to update
-     * @param type the batch type
+     * @param type the batch type; {@code null} is treated as {@code LOGGED} by the shipped executors
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if entities is null or empty, if any element is null, if the first entity's
      *         class is not a bean class or has no updatable non-key property (for a {@code Map} entity: no non-key
@@ -1351,7 +1369,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entities the collection of entities to update
      * @param propNamesToUpdate the property names to update
-     * @param type the batch type
+     * @param type the batch type; {@code null} is treated as {@code LOGGED} by the shipped executors
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if entities or propNamesToUpdate is null or empty, if any element is
      *         null, if an entity's class is not a bean class, if propNamesToUpdate contains a primary-key property,
@@ -1396,7 +1414,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param targetClass the entity class
      * @param propsList the collection of property maps to update
-     * @param type the batch type
+     * @param type the batch type; {@code null} is treated as {@code LOGGED} by the shipped executors
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code propsList} is {@code null} or
      *         empty or contains a {@code null} map, {@code targetClass} declares no key, or a map lacks a non-null,
@@ -1438,7 +1456,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param query the UPDATE query to execute
      * @param parametersList the collection of parameter arrays
-     * @param type the batch type
+     * @param type the batch type; {@code null} is treated as {@code LOGGED} by the shipped executors
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if {@code query} is {@code null} or {@code parametersList} is {@code null},
      *         empty, or contains a {@code null} element (enforced by the shipped executors' batch-statement
@@ -1839,8 +1857,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Builds a {@code SELECT ... LIMIT 1} CQL query from the given condition and returns the first
      * matching row mapped to an instance of {@code targetClass}.
      *
-     * <p>All properties of the entity class are selected. The generated CQL uses {@code ?} placeholders
-     * bound from the {@link Condition}; only the first row of the {@code ResultSet} is consumed.</p>
+     * <p>All properties of the entity class are selected. The generated CQL uses named bind markers (such as
+     * {@code :email}) bound from the {@link Condition}'s values; only the first row of the {@code ResultSet} is consumed.</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
      * query produces no rows. When a row is found, the mapped entity is returned as a <i>present</i>
@@ -3334,7 +3352,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return toList(targetClass, execute(query, parameters));
+        final List<T> result = toList(targetClass, execute(query, parameters));
+
+        // WHY: for a raw-row target (Row.class or a supertype) the executors return the driver's ResultSet.all() list, which
+        // drivers 3 and 4 return as the immutable Collections.emptyList() when there is no row; this method promises a mutable
+        // list. A non-empty all() list is an ArrayList in both drivers.
+        return result.isEmpty() ? new ArrayList<>() : result;
     }
 
     /**
@@ -3377,8 +3400,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     "SELECT * FROM users WHERE age > ?", 18); // returns a non-null Dataset shaped by User (empty when no rows)
      * }</pre>
      *
-     * @param targetClass an entity class with getter/setter methods matching column names,
-     *        or {@code Map.class}
+     * @param targetClass an entity class with getter/setter methods matching column names, whose property types the
+     *        column values are converted to; {@code Map.class}, another non-bean type or {@code null} keeps the raw driver
+     *        column values
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a Dataset containing all result rows shaped according to {@code targetClass}

@@ -850,4 +850,82 @@ public class AsyncDynamoDBExecutorTest extends MockitoTestBase {
             this.name = name;
         }
     }
+
+    // ---- 2026-10-27 sliceB ----
+
+    public record RecordRow(String id, int count) {
+    }
+
+    /**
+     * The typed getItem/stream row types are those of the synchronous executor: an entity class needs no no-args constructor (a
+     * record is built through its canonical constructor), and a missing item completes the future with the type's default (null
+     * for a record). Pins the corrected {@code @param targetClass} contract through a real executor over a mocked client.
+     */
+    @Test
+    public void testGetItemWithClass_RecordTargetIsBuiltThroughItsConstructor_sliceB() throws Exception {
+        final com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient client = org.mockito.Mockito
+                .mock(com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient.class);
+        final Map<String, AttributeValue> key = Map.of("id", new AttributeValue("r1"));
+        final Map<String, AttributeValue> missingKey = Map.of("id", new AttributeValue("none"));
+        when(client.getItem("T", key)).thenReturn(new com.amazonaws.services.dynamodbv2.model.GetItemResult()
+                .withItem(Map.of("id", new AttributeValue("r1"), "count", new AttributeValue().withN("3"))));
+        when(client.getItem("T", missingKey)).thenReturn(new com.amazonaws.services.dynamodbv2.model.GetItemResult());
+        when(client.query(any(QueryRequest.class))).thenReturn(new com.amazonaws.services.dynamodbv2.model.QueryResult()
+                .withItems(List.of(Map.of("id", new AttributeValue("r2"), "count", new AttributeValue().withN("4")))));
+        final AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(new DynamoDBExecutor(client), new AsyncExecutor(Runnable::run));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(new RecordRow("r1", 3), executor.getItem("T", key, RecordRow.class).get()),
+                () -> org.junit.jupiter.api.Assertions.assertNull(executor.getItem("T", missingKey, RecordRow.class).get()),
+                () -> assertEquals(List.of(new RecordRow("r2", 4)), executor.stream(new QueryRequest().withTableName("T"), RecordRow.class).get().toList()));
+    }
+
+    // ---- 2026-10-27 r2D ----
+
+    /**
+     * The async facade hands an immutable row class to the synchronous readers, so getItem, list, stream, scan and batchGetItem
+     * complete with rows of the requested abacus immutable class (HEAD: the HashMap/ArrayList/HashSet/TreeMap stand-in).
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testImmutableRowClassesThroughTheAsyncFacade_r2D() throws Exception {
+        final com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient client = org.mockito.Mockito
+                .mock(com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient.class);
+        final Map<String, AttributeValue> item = new java.util.LinkedHashMap<>();
+        item.put("id", new AttributeValue("a"));
+        item.put("n", new AttributeValue().withN("2"));
+        final Map<String, Object> expectedMap = new HashMap<>();
+        expectedMap.put("id", "a");
+        expectedMap.put("n", "2");
+        final Map<String, AttributeValue> key = new java.util.LinkedHashMap<>();
+        key.put("id", new AttributeValue("a"));
+        final Map<String, KeysAndAttributes> keys = new java.util.LinkedHashMap<>();
+        keys.put("T", new KeysAndAttributes().withKeys(key));
+        final Map<String, List<Map<String, AttributeValue>>> responses = new java.util.LinkedHashMap<>();
+        responses.put("T", List.of(item));
+        when(client.getItem("T", key)).thenReturn(new com.amazonaws.services.dynamodbv2.model.GetItemResult().withItem(item));
+        when(client.getItem(any(GetItemRequest.class))).thenReturn(new com.amazonaws.services.dynamodbv2.model.GetItemResult().withItem(item));
+        when(client.query(any(QueryRequest.class))).thenReturn(new com.amazonaws.services.dynamodbv2.model.QueryResult().withItems(List.of(item)));
+        when(client.scan(any(ScanRequest.class))).thenReturn(new com.amazonaws.services.dynamodbv2.model.ScanResult().withItems(List.of(item)));
+        when(client.batchGetItem(any(Map.class))).thenReturn(new com.amazonaws.services.dynamodbv2.model.BatchGetItemResult().withResponses(responses));
+        final AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(new DynamoDBExecutor(client), new AsyncExecutor(Runnable::run));
+
+        final Object mapRow = executor.getItem("T", key, com.landawn.abacus.util.ImmutableMap.class).get();
+        final Object setRow = executor.getItem(new GetItemRequest("T", key), com.landawn.abacus.util.ImmutableSortedSet.class).get();
+        final Object listRow = executor.list(new QueryRequest("T"), com.landawn.abacus.util.ImmutableList.class).get().get(0);
+        final Object streamRow = executor.stream(new QueryRequest("T"), com.landawn.abacus.util.ImmutableSet.class).get().first().orElseNull();
+        final Object scanRow = executor.scan(new ScanRequest("T"), com.landawn.abacus.util.ImmutableNavigableMap.class).get().first().orElseNull();
+        final Object batchRow = executor.batchGetItem(keys, com.landawn.abacus.util.ImmutableSortedMap.class).get().get("T").get(0);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(mapRow instanceof com.landawn.abacus.util.ImmutableMap, mapRow.getClass().getName()),
+                () -> assertEquals(expectedMap, mapRow),
+                () -> assertTrue(setRow instanceof com.landawn.abacus.util.ImmutableSortedSet, setRow.getClass().getName()),
+                () -> assertEquals(List.of("2", "a"), new ArrayList<>((java.util.Collection<?>) setRow)),
+                () -> assertTrue(listRow instanceof com.landawn.abacus.util.ImmutableList, listRow.getClass().getName()),
+                () -> assertEquals(List.of("a", "2"), listRow),
+                () -> assertTrue(streamRow instanceof com.landawn.abacus.util.ImmutableSet, streamRow.getClass().getName()),
+                () -> assertTrue(scanRow instanceof com.landawn.abacus.util.ImmutableNavigableMap, scanRow.getClass().getName()),
+                () -> assertEquals(expectedMap, scanRow),
+                () -> assertTrue(batchRow instanceof com.landawn.abacus.util.ImmutableSortedMap, batchRow.getClass().getName()),
+                () -> assertEquals(expectedMap, batchRow));
+    }
 }

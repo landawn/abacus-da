@@ -39,6 +39,14 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * <p>For a blocking, synchronous variant built on the standard MongoDB driver, see
  * {@link com.landawn.abacus.da.mongodb.MongoDB}.</p>
  *
+ * <p>This class has no {@code close()} method: it neither owns nor closes the {@code MongoClient} that created the
+ * database. The caller closes that client when it is no longer needed; operations run through the collections, executors
+ * and mappers obtained from this instance then fail with {@link IllegalStateException}. Writes and counts
+ * ({@code exists}, {@code count}, {@code estimatedDocumentCount}, inserts, updates, replaces, deletes, bulk writes and
+ * {@code findOneAndXxx}) build their driver operation when called and throw it there, while find-based reads,
+ * {@code distinct}, {@code aggregate}, the grouping methods, {@code mapReduce} and {@code watch} return their publisher
+ * and signal it on subscription (see {@link MongoCollectionExecutor}).</p>
+ *
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
  * <ul>
@@ -314,7 +322,9 @@ public final class MongoDB extends MongoDBBase {
      * does not receive this instance's framework codec registry, so writing an entity with a nested bean
      * property, or with an array property other than {@code byte[]} (such as a {@code String[]}, which the
      * framework registry stores as a BSON array), fails with {@code CodecConfigurationException} unless the
-     * collection comes from {@link #db()} (or its own registry can encode that value).</p>
+     * collection comes from {@link #db()} (or its own registry can encode that value). The driver encodes such a
+     * value only when the write runs, so the exception is signalled through the write's publisher on subscription,
+     * not thrown when the publisher is built.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -444,7 +454,9 @@ public final class MongoDB extends MongoDBBase {
      * does not receive this instance's framework codec registry, so writing an entity with a nested bean
      * property, or with an array property other than {@code byte[]} (such as a {@code String[]}, which the
      * framework registry stores as a BSON array), fails with {@code CodecConfigurationException} unless the
-     * collection comes from {@link #db()} (or its own registry can encode that value).</p>
+     * collection comes from {@link #db()} (or its own registry can encode that value). The driver encodes such a
+     * value only when the write runs, so the exception is signalled through the write's publisher on subscription,
+     * not thrown when the publisher is built.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

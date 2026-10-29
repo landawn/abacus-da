@@ -306,4 +306,23 @@ public class AnyQueryTest extends TestBase {
         AnyGet get = AnyGet.of("row").setColumnFamilyTimeRange((String) null, 1L, 2L);
         assertThrows(NullPointerException.class, () -> org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil.toGet(get.val()));
     }
+
+    // ---- 2026-10-27 sliceP ----
+
+    /**
+     * Pins the setFilter {@code @throws}: on a scan with a positive batch, a filter whose hasFilterRow() is true is rejected
+     * with IncompatibleFilterException and the previous filter is kept; a get, or a scan without a batch, accepts it.
+     */
+    @Test
+    public void testSetFilter_scanWithBatch_rejectsFilterRowFilter_keepsPreviousFilter_sliceP() {
+        final org.apache.hadoop.hbase.filter.PrefixFilter previous = new org.apache.hadoop.hbase.filter.PrefixFilter(Bytes.toBytes("a"));
+        final AnyScan batched = AnyScan.create().setFilter(previous).setBatch(10);
+        final org.apache.hadoop.hbase.filter.PageFilter pageFilter = new org.apache.hadoop.hbase.filter.PageFilter(1);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(pageFilter.hasFilterRow()),
+                () -> assertThrows(org.apache.hadoop.hbase.filter.IncompatibleFilterException.class, () -> batched.setFilter(pageFilter)),
+                () -> assertSame(previous, batched.getFilter()), () -> assertSame(batched, batched.setFilter(null)),
+                () -> assertSame(pageFilter, AnyScan.create().setFilter(pageFilter).getFilter()),
+                () -> assertSame(pageFilter, AnyGet.of("row").setFilter(pageFilter).getFilter()));
+    }
 }

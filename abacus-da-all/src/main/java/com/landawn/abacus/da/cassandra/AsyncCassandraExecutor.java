@@ -42,6 +42,14 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code query}, {@code stream}, {@code exists}, {@code count}, {@code insert}/{@code update}/{@code delete});
  * each result is wrapped in a {@code ContinuableFuture}.</p>
  *
+ * <p><b>Work on the calling thread:</b> every method that runs CQL text (the {@code String}-query methods and the
+ * entity, {@code Condition} and batch methods, which build CQL text) binds a prepared statement on the calling thread,
+ * as described in {@link AsyncCassandraExecutorBase}. When the {@link CassandraExecutor}'s prepared-statement cache has
+ * no entry for that CQL text (always the first time it is used), the statement is prepared through the session's
+ * blocking {@code prepare}: the calling thread waits for that round trip to Cassandra, and on a driver I/O thread (for
+ * example inside a callback of a {@code CompletionStage} returned by the session) the call throws
+ * {@link IllegalStateException}. The {@link Statement} overloads submit the given statement without preparing it.</p>
+ *
  * @see CassandraExecutor
  * @see AsyncCassandraExecutorBase
  */
@@ -255,7 +263,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @return a future that completes with an {@code Optional} of the first mapped row, or empty
      *         if no row exists; if the first row maps to {@code null} (for example, a {@code NULL} column
      *         read into a single-value reference type), {@code get()} throws an {@code ExecutionException}
-     *         whose cause is a {@link NullPointerException}
+     *         whose cause is a {@link NullPointerException}, and if {@code targetClass} is a single-value type but the
+     *         first row does not have exactly one column, the cause is an {@link IllegalArgumentException}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
      *         rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in {@link CassandraExecutor})

@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.client.Operation;
@@ -152,8 +153,11 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *     {@code java.sql.Timestamp} or {@code UUID}; or the property registered via the deprecated
  *     {@link HBaseExecutor#registerRowKeyProperty(Class, String)}) becomes the row key; it is not written as a column.</li>
  * <li><strong>Written properties</strong>: every other property in the bean's property list is written, including getter-only
- *     (read-only) properties and properties marked {@code @Transient} or {@code @NonColumn} — these markers are not consulted
- *     here. Use {@link #create(Object, Collection)} to restrict the written properties.</li>
+ *     properties (computed or field-backed) and properties marked {@code @Transient} or {@code @NonColumn} — these markers are not
+ *     consulted here. A getter without a setter is in that list only when the bean class is annotated with {@code @Entity} or the
+ *     getter is declared by an {@code @Entity} superclass, on a record, or, when a field backs it, on an immutable or builder-built
+ *     class; on an ordinary mutable class it is not a property, so it is not written. Use {@link #create(Object, Collection)} to
+ *     restrict the written properties.</li>
  * <li><strong>Column Families</strong>: Resolved from {@link ColumnFamily} annotations on the
  *     individual property or the class; otherwise the property name, converted by the naming policy, is used.</li>
  * <li><strong>Column Qualifiers</strong>: A {@code @Column} name, or the naming-policy-converted property
@@ -171,7 +175,9 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *     or primitive {@code OptionalXxx}, a {@code Nullable} that is empty or holds {@code null}, a {@code Holder} holding {@code null}),
  *     are skipped, so no cell is written for them; an empty cell would read back as a present empty string for a {@code String}
  *     element. Likewise an {@link HBaseColumn} (alone or in a versioned collection or map) whose value is such an empty wrapper
- *     writes no cell; one whose value is {@code null} is written as an empty cell.</li>
+ *     writes no cell; one whose value is {@code null} is written as an empty cell. An entity that writes no cell at all (every
+ *     non-key property skipped, or an empty {@code selectPropNames}) yields an {@code AnyPut} without cells, which HBase rejects as an
+ *     empty put ({@link IllegalArgumentException}) when it is sent.</li>
  * <li><strong>Operations are not entities</strong>: the single-entity {@code create} methods reject an HBase operation (an
  *     {@link org.apache.hadoop.hbase.client.Operation} or {@link org.apache.hadoop.hbase.client.Row}, such as a {@link Put} or
  *     {@code Get}) and every {@code Any*} wrapper ({@code AnyPut}, {@code AnyDelete}, ...) with an {@link IllegalArgumentException};
@@ -208,7 +214,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Package-private constructor backing {@link #of(Object)}.
      *
      * @param rowKey the row key, converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
@@ -222,7 +229,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key, converted to bytes
      * @param timestamp the default timestamp for columns added without an explicit timestamp
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
@@ -237,7 +245,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key whose byte representation is sliced
      * @param rowOffset the starting offset (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key starting at offset
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -255,7 +264,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowOffset the starting offset (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key starting at offset
      * @param timestamp the default timestamp for columns added without an explicit timestamp
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), {@code rowLength} is zero or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
@@ -272,7 +282,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key, converted to bytes
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
@@ -287,7 +298,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key, converted to bytes
      * @param timestamp the default timestamp for columns added without an explicit timestamp
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
@@ -380,7 +392,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.); must not be {@code null}
      * @return a new AnyPut instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (such as an empty {@code Optional}, which
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (such as an empty {@code Optional}, which
      *         converts to no bytes), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, long)
@@ -420,7 +433,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the specified default timestamp
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
@@ -455,7 +469,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyPut instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -497,7 +512,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the partial row key and default timestamp
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), {@code rowLength} is zero or exceeds 32,767 bytes, or
      *         {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
@@ -538,7 +554,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key for the put operation, automatically converted to bytes; must not be {@code null}
      * @param rowIsImmutable true if the row key byte array is guaranteed to be immutable
      * @return a new AnyPut instance with immutability control
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, long, boolean)
@@ -573,7 +590,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowIsImmutable {@code true} if the row-key byte array is guaranteed not to be
      *                       modified after this Put is created
      * @return a new AnyPut with timestamp and immutability control
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, boolean)
@@ -1386,15 +1404,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *              and stored as an empty value; a value with no string form, such as an empty
      *              {@code Optional}, is stored like {@code null})
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family
+     *         entry this call added is removed again first, so the failed call leaves no empty family behind
      * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
      * @see #addColumn(String, String, long, Object)
      * @see #addColumn(byte[], byte[], byte[])
      */
     public AnyPut addColumn(final String family, final String qualifier, final Object value) throws IllegalArgumentException, RuntimeException {
-        put.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), toValueBytes(value));
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+        final byte[] qualifierBytes = toFamilyQualifierBytes(qualifier);
+        final byte[] valueBytes = toValueBytes(value);
 
-        return this;
+        return addCell(familyBytes, () -> put.addColumn(familyBytes, qualifierBytes, valueBytes));
     }
 
     /**
@@ -1433,15 +1454,17 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *              is stored like {@code null})
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code ts} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
      * @see #addColumn(String, String, Object)
      * @see #of(Object, long)
      */
     public AnyPut addColumn(final String family, final String qualifier, final long ts, final Object value) throws IllegalArgumentException, RuntimeException {
-        put.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), ts, toValueBytes(value));
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+        final byte[] qualifierBytes = toFamilyQualifierBytes(qualifier);
+        final byte[] valueBytes = toValueBytes(value);
 
-        return this;
+        return addCell(familyBytes, () -> put.addColumn(familyBytes, qualifierBytes, ts, valueBytes));
     }
 
     /**
@@ -1482,14 +1505,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *                  empty qualifier
      * @param value the value as a byte array; may be {@code null}
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family
+     *         entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(String, String, Object)
      * @see #addColumn(byte[], byte[], long, byte[])
      */
     public AnyPut addColumn(final byte[] family, final byte[] qualifier, final byte[] value) throws IllegalArgumentException {
-        put.addColumn(family, qualifier, value);
-
-        return this;
+        return addCell(family, () -> put.addColumn(family, qualifier, value));
     }
 
     /**
@@ -1525,14 +1547,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param value the value as a byte array; may be {@code null}
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code ts} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(byte[], byte[], byte[])
      * @see #addColumn(String, String, long, Object)
      */
     public AnyPut addColumn(final byte[] family, final byte[] qualifier, final long ts, final byte[] value) throws IllegalArgumentException {
-        put.addColumn(family, qualifier, ts, value);
-
-        return this;
+        return addCell(family, () -> put.addColumn(family, qualifier, ts, value));
     }
 
     /**
@@ -1571,12 +1591,39 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param value the value as a ByteBuffer; may be null for an empty value; a non-null buffer is consumed
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code ts} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind (and
+     *         consumes neither buffer)
      * @see #addColumn(byte[], byte[], long, byte[])
      * @see ByteBuffer
      */
     public AnyPut addColumn(final byte[] family, final ByteBuffer qualifier, final long ts, final ByteBuffer value) throws IllegalArgumentException {
-        put.addColumn(family, qualifier, ts, value);
+        return addCell(family, () -> put.addColumn(family, qualifier, ts, value));
+    }
+
+    // WHY: Put.addColumn registers the family's cell list BEFORE it builds the cell, so a call that failed there (a family over
+    // 127 bytes) left an empty family entry behind: the put then reported isEmpty() == false and numFamilies() == 1 without a
+    // cell, and HBase's client check that rejects an empty put ("No columns to put") let it through. A family entry the failed
+    // call added is removed again, as AnyDelete does for its markers; an entry that existed before the call is never touched.
+    // The family count, not a key lookup, tells whether the call added the entry (the call adds no other family): it costs
+    // nothing on this per-cell path and never throws, so a lookup that a family map not ordered by Bytes.BYTES_COMPARATOR
+    // cannot do (ClassCastException, NullPointerException) does not pre-empt HBase's own argument checks.
+    private AnyPut addCell(final byte[] family, final Runnable adder) {
+        final NavigableMap<byte[], List<Cell>> familyCellMap = put.getFamilyCellMap();
+        final int familyCount = familyCellMap.size();
+
+        try {
+            adder.run();
+        } catch (final RuntimeException e) {
+            if (familyCellMap.size() != familyCount) {
+                final List<Cell> cells = familyCellMap.get(family);
+
+                if (cells != null && cells.isEmpty()) {
+                    familyCellMap.remove(family);
+                }
+            }
+
+            throw e;
+        }
 
         return this;
     }

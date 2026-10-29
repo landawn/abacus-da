@@ -424,4 +424,36 @@ public class AnyGetTest extends TestBase {
         assertEquals(1, oneColumn.getCfTimeRangeCount());
         assertTrue(oneColumn.getCfTimeRange(0).getColumnFamily().isEmpty());
     }
+
+    // ---- 2026-10-27 sliceP ----
+
+    /** Pins the of(Object) @throws doc: an empty value wrapper row key has no bytes and is rejected like null. */
+    @Test
+    public void testOf_emptyValueWrapperRowKey_throwsIae_sliceP() {
+        final List<Object> emptyWrappers = Arrays.asList(java.util.Optional.empty(), java.util.OptionalInt.empty(), com.landawn.abacus.util.u.Optional.empty(),
+                com.landawn.abacus.util.u.Nullable.empty(), com.landawn.abacus.util.Holder.of(null));
+
+        org.junit.jupiter.api.Assertions.assertAll(emptyWrappers.stream().map(w -> (org.junit.jupiter.api.function.Executable) () -> {
+            assertThrows(IllegalArgumentException.class, () -> AnyGet.of(w));
+            assertThrows(IllegalArgumentException.class, () -> AnyGet.of(w, 0, 1));
+        }));
+
+        assertArrayEquals(Bytes.toBytes("k"), AnyGet.of(java.util.Optional.of("k")).getRow());
+    }
+
+    // ---- 2026-10-27 r2O ----
+
+    /**
+     * Pins the row-key @throws docs of both Object factories: an HBase operation or Any* wrapper is not a row-key value and is
+     * rejected (HBaseExecutor.toRowKeyBytes) instead of addressing the row named by its bean JSON.
+     */
+    @Test
+    public void testOf_operationAsRowKey_throwsIae_r2O() {
+        final Object get = new Get(Bytes.toBytes("r"));
+        final Object anyPut = AnyPut.of("r");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyGet.of(get)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyGet.of(get, 0, 1)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyGet.of(anyPut, 0, 1)));
+    }
 }

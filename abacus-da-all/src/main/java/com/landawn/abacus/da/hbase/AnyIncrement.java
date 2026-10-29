@@ -67,7 +67,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the increment operation
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
@@ -126,7 +127,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position within the converted row-key bytes (0-based)
      * @param rowLength the number of bytes to use from the converted row-key bytes
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -144,7 +146,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param rowKey the row key as a byte array
      * @param timestamp the increment's default timestamp; existing cells retain their own timestamps; a negative
      *                  value is retained without validation, unlike {@link #setTimestamp(long)}
-     * @param familyMap a pre-populated map of column families to their cells
+     * @param familyMap a pre-populated map of column families to their cells, ordered by {@code Bytes.BYTES_COMPARATOR} (with a
+     *                  naturally ordered map, every later {@code addColumn}, {@code add}, {@code has} and {@code get} call throws
+     *                  {@link ClassCastException})
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
     AnyIncrement(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException {
@@ -196,7 +200,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param rowKey the row key for the increment operation; automatically converted to bytes
      * @return a new AnyIncrement instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (such as an empty {@code Optional}, which
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (such as an empty {@code Optional}, which
      *         converts to no bytes), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(byte[])
@@ -298,7 +303,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param rowOffset the starting position within the converted row-key bytes (0-based)
      * @param rowLength the number of bytes to use for the row key
      * @return a new AnyIncrement instance configured for the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -338,7 +344,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param rowKey the row key for the increment operation as a byte array
      * @param timestamp the default timestamp for subsequently added columns; a negative value is retained without
      *                  validation, unlike {@link #setTimestamp(long)}
-     * @param familyMap a pre-populated NavigableMap of column families to their Cell lists
+     * @param familyMap a pre-populated NavigableMap of column families to their Cell lists; retained by reference. Order it by
+     *                  {@code Bytes.BYTES_COMPARATOR}, as HBase's own family maps are: with a naturally ordered map (a plain
+     *                  {@code new TreeMap<>()}) every later {@code addColumn}, {@code add}, {@code has} and {@code get} call throws
+     *                  {@link ClassCastException}
      * @return a new AnyIncrement instance with the specified configuration
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      * @see #of(Increment)
@@ -480,13 +489,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param amount the long delta to apply to the existing cell value (negative for decrement)
      * @return this AnyIncrement instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code family} is {@code null}, or the encoded family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(String, String, long)
      */
     public AnyIncrement addColumn(final byte[] family, final byte[] qualifier, final long amount) throws IllegalArgumentException {
-        increment.addColumn(family, qualifier, amount);
-
-        return this;
+        return addCell(family, () -> increment.addColumn(family, qualifier, amount));
     }
 
     /**
@@ -525,11 +532,36 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param amount the long delta to apply to the existing cell value (negative for decrement)
      * @return this AnyIncrement instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code family} is {@code null}, or the encoded family exceeds 127 bytes or the cell exceeds HBase's
-     *         maximum size
+     *         maximum size; a family entry this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(byte[], byte[], long)
      */
     public AnyIncrement addColumn(final String family, final String qualifier, final long amount) throws IllegalArgumentException {
-        increment.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), amount);
+        return addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), amount);
+    }
+
+    // WHY: Increment.addColumn registers the family's cell list BEFORE it builds the cell, so a call that failed there (a family
+    // over 127 bytes) left an empty family entry behind: hasFamilies() and numFamilies() then reported a family without a cell,
+    // and HBase's client check that rejects an increment without columns ("zero columns specified") let it through. A family
+    // entry the failed call added is removed again, as in AnyPut and AnyDelete; an entry that existed before is never touched.
+    // As in AnyPut, the family count (not a key lookup) detects the added entry: free on this per-cell path, and it never
+    // throws, so a null family stays HBase's IllegalArgumentException even on a naturally ordered family map.
+    private AnyIncrement addCell(final byte[] family, final Runnable adder) {
+        final NavigableMap<byte[], List<Cell>> familyCellMap = increment.getFamilyCellMap();
+        final int familyCount = familyCellMap.size();
+
+        try {
+            adder.run();
+        } catch (final RuntimeException e) {
+            if (familyCellMap.size() != familyCount) {
+                final List<Cell> cells = familyCellMap.get(family);
+
+                if (cells != null && cells.isEmpty()) {
+                    familyCellMap.remove(family);
+                }
+            }
+
+            throw e;
+        }
 
         return this;
     }
@@ -724,7 +756,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * This is useful for inspecting the queued increment data programmatically.
      * The returned map is a structural snapshot rebuilt on each call, so adding or removing map
      * entries does not affect this increment. Qualifier keys are cloned, but outer family-key
-     * byte arrays are shared with the underlying mutation and must not be modified.
+     * byte arrays are shared with the underlying mutation and must not be modified. A qualifier
+     * queued more than once in a family appears once, with the amount of its last queued cell
+     * ({@link #size()} still counts every queued cell).
      * </p>
      *
      * <p><b>Structure:</b> {@code Map<byte[], NavigableMap<byte[], Long>>}, where the outer key is

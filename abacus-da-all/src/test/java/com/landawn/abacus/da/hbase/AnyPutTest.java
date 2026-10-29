@@ -1346,4 +1346,194 @@ public class AnyPutTest extends TestBase {
             this.attrs = attrs;
         }
     }
+
+    // ---- 2026-10-27 sliceO ----
+
+    /**
+     * Put.addColumn registers the family's cell list before it builds the cell, so an addColumn that failed there (a family over
+     * 127 bytes) left an empty family entry behind: isEmpty() was false and numFamilies() 1 without a cell, and HBase's client check
+     * that rejects an empty put let it through. Every overload now removes the entry the failed call added; an entry that existed
+     * before the call (here an empty one put through the live map) is kept.
+     */
+    @Test
+    public void testAddColumn_failedAddLeavesNoEmptyFamily_sliceO() {
+        final String longFamily = "f".repeat(128);
+        final byte[] longFamilyBytes = Bytes.toBytes(longFamily);
+        final byte[] q = Bytes.toBytes("q");
+        final byte[] v = Bytes.toBytes("v");
+
+        final List<java.util.function.Consumer<AnyPut>> failingAdds = Arrays.asList(put -> put.addColumn(longFamily, "q", "v"),
+                put -> put.addColumn(longFamily, "q", 5L, "v"), put -> put.addColumn(longFamilyBytes, q, v), put -> put.addColumn(longFamilyBytes, q, 5L, v),
+                put -> put.addColumn(longFamilyBytes, ByteBuffer.wrap(q), 5L, ByteBuffer.wrap(v)));
+
+        final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final java.util.function.Consumer<AnyPut> failingAdd : failingAdds) {
+            checks.add(() -> {
+                final AnyPut put = AnyPut.of("r");
+                assertThrows(IllegalArgumentException.class, () -> failingAdd.accept(put));
+                assertTrue(put.isEmpty());
+                assertEquals(0, put.numFamilies());
+
+                put.addColumn("cf", "q", "v");
+                assertEquals(1, put.numFamilies());
+                assertEquals(1, put.size());
+            });
+
+            checks.add(() -> {
+                final AnyPut put = AnyPut.of("r").addColumn("cf", "q", "v");
+                put.getFamilyCellMap().put(longFamilyBytes, new java.util.ArrayList<>());
+                assertThrows(IllegalArgumentException.class, () -> failingAdd.accept(put));
+                assertEquals(2, put.numFamilies());
+                assertTrue(put.getFamilyCellMap().containsKey(longFamilyBytes));
+                assertEquals(1, put.size());
+            });
+        }
+
+        checks.add(() -> {
+            final ByteBuffer qualifier = ByteBuffer.wrap(q);
+            final ByteBuffer value = ByteBuffer.wrap(v);
+            final AnyPut put = AnyPut.of("r");
+            assertThrows(IllegalArgumentException.class, () -> put.addColumn(longFamilyBytes, qualifier, 5L, value));
+            assertEquals(0, qualifier.position());
+            assertEquals(0, value.position());
+        });
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    /**
+     * Pins the class doc "Written properties" rule: a getter without a setter (field-backed or computed) is written for an @Entity
+     * class, but on an ordinary mutable class it is not a bean property and is not written.
+     */
+    @Test
+    public void testCreate_getterOnlyPropertiesAreWrittenOnlyForEntityClasses_sliceO() {
+        final GetterOnlyPlain plain = new GetterOnlyPlain();
+        plain.setId("k");
+        final GetterOnlyEntity entity = new GetterOnlyEntity();
+        entity.setId("k");
+
+        final AnyPut plainPut = AnyPut.create(plain);
+        final AnyPut entityPut = AnyPut.create(entity);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(plainPut.isEmpty()), () -> assertTrue(entityPut.has("cf", "stored", "s")),
+                () -> assertTrue(entityPut.has("cf", "computed", "c")), () -> assertEquals(2, entityPut.size()));
+    }
+
+    /**
+     * Pins the row-key @throws docs of the Object row-key factories of AnyPut, AnyIncrement, AnyAppend and AnyRowMutations: an HBase
+     * operation or Any* wrapper is not a row-key value (HBaseExecutor.toRowKeyBytes rejects it) instead of becoming its bean JSON.
+     */
+    @Test
+    public void testObjectRowKeyFactories_rejectOperationsAsRowKeys_sliceO() {
+        final Object anyPut = AnyPut.of("r");
+        final Object put = new Put(Bytes.toBytes("r"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(anyPut)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(put, 1L)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(put, 0, 1)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(put, 0, 1, 1L)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(put, true)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyPut.of(put, 1L, true)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(put)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(anyPut, 0, 1)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyAppend.of(put)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyAppend.of(anyPut, 0, 1)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyRowMutations.of(anyPut)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyRowMutations.of(put, 2)));
+    }
+
+    @ColumnFamily("cf")
+    public static class GetterOnlyPlain {
+        @Id
+        private String id;
+        private final String stored = "s";
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getStored() {
+            return stored;
+        }
+
+        public String getComputed() {
+            return "c";
+        }
+    }
+
+    @com.landawn.abacus.annotation.Entity
+    @ColumnFamily("cf")
+    public static class GetterOnlyEntity {
+        @Id
+        private String id;
+        private final String stored = "s";
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getStored() {
+            return stored;
+        }
+
+        public String getComputed() {
+            return "c";
+        }
+    }
+
+    // ---- 2026-10-27 r2O ----
+
+    /**
+     * The failed-add cleanup must never throw by itself: with a family map that cannot look up a byte[] key (a naturally ordered
+     * map, reachable only through the deprecated Put.setFamilyCellMap), HBase's own negative-timestamp check is still the one
+     * reported, as before the cleanup existed, not a ClassCastException from a family lookup made before the add.
+     */
+    @SuppressWarnings("deprecation")
+    @Test
+    public void testAddColumn_cleanupDoesNotPreemptHBaseArgumentChecks_r2O() {
+        final byte[] q = Bytes.toBytes("q");
+        final byte[] v = Bytes.toBytes("v");
+        final List<java.util.function.Consumer<AnyPut>> negativeTsAdds = Arrays.asList(put -> put.addColumn("cf", "q", -1L, "v"),
+                put -> put.addColumn(Bytes.toBytes("cf"), q, -1L, v), put -> put.addColumn(Bytes.toBytes("cf"), ByteBuffer.wrap(q), -1L, ByteBuffer.wrap(v)));
+
+        org.junit.jupiter.api.Assertions.assertAll(negativeTsAdds.stream().map(add -> (org.junit.jupiter.api.function.Executable) () -> {
+            final AnyPut put = AnyPut.of("r");
+            put.val().setFamilyCellMap(new java.util.TreeMap<>());
+            assertThrows(IllegalArgumentException.class, () -> add.accept(put));
+            assertTrue(put.isEmpty());
+        }));
+    }
+
+    /**
+     * Pins the class doc "Written properties" rule for class hierarchies: the getter-only state an @Entity superclass declares is
+     * written for a plain subclass, while the plain subclass's own getter-only methods are not properties and are not written.
+     */
+    @Test
+    public void testCreate_getterOnlyPropertiesOfAnEntitySuperclassAreWritten_r2O() {
+        final GetterOnlyPlainSubOfEntity bean = new GetterOnlyPlainSubOfEntity();
+        bean.setId("k");
+
+        final AnyPut put = AnyPut.create(bean);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(put.has("cf", "stored", "s")), () -> assertTrue(put.has("cf", "computed", "c")),
+                () -> assertFalse(put.has("cf", "own")), () -> assertEquals(2, put.size()));
+    }
+
+    @ColumnFamily("cf")
+    public static class GetterOnlyPlainSubOfEntity extends GetterOnlyEntity {
+        private final String own = "o";
+
+        public String getOwn() {
+            return own;
+        }
+    }
 }

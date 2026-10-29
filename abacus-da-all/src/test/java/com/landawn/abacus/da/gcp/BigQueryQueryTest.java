@@ -734,4 +734,304 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
                 FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(v2))), fields);
         return Arrays.asList(row);
     }
+
+    // ---- 2026-10-27 sliceL ----
+
+    /**
+     * A row class that N.newCollection / IntFunctions.ofMap cannot create as such (ImmutableMap, ImmutableSortedMap,
+     * ImmutableList, ImmutableSet) got a mutable stand-in (HashMap, TreeMap, ArrayList, HashSet) as the row: toList/list/stream
+     * returned a List&lt;ImmutableMap&gt; holding HashMaps (ClassCastException where the caller read a row), a STRUCT cell read by
+     * queryForSingleValue(ImmutableList.class) was an ArrayList, and N.convert(row, ImmutableMap.class) rejected the converter's
+     * own result. Each row is now of the requested class, with the raw cell values. RED on HEAD for every case.
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testImmutableRowClassesGetRowsOfThatClass_sliceL() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("name", StandardSQLTypeName.STRING));
+        final FieldValueList row = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "n")), fields);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(row));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        final FieldList structFields = FieldList.of(Field.of("pair", StandardSQLTypeName.STRUCT, fields));
+        final FieldValueList structRow = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD,
+                        FieldValueList
+                                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "m"))))),
+                structFields);
+        final TableResult structResult = org.mockito.Mockito.mock(TableResult.class);
+        when(structResult.getSchema()).thenReturn(Schema.of(structFields));
+        when(structResult.getTotalRows()).thenReturn(1L);
+        when(structResult.getValues()).thenReturn(Arrays.asList(structRow));
+
+        final Map<String, Object> expectedMap = new java.util.HashMap<>();
+        expectedMap.put("id", "1");
+        expectedMap.put("name", "n");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final Object r = BigQueryExecutor.toList(mockTableResult, com.landawn.abacus.util.ImmutableMap.class).get(0);
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableMap, r.getClass().getName());
+            assertEquals(expectedMap, r);
+        }, () -> {
+            final Object r = executor.list(com.landawn.abacus.util.ImmutableSortedMap.class, "SELECT id, name FROM t").get(0);
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableSortedMap, r.getClass().getName());
+            assertEquals(expectedMap, r);
+        }, () -> {
+            final Object r = executor.list(com.landawn.abacus.util.ImmutableList.class, "SELECT id, name FROM t").get(0);
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableList, r.getClass().getName());
+            assertEquals(Arrays.asList("1", "n"), r);
+        }, () -> {
+            final Object r = ((Stream<Object>) (Stream) executor.stream(com.landawn.abacus.util.ImmutableSet.class, "SELECT id, name FROM t")).first()
+                    .orElseNull();
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableSet, String.valueOf(r));
+            assertEquals(new java.util.HashSet<>(Arrays.asList("1", "n")), r);
+        }, () -> {
+            final Object r = com.landawn.abacus.util.N.convert(row, com.landawn.abacus.util.ImmutableMap.class);
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableMap, r.getClass().getName());
+            assertEquals(expectedMap, r);
+        }, () -> {
+            when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(structResult);
+            final Object r = executor.queryForSingleValue(com.landawn.abacus.util.ImmutableList.class, "SELECT pair FROM t").orElseNull();
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableList, r.getClass().getName());
+            assertEquals(Arrays.asList("2", "m"), r);
+        });
+    }
+
+    /**
+     * Review 2026-10-27 r2E: the remaining row-class cases of the immutable-row fix. A NULL cell keeps its null in an immutable row;
+     * a row class that the factories cannot create and N.convert cannot wrap ({@code EnumMap}, whose keys must be enums, and
+     * {@code AbstractQueue}) fails with IllegalArgumentException instead of returning {@code HashMap} / {@code LinkedList} rows (RED on
+     * HEAD); a mutable row class keeps the factory's own instance ({@code LinkedHashMap} in column order, {@code TreeMap},
+     * {@code LinkedList}), as before.
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testRowClassesWithNullCellsStandInsAndMutableClasses_r2E() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("name", StandardSQLTypeName.STRING), Field.of("id", StandardSQLTypeName.INT64));
+        final FieldValueList row = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "n"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, null)), fields);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(fields));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(row));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        final Map<String, Object> expectedMap = new java.util.HashMap<>();
+        expectedMap.put("name", "n");
+        expectedMap.put("id", null);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final Object r = BigQueryExecutor.toList(mockTableResult, com.landawn.abacus.util.ImmutableMap.class).get(0);
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableMap, r.getClass().getName());
+            assertEquals(expectedMap, r);
+        }, () -> {
+            final Object r = executor.list(com.landawn.abacus.util.ImmutableList.class, "SELECT name, id FROM t").get(0);
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableList, r.getClass().getName());
+            assertEquals(Arrays.asList("n", null), r);
+        }, () -> {
+            final Object r = com.landawn.abacus.util.N.convert(row, com.landawn.abacus.util.ImmutableList.class);
+            assertTrue(r instanceof com.landawn.abacus.util.ImmutableList, r.getClass().getName());
+            assertEquals(Arrays.asList("n", null), r);
+        }, () -> assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toList(mockTableResult, java.util.EnumMap.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> executor.list(java.util.AbstractQueue.class, "SELECT name, id FROM t")), () -> {
+                    final Object r = BigQueryExecutor.toList(mockTableResult, java.util.LinkedHashMap.class).get(0);
+                    assertEquals(java.util.LinkedHashMap.class, r.getClass());
+                    assertEquals(Arrays.asList("name", "id"), new ArrayList<>(((Map) r).keySet()));
+                }, () -> assertEquals(java.util.TreeMap.class, executor.list(java.util.TreeMap.class, "SELECT name, id FROM t").get(0).getClass()), () -> {
+                    final Object r = executor.list(java.util.LinkedList.class, "SELECT name, id FROM t").get(0);
+                    assertEquals(java.util.LinkedList.class, r.getClass());
+                    assertEquals(Arrays.asList("n", null), r);
+                });
+    }
+
+    /**
+     * Pins the class Javadoc's Dataset and Table Naming section: the executor's own query configuration sets no default
+     * dataset, and a dataset-qualified {@code @Table} name is emitted as written in the generated statements.
+     */
+    @Test
+    public void testGeneratedStatementsUseQualifiedTableNameWithoutDefaultDataset_sliceL() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        final SliceLQualifiedCustomer customer = new SliceLQualifiedCustomer();
+        customer.setId("c1");
+        customer.setName("n");
+
+        executor.insert(customer);
+        executor.list(SliceLQualifiedCustomer.class, Filters.eq("name", "n"));
+        executor.execute("SELECT 1");
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery, org.mockito.Mockito.times(3)).query(captor.capture());
+        final List<QueryJobConfiguration> configs = captor.getAllValues();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("INSERT INTO mydataset.customer (id, name) VALUES (?, ?)", configs.get(0).getQuery()),
+                () -> assertTrue(configs.get(1).getQuery().contains(" FROM mydataset.customer WHERE "), configs.get(1).getQuery()),
+                () -> assertNull(configs.get(0).getDefaultDataset()), () -> assertNull(configs.get(1).getDefaultDataset()),
+                () -> assertNull(configs.get(2).getDefaultDataset()));
+    }
+
+    @com.landawn.abacus.annotation.Table("mydataset.customer")
+    public static class SliceLQualifiedCustomer {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
+    /**
+     * Pins the class Javadoc's sub-entity paragraph (SNAKE_CASE): a bean-typed property without {@code @Column} is left out of
+     * the select-all list and its dotted path renders with the sub-entity class's table name ({@code address.city}); with
+     * {@code @Column} the path is {@code home_address.city} even when the annotation names another column; a backtick-quoted
+     * first segment is emitted as written.
+     */
+    @Test
+    public void testDottedPathThroughBeanPropertyRendering_sliceL() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.list(SliceLSubEntityPerson.class, Filters.eq("homeAddress.city", "SF"));
+        executor.list(SliceLColumnPerson.class, Filters.eq("homeAddress.city", "SF"));
+        executor.list(SliceLNamedColumnPerson.class, Filters.eq("homeAddress.city", "SF"));
+        executor.list(SliceLNamedColumnPerson.class, Filters.eq("`home_addr`.city", "SF"));
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery, org.mockito.Mockito.times(4)).query(captor.capture());
+        final List<QueryJobConfiguration> configs = captor.getAllValues();
+
+        // The sub-entity path takes the table name of the property's class (SliceLAddress), not the property name.
+        final String subEntityTable = NamingPolicy.SNAKE_CASE.convert("SliceLAddress");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT id AS `id`, name AS `name` FROM " + NamingPolicy.SNAKE_CASE.convert("SliceLSubEntityPerson") + " WHERE "
+                        + subEntityTable + ".city = ?", configs.get(0).getQuery()),
+                () -> assertTrue(configs.get(1).getQuery().contains("home_address AS `homeAddress`"), configs.get(1).getQuery()),
+                () -> assertTrue(configs.get(1).getQuery().endsWith(" WHERE home_address.city = ?"), configs.get(1).getQuery()),
+                () -> assertTrue(configs.get(2).getQuery().contains("home_addr AS `homeAddress`"), configs.get(2).getQuery()),
+                () -> assertTrue(configs.get(2).getQuery().endsWith(" WHERE home_address.city = ?"), configs.get(2).getQuery()),
+                () -> assertTrue(configs.get(3).getQuery().endsWith(" WHERE `home_addr`.city = ?"), configs.get(3).getQuery()));
+    }
+
+    public static class SliceLAddress {
+        private String city;
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+    }
+
+    public static class SliceLSubEntityPerson {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String name;
+        private SliceLAddress homeAddress;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public SliceLAddress getHomeAddress() {
+            return homeAddress;
+        }
+
+        public void setHomeAddress(final SliceLAddress homeAddress) {
+            this.homeAddress = homeAddress;
+        }
+    }
+
+    public static class SliceLColumnPerson {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String name;
+        @com.landawn.abacus.annotation.Column
+        private SliceLAddress homeAddress;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public SliceLAddress getHomeAddress() {
+            return homeAddress;
+        }
+
+        public void setHomeAddress(final SliceLAddress homeAddress) {
+            this.homeAddress = homeAddress;
+        }
+    }
+
+    public static class SliceLNamedColumnPerson {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String name;
+        @com.landawn.abacus.annotation.Column("home_addr")
+        private SliceLAddress homeAddress;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public SliceLAddress getHomeAddress() {
+            return homeAddress;
+        }
+
+        public void setHomeAddress(final SliceLAddress homeAddress) {
+            this.homeAddress = homeAddress;
+        }
+    }
 }

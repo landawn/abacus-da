@@ -40,6 +40,7 @@ import com.google.cloud.bigquery.JobException;
 import com.google.cloud.bigquery.LegacySQLTypeName;
 import com.google.cloud.bigquery.QueryJobConfiguration;
 import com.google.cloud.bigquery.QueryParameterValue;
+import com.google.cloud.bigquery.Range;
 import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.TableResult;
 import com.landawn.abacus.da.cs;
@@ -112,17 +113,22 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Dataset and Table Naming</h2>
  * <p>The {@link SqlBuilder}-driven helpers derive the BigQuery table name from the target Java
- * class (via the configured {@link NamingPolicy}); the resulting SQL therefore uses an
- * <i>unqualified</i> table name. To target a specific dataset or project you must either:</p>
+ * class (via the configured {@link NamingPolicy}, unless the class declares a {@code @Table} name); a name derived
+ * that way is <i>unqualified</i>. This executor submits generated statements, and the SQL passed to its
+ * {@code String}-taking methods, with a {@link QueryJobConfiguration} of its own, which sets no default dataset, and the
+ * client offers no default dataset either ({@code BigQueryOptions} has none), so BigQuery rejects an unqualified table
+ * name in them as missing its dataset. Qualify the table instead:</p>
  * <ul>
- *   <li>Set the default dataset on the underlying {@link BigQuery} client (e.g. via
- *       {@code BigQueryOptions} or a {@code QueryJobConfiguration#setDefaultDataset(DatasetId)}
- *       on a custom configuration), or</li>
- *   <li>Pass a fully-qualified SQL string ({@code `project.dataset.table`}) to the
- *       {@link #execute(String, Object...)}, {@link #list(Class, String, Object...)},
+ *   <li>For the generated statements, declare the qualified name on the class, as in
+ *       {@code @Table("mydataset.customer")} or {@code @Table("`my-project.mydataset.customer`")}; it is emitted
+ *       as written in every generated statement.</li>
+ *   <li>In SQL passed to the {@link #execute(String, Object...)}, {@link #list(Class, String, Object...)},
  *       {@link #query(Class, String, Object...)}, or {@link #stream(Class, String, Object...)}
- *       overloads.</li>
+ *       overloads, write the qualified name ({@code mydataset.customers} or {@code `project.dataset.table`}).
+ *       Only {@link #stream(Class, QueryJobConfiguration)} and {@link #stream(QueryJobConfiguration)} run a
+ *       configuration of your own, on which {@code QueryJobConfiguration.Builder#setDefaultDataset} can be set.</li>
  * </ul>
+ * <p>The examples in this documentation write unqualified table names (such as {@code customers}) for brevity.</p>
  *
  * <h2>Parameter Binding</h2>
  * <p>Custom SQL methods use positional ({@code ?}) parameters; values are converted to
@@ -152,6 +158,10 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code OffsetDateTime}) receives the instant in the JVM default time zone, not in UTC, in which BigQuery displays it.
  * {@code TIME} cells ({@code HH:MM:SS[.ffffff]}) are decoded for {@code java.sql.Time} targets, retaining milliseconds, and
  * {@code DATE} cells ({@code YYYY-MM-DD}) for {@code com.google.cloud.Date} targets, the type a {@code DATE} parameter binds from.
+ * A {@code RANGE} cell is the exception to the text rule: the client returns it as a {@link Range}, which a {@code Range} or
+ * {@code Object} target and the {@code Map}, {@code Collection} and {@code Object[]} rows receive as is, and which a {@code String}
+ * or other {@code CharSequence} target receives as its {@code RANGE} literal, e.g. {@code [2020-01-01, 2020-12-31)}
+ * ({@code UNBOUNDED} for an open bound).
  * The same decoding applies to elements of typed collection and array bean properties for {@code REPEATED}
  * columns, and a {@code REPEATED STRUCT} column mapped to a collection or array of beans maps each element
  * like a {@code STRUCT} bean property. A {@code STRUCT} cell mapped to a {@code Map} or {@code Collection} bean property
@@ -221,6 +231,16 @@ import com.landawn.abacus.util.stream.Stream;
  * or {@code group} property, is therefore a syntax error in BigQuery. Declare such a name with backticks, as in
  * {@code @Table("`order`")} or {@code @Column("`from`")}: the quoted name is emitted as written in every generated statement,
  * including for a property name inside a raw {@code Filters.expr(...)} condition.</p>
+ * <p>A bean-typed property (a {@code STRUCT} column) without {@code @Column} is a sub-entity to the SQL builder: the generated
+ * {@code SELECT}, {@code INSERT} and {@code UPDATE} statements leave it out, and a dotted path through it (in a condition, in
+ * a raw {@code Filters.expr(...)} condition, or as a selected property name) is rendered with the table name of the
+ * sub-entity's class: {@code homeAddress.city} of an {@code Address homeAddress} property becomes {@code address.city},
+ * which BigQuery rejects or, if the table has an {@code address} column, silently reads from that column. Annotate such a
+ * property with {@code @Column}: it is then in the generated column lists (its value binds as a JSON parameter, see
+ * <i>Parameter Binding</i>), and {@code homeAddress.city} renders as {@code home_address.city} under {@code SNAKE_CASE}.
+ * A dotted path does not use a {@code @Column} name, however ({@code @Column("home_addr")} still renders
+ * {@code home_address.city}); a path whose first segment is backtick-quoted, as in
+ * {@code Filters.eq("`home_addr`.city", "SF")}, is emitted as written in either case.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -419,7 +439,7 @@ public class BigQueryExecutor {
      * @param <T> the entity type
      * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert
-     * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
+     * @param targetClass the bean class to instantiate: a class with getter/setter properties, or an immutable bean such as a record
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
      * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null}, the schema and row widths differ, or
      *         {@code targetClass} is null or not a recognised bean class
@@ -444,11 +464,14 @@ public class BigQueryExecutor {
      * {@code firstName}), then a column-to-property name map derived from the bean's annotations
      * ({@code @Column}, etc.). Columns whose names contain a period are written via
      * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
-     * no top-level property matches. Nested {@code STRUCT} values are converted recursively, with the sub-schema of
+     * no top-level property matches; a nested bean the path has to create needs a no-argument constructor (a nested record
+     * fails the read with {@link IllegalArgumentException}; read it from a {@code STRUCT} column instead). Nested {@code STRUCT}
+     * values are converted recursively, with the sub-schema of
      * their field in {@code fields}, into the property's declared type (including the element types of a {@code Map} or
      * {@code Collection} property such as {@code Map<String, Long>}, and the type arguments of a generic bean property such as
-     * {@code Box<Long>}); an {@code Object} property (or one of another non-{@code Collection} type that a
-     * {@link FieldValueList} is an instance of) receives a {@code STRUCT} value as the raw {@code FieldValueList}.
+     * {@code Box<Long>}); an {@code Object} or {@code Serializable} property (the non-{@code Iterable} types a
+     * {@link FieldValueList} is an instance of) receives a {@code STRUCT} value as the raw {@code FieldValueList}, while a
+     * property declared as {@code Iterable} is not supported for a {@code STRUCT} value.
      * {@code REPEATED} values are converted to the property's collection or array type. {@code BYTES}, {@code TIMESTAMP}, {@code TIME} and {@code DATE} cells are decoded for binary,
      * date/time, {@code java.sql.Time} and {@code com.google.cloud.Date} properties as described under <i>Result Value Conversion</i> in
      * the class documentation.
@@ -484,7 +507,7 @@ public class BigQueryExecutor {
      * @param <T> the entity type
      * @param fields the field list describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert; must not be {@code null}
-     * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
+     * @param targetClass the bean class to instantiate: a class with getter/setter properties, or an immutable bean such as a record
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
      * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is null, the field and row-value counts differ, or
      *         {@code targetClass} is null or not a recognised bean class
@@ -878,17 +901,24 @@ public class BigQueryExecutor {
     // typed accessors when the target is a binary or date/time type. A TIME cell is HH:MM:SS[.ffffff], whose
     // fractional part the java.sql.Time conversion rejects, so it is parsed here for a java.sql.Time target, and a
     // DATE cell (YYYY-MM-DD) is parsed for a com.google.cloud.Date target, which the standard conversion cannot create.
-    // Every other value (including the raw String for String/Object targets) is returned unchanged for the
-    // caller's normal conversion path.
+    // Apart from a RANGE cell read into a text target (see below), every other value (including the raw String for
+    // String/Object targets) is returned unchanged for the caller's normal conversion path.
     /**
-     * Decodes a BYTES, TIMESTAMP, TIME or DATE cell for a binary, date/time, {@code java.sql.Time} or {@code com.google.cloud.Date} target;
-     * returns any other cell value unchanged.
+     * Decodes a BYTES, TIMESTAMP, TIME or DATE cell for a binary, date/time, {@code java.sql.Time} or {@code com.google.cloud.Date} target,
+     * and a RANGE cell for a {@code CharSequence} target; returns any other cell value unchanged.
      *
      * @throws RuntimeException if a BYTES value is not valid Base64, a TIMESTAMP value cannot be parsed, or its timestamp cannot be converted to the
      *         requested date/time type, or a TIME or DATE value cannot be parsed
      */
     private static Object decodeTypedValue(final Field field, final FieldValue fieldValue, final Class<?> targetClass) throws RuntimeException {
         final Object value = fieldValue.getValue();
+
+        // The client decodes a RANGE cell into a Range (FieldValue.fromPb, Attribute.RANGE), not text. WHY: a String target
+        // received its toString(), AutoValue's debug text "Range{startInner=2020-01-01, endInner=..., type=FieldElementType{...}}",
+        // instead of the value. The RANGE literal BigQuery sent is rebuilt from the bounds Range.of split it into.
+        if (value instanceof final Range range && targetClass != null && CharSequence.class.isAssignableFrom(targetClass)) {
+            return rangeLiteral(range);
+        }
 
         if (field == null || targetClass == null || !(value instanceof String)) {
             return value;
@@ -934,6 +964,14 @@ public class BigQueryExecutor {
         }
 
         return value;
+    }
+
+    // "[start, end)" as BigQuery writes a RANGE value; Range.of maps an UNBOUNDED (or NULL) bound to a null one.
+    private static String rangeLiteral(final Range range) {
+        final FieldValue start = range.getStart();
+        final FieldValue end = range.getEnd();
+
+        return "[" + (start.isNull() ? "UNBOUNDED" : start.getStringValue()) + ", " + (end.isNull() ? "UNBOUNDED" : end.getStringValue()) + ")";
     }
 
     /**
@@ -986,7 +1024,7 @@ public class BigQueryExecutor {
      *
      * @param <T> the entity type
      * @param fieldValueList the row to convert; must not be {@code null}
-     * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
+     * @param targetClass the bean class to instantiate: a class with getter/setter properties, or an immutable bean such as a record
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
      * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, if the schema cannot be retrieved from
      *         {@code fieldValueList}, or if {@code targetClass} is null or not a recognised bean class
@@ -1303,9 +1341,9 @@ public class BigQueryExecutor {
                 }
             }
 
-            res = c;
+            res = toRowClass(c, rowClass);
         } else if (rowType.isMap()) {
-            res = toMap(fields, row, IntFunctions.ofMap((Class<Map>) rowClass));
+            res = toRowClass(toMap(fields, row, IntFunctions.ofMap((Class<Map>) rowClass)), rowClass);
         } else if (rowType.isBean()) {
             res = toEntity(fields, row, rowClass);
         } else if (fieldCount == 1) {
@@ -1330,6 +1368,18 @@ public class BigQueryExecutor {
         }
 
         return (T) res;
+    }
+
+    // N.newCollection and IntFunctions.ofMap return a mutable stand-in for a row class they cannot create as such (an
+    // ArrayList for ImmutableList, a HashSet for ImmutableSet, a HashMap for ImmutableMap, a TreeMap for ImmutableSortedMap).
+    // WHY: handing the stand-in back as the row put HashMaps into a List<ImmutableMap> (toList/list/stream), which failed with
+    // ClassCastException only where the caller read a row, and made N.convert(row, ImmutableMap.class) reject its own result.
+    // N.convert copies such a stand-in into the requested immutable type, keeping the cell values as they are; a stand-in that
+    // it cannot turn into the row class (an EnumMap row class, whose keys must be enums, or an AbstractQueue) now fails with
+    // IllegalArgumentException instead of being returned as a row of another class. No null check: the row is a container
+    // just created by the factory.
+    private static Object toRowClass(final Object row, final Class<?> rowClass) {
+        return rowClass.isInstance(row) ? row : N.convert(row, rowClass);
     }
 
     // Element of an array row. Object[] rows keep the raw cell values (nested STRUCT -> Object[], REPEATED -> List). A
@@ -1467,7 +1517,7 @@ public class BigQueryExecutor {
                         }
                     }
 
-                    return (T) c;
+                    return (T) toRowClass(c, rowClass);
                 }
             };
         } else if (Map.class.isAssignableFrom(rowClass)) {
@@ -1489,7 +1539,7 @@ public class BigQueryExecutor {
                         rowFields = getSchema(row);
                     }
 
-                    return (T) toMap(rowFields, row, IntFunctions.ofMap((Class<Map>) rowClass));
+                    return (T) toRowClass(toMap(rowFields, row, IntFunctions.ofMap((Class<Map>) rowClass)), rowClass);
                 }
             };
         } else if (rowType.isBean()) {
@@ -1844,8 +1894,9 @@ public class BigQueryExecutor {
      *
      * @param entity the entity instance to insert; the table name is resolved from its class via the configured naming policy
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if {@code entity} is null, or if the SQL builder finds no insertable value in it (every insertable
-     *         property is null)
+     * @throws IllegalArgumentException if {@code entity} is null, if it is neither a bean nor an {@code @Entity}-annotated {@code Map}
+     *         subclass (a plain {@code Map} names no table; use {@link #insert(Class, Map)}), or if the SQL builder finds no insertable value
+     *         in it (every insertable property is null)
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #insert(Class, Map)
@@ -2008,8 +2059,9 @@ public class BigQueryExecutor {
      *               column to NULL explicitly, use {@link #update(Class, Map, Condition)} with a typed
      *               {@code QueryParameterValue}
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, if no primary key fields are found for the entity class, if a primary-key property of
-     *         the entity has a null or empty value, or if every non-key property of the entity is null (nothing to update)
+     * @throws IllegalArgumentException if entity is null or is neither a bean nor an {@code @Entity}-annotated {@code Map} subclass, if no
+     *         primary key fields are found for the entity class, if a primary-key property of the entity has a null or empty value, or if every
+     *         non-key property of the entity is null (nothing to update)
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #update(Object, Set)
@@ -2065,8 +2117,9 @@ public class BigQueryExecutor {
      *               {@code QueryParameterValue}
      * @param primaryKeyNames the set of property names to use as primary key fields in the WHERE clause
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, if a named primary-key property of the entity has
-     *         a null or empty value, or if every non-key property of the entity is null (nothing to update)
+     * @throws IllegalArgumentException if entity is null or is neither a bean nor an {@code @Entity}-annotated {@code Map} subclass, if
+     *         primaryKeyNames is null or empty, if a named primary-key property of the entity has a null or empty value, or if every non-key
+     *         property of the entity is null (nothing to update)
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #update(Class, Map, Condition)
@@ -2262,8 +2315,8 @@ public class BigQueryExecutor {
      *
      * @param entity the entity instance containing primary key values for deletion
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, if no primary key fields are defined, or if any key property value is null or an
-     *         empty {@code CharSequence}
+     * @throws IllegalArgumentException if entity is null or is neither a bean nor an {@code @Entity}-annotated {@code Map} subclass, if no
+     *         primary key fields are defined, or if any key property value is null or an empty {@code CharSequence}
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #delete(Class, Object...)
@@ -3435,8 +3488,8 @@ public class BigQueryExecutor {
      * {@link #buildQueryParameterValue(Object...)}. The job runs synchronously through
      * {@link BigQuery#query(QueryJobConfiguration, com.google.cloud.bigquery.BigQuery.JobOption...)};
      * an {@link InterruptedException} during the wait is rethrown as a {@link RuntimeException}
-     * after the thread's interrupt flag is restored, and a {@link JobException} (failed/cancelled
-     * job) is wrapped via {@link ExceptionUtil#toRuntimeException(Throwable, boolean)}.
+     * after the thread's interrupt flag is restored, while a {@link JobException} (failed/cancelled
+     * job) or {@code BigQueryException}, both {@link RuntimeException}s, propagates unchanged, so callers can catch it by type.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3625,7 +3678,13 @@ public class BigQueryExecutor {
                 value -> QueryParameterValue.time(String.format(Locale.ROOT, "%s.%03d000", value, Math.floorMod(((java.sql.Time) value).getTime(), 1000L))));
         queryParameterMap.put(java.sql.Timestamp.class, value -> QueryParameterValue.timestamp(toMicros((java.sql.Timestamp) value)));
 
-        queryParameterMap.put(com.google.cloud.Date.class, value -> QueryParameterValue.date(value.toString()));
+        // com.google.cloud.Date.toString() is String.format("%04d-%02d-%02d") in the JVM's formatting locale. WHY: under a locale
+        // with other digits (ar-EG, fa-IR, th-TH-u-nu-thai) it rendered non-ASCII digits, which QueryParameterValue.date rejects,
+        // so every com.google.cloud.Date parameter failed; format the fields with ASCII digits, as for java.sql.Time above.
+        queryParameterMap.put(com.google.cloud.Date.class, value -> {
+            final com.google.cloud.Date date = (com.google.cloud.Date) value;
+            return QueryParameterValue.date(String.format(Locale.ROOT, "%04d-%02d-%02d", date.getYear(), date.getMonth(), date.getDayOfMonth()));
+        });
         queryParameterMap.put(com.google.cloud.Timestamp.class, value -> {
             // Preserve microsecond precision: toDate() truncates to milliseconds, silently losing the
             // micro component that BigQuery TIMESTAMP carries (a WHERE equality on a value read back

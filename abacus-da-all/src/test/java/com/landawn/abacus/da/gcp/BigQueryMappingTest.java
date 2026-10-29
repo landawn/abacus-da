@@ -2110,4 +2110,173 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
             this.payload = payload;
         }
     }
+
+    // ---- 2026-10-27 sliceL ----
+
+    /**
+     * The client decodes a RANGE cell into a {@code Range} (Attribute.RANGE), not text. A String target received the Range's
+     * toString(), AutoValue's debug text {@code Range{startInner=2020-01-01, endInner=null, type=FieldElementType{type=DATE}}};
+     * it now receives the RANGE literal BigQuery sent ({@code UNBOUNDED} for an open bound), on every read path. A Range or
+     * Object target and raw rows keep the Range itself. RED on HEAD for every text case.
+     */
+    @Test
+    public void testRangeCellReadsAsRangeLiteralIntoTextTargets_sliceL() throws Exception {
+        final com.google.cloud.bigquery.FieldElementType dateElement = com.google.cloud.bigquery.FieldElementType.newBuilder().setType("DATE").build();
+        final com.google.cloud.bigquery.Range open = com.google.cloud.bigquery.Range.of("[2020-01-01, UNBOUNDED)", dateElement);
+        final com.google.cloud.bigquery.Range closed = com.google.cloud.bigquery.Range.of("[2020-01-01, 2020-12-31)", dateElement);
+        final FieldList fields = FieldList.of(Field.newBuilder("period", StandardSQLTypeName.RANGE).setRangeElementType(dateElement).build(),
+                Field.newBuilder("raw", StandardSQLTypeName.RANGE).setRangeElementType(dateElement).build());
+        final FieldValueList row = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RANGE, open), FieldValue.of(FieldValue.Attribute.RANGE, closed)), fields);
+        final FieldList single = FieldList.of(fields.get(1));
+        final FieldValueList singleRow = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RANGE, closed)), single);
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(single));
+        when(mockTableResult.getValues()).thenReturn(List.of(singleRow));
+        when(mockTableResult.iterateAll()).thenReturn(List.of(singleRow));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        final TableResult twoColumns = mock(TableResult.class);
+        when(twoColumns.getTotalRows()).thenReturn(1L);
+        when(twoColumns.getSchema()).thenReturn(Schema.of(fields));
+        when(twoColumns.iterateAll()).thenReturn(List.of(row));
+
+        final SliceLRangeHolder holder = BigQueryExecutor.toEntity(fields, row, SliceLRangeHolder.class);
+        final Dataset ds = BigQueryExecutor.extractData(twoColumns, SliceLRangeHolder.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("[2020-01-01, UNBOUNDED)", holder.getPeriod()),
+                () -> assertTrue(holder.getRaw() == closed, String.valueOf(holder.getRaw())), () -> assertEquals("[2020-01-01, UNBOUNDED)", ds.get(0, 0)),
+                () -> assertEquals("[2020-01-01, 2020-12-31)", executor.queryForSingleValue(String.class, "SELECT raw FROM t").orElseNull()),
+                () -> assertEquals("[2020-01-01, 2020-12-31)", executor.list(String.class, "SELECT raw FROM t").get(0)),
+                () -> assertEquals("[2020-01-01, 2020-12-31)", executor.list(String[].class, "SELECT raw FROM t").get(0)[0]),
+                () -> assertEquals("[2020-01-01, 2020-12-31)", N.convert(singleRow, String.class)),
+                () -> assertTrue(executor.queryForSingleValue(com.google.cloud.bigquery.Range.class, "SELECT raw FROM t").orElseNull() == closed),
+                () -> assertTrue(executor.list(Object[].class, "SELECT raw FROM t").get(0)[0] == closed));
+    }
+
+    /**
+     * Review 2026-10-27 r2E: the RANGE literal for every bound shape (open start, both open, a NULL bound, which Range.of reads like
+     * UNBOUNDED) and for TIMESTAMP and DATETIME elements, whose bound text is kept as sent; for CharSequence targets other than String;
+     * and for a RANGE field of a STRUCT read into a nested bean's String property (RED on HEAD). A Map row keeps the Range itself.
+     */
+    @Test
+    public void testRangeLiteralBoundsElementTypesAndNestedTargets_r2E() throws Exception {
+        final com.google.cloud.bigquery.FieldElementType date = com.google.cloud.bigquery.FieldElementType.newBuilder().setType("DATE").build();
+        final com.google.cloud.bigquery.FieldElementType timestamp = com.google.cloud.bigquery.FieldElementType.newBuilder().setType("TIMESTAMP").build();
+        final com.google.cloud.bigquery.FieldElementType datetime = com.google.cloud.bigquery.FieldElementType.newBuilder().setType("DATETIME").build();
+        final java.util.function.BiFunction<String, com.google.cloud.bigquery.FieldElementType, FieldValueList> rangeRow = (text, type) -> FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.RANGE, com.google.cloud.bigquery.Range.of(text, type))),
+                FieldList.of(Field.newBuilder("r", StandardSQLTypeName.RANGE).setRangeElementType(type).build()));
+
+        final Field rangeField = Field.newBuilder("r", StandardSQLTypeName.RANGE).setRangeElementType(date).build();
+        final FieldList structFields = FieldList.of(Field.of("s", StandardSQLTypeName.STRUCT, FieldList.of(rangeField)));
+        final FieldValueList structRow = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD,
+                        FieldValueList.of(Arrays
+                                .asList(FieldValue.of(FieldValue.Attribute.RANGE, com.google.cloud.bigquery.Range.of("[2021-01-01, UNBOUNDED)", date)))))),
+                structFields);
+        final FieldValueList mapRow = rangeRow.apply("[2020-01-01, 2020-12-31)", date);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("[UNBOUNDED, 2020-12-31)", N.convert(rangeRow.apply("[UNBOUNDED, 2020-12-31)", date), String.class)),
+                () -> assertEquals("[UNBOUNDED, UNBOUNDED)", N.convert(rangeRow.apply("[UNBOUNDED, UNBOUNDED)", date), String.class)),
+                () -> assertEquals("[UNBOUNDED, 2020-12-31)", N.convert(rangeRow.apply("[NULL, 2020-12-31)", date), String.class)),
+                () -> assertEquals("[2020-01-01 12:00:00+00, UNBOUNDED)",
+                        N.convert(rangeRow.apply("[2020-01-01 12:00:00+00, UNBOUNDED)", timestamp), String.class)),
+                () -> assertEquals("[2020-01-01T10:00:00.123456, 2020-01-02T00:00:00)",
+                        N.convert(rangeRow.apply("[2020-01-01T10:00:00.123456, 2020-01-02T00:00:00)", datetime), String.class)),
+                () -> assertEquals("[2020-01-01, 2020-12-31)", N.convert(rangeRow.apply("[2020-01-01, 2020-12-31)", date), StringBuilder.class).toString()),
+                () -> assertEquals("[2020-01-01, 2020-12-31)", N.convert(rangeRow.apply("[2020-01-01, 2020-12-31)", date), CharSequence.class)),
+                () -> assertTrue(BigQueryExecutor.toMap(mapRow).get("r") == mapRow.get(0).getValue()),
+                () -> assertEquals("[2021-01-01, UNBOUNDED)", BigQueryExecutor.toEntity(structFields, structRow, R2ERangeOuter.class).getS().getR()));
+    }
+
+    public static class R2ERangeOuter {
+        private R2ERangeInner s;
+
+        public R2ERangeInner getS() {
+            return s;
+        }
+
+        public void setS(final R2ERangeInner s) {
+            this.s = s;
+        }
+    }
+
+    public static class R2ERangeInner {
+        private String r;
+
+        public String getR() {
+            return r;
+        }
+
+        public void setR(final String r) {
+            this.r = r;
+        }
+    }
+
+    public static class SliceLRangeHolder {
+        private String period;
+        private Object raw;
+
+        public String getPeriod() {
+            return period;
+        }
+
+        public void setPeriod(final String period) {
+            this.period = period;
+        }
+
+        public Object getRaw() {
+            return raw;
+        }
+
+        public void setRaw(final Object raw) {
+            this.raw = raw;
+        }
+    }
+
+    /**
+     * Pins the toEntity(FieldList, ...) Javadoc: a dotted column can only create a nested bean that has a no-argument
+     * constructor, so a nested record fails the read with IllegalArgumentException, while the same record read from a STRUCT
+     * column is mapped.
+     */
+    @Test
+    public void testDottedColumnCannotCreateNestedRecordButStructCan_sliceL() throws Exception {
+        final FieldList dotted = FieldList.of(Field.of("name", StandardSQLTypeName.STRING), Field.of("addr.city", StandardSQLTypeName.STRING));
+        final FieldValueList dottedRow = FieldValueList.of(Arrays.asList(verifyCell("n"), verifyCell("SF")), dotted);
+        final FieldList sub = FieldList.of(Field.of("city", StandardSQLTypeName.STRING));
+        final FieldList struct = FieldList.of(Field.of("name", StandardSQLTypeName.STRING), Field.of("addr", StandardSQLTypeName.STRUCT, sub));
+        final FieldValueList structRow = FieldValueList
+                .of(Arrays.asList(verifyCell("n"), FieldValue.of(FieldValue.Attribute.RECORD, FieldValueList.of(Arrays.asList(verifyCell("SF"))))), struct);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toEntity(dotted, dottedRow, SliceLAddrHolder.class)),
+                () -> assertEquals(new SliceLAddr("SF"), BigQueryExecutor.toEntity(struct, structRow, SliceLAddrHolder.class).getAddr()));
+    }
+
+    public record SliceLAddr(String city) {
+    }
+
+    public static class SliceLAddrHolder {
+        private String name;
+        private SliceLAddr addr;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public SliceLAddr getAddr() {
+            return addr;
+        }
+
+        public void setAddr(final SliceLAddr addr) {
+            this.addr = addr;
+        }
+    }
 }

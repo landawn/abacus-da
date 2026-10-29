@@ -18,11 +18,16 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
+import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
+import org.bson.types.Binary;
+import org.bson.types.Code;
 import org.bson.types.ObjectId;
+import org.bson.types.Symbol;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
@@ -76,6 +81,13 @@ import reactor.core.publisher.Mono;
  *       ID property of any other type (e.g. {@code long}) is stored as an ordinary field under its own
  *       name, and MongoDB assigns a separate {@code _id}. The collection codec registry handles BSON
  *       values stored inside the document.</li>
+ *   <li><strong>BSON field names:</strong> names in filters and sorts, and {@code propName}/{@code fieldName}
+ *       arguments, are BSON field names, so the mapped id property is addressed as {@code _id}: no {@code id} field
+ *       is stored, so {@code Filters.eq("id", value)} matches nothing and {@code queryForString("id", filter)}
+ *       completes empty even for a matched document.</li>
+ *   <li><strong>BSON {@code null} and missing fields:</strong> both surface as Java {@code null} in the mapped entity (a
+ *       primitive property keeps its default value, such as {@code 0}); a single-value read of such a field
+ *       ({@code queryForInt}, {@code queryForString}, ...) completes empty instead (see "No {@code null} elements" below).</li>
  *   <li><strong>Generated {@code _id}:</strong> when the {@code _id} value is omitted, the driver assigns an
  *       {@link ObjectId}. A bean entity (or any other non-{@link Document} entity, such as a {@code Map}) is
  *       copied into a new document, so the generated value is <strong>not</strong> written back: its id
@@ -603,7 +615,9 @@ public final class MongoCollectionMapper<T> {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param objectId the string representation of the ObjectId to search for
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     *        subscription, when it encodes the projection
      * @return a Mono that emits the projected entity, or empty if no document matches the ObjectId
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
      * @see ObjectId
@@ -646,7 +660,9 @@ public final class MongoCollectionMapper<T> {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param objectId the ObjectId to search for
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     *        subscription, when it encodes the projection
      * @return a Mono that emits the projected entity, or empty if no document matches the ObjectId
      * @throws IllegalArgumentException if {@code objectId} is null
      * @see ObjectId
@@ -741,7 +757,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     *        subscription, when it encodes the projection
      * @param filter the query filter to match documents
      * @return a Mono that emits the first matching projected entity, or empty if no documents match
      * @throws IllegalArgumentException if {@code filter} is null
@@ -785,7 +803,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     *        subscription, when it encodes the projection
      * @param filter the query filter to match documents
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits the first matching projected entity with applied sorting, or empty if no documents match
@@ -975,7 +995,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     *        subscription, when it encodes the projection
      * @param filter the query filter to match documents
      * @return a Flux that emits matching entities with only the specified fields (plus {@code _id}) populated
      * @throws IllegalArgumentException if {@code filter} is null
@@ -1014,7 +1036,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: when {@code count} is positive, the driver signals an
+     *        {@link IllegalArgumentException} on subscription, when it encodes the projection (a {@code count} of 0 sends no projection)
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
@@ -1056,7 +1080,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     *        subscription, when it encodes the projection
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Flux that emits sorted matching entities with specified fields
@@ -1098,7 +1124,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); a null
+     *        name in it is not rejected when this method is called: when {@code count} is positive, the driver signals an
+     *        {@link IllegalArgumentException} on subscription, when it encodes the projection (a {@code count} of 0 sends no projection)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
@@ -1759,7 +1787,9 @@ public final class MongoCollectionMapper<T> {
      * <p>Only the named property of the first matched document is read; any remaining documents or
      * fields are ignored. This is the underlying method delegated to by the primitive-wrapper
      * convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.). Delegates to
-     * {@link MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)}.</p>
+     * {@link MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)}. A dotted {@code propName} such as
+     * {@code "address.city"} reads the nested value; a dotted path that traverses a non-null value that is not a
+     * {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the publisher.</p>
      *
      * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
      * document matches the filter, or when a matching document's named field is absent or BSON null (or
@@ -1931,7 +1961,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); each name
+     *        is a Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on
+     *        subscription
      * @param filter the query filter to match documents
      * @return a Mono that emits a Dataset with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
@@ -1971,7 +2003,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); each name
+     *        is a Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on
+     *        subscription
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
@@ -2016,7 +2050,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); each name
+     *        is a Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on
+     *        subscription
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits a sorted Dataset with projected fields
@@ -2059,7 +2095,9 @@ public final class MongoCollectionMapper<T> {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields); each name
+     *        is a Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on
+     *        subscription
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
@@ -2353,8 +2391,9 @@ public final class MongoCollectionMapper<T> {
      * <p>A bean entity is converted via {@link com.landawn.abacus.da.mongodb.MongoDBBase#toDocument(Object)} and wrapped
      * in {@code {$set: ...}} after its immutable {@code _id} is removed; properties whose getter returns {@code null} are
      * dropped, so entity nulls cannot clear fields through this path. Because {@code update} is typed {@code T}, a
-     * driver-built {@link Bson} update can be passed here only when {@code T} is itself a {@link Bson} type such as
-     * {@link Document}; for a bean mapper, use
+     * driver-built update such as {@code Updates.set(...)} can be passed here only when {@code T} is {@link Bson}
+     * itself (or {@code Object}); a {@link Document} mapper can pass an operator document such as
+     * {@code new Document("$set", new Document(field, null))}, which is also used verbatim. For a bean mapper, use
      * {@link #collectionExecutor()}{@code .updateOne(objectId, Updates.set(field, null))} to write {@code null}
      * explicitly.</p>
      *
@@ -3294,7 +3333,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param filter the query filter to identify the document to update
      * @param update the entity containing update values
@@ -3331,7 +3372,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param filter the query filter to identify the document
      * @param update the entity containing update values
@@ -3379,7 +3422,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param filter the query filter to identify the document
      * @param objList collection of objects containing update values
@@ -3416,7 +3461,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param filter the query filter to identify the document
      * @param objList collection of objects containing update values
@@ -3472,7 +3519,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * result conversion failures are also signalled through the publisher; such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the replacement, so resubscribing (for example through {@code retry()}) runs the
+     * replacement again. A replacement whose converted document has a top-level field
      * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
      * likewise signalled through the publisher, not thrown at call time.</p>
      *
@@ -3510,7 +3559,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * result conversion failures are also signalled through the publisher; such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the replacement, so resubscribing (for example through {@code retry()}) runs the
+     * replacement again. A replacement whose converted document has a top-level field
      * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
      * likewise signalled through the publisher, not thrown at call time.</p>
      *
@@ -3562,7 +3613,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has deleted that document, so resubscribing (for example through {@code retry()}) deletes another
+     * matching document.</p>
      *
      * @param filter the query filter to identify the document to delete
      * @return a {@code Mono} that emits the deleted document decoded as {@code T}, or completes
@@ -3593,7 +3646,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has deleted that document, so resubscribing (for example through {@code retry()}) deletes another
+     * matching document.</p>
      *
      * @param filter the query filter to identify the document
      * @param options configuration for the delete operation (can be null to use defaults)
@@ -3619,7 +3674,8 @@ public final class MongoCollectionMapper<T> {
      * so scalar field values decode cleanly into {@code T} — unlike the driver's native
      * {@code distinct(field, T.class)}, which throws {@code BsonInvalidOperationException} when
      * {@code T} is a POJO and the field is scalar. When {@code T} itself is a single-value type (such as
-     * {@code String}), the {@code $project} stage is omitted and each distinct value is emitted directly,
+     * {@code String}, or a BSON value class such as {@link Binary} or {@link Code}), the {@code $project} stage is omitted
+     * and each distinct value is emitted directly,
      * converted to {@code T}; for such a {@code T} the {@code null} value shared by documents that lack the
      * field is not emitted, because Reactive Streams forbids {@code null} elements. To obtain raw scalar values
      * instead, use {@link MongoCollectionExecutor#distinct(String, Class)} with an explicit value class.</p>
@@ -3714,7 +3770,19 @@ public final class MongoCollectionMapper<T> {
 
         final Type<?> type = N.typeOf(rowType);
 
-        return !(type.isObjectArray() || type.isCollection() || type.isMap() || type.isBean());
+        // Binary, Code, Symbol and some BsonValue classes (BsonRegularExpression, BsonString, ...) report a bean Type, but readRow
+        // reads them as the single value of the row (MongoDBBase.isBsonValueClass). Routed as beans, the $project stage nested a
+        // dotted path ({a: {b: v}}, {_id: {part: v}}), so the value read was the embedded document (a Binary failed with
+        // NullPointerException, a Code came back as Code{code=null}), and the server returned a Code or Symbol as plain text,
+        // which could not be read back.
+        return !(type.isObjectArray() || type.isCollection() || type.isMap() || type.isBean()) || isBsonValueClass(rowType);
+    }
+
+    // Mirrors MongoDBBase.isBsonValueClass (package-private in another package): the BSON value row types readRow reads as a
+    // single value.
+    private static boolean isBsonValueClass(final Class<?> cls) {
+        return Binary.class.isAssignableFrom(cls) || Code.class.isAssignableFrom(cls) || Symbol.class.isAssignableFrom(cls)
+                || (BsonValue.class.isAssignableFrom(cls) && !(Map.class.isAssignableFrom(cls) || Collection.class.isAssignableFrom(cls)));
     }
 
     /**
@@ -3797,7 +3865,9 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
-     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     * Document decoding or result conversion failures are also signalled through the publisher. A {@code null} stage in
+     * {@code pipeline} is rejected by the driver with an {@link IllegalArgumentException} that is likewise signalled through
+     * the publisher, not thrown at call time.</p>
      *
      * @param pipeline list of aggregation stages to execute in order; the pipeline itself may be
      *        empty (which returns every document)

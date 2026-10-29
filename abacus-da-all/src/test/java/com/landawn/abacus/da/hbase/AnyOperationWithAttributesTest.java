@@ -189,6 +189,33 @@ public class AnyOperationWithAttributesTest extends TestBase {
         assertTrue(get.getAttributesMap().containsKey("k2"));
     }
 
+    // ---- 2026-10-27 sliceP ----
+
+    /** Pins the setAttribute @param value doc: an empty value wrapper converts to null bytes and removes the attribute. */
+    @Test
+    public void testSetAttribute_emptyValueWrapper_removesAttribute_sliceP() {
+        final java.util.List<Object> emptyWrappers = java.util.Arrays.asList(java.util.Optional.empty(), java.util.OptionalLong.empty(),
+                com.landawn.abacus.util.u.Optional.empty(), com.landawn.abacus.util.u.Nullable.empty(), com.landawn.abacus.util.Holder.of(null));
+
+        org.junit.jupiter.api.Assertions.assertAll(emptyWrappers.stream().map(w -> (org.junit.jupiter.api.function.Executable) () -> {
+            final AnyGet get = AnyGet.of("row").setAttribute("k", "v").setAttribute("other", "x");
+            assertSame(get, get.setAttribute("k", w));
+            assertNull(get.getAttribute("k"), String.valueOf(w));
+            assertArrayEquals(Bytes.toBytes("x"), get.getAttribute("other"));
+        }));
+    }
+
+    /** Pins the setId @param doc: setId cannot clear an id, but setAttribute(ID_ATRIBUTE, null) removes it. */
+    @Test
+    public void testSetId_clearedOnlyThroughIdAttribute_sliceP() {
+        final AnyGet get = AnyGet.of("row").setId("trace-1");
+
+        assertThrows(IllegalArgumentException.class, () -> get.setId(null));
+        assertEquals("trace-1", get.getId());
+        get.setAttribute(org.apache.hadoop.hbase.client.OperationWithAttributes.ID_ATRIBUTE, null);
+        assertNull(get.getId());
+    }
+
     // Minimal concrete subclass to drive the constructor null-guard directly.
     private static final class TestOwa extends AnyOperationWithAttributes<TestOwa> {
         protected TestOwa(final org.apache.hadoop.hbase.client.OperationWithAttributes owa) {

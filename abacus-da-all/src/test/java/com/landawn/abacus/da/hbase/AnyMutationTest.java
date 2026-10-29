@@ -456,6 +456,42 @@ public class AnyMutationTest extends TestBase {
         assertTrue(put.has("cf", "q", 5L, java.util.Optional.of("v")));
     }
 
+    // ---- 2026-10-27 sliceP ----
+
+    /**
+     * Pins the has(String, String, Object) / has(String, String, long) overload note: a primitive int or long third argument
+     * selects the timestamp overload, so it does not find a cell holding that number; a boxed value does.
+     */
+    @Test
+    public void testHas_primitiveThirdArgument_isTimestampNotValue_sliceP() {
+        final AnyPut counter = AnyPut.of("row").addColumn("stats", "visits", 5);
+        final AnyPut stamped = AnyPut.of("row").addColumn("stats", "visits", 7L, "x");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertFalse(counter.has("stats", "visits", 5)), () -> assertFalse(counter.has("stats", "visits", 5L)),
+                () -> assertTrue(counter.has("stats", "visits", Integer.valueOf(5))), () -> assertTrue(counter.has("stats", "visits", (Object) 5)),
+                () -> assertTrue(stamped.has("stats", "visits", 7)));
+    }
+
+    // ---- 2026-10-27 r2O ----
+
+    /**
+     * Pins the same overload note for the other primitives it names: a byte, short or char third argument also widens to the
+     * timestamp overload (a char by its code: '5' is timestamp 53); the boxed values reach the value overload.
+     */
+    @Test
+    public void testHas_primitiveByteShortCharThirdArgument_isTimestampNotValue_r2O() {
+        final AnyPut counter = AnyPut.of("row").addColumn("stats", "visits", 5);
+        final AnyPut stamped = AnyPut.of("row").addColumn("stats", "visits", 53L, "x");
+        final byte b = 5;
+        final short s = 5;
+        final char c = '5';
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertFalse(counter.has("stats", "visits", b)), () -> assertFalse(counter.has("stats", "visits", s)),
+                () -> assertFalse(counter.has("stats", "visits", c)), () -> assertTrue(counter.has("stats", "visits", Byte.valueOf(b))),
+                () -> assertTrue(counter.has("stats", "visits", Short.valueOf(s))), () -> assertTrue(counter.has("stats", "visits", Character.valueOf(c))),
+                () -> assertTrue(stamped.has("stats", "visits", c)));
+    }
+
     private static final class TestMutation extends AnyMutation<TestMutation> {
         protected TestMutation(final org.apache.hadoop.hbase.client.Mutation mutation) {
             super(mutation);

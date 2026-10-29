@@ -86,6 +86,15 @@ import com.mongodb.client.result.UpdateResult;
  * should not be confused with the {@code com.landawn.abacus.da.mongodb.reactivestreams} subpackage,
  * whose methods return {@code org.reactivestreams.Publisher} on top of the MongoDB reactive driver.</p>
  *
+ * <p><b>Arguments are not copied:</b> each task captures the caller's arguments by reference and reads
+ * them on a worker thread when it runs; entities, maps and update payloads are converted to BSON only then.
+ * Do not modify a passed filter, document, entity, map or collection until the returned future completes
+ * (the {@code selectPropNames} of a stream-returning method until the delivered stream is consumed, since they
+ * are read per element; a {@code watch} pipeline list until the change-stream cursor is opened, since the
+ * returned iterable keeps it): the task may or may not see the change. For example, a list cleared after it was passed to
+ * {@link #insertMany(Collection)} makes the future fail with {@link IllegalArgumentException} although the
+ * eager check accepted it, and an element added to it may be inserted too.</p>
+ *
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
  * <ul>
@@ -95,7 +104,12 @@ import com.mongodb.client.result.UpdateResult;
  *       determines parallelism and queueing policy.</li>
  *   <li><strong>Future composition:</strong> {@link ContinuableFuture} supports {@code thenRunAsync}
  *       (Runnable/Consumer/BiConsumer), {@code thenCallAsync}, and {@code map} style chaining, plus
- *       conversion to {@link java.util.concurrent.CompletableFuture} via {@code toCompletableFuture()}.</li>
+ *       conversion to {@link java.util.concurrent.CompletableFuture} via {@code toCompletableFuture()}.
+ *       A {@code map} function runs lazily on the thread that calls {@code get()}, and again on every
+ *       {@code get()} (its result is not cached); its failure surfaces as an
+ *       {@link java.util.concurrent.ExecutionException}. Do not {@code map} a stream-returning future through
+ *       a function that consumes the stream: a second {@code get()} re-applies it to the already consumed
+ *       stream and fails with an {@code IllegalStateException} cause.</li>
  *   <li><strong>Exception propagation:</strong> Exceptions thrown by the underlying sync call
  *       surface as the future's completion exception ({@code get()} throws an
  *       {@link java.util.concurrent.ExecutionException} whose cause is the original exception);
@@ -595,7 +609,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for the retrieved document
      * @param objectId the string representation of the ObjectId to search for
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null for all fields); a null name in it fails the
+     *        returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever
+     *        {@code rowType} is)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object with projected fields, or empty if not found
      * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code rowType} is null
@@ -633,7 +649,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for the retrieved document
      * @param objectId the ObjectId to search for
-     * @param selectPropNames collection of field names to include (null includes all fields)
+     * @param selectPropNames collection of field names to include (null includes all fields); a null name in it fails the returned
+     *        future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever {@code rowType} is)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object with only the specified fields, or empty if not found
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null
@@ -824,7 +841,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for the retrieved document
      * @param objectId the string representation of the ObjectId (24 hex characters)
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null for all fields); a null name in it fails the
+     *        returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever
+     *        {@code rowType} is)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code rowType} is null
@@ -867,7 +886,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for the retrieved document
      * @param objectId the ObjectId to search for
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null for all fields); a null name in it fails the
+     *        returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever
+     *        {@code rowType} is)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null
@@ -972,7 +993,9 @@ public final class AsyncMongoCollectionExecutor {
      * the MongoDB command.</p>
      *
      * @param <T> the target type for the document conversion
-     * @param selectPropNames collection of field names to include in projection (null for all fields)
+     * @param selectPropNames collection of field names to include in projection (null for all fields); a null name in it fails the
+     *        returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever
+     *        {@code rowType} is)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
@@ -997,7 +1020,8 @@ public final class AsyncMongoCollectionExecutor {
      * <p>This method performs a non-blocking find operation with field projection and sorting for the first document
      * matching the filter criteria. The sort parameter determines which document is considered "first" when multiple
      * documents match the filter. Only the specified fields are retrieved, improving performance.
-     * When exactly one field is selected for a scalar {@code rowType}, that named field is converted directly;
+     * When exactly one field is selected for a scalar {@code rowType} (a BSON value type such as {@link org.bson.types.Binary Binary},
+     * {@link org.bson.types.Code Code} or {@link org.bson.types.Symbol Symbol} is scalar here too), that named field is converted directly;
      * a matched document that lacks the field completes the future with {@link Optional#empty()} rather than with
      * MongoDB's implicitly projected {@code _id} converted to {@code rowType}. Result types that can directly hold a
      * {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected document.</p>
@@ -1013,7 +1037,9 @@ public final class AsyncMongoCollectionExecutor {
      * the MongoDB command.</p>
      *
      * @param <T> the target type for the document conversion
-     * @param selectPropNames collection of field names to include in projection (null for all fields)
+     * @param selectPropNames collection of field names to include in projection (null for all fields); a null name in it fails the
+     *        returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever
+     *        {@code rowType} is)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of the document
@@ -1199,7 +1225,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command.</p>
      *
      * @param <T> the target type for document conversion
-     * @param selectPropNames collection of field names to include in projection (null for all fields)
+     * @param selectPropNames collection of field names to include in projection (null for all fields); a null name in it fails the
+     *        returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever
+     *        {@code rowType} is)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities with only the projected fields
@@ -1235,7 +1263,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative.</p>
      *
      * @param <T> the target type for document conversion
-     * @param selectPropNames collection of field names to include in projection (null for all fields)
+     * @param selectPropNames collection of field names to include in projection (null for all fields); when {@code count} is positive,
+     *        a null name in it fails the returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding
+     *        the query; a {@code count} of 0 sends no projection)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset the number of documents to skip before starting to return results
      * @param count the maximum number of documents to return
@@ -1273,7 +1303,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command.</p>
      *
      * @param <T> the target type for document conversion
-     * @param selectPropNames collection of field names to include in projection (null for all fields)
+     * @param selectPropNames collection of field names to include in projection (null for all fields); a null name in it fails the
+     *        returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the query, whatever
+     *        {@code rowType} is)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of each document
@@ -1297,7 +1329,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method combines all find operation features: filtering, projection, sorting, and pagination
      * in a single non-blocking operation. This is the most comprehensive list retrieval method.
-     * When exactly one field is selected into a scalar {@code rowType}, that field's value is extracted directly;
+     * When exactly one field is selected into a scalar {@code rowType} (a BSON value type such as {@link org.bson.types.Binary Binary},
+     * {@link org.bson.types.Code Code} or {@link org.bson.types.Symbol Symbol} included), that field's value is extracted directly;
      * a dotted path such as {@code address.city} resolves the nested value, and a document that lacks the field
      * yields a {@code null} element instead of its converted {@code _id}. Result types that can directly hold a
      * {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
@@ -1313,7 +1346,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative.</p>
      *
      * @param <T> the target type for document conversion
-     * @param selectPropNames collection of field names to include in projection (null for all fields)
+     * @param selectPropNames collection of field names to include in projection (null for all fields); when {@code count} is positive,
+     *        a null name in it fails the returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding
+     *        the query; a {@code count} of 0 sends no projection)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before starting to return results
@@ -2195,7 +2230,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a
      * {@link ClassCastException} when a dotted field name traverses a non-null value that is not a Document.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); each name
+     *        is a Dataset column, so a null or duplicated name fails the returned future with an {@link IllegalArgumentException}, even
+     *        when no document matches
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected results
@@ -2232,7 +2269,9 @@ public final class AsyncMongoCollectionExecutor {
      * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a {@link ClassCastException} when a dotted
      * field name traverses a non-null value that is not a Document.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); each name
+     *        is a Dataset column, so a null or duplicated name fails the returned future with an {@link IllegalArgumentException}, even
+     *        when no document matches or {@code count} is 0
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
@@ -2270,7 +2309,9 @@ public final class AsyncMongoCollectionExecutor {
      * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a
      * {@link ClassCastException} when a dotted field name traverses a non-null value that is not a Document.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); each name
+     *        is a Dataset column, so a null or duplicated name fails the returned future with an {@link IllegalArgumentException}, even
+     *        when no document matches
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification (null for natural order)
      * @param rowType the Class object representing the row type
@@ -2310,7 +2351,9 @@ public final class AsyncMongoCollectionExecutor {
      * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type, and a {@link ClassCastException} when a dotted
      * field name traverses a non-null value that is not a Document.</p>
      *
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); each name
+     *        is a Dataset column, so a null or duplicated name fails the returned future with an {@link IllegalArgumentException}, even
+     *        when no document matches or {@code count} is 0
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification (null for natural order)
      * @param offset the number of documents to skip
@@ -2548,7 +2591,9 @@ public final class AsyncMongoCollectionExecutor {
      * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); a null
+     *        name in it fails the returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the
+     *        query)
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected typed Stream
@@ -2588,7 +2633,9 @@ public final class AsyncMongoCollectionExecutor {
      * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); when
+     *        {@code count} is positive, a null name in it fails the returned future with an {@link IllegalArgumentException} (the driver
+     *        rejects it while encoding the query; a {@code count} of 0 sends no projection)
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
@@ -2634,7 +2681,9 @@ public final class AsyncMongoCollectionExecutor {
      * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); a null
+     *        name in it fails the returned future with an {@link IllegalArgumentException} (the driver rejects it while encoding the
+     *        query)
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification (null for natural order)
      * @param rowType the Class object representing the row type
@@ -2681,7 +2730,9 @@ public final class AsyncMongoCollectionExecutor {
      * {@code false} and does not close the delivered stream; the caller must close it after use.</p>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields)
+     * @param selectPropNames the collection of BSON field names to include in the projection (null or empty for all fields); when
+     *        {@code count} is positive, a null name in it fails the returned future with an {@link IllegalArgumentException} (the driver
+     *        rejects it while encoding the query; a {@code count} of 0 sends no projection)
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification (null for natural order)
      * @param offset the number of documents to skip
@@ -2846,7 +2897,10 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
-     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
+     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.
+     * Creating the iterable looks up the codec for {@code rowType}: the returned future completes exceptionally with a
+     * {@link org.bson.codecs.configuration.CodecConfigurationException} if the collection's codec registry has none (possible for a
+     * collection passed to {@link MongoDB#collectionExecutor(com.mongodb.client.MongoCollection)} with its own registry).</p>
      *
      * @param <T> the type to decode each change event's full document into
      * @param rowType the class to decode each change event's full document into
@@ -2881,7 +2935,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
-     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
+     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.
+     * Likewise a {@code null} stage in {@code pipeline} does not fail the future: the driver throws an {@link IllegalArgumentException}
+     * when the cursor is opened.</p>
      *
      * @param pipeline the aggregation pipeline to apply to change events
      * @return a ContinuableFuture that completes with a filtered ChangeStreamIterable for Document changes
@@ -2916,7 +2972,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The delegated {@code watch} call only creates the change-stream iterable and does not contact the server. A {@link MongoException}
-     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.</p>
+     * from opening or iterating the change-stream cursor is thrown by that cursor operation, not delivered through the returned future.
+     * Creating the iterable looks up the codec for {@code rowType}: the returned future completes exceptionally with a
+     * {@link org.bson.codecs.configuration.CodecConfigurationException} if the collection's codec registry has none (possible for a
+     * collection passed to {@link MongoDB#collectionExecutor(com.mongodb.client.MongoCollection)} with its own registry). A {@code null}
+     * stage in {@code pipeline} does not fail the future: the driver throws an {@link IllegalArgumentException} when the cursor is opened.</p>
      *
      * @param <T> the type to decode each change event's full document into
      * @param pipeline the aggregation pipeline to apply to change events
@@ -4149,7 +4209,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. The returned document is converted to {@code rowType} after the server has applied the update, so
+     * when that conversion fails the update has already been made: retrying the call updates again.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4225,7 +4286,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. The returned document is converted to {@code rowType} after the server has applied the update, so
+     * when that conversion fails the update has already been made: retrying the call updates again.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4313,7 +4375,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.
+     * The returned document is converted to {@code rowType} after the server has applied the update, so when that conversion fails the
+     * update has already been made: retrying the call updates again.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4392,7 +4456,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
-     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objList} contains a null element.
+     * The returned document is converted to {@code rowType} after the server has applied the update, so when that conversion fails the
+     * update has already been made: retrying the call updates again.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4466,7 +4532,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
      * executing the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level
-     * field name starting with {@code $}.</p>
+     * field name starting with {@code $}. The returned document is converted to {@code rowType} after the server has replaced the
+     * document, so when that conversion fails the replacement has already been made: retrying the call replaces again.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4542,7 +4609,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
      * executing the MongoDB command. This includes an {@link IllegalArgumentException} when the converted replacement has a top-level
-     * field name starting with {@code $}.</p>
+     * field name starting with {@code $}. The returned document is converted to {@code rowType} after the server has replaced (or, with
+     * {@code upsert}, inserted) the document, so when that conversion fails the write has already been made: retrying the call writes
+     * again.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4610,7 +4679,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndDelete} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. The deleted document is converted to {@code rowType} after the server has deleted it, so when that
+     * conversion fails the document is already gone: retrying the call deletes another matching document.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4680,7 +4750,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code findOneAndDelete} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. The deleted document is converted to {@code rowType} after the server has deleted it, so when that
+     * conversion fails the document is already gone: retrying the call deletes another matching document.</p>
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
@@ -4718,7 +4789,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
+     * the MongoDB command. The command returns every value in one reply, which the delegated call decodes as {@code rowType} before the
+     * stream is delivered, so a value that cannot be decoded (for example a string or fractional value requested as {@code Long}, a
+     * {@link org.bson.BsonInvalidOperationException}) fails the future; consuming the delivered stream sends no further command.</p>
      *
      * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
      * including a stream created after cancellation. Cancellation after successful completion returns
@@ -4757,7 +4830,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
+     * the MongoDB command. As with {@link #distinct(String, Class)}, every returned value is decoded as {@code rowType} before the stream
+     * is delivered, so a value that cannot be decoded fails the future; consuming the delivered stream sends no further command.</p>
      *
      * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
      * including a stream created after cancellation. Cancellation after successful completion returns
@@ -4801,7 +4875,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
+     * the MongoDB command. This includes the driver's {@link IllegalArgumentException} when {@code pipeline} contains a null stage (only a
+     * null {@code pipeline} itself is rejected at the call site). Failures while consuming the returned stream are raised during
+     * consumption.</p>
      *
      * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
      * including a stream created after cancellation. Cancellation after successful completion returns
@@ -4842,7 +4918,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
-     * the MongoDB command. Failures while consuming the returned stream are raised during consumption.</p>
+     * the MongoDB command. This includes the driver's {@link IllegalArgumentException} when {@code pipeline} contains a null stage (only a
+     * null {@code pipeline} itself is rejected at the call site). Failures while consuming the returned stream are raised during
+     * consumption.</p>
      *
      * <p>If cancellation of the returned future succeeds, any stream created by this operation is closed,
      * including a stream created after cancellation. Cancellation after successful completion returns

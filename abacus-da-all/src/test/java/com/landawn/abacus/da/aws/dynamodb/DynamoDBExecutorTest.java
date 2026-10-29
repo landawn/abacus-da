@@ -1604,4 +1604,305 @@ public class DynamoDBExecutorTest extends DynamoDBExecutorTestSupport {
         }
     }
 
+    // ---- 2026-10-27 sliceA ----
+
+    /**
+     * Pins the write rules the toItem/toUpdateItem Javadoc now states (doc-only, so this passes on HEAD too): every non-null
+     * bean property is written, one marked transient, @Transient or @NonColumn included (the markers are not consulted);
+     * CAMEL_CASE keeps Map keys and Object[] names as they are, while another naming policy converts them.
+     */
+    @Test
+    public void testToItemWritesMarkedPropertiesAndCamelCaseKeepsMapKeys_sliceA() {
+        final MarkedPropsEntity_sliceA entity = new MarkedPropsEntity_sliceA();
+        final java.util.Set<String> written = java.util.Set.of("id", "javaTransient", "abacusTransient", "nonColumn");
+        final java.util.Set<String> writtenSnake = java.util.Set.of("id", "java_transient", "abacus_transient", "non_column");
+        final Map<String, Object> snakeKeyed = new LinkedHashMap<>();
+        snakeKeyed.put("user_name", "x");
+        snakeKeyed.put("UserAge", 1);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(written, DynamoDBExecutor.toItem(entity).keySet()),
+                () -> assertEquals(new AttributeValue().withS("jt"), DynamoDBExecutor.toItem(entity).get("javaTransient")),
+                () -> assertEquals(written, DynamoDBExecutor.toUpdateItem(entity).keySet()),
+                () -> assertEquals(writtenSnake, DynamoDBExecutor.toItem(entity, NamingPolicy.SNAKE_CASE).keySet()),
+                () -> assertEquals(writtenSnake, DynamoDBExecutor.toUpdateItem(entity, NamingPolicy.SNAKE_CASE).keySet()),
+                () -> assertEquals(List.of("user_name", "UserAge"), new ArrayList<>(DynamoDBExecutor.toItem(snakeKeyed, NamingPolicy.CAMEL_CASE).keySet())),
+                () -> assertEquals(List.of("user_name", "UserAge"),
+                        new ArrayList<>(DynamoDBExecutor.toUpdateItem(snakeKeyed, NamingPolicy.CAMEL_CASE).keySet())),
+                () -> assertEquals(List.of("user_name", "UserAge"),
+                        new ArrayList<>(DynamoDBExecutor.toItem(new Object[] { "user_name", "x", "UserAge", 1 }, NamingPolicy.CAMEL_CASE).keySet())),
+                () -> assertEquals(List.of("user_name", "user_age"), new ArrayList<>(DynamoDBExecutor.toItem(snakeKeyed, NamingPolicy.SNAKE_CASE).keySet())),
+                // CAMEL_CASE itself would convert the key; toItem deliberately does not.
+                () -> assertEquals("userName", NamingPolicy.CAMEL_CASE.convert("user_name")));
+    }
+
+    /**
+     * Pins the mapper rules the Mapper/mapper(Class) Javadoc now states (doc-only, so this passes on HEAD too): without an
+     * annotated ID property, a property named "id" is the key by convention; a mapper fills its table name into the caller's
+     * request object itself, so the same request is afterwards rejected by a mapper of another table.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testMapperConventionIdAndRequestFilledInPlace_sliceA() {
+        final DynamoDBExecutor.Mapper<ConventionIdEntity_sliceA> conventionMapper = executor.mapper(ConventionIdEntity_sliceA.class);
+        final ConventionIdEntity_sliceA keyOnly = new ConventionIdEntity_sliceA();
+        keyOnly.setId("k1");
+        when(mockDynamoDBClient.getItem(eq("ConventionTable_sliceA"), any(Map.class))).thenReturn(new GetItemResult());
+
+        final ConventionIdEntity_sliceA missing = conventionMapper.getItem(keyOnly);
+        final ArgumentCaptor<Map<String, AttributeValue>> keyCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).getItem(eq("ConventionTable_sliceA"), keyCaptor.capture());
+
+        final DynamoDBExecutor.Mapper<TestEntity> testMapper = executor.mapper(TestEntity.class);
+        final DynamoDBExecutor.Mapper<TestEntity> otherMapper = executor.mapper(TestEntity.class, "OtherTable_sliceA", null);
+        final QueryRequest shared = new QueryRequest().withKeyConditionExpression("id = :id")
+                .withExpressionAttributeValues(Map.of(":id", new AttributeValue().withS("1")));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(new QueryResult().withItems(new ArrayList<>()));
+
+        final List<TestEntity> firstRows = testMapper.list(shared);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertNull(missing),
+                () -> assertEquals(Map.of("id", new AttributeValue().withS("k1")), keyCaptor.getValue()), () -> assertTrue(firstRows.isEmpty()),
+                () -> assertEquals("TestTable", shared.getTableName()),
+                () -> assertEquals("Table name mismatch: request has 'TestTable' but mapper expects 'OtherTable_sliceA'",
+                        assertThrows(IllegalArgumentException.class, () -> otherMapper.list(shared)).getMessage()));
+    }
+
+    /**
+     * Pins the target-construction rules the toEntity Javadoc now states (doc-only, so this passes on HEAD too): a record row type
+     * is built through its canonical constructor by getItem, a Mapper and query(QueryRequest, Class) (whose Dataset columns are
+     * the record components), and a bean with only a constructor taking some of its properties fails with
+     * UnsupportedOperationException once an item is present.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testRecordTargetsAndPartialConstructorBean_sliceA() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", new AttributeValue().withS("r1"));
+        item.put("count", new AttributeValue().withN("2"));
+        when(mockDynamoDBClient.getItem(eq("RecordTable_sliceA"), any(Map.class))).thenReturn(new GetItemResult().withItem(item));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(new QueryResult().withItems(List.of(item)));
+
+        final RecordRow_sliceA expected = new RecordRow_sliceA("r1", 2);
+        final DynamoDBExecutor.Mapper<RecordRow_sliceA> mapper = executor.mapper(RecordRow_sliceA.class);
+        final Dataset dataset = executor.query(new QueryRequest("RecordTable_sliceA"), RecordRow_sliceA.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(expected, executor.getItem("RecordTable_sliceA", DynamoDBExecutor.asKey("id", "r1"), RecordRow_sliceA.class)),
+                () -> assertEquals(expected, mapper.getItem(new RecordRow_sliceA("r1", 0))),
+                () -> assertEquals(List.of("id", "count"), new ArrayList<>(dataset.columnNames())), () -> assertEquals(1, dataset.size()),
+                () -> assertThrows(UnsupportedOperationException.class, () -> DynamoDBExecutor.toEntity(item, PartialConstructorBean_sliceA.class)),
+                () -> assertNull(DynamoDBExecutor.toEntity((Map<String, AttributeValue>) null, PartialConstructorBean_sliceA.class)));
+    }
+
+    /**
+     * N.newCollection and IntFunctions.ofMap hand back a mutable stand-in (HashMap, TreeMap, ArrayList, HashSet) for an abacus
+     * immutable row class, so toList/list/stream/getItem with ImmutableMap, ImmutableSortedMap, ImmutableList or ImmutableSet
+     * returned rows that are not of the requested class (a List<ImmutableMap> holding HashMaps). Each row is now of the requested
+     * class with the same values; a null item still reads as a null Map row, and a creatable row class is returned as before.
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testImmutableRowClassesGetRowsOfThatClass_sliceA() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", new AttributeValue().withS("a"));
+        item.put("n", new AttributeValue().withN("2"));
+        final Map<String, Object> expectedMap = new HashMap<>();
+        expectedMap.put("id", "a");
+        expectedMap.put("n", "2");
+        final List<Map<String, AttributeValue>> itemsWithNull = new ArrayList<>();
+        itemsWithNull.add(null);
+
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(new QueryResult().withItems(List.of(item)));
+        when(mockDynamoDBClient.getItem(eq("ImmutableRows_sliceA"), any(Map.class))).thenReturn(new GetItemResult().withItem(item));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final Object row = DynamoDBExecutor.toList(new QueryResult().withItems(List.of(item)), com.landawn.abacus.util.ImmutableMap.class).get(0);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableMap, row.getClass().getName());
+            assertEquals(expectedMap, row);
+        }, () -> {
+            final Object row = executor.list(new QueryRequest("ImmutableRows_sliceA"), com.landawn.abacus.util.ImmutableSortedMap.class).get(0);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableSortedMap, row.getClass().getName());
+            assertEquals(expectedMap, row);
+        }, () -> {
+            final Object row = executor.stream(new QueryRequest("ImmutableRows_sliceA"), com.landawn.abacus.util.ImmutableList.class).first().orElseNull();
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableList, row.getClass().getName());
+            assertEquals(List.of("a", "2"), row);
+        }, () -> {
+            final Object row = executor.getItem("ImmutableRows_sliceA", DynamoDBExecutor.asKey("id", "a"), com.landawn.abacus.util.ImmutableSet.class);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableSet, row.getClass().getName());
+            assertEquals(java.util.Set.of("a", "2"), row);
+        }, () -> assertNull(DynamoDBExecutor.toList(new QueryResult().withItems(itemsWithNull), com.landawn.abacus.util.ImmutableMap.class).get(0)),
+                () -> assertEquals(LinkedHashMap.class,
+                        DynamoDBExecutor.toList(new QueryResult().withItems(List.of(item)), LinkedHashMap.class).get(0).getClass()));
+    }
+
+    // ---- 2026-10-27 r2D ----
+
+    /**
+     * The immutable-row fix covers every row reader: the three getItem overloads (readRow's Map and Collection branches), toList over
+     * query and scan results, list, scan and batchGetItem (the row mappers), for the sorted and navigable immutable kinds too. A
+     * creatable row class (TreeMap, LinkedList, TreeSet, and the HashMap/ArrayList of the Map/List interfaces) is still returned as
+     * the factory builds it. A row class that the stand-in cannot be converted to (EnumMap, whose keys must be enums, or
+     * AbstractQueue) now fails with IllegalArgumentException where HEAD returned HashMap/LinkedList rows typed as that class;
+     * ImmutableBiMap and ImmutableCollection still fail as before, and an empty result converts nothing.
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testEveryRowReaderReturnsTheRequestedRowClass_r2D() {
+        final String table = "RowKinds_r2D";
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", new AttributeValue().withS("a"));
+        item.put("n", new AttributeValue().withN("2"));
+        final Map<String, Object> expectedMap = new HashMap<>();
+        expectedMap.put("id", "a");
+        expectedMap.put("n", "2");
+        final Map<String, AttributeValue> key = DynamoDBExecutor.asKey("id", "a");
+        final Map<String, KeysAndAttributes> keys = new LinkedHashMap<>();
+        keys.put(table, new KeysAndAttributes().withKeys(key));
+        final Map<String, List<Map<String, AttributeValue>>> responses = new LinkedHashMap<>();
+        responses.put(table, List.of(item));
+        final QueryResult queryResult = new QueryResult().withItems(List.of(item));
+
+        when(mockDynamoDBClient.getItem(eq(table), any(Map.class))).thenReturn(new GetItemResult().withItem(item));
+        when(mockDynamoDBClient.getItem(eq(table), any(Map.class), any(Boolean.class))).thenReturn(new GetItemResult().withItem(item));
+        when(mockDynamoDBClient.getItem(any(GetItemRequest.class))).thenReturn(new GetItemResult().withItem(item));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(new QueryResult().withItems(List.of(item)));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(new ScanResult().withItems(List.of(item)));
+        when(mockDynamoDBClient.batchGetItem(any(Map.class))).thenReturn(new BatchGetItemResult().withResponses(responses));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final Object row = executor.getItem(table, key, com.landawn.abacus.util.ImmutableMap.class);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableMap, row.getClass().getName());
+            assertEquals(expectedMap, row);
+        }, () -> {
+            final Object row = executor.getItem(table, key, Boolean.TRUE, com.landawn.abacus.util.ImmutableSortedSet.class);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableSortedSet, row.getClass().getName());
+            assertEquals(List.of("2", "a"), new ArrayList<>((java.util.Collection<?>) row));
+        }, () -> {
+            final Object row = executor.getItem(new GetItemRequest(table, key), com.landawn.abacus.util.ImmutableNavigableMap.class);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableNavigableMap, row.getClass().getName());
+            assertEquals(List.of("id", "n"), new ArrayList<>(((Map<?, ?>) row).keySet()));
+        }, () -> {
+            final Object row = DynamoDBExecutor.toList(queryResult, com.landawn.abacus.util.ImmutableNavigableSet.class).get(0);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableNavigableSet, row.getClass().getName());
+            assertEquals(List.of("2", "a"), new ArrayList<>((java.util.Collection<?>) row));
+        }, () -> {
+            final Object row = DynamoDBExecutor.toList(new ScanResult().withItems(List.of(item)), 0, 1, com.landawn.abacus.util.ImmutableList.class).get(0);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableList, row.getClass().getName());
+            assertEquals(List.of("a", "2"), row);
+        }, () -> {
+            final Object row = executor.scan(new ScanRequest(table), com.landawn.abacus.util.ImmutableSortedMap.class).first().orElseNull();
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableSortedMap, row.getClass().getName());
+            assertEquals(expectedMap, row);
+        }, () -> {
+            final Object row = executor.batchGetItem(keys, com.landawn.abacus.util.ImmutableMap.class).get(table).get(0);
+            assertTrue(row instanceof com.landawn.abacus.util.ImmutableMap, row.getClass().getName());
+            assertEquals(expectedMap, row);
+        }, () -> assertEquals(java.util.TreeMap.class, executor.getItem(table, key, java.util.TreeMap.class).getClass()),
+                () -> assertEquals(java.util.LinkedList.class, DynamoDBExecutor.toList(queryResult, java.util.LinkedList.class).get(0).getClass()),
+                () -> assertEquals(java.util.TreeSet.class, executor.list(new QueryRequest(table), java.util.TreeSet.class).get(0).getClass()),
+                () -> assertEquals(HashMap.class, DynamoDBExecutor.toList(queryResult, Map.class).get(0).getClass()),
+                () -> assertEquals(ArrayList.class, DynamoDBExecutor.toList(queryResult, List.class).get(0).getClass()),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(queryResult, java.util.EnumMap.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> executor.getItem(table, key, java.util.AbstractQueue.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(queryResult, com.landawn.abacus.util.ImmutableBiMap.class)),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> DynamoDBExecutor.toList(queryResult, com.landawn.abacus.util.ImmutableCollection.class)),
+                () -> assertTrue(DynamoDBExecutor.toList(new QueryResult().withItems(new ArrayList<>()), java.util.EnumMap.class).isEmpty()));
+    }
+
+    @com.landawn.abacus.annotation.Table("RecordTable_sliceA")
+    public record RecordRow_sliceA(@com.landawn.abacus.annotation.Id String id, int count) {
+    }
+
+    public static class PartialConstructorBean_sliceA {
+        private String id;
+        private int count;
+
+        public PartialConstructorBean_sliceA(final String id) {
+            this.id = id;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public void setCount(final int count) {
+            this.count = count;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("MarkedTable_sliceA")
+    public static class MarkedPropsEntity_sliceA {
+        @com.landawn.abacus.annotation.Id
+        private String id = "k";
+        private transient String javaTransient = "jt";
+        @com.landawn.abacus.annotation.Transient
+        private String abacusTransient = "at";
+        @com.landawn.abacus.annotation.NonColumn
+        private String nonColumn = "nc";
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getJavaTransient() {
+            return javaTransient;
+        }
+
+        public void setJavaTransient(final String javaTransient) {
+            this.javaTransient = javaTransient;
+        }
+
+        public String getAbacusTransient() {
+            return abacusTransient;
+        }
+
+        public void setAbacusTransient(final String abacusTransient) {
+            this.abacusTransient = abacusTransient;
+        }
+
+        public String getNonColumn() {
+            return nonColumn;
+        }
+
+        public void setNonColumn(final String nonColumn) {
+            this.nonColumn = nonColumn;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table("ConventionTable_sliceA")
+    public static class ConventionIdEntity_sliceA {
+        private String id;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+    }
+
 }

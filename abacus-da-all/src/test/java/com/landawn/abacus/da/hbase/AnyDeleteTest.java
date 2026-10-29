@@ -729,4 +729,55 @@ public class AnyDeleteTest extends TestBase {
         assertArrayEquals(Bytes.toBytes("row"), AnyDelete.of(java.util.Optional.of("row")).getRow());
         assertArrayEquals(Bytes.toBytes("row"), AnyDelete.of(java.util.Optional.of("row"), 5L).getRow());
     }
+
+    // ---- 2026-10-27 sliceP ----
+
+    /**
+     * Pins the of(rowKey, ts, familyMap) @param familyMap doc: the map must be ordered by Bytes.BYTES_COMPARATOR. A naturally
+     * ordered TreeMap is accepted, but every later add*, has and get call throws ClassCastException (byte[] is not Comparable)
+     * and leaves the map empty; the same calls work on a BYTES_COMPARATOR map.
+     */
+    @Test
+    public void testOf_naturallyOrderedFamilyMap_laterAddsHasAndGetThrowClassCast_sliceP() {
+        final List<java.util.function.Consumer<AnyDelete>> calls = new java.util.ArrayList<>(addersFor("cf"));
+        calls.add(d -> {
+            try {
+                d.add(new org.apache.hadoop.hbase.KeyValue(Bytes.toBytes("row"), Bytes.toBytes("cf"), null, 5L,
+                        org.apache.hadoop.hbase.KeyValue.Type.DeleteFamily));
+            } catch (final java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+        calls.add(d -> d.has("cf", "q"));
+        calls.add(d -> d.get("cf", "q"));
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(java.util.stream.IntStream.range(0, calls.size()).mapToObj(i -> (org.junit.jupiter.api.function.Executable) () -> {
+                    final AnyDelete natural = AnyDelete.of("row", 5L, new TreeMap<byte[], List<Cell>>());
+                    assertThrows(ClassCastException.class, () -> calls.get(i).accept(natural), "call #" + i);
+                    assertTrue(natural.isEmpty());
+
+                    final AnyDelete ordered = AnyDelete.of("row", 5L, new TreeMap<byte[], List<Cell>>(Bytes.BYTES_COMPARATOR));
+                    calls.get(i).accept(ordered);
+                }));
+    }
+
+    // ---- 2026-10-27 r2O ----
+
+    /**
+     * Pins the row-key @throws docs of every Object factory: an HBase operation or Any* wrapper is not a row-key value and is
+     * rejected (HBaseExecutor.toRowKeyBytes) instead of deleting the row named by its bean JSON.
+     */
+    @Test
+    public void testOf_operationAsRowKey_throwsIae_r2O() {
+        final Object delete = new Delete(Bytes.toBytes("r"));
+        final Object anyDelete = AnyDelete.of("r");
+        final NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(delete)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(anyDelete, 1L)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(delete, 0, 1)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(anyDelete, 0, 1, 1L)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyDelete.of(anyDelete, 1L, familyMap)));
+    }
 }

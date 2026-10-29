@@ -180,4 +180,132 @@ class CassandraExecutorTest {
                     () -> verify(fixture.session, times(2)).prepare(query));
         }
     }
+
+    // ---- 2026-10-27 sliceK ----
+
+    // close() closed the session, the cluster and the statement pool in nested finally blocks, so a cluster close failure replaced a
+    // session close failure, which was lost. The first failure is thrown with the later ones suppressed; every resource is still closed.
+    @Test
+    void sliceK_closeThrowsTheFirstFailureWithLaterOnesSuppressed() throws Exception {
+        final CassandraTestFixture fixture = new CassandraTestFixture();
+        final IllegalStateException sessionFailure = new IllegalStateException("session close");
+        final IllegalStateException clusterFailure = new IllegalStateException("cluster close");
+        doThrow(sessionFailure).when(fixture.session).close();
+        doThrow(clusterFailure).when(fixture.cluster).close();
+
+        final IllegalStateException thrown = assertThrows(IllegalStateException.class, fixture::close);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertSame(sessionFailure, thrown),
+                () -> assertArrayEquals(new Throwable[] { clusterFailure }, thrown.getSuppressed()), () -> verify(fixture.cluster).close(),
+                () -> assertTrue(statementPool(fixture.executor).isClosed()));
+    }
+
+    /** Pins: a single close failure (the cluster's, or the session's) is thrown as is, and the statement pool is still closed. */
+    @Test
+    void sliceK_aSingleCloseFailureIsThrownAsIsAfterThePoolIsClosed() throws Exception {
+        final CassandraTestFixture clusterFails = new CassandraTestFixture();
+        final IllegalStateException clusterFailure = new IllegalStateException("cluster close");
+        doThrow(clusterFailure).when(clusterFails.cluster).close();
+        final CassandraTestFixture sessionFails = new CassandraTestFixture();
+        final OutOfMemoryError sessionError = new OutOfMemoryError("session close");
+        doThrow(sessionError).when(sessionFails.session).close();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            assertSame(clusterFailure, assertThrows(IllegalStateException.class, clusterFails::close));
+            assertEquals(0, clusterFailure.getSuppressed().length);
+            assertTrue(statementPool(clusterFails.executor).isClosed());
+        }, () -> {
+            assertSame(sessionError, assertThrows(OutOfMemoryError.class, sessionFails::close));
+            verify(sessionFails.cluster).close();
+            assertTrue(statementPool(sessionFails.executor).isClosed());
+        });
+    }
+
+    private static com.landawn.abacus.pool.KeyedObjectPool<?, ?> statementPool(final CassandraExecutor executor) throws Exception {
+        final var poolField = CassandraExecutor.class.getDeclaredField("preparedStatementPool");
+        poolField.setAccessible(true);
+        return (com.landawn.abacus.pool.KeyedObjectPool<?, ?>) poolField.get(executor);
+    }
+
+    // ---- 2026-10-27 r2K ----
+
+    // Branch coverage of addCloseFailure's identity check: the same exception instance thrown by the session and the cluster is thrown
+    // once, without itself as a suppressed exception (Throwable.addSuppressed(this) would throw IllegalArgumentException out of
+    // close() before the statement pool is closed).
+    @Test
+    void r2K_theSameFailureFromTheSessionAndTheClusterIsThrownOnce() throws Exception {
+        final CassandraTestFixture fixture = new CassandraTestFixture();
+        final IllegalStateException failure = new IllegalStateException("close");
+        doThrow(failure).when(fixture.session).close();
+        doThrow(failure).when(fixture.cluster).close();
+
+        final IllegalStateException thrown = assertThrows(IllegalStateException.class, fixture::close);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertSame(failure, thrown), () -> assertEquals(0, thrown.getSuppressed().length),
+                () -> verify(fixture.cluster).close(), () -> assertTrue(statementPool(fixture.executor).isClosed()));
+    }
+
+    // ---- 2026-10-27 fixD ----
+
+    // fixD (finding F): close() has a third failure branch, the prepared-statement pool's close, which the tests above never reach
+    // (the pool's own close does not fail). A session or cluster close failure is thrown with the pool's added to it as suppressed,
+    // after the earlier ones; a pool close failure alone is thrown as is, after the session and the cluster are closed. The pool is a
+    // private final field created by the constructor (no seam), so it is replaced by reflection with a mock whose close() throws.
+    @Test
+    void fixD_aStatementPoolCloseFailureIsSuppressedByAnEarlierOneOrThrownAlone() throws Exception {
+        final CassandraTestFixture sessionAndPool = new CassandraTestFixture();
+        final IllegalStateException sessionFailure = new IllegalStateException("session close");
+        final IllegalStateException poolAfterSession = new IllegalStateException("pool close 1");
+        doThrow(sessionFailure).when(sessionAndPool.session).close();
+        failingStatementPool(sessionAndPool.executor, poolAfterSession);
+
+        final CassandraTestFixture clusterAndPool = new CassandraTestFixture();
+        final IllegalStateException clusterFailure = new IllegalStateException("cluster close");
+        final IllegalStateException poolAfterCluster = new IllegalStateException("pool close 2");
+        doThrow(clusterFailure).when(clusterAndPool.cluster).close();
+        failingStatementPool(clusterAndPool.executor, poolAfterCluster);
+
+        final CassandraTestFixture allThree = new CassandraTestFixture();
+        final IllegalStateException firstFailure = new IllegalStateException("session close 3");
+        final IllegalStateException secondFailure = new IllegalStateException("cluster close 3");
+        final IllegalStateException thirdFailure = new IllegalStateException("pool close 3");
+        doThrow(firstFailure).when(allThree.session).close();
+        doThrow(secondFailure).when(allThree.cluster).close();
+        failingStatementPool(allThree.executor, thirdFailure);
+
+        final CassandraTestFixture poolOnly = new CassandraTestFixture();
+        final IllegalStateException poolFailure = new IllegalStateException("pool close 4");
+        failingStatementPool(poolOnly.executor, poolFailure);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final IllegalStateException thrown = assertThrows(IllegalStateException.class, sessionAndPool::close);
+            assertSame(sessionFailure, thrown);
+            assertArrayEquals(new Throwable[] { poolAfterSession }, thrown.getSuppressed());
+            verify(sessionAndPool.cluster).close();
+        }, () -> {
+            final IllegalStateException thrown = assertThrows(IllegalStateException.class, clusterAndPool::close);
+            assertSame(clusterFailure, thrown);
+            assertArrayEquals(new Throwable[] { poolAfterCluster }, thrown.getSuppressed());
+            verify(clusterAndPool.session).close();
+        }, () -> {
+            final IllegalStateException thrown = assertThrows(IllegalStateException.class, allThree::close);
+            assertSame(firstFailure, thrown);
+            assertArrayEquals(new Throwable[] { secondFailure, thirdFailure }, thrown.getSuppressed());
+        }, () -> {
+            assertSame(poolFailure, assertThrows(IllegalStateException.class, poolOnly::close));
+            assertEquals(0, poolFailure.getSuppressed().length);
+            verify(poolOnly.session).close();
+            verify(poolOnly.cluster).close();
+        });
+    }
+
+    // Closes the executor's real statement pool and puts a mock in its place whose close() throws failure.
+    private static void failingStatementPool(final CassandraExecutor executor, final RuntimeException failure) throws Exception {
+        statementPool(executor).close();
+        final com.landawn.abacus.pool.KeyedObjectPool<?, ?> pool = mock(com.landawn.abacus.pool.KeyedObjectPool.class);
+        doThrow(failure).when(pool).close();
+        final var poolField = CassandraExecutor.class.getDeclaredField("preparedStatementPool");
+        poolField.setAccessible(true);
+        poolField.set(executor, pool);
+    }
 }

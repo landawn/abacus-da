@@ -142,7 +142,9 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * @param value the attribute value, converted to bytes via {@link HBaseExecutor#toValueBytes(Object)}.
      *              A {@code null} value is forwarded as a {@code null} byte array, which per the
      *              {@link OperationWithAttributes#setAttribute(String, byte[])} contract removes
-     *              any attribute previously stored under {@code name}.
+     *              any attribute previously stored under {@code name}. An empty value wrapper such as
+     *              {@code Optional.empty()} or an empty {@code Nullable} converts to {@code null} bytes
+     *              and so removes the attribute too.
      * @return this instance, to allow fluent method chaining
      * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
      * @see #getAttribute(String)
@@ -190,8 +192,8 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * operation.setId(null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param id the identifier to assign; must not be {@code null} — once set, the id cannot be
-     *           cleared via this API
+     * @param id the identifier to assign; must not be {@code null}, so this method cannot clear an id
+     *           once set ({@code setAttribute(OperationWithAttributes.ID_ATRIBUTE, null)} removes it)
      * @return this instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code id} is {@code null}
      * @see #getId()

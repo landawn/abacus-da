@@ -123,7 +123,12 @@ public abstract class DynamoDBExecutorBase {
      * names. Item and direct bean mapping assign SERIALIZE_ONLY properties that have a write path (a writable field or
      * a setter), skip read-only properties ({@code PropInfo.isReadOnlyProperty}, including getter-only properties of an
      * {@code @AccessFieldByMethod} bean), and resolve dotted paths, converting their values as for the last property of the
-     * path named directly. A read-only property is skipped in every context,
+     * path named directly. The dependency's path setter creates a missing intermediate bean through its no-args constructor and
+     * assigns into an existing one in place, so a path through a nested record or another bean without a no-args constructor
+     * fails the item ({@link IllegalArgumentException} when the intermediate value is missing, {@link ClassCastException} when an
+     * earlier attribute already set it), as does a resolvable path into a builder-based target bean, whose intermediate values the
+     * setter reads from the builder ({@link ClassCastException}); such a nested bean is read from
+     * an {@code M} attribute instead. A read-only property is skipped in every context,
      * whatever its declared direction: a read-only property can carry an explicit {@code DESERIALIZE_ONLY} only on an
      * {@code @AccessFieldByMethod} field without a setter, and such a property is skipped too, by item and direct mapping and
      * by a JSON-context element of {@code L}, since {@code isReadOnlyProperty} is tested before the direction. Only a bean parsed from the JSON

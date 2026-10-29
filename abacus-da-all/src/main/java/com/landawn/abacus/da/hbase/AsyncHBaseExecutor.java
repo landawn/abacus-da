@@ -811,9 +811,10 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(stream -> { try (stream) { stream.forEach(System.out::println); } }); // returns ContinuableFuture<Void>
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<Result> s = async.scan("badTable", family).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -862,9 +863,10 @@ public final class AsyncHBaseExecutor {
      * }                           // throws InterruptedException, ExecutionException
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<Result> s = async.scan("badTable", family, qualifier).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -911,9 +913,10 @@ public final class AsyncHBaseExecutor {
      * }                                      // throws InterruptedException, ExecutionException
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<Result> s = async.scan("badTable", AnyScan.create()).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -961,9 +964,10 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(stream -> { try (stream) { stream.forEach(System.out::println); } }); // returns ContinuableFuture<Void>
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<Result> s = async.scan("badTable", new Scan()).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -1060,9 +1064,10 @@ public final class AsyncHBaseExecutor {
      * }                           // throws InterruptedException, ExecutionException
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<String> s = async.scan("badTable", "info", "name", String.class).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -1113,9 +1118,10 @@ public final class AsyncHBaseExecutor {
      * }                           // throws InterruptedException, ExecutionException
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<User> s = async.scan("badTable", family, User.class).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -1166,9 +1172,10 @@ public final class AsyncHBaseExecutor {
      * }                           // throws InterruptedException, ExecutionException
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<String> s = async.scan("badTable", family, qualifier, String.class).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -1198,7 +1205,10 @@ public final class AsyncHBaseExecutor {
      * Result to the specified target type.
      *
      * <p>Combines the flexibility of {@link AnyScan} configuration (start/stop rows, filters,
-     * column families, time ranges, limits) with automatic object mapping.</p>
+     * column families, time ranges, limits) with automatic object mapping. As in
+     * {@link HBaseExecutor#scan(String, AnyScan, Class)}, empty results, including cursor-only progress
+     * notifications, are omitted, and when partial results or batching are enabled on the scan, each
+     * partial {@link Result} is converted independently (one object per fragment, not per row).</p>
      *
      * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
@@ -1217,9 +1227,10 @@ public final class AsyncHBaseExecutor {
      * }                                  // throws InterruptedException, ExecutionException
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<User> s = async.scan("badTable", AnyScan.create(), User.class).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -1249,7 +1260,10 @@ public final class AsyncHBaseExecutor {
      * Result to the specified target type.
      *
      * <p>Provides full access to HBase scan capabilities (filters, column selection, time ranges,
-     * caching, batching) combined with automatic object mapping.</p>
+     * caching, batching) combined with automatic object mapping. As in
+     * {@link HBaseExecutor#scan(String, Scan, Class)}, empty results, including cursor-only progress
+     * notifications, are omitted, and when partial results or batching are enabled on the scan, each
+     * partial {@link Result} is converted independently (one object per fragment, not per row).</p>
      *
      * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
@@ -1269,9 +1283,10 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(stream -> { try (stream) { stream.forEach(System.out::println); } }); // returns ContinuableFuture<Void>
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
-     * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
+     * // table; the table is first contacted when the stream fetches its first row, and HBase's scanner
+     * // iterator wraps that failure (e.g. a TableNotFoundException) in a java.io.UncheckedIOException.
      * try (Stream<User> s = async.scan("badTable", new Scan(), User.class).get()) {
-     *     s.count(); // throws UncheckedIOException (table opened on consumption)
+     *     s.count(); // throws java.io.UncheckedIOException (not com.landawn.abacus.exception.UncheckedIOException)
      * }              // the get() above only throws InterruptedException, ExecutionException
      * }</pre>
      *
@@ -1542,8 +1557,10 @@ public final class AsyncHBaseExecutor {
      * // Edge: an empty list is a no-op that still completes successfully
      * Object none = async.delete("users", Collections.<Delete>emptyList()).get(); // returns null
      *
-     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.delete("badTable", deletes).get(); // throws InterruptedException, ExecutionException
+     * // Negative: exceptions from the underlying call surface wrapped in ExecutionException. Use a non-empty list:
+     * // deletes is empty by now, and an empty list completes with null without contacting the table.
+     * List<Delete> pending = new ArrayList<>(List.of(new Delete(Bytes.toBytes("user3"))));
+     * async.delete("badTable", pending).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to delete from
@@ -2104,7 +2121,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: use the channel once it is available, on the async pool
      * async.coprocessorService("users", "user123")
-     *      .thenRunAsync(channel -> System.out.println(channel)); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(ch -> System.out.println(ch)); // returns ContinuableFuture<Void>
      *
      * // Edge: creating the channel makes no RPC, so a well-formed but non-existent table still yields a
      * // channel; the missing table is reported only when an endpoint method is invoked through it

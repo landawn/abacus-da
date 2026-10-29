@@ -39,9 +39,11 @@ import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Increment;
+import org.apache.hadoop.hbase.client.Operation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Table;
@@ -100,7 +102,8 @@ import com.landawn.abacus.util.stream.Stream;
  * encoded with {@link Bytes#toBytes(String)}; other objects are converted to their
  * {@code N.stringOf} form first; the remaining bytes of {@link ByteBuffer}s are copied
  * into a fresh array without changing the buffer position;
- * existing {@code byte[]} values are returned as-is.</p>
+ * existing {@code byte[]} values are returned as-is. An HBase operation or {@code Any*} wrapper
+ * passed as a row key is rejected with {@link IllegalArgumentException}: it is not a row-key value.</p>
  *
  * <h2>Entity mapping</h2>
  *
@@ -211,9 +214,10 @@ public final class HBaseExecutor {
 
     /**
      * The shared {@link AsyncExecutor} that backs {@link #async()} when no executor is supplied
-     * at construction. It is sized to {@code max(64, IOUtil.CPU_CORES * 8)} core threads and
-     * {@code max(128, IOUtil.CPU_CORES * 16)} maximum threads with a 180-second keep-alive,
-     * and is never shut down by {@link #close()}.
+     * at construction. Its core pool is {@code max(64, IOUtil.CPU_CORES * 8)} threads, created as tasks arrive and kept
+     * when idle. The maximum pool size {@code max(128, IOUtil.CPU_CORES * 16)} and the 180-second keep-alive are passed as
+     * well, but {@link AsyncExecutor} queues tasks in an unbounded queue, so at most the core number of tasks run at once
+     * and further ones wait in that queue. It is never shut down by {@link #close()}.
      */
     static final AsyncExecutor DEFAULT_ASYNC_EXECUTOR = new AsyncExecutor(//
             N.max(64, IOUtil.CPU_CORES * 8), // coreThreadPoolSize
@@ -241,9 +245,10 @@ public final class HBaseExecutor {
      *
      * <p>The default async executor is statically configured with:</p>
      * <ul>
-     *   <li>Core thread pool size: {@code max(64, IOUtil.CPU_CORES * 8)}</li>
-     *   <li>Max thread pool size: {@code max(128, IOUtil.CPU_CORES * 16)}</li>
-     *   <li>Keep-alive time: 180 seconds</li>
+     *   <li>Core thread pool size: {@code max(64, IOUtil.CPU_CORES * 8)}, which is also the most tasks that run at once:
+     *       further tasks wait in an unbounded queue</li>
+     *   <li>Max thread pool size: {@code max(128, IOUtil.CPU_CORES * 16)} (never reached, because of that queue)</li>
+     *   <li>Keep-alive time: 180 seconds (core threads are kept when idle)</li>
      * </ul>
      *
      * <p>The supplied {@code conn} is not copied; closing this executor closes the
@@ -1169,11 +1174,18 @@ public final class HBaseExecutor {
      * values {@link AnyPut#create(Object)} writes but which cannot be assigned. Only that write path decides: a
      * {@code @JsonXmlField(direction = SERIALIZE_ONLY)} property that has a setter is still written on read (as in
      * DynamoDB item mapping), and a read-only property is still skipped when its field declares
-     * {@code DESERIALIZE_ONLY}. The one exception is a read-only nested bean that is flattened into its own column
+     * {@code DESERIALIZE_ONLY}. The one exception is a read-only mutable nested bean that is flattened into its own column
      * family (the family is the nested bean property, the qualifiers are its properties) and held by a field: its
      * cells are written into the instance that field already holds, which needs no setter; when that field holds
-     * {@code null} the whole family is skipped and the rest of the row is still read. A read-only nested bean mapped
-     * as a single {@code @Column} cell is skipped like any other read-only property. A cell whose column maps to the
+     * {@code null} the whole family is skipped and the rest of the row is still read (a read-only immutable nested bean
+     * cannot be filled in place, so its family is always skipped). Otherwise a flattened mutable nested bean that the
+     * property of a mutable entity already holds is filled in place, and any other flattened nested bean is created for
+     * the row and assigned to its property once, after the last cell of the row, so a setter or builder method that
+     * copies its argument receives it complete. Such a nested bean may be immutable (a record, or a bean built through
+     * its constructor or builder): it is built from its cells, and a nested property without a cell gets its default
+     * value or, only when the owning entity is mutable, the value it has in the instance the property already holds (the
+     * nested value that the builder or constructor of an immutable entity starts with is not consulted). A read-only
+     * nested bean mapped as a single {@code @Column} cell is skipped like any other read-only property. A cell whose column maps to the
      * row-key property is ignored too: that property always receives the key of the row. A property without a cell, such
      * as one that was {@code null} or an empty value wrapper (empty {@code Optional}/{@code Nullable}/{@code OptionalInt}
      * and the like, a {@code Holder} of {@code null}) when {@link AnyPut#create(Object)} wrote the row, is not assigned and
@@ -1204,7 +1216,9 @@ public final class HBaseExecutor {
      *
      * <p>Entity-class requirements:</p>
      * <ul>
-     *   <li>JavaBean conventions (getters/setters)</li>
+     *   <li>JavaBean conventions (getters/setters); an immutable bean (a record, or a bean built through its constructor
+     *       or builder) is supported as a target without a row-key property, whose properties are passed to its
+     *       constructor or builder</li>
      *   <li>{@code @ColumnFamily} / {@code @Column} for custom mapping; without them,
      *       field names become column-family names with empty qualifiers (or are flattened
      *       for nested bean fields)</li>
@@ -1388,6 +1402,8 @@ public final class HBaseExecutor {
             Set<String> assignedSingleVersionColumns = null;
             Map<String, Map<String, Tuple2<String, Boolean>>> familySoleWriterTPMap = null;
             Map<String, List<Tuple2<String, Boolean>>> familyNestedBeanTPs = null;
+            List<Tuple3<PropInfo, BeanInfo, Object>> nestedBeanResults = null;
+            List<Tuple3<Object, PropInfo, Object>> versionedContainers = null;
             boolean isContestedCell = false;
 
             Map<String, Type<?>> columnValueTypeMap = null;
@@ -1580,16 +1596,51 @@ public final class HBaseExecutor {
                         continue;
                     }
 
-                    Object propEntity = familyPropInfo.getPropValue(entity);
+                    // WHY: a nested bean created for this row is assigned to its property once, after the last cell (below), not
+                    // on creation: a setter or builder method that copies or normalizes its argument kept a snapshot of the still
+                    // empty bean, and the cells written into the created instance were lost (all of them for a builder). Later
+                    // cells of the property therefore find it in nestedBeanResults, never by reading the property back. Only a
+                    // mutable entity's property is read (an immutable entity's intermediate result may be a builder, which the
+                    // property cannot read: ClassCastException), for a mutable nested bean it already holds, which is filled in
+                    // place. AnyPut.create also flattens an immutable nested bean (a record, or a bean built through its
+                    // constructor or builder), which has no no-args constructor and no setters: its cells fill its intermediate
+                    // result (createBeanResult).
+                    Object propEntity = findNestedBeanResult(nestedBeanResults, familyPropInfo);
+
+                    if (propEntity == null && !entityInfo.isImmutable && !propBeanInfo.isImmutable) {
+                        propEntity = familyPropInfo.getPropValue(entity);
+                    }
 
                     if (propEntity == null) {
                         if (isReadOnlyProperty(familyPropInfo)) {
-                            continue; // no instance to fill, and the read-only property cannot be assigned one
+                            // no instance to fill (an immutable nested bean cannot be filled in place), and the read-only property
+                            // cannot be assigned one
+                            continue;
                         }
 
-                        propEntity = N.newInstance(propEntityClass);
+                        if (propBeanInfo.isImmutable) {
+                            propEntity = propBeanInfo.createBeanResult();
 
-                        familyPropInfo.setPropValue(entity, propEntity);
+                            // Only a mutable entity's property can be read (see above): the nested value an immutable entity's
+                            // builder or constructor starts with is not consulted.
+                            final Object existingPropEntity = entityInfo.isImmutable ? null : familyPropInfo.getPropValue(entity);
+
+                            if (existingPropEntity != null) {
+                                // A nested property without a cell keeps the value of the instance the property already holds,
+                                // as it does when a mutable nested bean is filled in place.
+                                for (final PropInfo nestedPropInfo : propBeanInfo.propInfoList) {
+                                    nestedPropInfo.setPropValue(propEntity, nestedPropInfo.getPropValue(existingPropEntity));
+                                }
+                            }
+                        } else {
+                            propEntity = N.newInstance(propEntityClass);
+                        }
+
+                        if (nestedBeanResults == null) {
+                            nestedBeanResults = new ArrayList<>(4);
+                        }
+
+                        nestedBeanResults.add(Tuple.of(familyPropInfo, propBeanInfo, propEntity));
                     }
 
                     if (columnPropInfo.jsonXmlType.isMap() && columnPropInfo.jsonXmlType.parameterTypes().get(1).javaType().equals(HBaseColumn.class)) {
@@ -1608,7 +1659,7 @@ public final class HBaseExecutor {
 
                         columnValueTypeMap.put(qualifier, columnValueType);
                         columnMap = N.<Long, HBaseColumn<?>> newMap((Class) columnPropInfo.jsonXmlType.javaType());
-                        columnPropInfo.setPropValue(propEntity, columnMap);
+                        versionedContainers = deferVersionedContainer(versionedContainers, propEntity, columnPropInfo, columnMap);
 
                         if (columnMapMap == null) {
                             if (familyColumnMapMap == null) {
@@ -1640,7 +1691,7 @@ public final class HBaseExecutor {
 
                         columnValueTypeMap.put(qualifier, columnValueType);
                         columnColl = N.newCollection((Class) columnPropInfo.jsonXmlType.javaType());
-                        columnPropInfo.setPropValue(propEntity, columnColl);
+                        versionedContainers = deferVersionedContainer(versionedContainers, propEntity, columnPropInfo, columnColl);
 
                         if (columnCollectionMap == null) {
                             if (familyColumnCollectionMap == null) {
@@ -1713,7 +1764,7 @@ public final class HBaseExecutor {
 
                     columnValueTypeMap.put(qualifier, columnValueType);
                     columnMap = N.<Long, HBaseColumn<?>> newMap((Class) familyPropInfo.jsonXmlType.javaType());
-                    familyPropInfo.setPropValue(entity, columnMap);
+                    versionedContainers = deferVersionedContainer(versionedContainers, entity, familyPropInfo, columnMap);
 
                     if (columnMapMap == null) {
                         if (familyColumnMapMap == null) {
@@ -1745,7 +1796,7 @@ public final class HBaseExecutor {
 
                     columnValueTypeMap.put(qualifier, columnValueType);
                     columnColl = N.newCollection((Class) familyPropInfo.jsonXmlType.javaType());
-                    familyPropInfo.setPropValue(entity, columnColl);
+                    versionedContainers = deferVersionedContainer(versionedContainers, entity, familyPropInfo, columnColl);
 
                     if (columnCollectionMap == null) {
                         if (familyColumnCollectionMap == null) {
@@ -1800,6 +1851,29 @@ public final class HBaseExecutor {
                     }
 
                     familyPropInfo.setPropValue(entity, getCellValue(cell, familyPropInfo.jsonXmlType));
+                }
+            }
+
+            if (versionedContainers != null) {
+                // WHY: a versioned Collection/Map property receives its later versions (cells) after its container is created,
+                // but setPropValue stores a CONVERTED copy when the container is not an instance of the declared type (an
+                // ImmutableList/ImmutableSet/ImmutableMap property gets the ArrayList/HashSet/HashMap N.newCollection/newMap
+                // build, also as a component of an immutable nested bean): the copy was taken while still empty, so every
+                // version was lost. Each container is therefore assigned once, after the last cell, in creation order (a
+                // later container for the same property still replaces an earlier one, as before), and before the nested beans
+                // holding some of them are built or handed to a setter that may copy them below.
+                for (final Tuple3<Object, PropInfo, Object> versionedContainer : versionedContainers) {
+                    versionedContainer._2.setPropValue(versionedContainer._1, versionedContainer._3);
+                }
+            }
+
+            if (nestedBeanResults != null) {
+                // Assign each nested bean created for this row, now complete (see above), in creation order; an immutable one is
+                // first built from the intermediate result its cells filled (finishBeanResult returns a mutable one as is).
+                for (int i = 0, size = nestedBeanResults.size(); i < size; i++) {
+                    final Tuple3<PropInfo, BeanInfo, Object> nestedBeanResult = nestedBeanResults.get(i);
+
+                    nestedBeanResult._1.setPropValue(entity, nestedBeanResult._2.finishBeanResult(nestedBeanResult._3));
                 }
             }
 
@@ -1887,6 +1961,33 @@ public final class HBaseExecutor {
     // property is skipped even when its field declares DESERIALIZE_ONLY (setPropValue would still throw).
     private static boolean isReadOnlyProperty(final PropInfo propInfo) {
         return propInfo.isReadOnlyProperty;
+    }
+
+    // The nested bean (or immutable nested bean's intermediate result) that toValue created for propInfo in the current row, or
+    // null. A row has few nested beans, so a list scanned by PropInfo identity (one instance per property of the entity's
+    // BeanInfo, whatever name variant reached it) is cheaper per row and per cell than a map.
+    private static Object findNestedBeanResult(final List<Tuple3<PropInfo, BeanInfo, Object>> nestedBeanResults, final PropInfo propInfo) {
+        if (nestedBeanResults != null) {
+            for (int i = 0, size = nestedBeanResults.size(); i < size; i++) {
+                final Tuple3<PropInfo, BeanInfo, Object> nestedBeanResult = nestedBeanResults.get(i);
+
+                if (nestedBeanResult._1 == propInfo) {
+                    return nestedBeanResult._3;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // Records a versioned Collection/Map container to be assigned to propInfo of owner after the last cell (see toValue).
+    private static List<Tuple3<Object, PropInfo, Object>> deferVersionedContainer(final List<Tuple3<Object, PropInfo, Object>> versionedContainers,
+            final Object owner, final PropInfo propInfo, final Object container) {
+        final List<Tuple3<Object, PropInfo, Object>> result = versionedContainers == null ? new ArrayList<>() : versionedContainers;
+
+        result.add(Tuple.of(owner, propInfo, container));
+
+        return result;
     }
 
     private static byte[] copyOf(final byte[] bytes, final int offset, final int len) {
@@ -2087,8 +2188,9 @@ public final class HBaseExecutor {
      * @param rowKey the row key to check
      * @return {@code true} if the row has one or more cells, {@code false} otherwise
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
-     *         representation), or its byte representation is empty or exceeds 32,767 bytes
+     *         also if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)}) or an
+     *         empty value wrapper such as {@code Optional.empty()} (which has no byte representation), or its byte representation is empty
+     *         or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
      */
@@ -2264,8 +2366,9 @@ public final class HBaseExecutor {
      * @param rowKey the row key of the row to retrieve
      * @return the HBase Result containing the retrieved data, or a present-but-{@linkplain Result#isEmpty() empty} Result if the row does not exist
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
-     *         representation), or its byte representation is empty or exceeds 32,767 bytes
+     *         also if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)}) or an
+     *         empty value wrapper such as {@code Optional.empty()} (which has no byte representation), or its byte representation is empty
+     *         or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @throws UncheckedIOException if acquiring the table, fetching rows, or reading result cells fails with an {@link IOException}
      */
@@ -2448,8 +2551,9 @@ public final class HBaseExecutor {
      * @param targetType the class to convert the result to
      * @return the converted object of the specified type, or the type's default value if the row does not exist
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
-     *         representation), or its byte representation is empty or exceeds 32,767 bytes; also if {@code targetType} is
+     *         also if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)}) or an
+     *         empty value wrapper such as {@code Optional.empty()} (which has no byte representation), or its byte representation is empty
+     *         or exceeds 32,767 bytes; also if {@code targetType} is
      *         {@code null}, a result is requested as a {@link Map}, a scalar result contains more than one cell, or the target bean has invalid
      *         row-key metadata
      * @throws RuntimeException if converting a cell or row key, creating a target bean, or reading or assigning one of its properties fails
@@ -3248,8 +3352,9 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param rowKey the row key of the row to delete
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has no byte
-     *         representation), or its byte representation is empty or exceeds 32,767 bytes
+     *         also if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)}) or an
+     *         empty value wrapper such as {@code Optional.empty()} (which has no byte representation), or its byte representation is empty
+     *         or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @throws UncheckedIOException if acquiring the table or applying the delete mutations fails with an {@link IOException}
      */
@@ -3654,7 +3759,8 @@ public final class HBaseExecutor {
      * @param qualifier the column qualifier name (converted to bytes via {@link #toFamilyQualifierBytes(String)})
      * @param amount the amount to add (negative values decrement)
      * @return the value of the column after the increment
-     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -3687,7 +3793,8 @@ public final class HBaseExecutor {
      * @param amount the amount to add (negative values decrement)
      * @param durability the durability level to use for the WAL write
      * @return the value of the column after the increment
-     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -3719,7 +3826,8 @@ public final class HBaseExecutor {
      * @param qualifier the column qualifier bytes (used as-is)
      * @param amount the amount to add (negative values decrement)
      * @return the value of the column after the increment
-     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -3761,7 +3869,8 @@ public final class HBaseExecutor {
      * @param amount the amount to add (negative values decrement)
      * @param durability the durability level to use for the WAL write
      * @return the value of the column after the increment
-     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
      *         rejects a null row key or family
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -3802,7 +3911,8 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param rowKey the row key identifying the target region (converted via {@link #toRowKeyBytes(Object)})
      * @return a CoprocessorRpcChannel pointed at the region hosting {@code rowKey}
-     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table fails with an {@link IOException}
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see CoprocessorRpcChannel
@@ -3850,7 +3960,8 @@ public final class HBaseExecutor {
      * @param callable the per-region callable to execute
      * @return a map from region name bytes to the result returned by {@code callable} for that region
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code callable} is {@code null}
+     *         also if {@code callable} is {@code null}, or {@code startRowKey} or {@code endRowKey} is an HBase operation or {@code Any*}
+     *         wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws RuntimeException if converting a row-range boundary to bytes fails, or the coprocessor invocation throws a
      *         non-{@link IOException}, non-{@link Error} throwable (wrapped via
@@ -3910,7 +4021,8 @@ public final class HBaseExecutor {
      * @param callable the per-region callable to execute
      * @param callback the callback that receives each region's result
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code callable} or {@code callback} is {@code null}
+     *         also if {@code callable} or {@code callback} is {@code null}, or {@code startRowKey} or {@code endRowKey} is an HBase operation
+     *         or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws Exception if converting a row-range boundary to bytes or invoking the coprocessor throws a non-{@link IOException},
      *         non-{@link Error} throwable: it is rethrown as-is if it is already an
@@ -3972,7 +4084,8 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @return a map of region names (byte arrays) to their corresponding response messages
-     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
+     *         also if {@code startRowKey} or {@code endRowKey} is an HBase operation or {@code Any*} wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws Exception if converting a row-range boundary to bytes or invoking the coprocessor throws a throwable other than
      *         {@link IOException} or {@link Error}: it is rethrown as-is if it is
@@ -4032,7 +4145,8 @@ public final class HBaseExecutor {
      * @param responsePrototype the prototype for the response message
      * @param callback the callback to receive response messages from each region
      * @throws IllegalArgumentException if {@code tableName} is {@code null}, empty or violates HBase's namespace or table-qualifier naming rules;
-     *         also if {@code callback} is {@code null}
+     *         also if {@code callback} is {@code null}, or {@code startRowKey} or {@code endRowKey} is an HBase operation or {@code Any*}
+     *         wrapper (see {@link #toRowKeyBytes(Object)})
      * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
      * @throws Exception if converting a row-range boundary to bytes or invoking the coprocessor throws a throwable other than
      *         {@link IOException} or {@link Error}: it is rethrown as-is if it is
@@ -4086,17 +4200,59 @@ public final class HBaseExecutor {
     /**
      * Converts an arbitrary row-key value to its HBase byte representation.
      *
-     * <p>Equivalent to {@link #toValueBytes(Object)}; defined as a separate helper to keep
-     * row-key call sites self-describing at the call site.</p>
+     * <p>Converts like {@link #toValueBytes(Object)}, except that an HBase operation ({@link Operation} or {@link Row},
+     * such as a {@link Get}, {@link Put}, {@link Delete}, {@link Scan} or {@link RowMutations}) or an {@code Any*} wrapper
+     * ({@code AnyGet}, {@code AnyPut}, {@code AnyScan}, {@code AnyRowMutations} and the like) is rejected: it is not a
+     * row-key value. So is one that a present value wrapper ({@code java.util.Optional}, {@code u.Optional},
+     * {@code u.Nullable} or {@link Holder}, also nested) holds, since a wrapper converts as the value it holds. Every
+     * {@code Object} row key of this package goes through this helper (the {@code Any*.of(Object...)} factories, the
+     * {@code AnyScan} row bounds and prefixes, and this executor's {@code incrementColumnValue} and coprocessor row
+     * arguments).</p>
      *
      * @param rowKey the row key value; may be {@code null}
      * @return the bytes for the row key, or {@code null} if {@code rowKey} is {@code null} or an empty value wrapper
      *         (see {@link #isEmptyValueWrapper(Object)})
+     * @throws IllegalArgumentException if {@code rowKey} is, or is a present value wrapper holding, an HBase operation or an
+     *         {@code Any*} wrapper
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #toValueBytes(Object)
      */
-    static byte[] toRowKeyBytes(final Object rowKey) throws RuntimeException {
+    static byte[] toRowKeyBytes(final Object rowKey) throws IllegalArgumentException, RuntimeException {
+        // WHY: an operation passed where a row key is expected (AnyGet.of((Object) anyGet), AnyDelete.of(anyDelete) as an
+        // attempted copy, a Get typed as Object) fell through to N.stringOf, whose bean JSON ({"priority": -1, ...}) does not
+        // even contain the operation's row: the call silently read, wrote or deleted that garbage row. Rejected as
+        // AnyPut.create rejects an operation passed as an entity. N.stringOf converts a present Optional/Nullable/Holder as the
+        // value it holds, so Optional.of(anyGet) made the same garbage row: an operation inside one is rejected too.
+        final Object operation = heldOperation(rowKey);
+
+        if (operation != null) {
+            throw new IllegalArgumentException("Cannot use " + ClassUtil.getCanonicalClassName(operation.getClass())
+                    + (operation == rowKey ? "" : " held by " + ClassUtil.getCanonicalClassName(rowKey.getClass()))
+                    + " as a row key: it is an HBase operation, not a row-key value. Pass its row (for example getRow()) instead");
+        }
+
         return toValueBytes(rowKey);
+    }
+
+    /**
+     * Returns {@code value} if it is an HBase operation ({@link Operation}, {@link Row}) or an {@code Any*} wrapper, else the
+     * one a present {@code java.util.Optional}, {@code u.Optional}, {@code u.Nullable} or {@link Holder} holds (nested ones
+     * included), else {@code null}.
+     */
+    private static Object heldOperation(final Object value) {
+        if (value instanceof Operation || value instanceof Row || value instanceof AnyOperation) {
+            return value;
+        } else if (value instanceof java.util.Optional<?> optional) {
+            return optional.isPresent() ? heldOperation(optional.get()) : null;
+        } else if (value instanceof u.Optional<?> optional) {
+            return optional.isPresent() ? heldOperation(optional.get()) : null;
+        } else if (value instanceof u.Nullable<?> nullable) {
+            return nullable.isNotNull() ? heldOperation(nullable.get()) : null;
+        } else if (value instanceof Holder<?> holder) {
+            return holder.isNotNull() ? heldOperation(holder.value()) : null;
+        }
+
+        return null;
     }
 
     /**
@@ -4431,7 +4587,8 @@ public final class HBaseExecutor {
          *
          * @param rowKey the row key to check
          * @return {@code true} if an entity with the given row key exists, {@code false} otherwise
-         * @throws IllegalArgumentException if a row key's byte representation is {@code null}, empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if a row key is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}) or its byte representation is {@code null}, empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if converting a row key to bytes invokes a failing string conversion
          * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
@@ -4455,7 +4612,8 @@ public final class HBaseExecutor {
          *        collection and yields an empty list
          * @return a list of Boolean values corresponding to each row key, where {@code true}
          *         indicates the entity exists
-         * @throws IllegalArgumentException if a row key's byte representation is {@code null}, empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if a row key is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}) or its byte representation is {@code null}, empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if converting a row key to bytes invokes a failing string conversion
          * @throws UncheckedIOException if acquiring the table or checking row existence fails with an {@link IOException}
@@ -4478,7 +4636,8 @@ public final class HBaseExecutor {
          * @param rowKey the row key of the entity to retrieve
          * @return the entity object, or the type's default value (typically {@code null} for bean classes)
          *         when no row matches the given key
-         * @throws IllegalArgumentException if a row key's byte representation is {@code null}, empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if a row key is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}) or its byte representation is {@code null}, empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules; or if preparing the target entity's
          *         row-key metadata finds an unsupported property type or a missing getter or setter
          * @throws RuntimeException if converting a cell or row key, creating a target bean, or reading or assigning one of its properties fails
@@ -4506,7 +4665,8 @@ public final class HBaseExecutor {
          * @param rowKeys the collection of row keys to retrieve; {@code null} is treated as an empty
          *        collection and yields an empty list
          * @return a list of entity objects for the row keys that were found
-         * @throws IllegalArgumentException if a row key's byte representation is {@code null}, empty or exceeds 32,767 bytes; also
+         * @throws IllegalArgumentException if a row key is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}) or its byte representation is {@code null}, empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules; or if preparing the target entity's
          *         row-key metadata finds an unsupported property type or a missing getter or setter
          * @throws RuntimeException if converting a cell or row key, creating a target bean, or reading or assigning one of its properties fails
@@ -4667,7 +4827,8 @@ public final class HBaseExecutor {
          * }</pre>
          *
          * @param rowKey the row key of the entity to delete; must not be {@code null}
-         * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which
+         * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}) or an empty value wrapper such as {@code Optional.empty()} (which
          *         has no byte representation), or its byte representation is empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if converting a row key to bytes invokes a failing string conversion
@@ -4689,7 +4850,8 @@ public final class HBaseExecutor {
          *
          * @param rowKeys the collection of row keys to delete; {@code null} is treated as an empty
          *        collection and is a no-op
-         * @throws IllegalArgumentException if a row key is {@code null} or an empty value wrapper such as {@code Optional.empty()} (which has
+         * @throws IllegalArgumentException if a row key is {@code null}, an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}) or an empty value wrapper such as {@code Optional.empty()} (which has
          *         no byte representation), or its byte representation is empty or exceeds 32,767 bytes; also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws RuntimeException if converting a row key to bytes invokes a failing string conversion
@@ -5057,7 +5219,9 @@ public final class HBaseExecutor {
          * @param qualifier the column qualifier name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
          * @param amount the amount to add (negative values decrement)
          * @return the value of the column after the increment
-         * @throws IllegalArgumentException if this mapper's table name violates HBase's namespace or table-qualifier naming rules
+         * @throws IllegalArgumentException if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}), or this mapper's table name violates HBase's namespace or table-qualifier
+         *         naming rules
          * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
          *         rejects a null row key or family
          * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -5083,7 +5247,9 @@ public final class HBaseExecutor {
          * @param amount the amount to add (negative values decrement)
          * @param durability the durability level to use for the WAL write
          * @return the value of the column after the increment
-         * @throws IllegalArgumentException if this mapper's table name violates HBase's namespace or table-qualifier naming rules
+         * @throws IllegalArgumentException if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}), or this mapper's table name violates HBase's namespace or table-qualifier
+         *         naming rules
          * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
          *         rejects a null row key or family
          * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -5109,7 +5275,9 @@ public final class HBaseExecutor {
          * @param qualifier the column qualifier bytes (used as-is)
          * @param amount the amount to add (negative values decrement)
          * @return the value of the column after the increment
-         * @throws IllegalArgumentException if this mapper's table name violates HBase's namespace or table-qualifier naming rules
+         * @throws IllegalArgumentException if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}), or this mapper's table name violates HBase's namespace or table-qualifier
+         *         naming rules
          * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
          *         rejects a null row key or family
          * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -5136,7 +5304,9 @@ public final class HBaseExecutor {
          * @param amount the amount to add (negative values decrement)
          * @param durability the durability level to use for the WAL write
          * @return the value of the column after the increment
-         * @throws IllegalArgumentException if this mapper's table name violates HBase's namespace or table-qualifier naming rules
+         * @throws IllegalArgumentException if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}), or this mapper's table name violates HBase's namespace or table-qualifier
+         *         naming rules
          * @throws UncheckedIOException if acquiring the table or incrementing the column fails with an {@link IOException}, including when HBase
          *         rejects a null row key or family
          * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -5160,7 +5330,9 @@ public final class HBaseExecutor {
          *
          * @param rowKey the row key identifying the target region (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
          * @return a CoprocessorRpcChannel pointed at the region hosting {@code rowKey}
-         * @throws IllegalArgumentException if this mapper's table name violates HBase's namespace or table-qualifier naming rules
+         * @throws IllegalArgumentException if {@code rowKey} is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}), or this mapper's table name violates HBase's namespace or table-qualifier
+         *         naming rules
          * @throws UncheckedIOException if acquiring the table fails with an {@link IOException}
          * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
          * @see CoprocessorRpcChannel
@@ -5189,7 +5361,8 @@ public final class HBaseExecutor {
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @return a map from region name bytes to the result returned by {@code callable} for that region
-         * @throws IllegalArgumentException if {@code callable} is {@code null}; also
+         * @throws IllegalArgumentException if {@code callable} is {@code null}, or {@code startRowKey} or {@code endRowKey} is an HBase operation or
+         *         {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}); also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
          * @throws RuntimeException if converting a row-range boundary to bytes fails, or the coprocessor invocation throws a
@@ -5224,7 +5397,8 @@ public final class HBaseExecutor {
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @param callback the callback to receive results from each region
-         * @throws IllegalArgumentException if {@code callable} or {@code callback} is {@code null}; also
+         * @throws IllegalArgumentException if {@code callable} or {@code callback} is {@code null}, or {@code startRowKey} or {@code endRowKey} is
+         *         an HBase operation or {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}); also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
          * @throws Exception if converting a row-range boundary to bytes or invoking the coprocessor throws a non-{@link IOException},
@@ -5260,7 +5434,9 @@ public final class HBaseExecutor {
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param responsePrototype the prototype for the response message
          * @return a map of region names to their corresponding response messages
-         * @throws IllegalArgumentException if this mapper's table name violates HBase's namespace or table-qualifier naming rules
+         * @throws IllegalArgumentException if {@code startRowKey} or {@code endRowKey} is an HBase operation or {@code Any*} wrapper (see
+         *         {@link HBaseExecutor#toRowKeyBytes(Object)}), or this mapper's table name violates HBase's namespace or table-qualifier
+         *         naming rules
          * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
          * @throws Exception if converting a row-range boundary to bytes or invoking the coprocessor throws a throwable other than
          *         {@link IOException} or {@link Error}: it is rethrown as-is if it is
@@ -5295,7 +5471,8 @@ public final class HBaseExecutor {
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param responsePrototype the prototype for the response message
          * @param callback the callback to receive response messages from each region
-         * @throws IllegalArgumentException if {@code callback} is {@code null}; also
+         * @throws IllegalArgumentException if {@code callback} is {@code null}, or {@code startRowKey} or {@code endRowKey} is an HBase operation or
+         *         {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}); also
          *         if this mapper's table name violates HBase's namespace or table-qualifier naming rules
          * @throws UncheckedIOException if acquiring the table or invoking the coprocessor fails with an {@link IOException}
          * @throws Exception if converting a row-range boundary to bytes or invoking the coprocessor throws a throwable other than
