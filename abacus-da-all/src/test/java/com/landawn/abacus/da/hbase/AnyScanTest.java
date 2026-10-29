@@ -891,4 +891,142 @@ public class AnyScanTest extends TestBase {
                 // the reversed range (stop, start] is empty: the stop row sorts above the start row
                 () -> assertTrue(Bytes.compareTo(reversedAfter.getStopRow(), reversedAfter.getStartRow()) > 0));
     }
+
+    // ---- 2026-10-27 sliceN ----
+
+    /**
+     * Pins the setLimit doc: HBase puts a row limit into the scan request only for a positive limit, so 0 and a negative
+     * limit (the default -1) do not limit the scan on the server.
+     */
+    @Test
+    public void testSetLimit_onlyAPositiveLimitIsSentToTheServer_sliceN() {
+        final byte[] region = Bytes.toBytes("region");
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals(5, buildOpenScanRequest_sliceN(region, AnyScan.create().setLimit(5)).getLimitOfRows()),
+                () -> assertFalse(buildOpenScanRequest_sliceN(region, AnyScan.create().setLimit(0)).hasLimitOfRows()),
+                () -> assertFalse(buildOpenScanRequest_sliceN(region, AnyScan.create()).hasLimitOfRows()),
+                () -> assertFalse(buildOpenScanRequest_sliceN(region, AnyScan.create().setLimit(-5)).hasLimitOfRows()));
+    }
+
+    /**
+     * Pins the setLimit doc's {@code 0} case through HBase 2.6's real synchronous scanner (the one HBaseExecutor's tables
+     * return): with a fake RPC layer that serves three rows on every call, a limit of 0 yields exactly the rows of the first
+     * server response and then reports the end of the scan - neither "no rows" nor "no limit".
+     */
+    @Test
+    public void testSetLimitZero_syncScannerReturnsOnlyTheFirstServerResponse_sliceN() throws Exception {
+        final org.apache.hadoop.conf.Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
+        final org.apache.hadoop.hbase.client.ClusterConnection conn = org.mockito.Mockito.mock(org.apache.hadoop.hbase.client.ClusterConnection.class);
+        org.mockito.Mockito.when(conn.getConfiguration()).thenReturn(conf);
+
+        final org.apache.hadoop.hbase.ipc.RpcControllerFactory controllerFactory = org.mockito.Mockito
+                .mock(org.apache.hadoop.hbase.ipc.RpcControllerFactory.class);
+        org.mockito.Mockito.when(controllerFactory.newController()).thenReturn(org.mockito.Mockito.mock(org.apache.hadoop.hbase.ipc.HBaseRpcController.class));
+
+        final java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        @SuppressWarnings("unchecked")
+        final org.apache.hadoop.hbase.client.RpcRetryingCaller<org.apache.hadoop.hbase.client.Result[]> caller = org.mockito.Mockito
+                .mock(org.apache.hadoop.hbase.client.RpcRetryingCaller.class);
+        org.mockito.Mockito.when(caller.callWithoutRetries(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> {
+            final int call = calls.incrementAndGet();
+            final org.apache.hadoop.hbase.client.Result[] rows = new org.apache.hadoop.hbase.client.Result[3];
+
+            for (int i = 0; i < rows.length; i++) {
+                rows[i] = org.apache.hadoop.hbase.client.Result.create(new org.apache.hadoop.hbase.Cell[] {
+                        new org.apache.hadoop.hbase.KeyValue(Bytes.toBytes("r" + call + i), Bytes.toBytes("f"), Bytes.toBytes("q"), Bytes.toBytes("v")) });
+            }
+
+            return rows;
+        });
+
+        final org.apache.hadoop.hbase.client.RpcRetryingCallerFactory callerFactory = org.mockito.Mockito
+                .mock(org.apache.hadoop.hbase.client.RpcRetryingCallerFactory.class);
+        org.mockito.Mockito.when(callerFactory.<org.apache.hadoop.hbase.client.Result[]> newCaller()).thenReturn(caller);
+
+        final java.lang.reflect.Constructor<org.apache.hadoop.hbase.client.ConnectionConfiguration> connConfigCtor = org.apache.hadoop.hbase.client.ConnectionConfiguration.class
+                .getDeclaredConstructor(org.apache.hadoop.conf.Configuration.class);
+        connConfigCtor.setAccessible(true);
+
+        final AnyScan anyScan = AnyScan.create().setLimit(0).setCaching(3);
+        // HTable.getScanner hands the scanner a copy of the caller's Scan
+        final Scan scan = new Scan(anyScan.val());
+
+        try (org.apache.hadoop.hbase.client.ResultScanner scanner = new org.apache.hadoop.hbase.client.ClientSimpleScanner(conf, scan, anyScan.val(),
+                org.apache.hadoop.hbase.TableName.valueOf("t"), conn, callerFactory, controllerFactory,
+                org.mockito.Mockito.mock(java.util.concurrent.ExecutorService.class), 1000, 1000, 1000, connConfigCtor.newInstance(conf),
+                java.util.Collections.emptyMap())) {
+            int rows = 0;
+
+            while (scanner.next() != null && rows < 20) {
+                rows++;
+            }
+
+            assertEquals(3, rows, "a limit of 0 must return the first server response's rows, then end the scan");
+        }
+    }
+
+    /**
+     * Pins the setBatch doc: a filter whose hasFilterRow() is true conflicts with batching in both directions - setBatch
+     * throws for any value once such a filter is set, and the inherited setFilter throws once a positive batch is set.
+     */
+    @Test
+    public void testSetBatch_hasFilterRowFilterConflictsInBothDirections_sliceN() {
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertThrows(org.apache.hadoop.hbase.filter.IncompatibleFilterException.class,
+                        () -> AnyScan.create().setBatch(10).setFilter(new org.apache.hadoop.hbase.filter.PageFilter(5))),
+                () -> assertThrows(org.apache.hadoop.hbase.filter.IncompatibleFilterException.class,
+                        () -> AnyScan.create().setFilter(new org.apache.hadoop.hbase.filter.PageFilter(5)).setBatch(-1)),
+                () -> assertNotNull(AnyScan.create().setBatch(-1).setFilter(new org.apache.hadoop.hbase.filter.PageFilter(5)).getFilter()),
+                () -> assertNotNull(AnyScan.create().setBatch(10).setFilter(new PrefixFilter(Bytes.toBytes("u"))).getFilter()));
+    }
+
+    /**
+     * Pins the setFamilyMap doc: the map is retained by reference, so only a Bytes.BYTES_COMPARATOR map keeps later adds
+     * correct - a HashMap gains a duplicate family entry, a naturally ordered TreeMap throws ClassCastException.
+     */
+    @Test
+    public void testSetFamilyMap_mapMustBeOrderedByBytesComparator_sliceN() {
+        final Map<byte[], NavigableSet<byte[]>> comparatorMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+        comparatorMap.put(Bytes.toBytes("cf"), null);
+        final Map<byte[], NavigableSet<byte[]>> hashMap = new java.util.HashMap<>();
+        hashMap.put(Bytes.toBytes("cf"), null);
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertSame(comparatorMap, AnyScan.create().setFamilyMap(comparatorMap).getFamilyMap()),
+                () -> assertEquals(1, AnyScan.create().setFamilyMap(comparatorMap).addFamily("cf").addColumn("cf", "q").numFamilies()),
+                () -> assertEquals(2, AnyScan.create().setFamilyMap(hashMap).addFamily("cf").numFamilies()),
+                () -> assertThrows(ClassCastException.class, () -> AnyScan.create().setFamilyMap(new TreeMap<>()).addFamily("cf")),
+                () -> assertThrows(ClassCastException.class, () -> AnyScan.create().setFamilyMap(new TreeMap<>()).addColumn("cf", "q")));
+    }
+
+    private static org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.ScanRequest buildOpenScanRequest_sliceN(final byte[] region,
+            final AnyScan scan) throws java.io.IOException {
+        return org.apache.hadoop.hbase.shaded.protobuf.RequestConverter.buildScanRequest(region, scan.val(), 100, false);
+    }
+
+    // ---- 2026-10-27 r2O ----
+
+    /**
+     * Pins the row-bound @throws docs of the Object row-bound sites: an HBase operation or Any* wrapper passed as a bound or a
+     * prefix is rejected (HBaseExecutor.toRowKeyBytes) instead of becoming its bean JSON; a null bound is still unbounded.
+     */
+    @SuppressWarnings("deprecation")
+    @Test
+    public void testRowBounds_operationAsRowKey_throwsIae_r2O() {
+        final Object anyGet = AnyGet.of("r");
+        final Object scan = new Scan();
+        final Filter filter = null;
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyScan.of(anyGet)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.of("a", scan)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.of(anyGet, filter)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.create().withStartRow(anyGet)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.create().withStartRow(scan, false)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.create().withStopRow(anyGet)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.create().withStopRow(anyGet, true)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setRowPrefixFilter(scan)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyScan.create().setStartStopRowForPrefixScan(anyGet)),
+                () -> assertEquals(0, AnyScan.create().withStopRow((Object) null, true).getStopRow().length));
+    }
 }

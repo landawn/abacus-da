@@ -1292,8 +1292,9 @@ public final class ParsedCql {
      * hook, which the runtime refuses once shutdown has begun ({@code IllegalStateException: Shutdown in progress}, or an
      * {@code ExceptionInInitializerError} when the pool classes are initialized then). Letting that escape this class's
      * static initializer would leave {@code ParsedCql} unusable ({@code NoClassDefFoundError}) when its first use happens
-     * inside a shutdown hook, so any failure leaves the cache absent and every parse runs uncached instead (mirroring
-     * abacus-query's {@code ParsedSql}).
+     * inside a shutdown hook, so any failure leaves the cache absent and every parse runs uncached instead (the
+     * shutdown-time behavior that {@link #parse(String)} documents; abacus-query's {@code ParsedSql} has the same helper but
+     * creates its own cache directly).
      *
      * @param factory creates the pool
      * @return the new pool, or {@code null} if {@code factory} threw

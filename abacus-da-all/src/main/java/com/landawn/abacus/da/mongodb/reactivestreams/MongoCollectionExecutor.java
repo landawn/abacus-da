@@ -21,10 +21,14 @@ import java.util.List;
 import java.util.Map;
 
 import org.bson.BsonDocument;
+import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
+import org.bson.types.Binary;
+import org.bson.types.Code;
 import org.bson.types.ObjectId;
+import org.bson.types.Symbol;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.cs;
@@ -78,7 +82,13 @@ import reactor.core.publisher.Mono;
  *       {@link Mono} or {@link Flux}) for reactive composition; {@link #coll()} is a synchronous accessor</li>
  *   <li><strong>Backpressure Support:</strong> Honours reactive-streams backpressure via the underlying driver</li>
  *   <li><strong>Error Propagation:</strong> Database failures surface as Publisher {@code onError} signals;
- *       argument validation and write-value conversion can fail synchronously while a publisher is built</li>
+ *       argument validation and write-value conversion can fail synchronously while a publisher is built. A closed
+ *       {@code MongoClient} is reported the same split way: {@code exists}, {@code count},
+ *       {@code estimatedDocumentCount} and the write methods (inserts, updates, replaces, deletes, bulk writes and
+ *       {@code findOneAndXxx}) build their driver operation when called and throw {@link IllegalStateException}
+ *       there, while the find-based reads ({@code get}, {@code findFirst}, {@code list}, {@code queryForXxx},
+ *       {@code query}), {@code distinct}, {@code aggregate}, {@code groupBy}/{@code groupByAndCount},
+ *       {@code mapReduce} and {@code watch} return their publisher and signal it on subscription</li>
  *   <li><strong>Cursor Lifecycle:</strong> The driver's {@link FindPublisher} cursor is opened on subscription
  *       and closed automatically on completion, cancellation, or error</li>
  *   <li><strong>Integration Ready:</strong> Direct compatibility with Reactor, RxJava, and any other library
@@ -90,7 +100,21 @@ import reactor.core.publisher.Mono;
  *   <li><strong>Cold Publishers:</strong> Every returned {@code Mono}/{@code Flux} is <i>cold</i> — no
  *       request is sent to MongoDB until the Publisher is subscribed to, and each new subscription executes
  *       the operation again (and opens a new cursor for find/aggregate). Re-subscribing a write operation
- *       therefore re-issues the write.</li>
+ *       therefore re-issues the write: an update is applied again, but an insert (including the inserts of
+ *       {@code bulkInsert}/{@code bulkWrite}) re-sends the {@code _id} values fixed when the method was called and
+ *       fails with a duplicate-key error instead of writing again. To write once per subscription, build the
+ *       request inside {@code Mono.defer(...)} from new documents (see {@link #insertOne(Object)}).</li>
+ *   <li><strong>When Arguments Are Read:</strong> Arguments are validated, and an entity, {@code Map} or name/value-array
+ *       argument is converted into a new document, when a method is called; nested values such as a property's
+ *       {@code List} are shared with that document, not copied. Field-name collections and the update collections of the
+ *       pipeline-update overloads are read then too. A caller-supplied {@link Document} (a filter, sort, projection,
+ *       document to insert or replace, or operator update) and the pipeline {@code List} of {@code aggregate}/{@code watch}
+ *       are passed to the driver by reference and encoded each time the request is sent, so a change made to them
+ *       before or between subscriptions is sent (a non-operator update document is wrapped in {@code $set} as a copy of
+ *       its top level). A value in such a document that has no codec is therefore signalled as a
+ *       {@link CodecConfigurationException} on subscription, while driver-built expressions such as
+ *       {@code Filters.eq(...)} or {@code Updates.set(...)} are encoded when the driver builds the operation, so
+ *       {@code exists}, {@code count} and the write methods throw it when called.</li>
  *   <li><strong>Long-lived Streams:</strong> {@link #watch()} returns a cold but long-lived
  *       {@link ChangeStreamPublisher} that opens its change-stream cursor on subscription and does not
  *       naturally complete; cancel the subscription to close the cursor.</li>
@@ -747,7 +771,9 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert the projected document to
      * @param objectId the ObjectId as a string to search for
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription,
+     *        when it encodes the projection
      * @param rowType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted projected object on subscription, or completes
      *         empty when no document matches the ObjectId
@@ -784,7 +810,9 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert the projected document to
      * @param objectId the ObjectId to search for
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription,
+     *        when it encodes the projection
      * @param rowType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted projected object on subscription, or completes
      *         empty when no document matches the ObjectId
@@ -897,7 +925,9 @@ public final class MongoCollectionExecutor {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type to convert the projected document to
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription,
+     *        when it encodes the projection
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion; must not be null
      * @return a {@code Mono} that emits the first matching projected document converted to {@code T}
@@ -917,7 +947,8 @@ public final class MongoCollectionExecutor {
      * <p>Retrieves the first document that matches the filter criteria, with specified field projection
      * and sorting, then converts the result to the target type. The sort parameter determines
      * which document is considered "first" when multiple documents match. For a single named field
-     * and scalar {@code rowType}, the named value is converted directly; if it is absent or BSON null,
+     * and scalar {@code rowType} (a BSON value type such as {@link Binary}, {@link Code} or {@link Symbol} is scalar here too),
+     * the named value is converted directly; if it is absent or BSON null,
      * the {@code Mono} completes empty instead of converting the implicitly projected {@code _id}. A dotted
      * path that traverses a non-null value that is not a {@link Document} (such as an array) fails with a
      * {@link ClassCastException} signalled through the publisher. Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
@@ -934,7 +965,9 @@ public final class MongoCollectionExecutor {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type to convert the document to
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription,
+     *        when it encodes the projection
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType the Class representing the target type for conversion
@@ -1115,7 +1148,9 @@ public final class MongoCollectionExecutor {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription,
+     *        when it encodes the projection
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits all matching documents with projected fields, converted to type T
@@ -1143,7 +1178,9 @@ public final class MongoCollectionExecutor {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: when {@code count} is positive, the driver signals an
+     *        {@link IllegalArgumentException} on subscription, when it encodes the projection (a {@code count} of 0 sends no projection)
      * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
@@ -1176,7 +1213,9 @@ public final class MongoCollectionExecutor {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription,
+     *        when it encodes the projection
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType the Class representing the target type for conversion
@@ -1194,7 +1233,8 @@ public final class MongoCollectionExecutor {
      * <p>Provides complete control over the query with field projection, filtering, sorting,
      * and pagination. This is the most comprehensive list method, suitable for complex
      * query requirements in reactive applications. When exactly one field is selected into a
-     * scalar type, dotted paths are resolved and documents missing that value are not emitted
+     * scalar type (a BSON value type such as {@link Binary}, {@link Code} or {@link Symbol} included), dotted paths are resolved
+     * and documents missing that value are not emitted
      * (Reactive Streams does not permit {@code null} elements). A dotted path that traverses a non-null value that
      * is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the
      * publisher.</p>
@@ -1210,7 +1250,9 @@ public final class MongoCollectionExecutor {
      * result conversion failures are also signalled through the publisher.</p>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); a null name
+     *        in it is not rejected when this method is called: when {@code count} is positive, the driver signals an
+     *        {@link IllegalArgumentException} on subscription, when it encodes the projection (a {@code count} of 0 sends no projection)
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before returning results
@@ -1880,7 +1922,10 @@ public final class MongoCollectionExecutor {
      * {@code {"a", "b"}} and {@code "[]"} an empty array; text that does not parse becomes the single element);
      * other values use {@link com.landawn.abacus.util.N#convert(Object, Class)}.
      * This is the underlying method delegated to by the
-     * primitive-wrapper convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.).</p>
+     * primitive-wrapper convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.).
+     * A dotted {@code propName} such as {@code "address.city"} reads the nested value; a dotted path that traverses a
+     * non-null value that is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled
+     * through the publisher.</p>
      *
      * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
      * document matches the filter, or when a matching document's named field is absent or BSON null (or
@@ -2091,7 +2136,8 @@ public final class MongoCollectionExecutor {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); each name is a
+     *        Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on subscription
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows
@@ -2119,7 +2165,8 @@ public final class MongoCollectionExecutor {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); each name is a
+     *        Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on subscription
      * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
@@ -2151,7 +2198,8 @@ public final class MongoCollectionExecutor {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); each name is a
+     *        Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on subscription
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
@@ -2184,7 +2232,8 @@ public final class MongoCollectionExecutor {
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
      * result conversion failures are also signalled through the publisher.</p>
      *
-     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields); each name is a
+     *        Dataset column, so a null or duplicated name makes the publisher signal an {@link IllegalArgumentException} on subscription
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before returning results
@@ -2364,9 +2413,22 @@ public final class MongoCollectionExecutor {
     }
 
     private static boolean isSingleValueType(final Class<?> rowType) {
+        // Binary, Code, Symbol and most scalar BsonValues report a bean Type (they have getters), but readRow reads them as a single
+        // value. Classified as beans here, one selected field missing from a document had the document's _id converted (the
+        // Flux failed), and a dotted field or dotted group key converted its parent document (Code{code=null}).
+        if (isBsonValueClass(rowType)) {
+            return true;
+        }
+
         final Type<?> targetType = N.typeOf(rowType);
 
         return targetType.isObjectArray() == false && targetType.isCollection() == false && targetType.isMap() == false && targetType.isBean() == false;
+    }
+
+    // Mirrors MongoDBBase.isBsonValueClass (package-private in another package): the BSON value types readRow reads as a single value.
+    private static boolean isBsonValueClass(final Class<?> cls) {
+        return Binary.class.isAssignableFrom(cls) || Code.class.isAssignableFrom(cls) || Symbol.class.isAssignableFrom(cls)
+                || (BsonValue.class.isAssignableFrom(cls) && !(Map.class.isAssignableFrom(cls) || Collection.class.isAssignableFrom(cls)));
     }
 
     private static boolean shouldReturnNullForEmptyDocument(final Document doc, final Class<?> rowType) {
@@ -2514,9 +2576,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for change events; must not be null
      * @return a {@link ChangeStreamPublisher} that emits typed change events as they occur
      * @throws IllegalArgumentException if {@code rowType} is null
+     * @throws CodecConfigurationException if the codec registry of the underlying collection has no codec for {@code rowType} (the driver
+     *         looks it up when it creates the publisher, so this call throws instead of the publisher signalling it on subscription; the
+     *         {@link MongoDBBase} registry of a collection obtained by name has one for every class)
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(Class)
      */
-    public <T> ChangeStreamPublisher<T> watch(final Class<T> rowType) throws IllegalArgumentException {
+    public <T> ChangeStreamPublisher<T> watch(final Class<T> rowType) throws IllegalArgumentException, CodecConfigurationException {
         N.checkArgNotNull(rowType, cs.rowType);
 
         return coll.watch(rowType);
@@ -2538,7 +2603,8 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB change-stream subscription fails. Document
-     * decoding or result conversion failures are also signalled through the publisher.</p>
+     * decoding or result conversion failures are also signalled through the publisher. A {@code null} stage in {@code pipeline} is not
+     * rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription.</p>
      *
      * @param pipeline the aggregation pipeline applied to change events; must not be null
      * @return a {@link ChangeStreamPublisher} emitting filtered {@link com.mongodb.client.model.changestream.ChangeStreamDocument}
@@ -2568,16 +2634,21 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB change-stream subscription fails. Document
-     * decoding or result conversion failures are also signalled through the publisher.</p>
+     * decoding or result conversion failures are also signalled through the publisher. A {@code null} stage in {@code pipeline} is not
+     * rejected when this method is called: the driver signals an {@link IllegalArgumentException} on subscription.</p>
      *
      * @param <T> the type to decode each change event's full document into
      * @param pipeline the aggregation pipeline applied to change events; must not be null
      * @param rowType the Class representing the target type for change events; must not be null
      * @return a {@link ChangeStreamPublisher} emitting filtered and typed change events
      * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
+     * @throws CodecConfigurationException if the codec registry of the underlying collection has no codec for {@code rowType} (the driver
+     *         looks it up when it creates the publisher, so this call throws instead of the publisher signalling it on subscription; the
+     *         {@link MongoDBBase} registry of a collection obtained by name has one for every class)
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List, Class)
      */
-    public <T> ChangeStreamPublisher<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) throws IllegalArgumentException {
+    public <T> ChangeStreamPublisher<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType)
+            throws IllegalArgumentException, CodecConfigurationException {
         N.checkArgNotNull(pipeline, cs.pipeline);
         N.checkArgNotNull(rowType, cs.rowType);
 
@@ -4106,7 +4177,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
@@ -4190,7 +4263,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
@@ -4290,7 +4365,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
@@ -4384,7 +4461,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the update, so resubscribing (for example through {@code retry()}) runs the update
+     * again.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document; must not be null
@@ -4478,7 +4557,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * result conversion failures are also signalled through the publisher; such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the replacement, so resubscribing (for example through {@code retry()}) runs the
+     * replacement again. A replacement whose converted document has a top-level field
      * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
      * likewise signalled through the publisher, not thrown at call time.</p>
      *
@@ -4566,7 +4647,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher. A replacement whose converted document has a top-level field
+     * result conversion failures are also signalled through the publisher; such a failure to decode or convert the returned document is
+     * signalled only after the server has applied the replacement, so resubscribing (for example through {@code retry()}) runs the
+     * replacement again. A replacement whose converted document has a top-level field
      * name starting with {@code $} (such as {@code $set}) is rejected by the driver with an {@link IllegalArgumentException} that is
      * likewise signalled through the publisher, not thrown at call time.</p>
      *
@@ -4650,7 +4733,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has deleted that document, so resubscribing (for example through {@code retry()}) deletes another
+     * matching document.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document to delete; must not be null
@@ -4724,7 +4809,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher. Such a failure to decode or convert the returned document is
+     * signalled only after the server has deleted that document, so resubscribing (for example through {@code retry()}) deletes another
+     * matching document.</p>
      *
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document to delete; must not be null
@@ -4774,7 +4861,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB distinct command fails.
-     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     * Document decoding or result conversion failures are also signalled through the publisher. The command returns every value in one
+     * reply, which the driver decodes as {@code rowType} before emitting any: a value that cannot be decoded (an
+     * {@link org.bson.BsonInvalidOperationException} for a string or fractional value requested as {@code Long}, or a
+     * {@code NumberFormatException}/{@link ArithmeticException} for a {@code rowType} without a driver codec, such as {@code int.class},
+     * that the {@link MongoDBBase} codec registry converts) makes the publisher signal that failure without emitting any value.</p>
      *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for; must not be null
@@ -4806,7 +4897,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB distinct command fails.
-     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     * Document decoding or result conversion failures are also signalled through the publisher. As with {@link #distinct(String, Class)},
+     * every returned value is decoded as {@code rowType} before any is emitted, so a value that cannot be decoded makes the publisher
+     * signal that failure without emitting any value.</p>
      *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for; must not be null
@@ -4852,7 +4945,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
-     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     * Document decoding or result conversion failures are also signalled through the publisher. A {@code null} stage in
+     * {@code pipeline} is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     * subscription.</p>
      *
      * @param pipeline the aggregation pipeline stages; must not be null
      * @return a {@code Flux} that, on subscription, emits each output document produced by the
@@ -4888,7 +4983,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregate command fails.
-     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     * Document decoding or result conversion failures are also signalled through the publisher. A {@code null} stage in
+     * {@code pipeline} is not rejected when this method is called: the driver signals an {@link IllegalArgumentException} on
+     * subscription.</p>
      *
      * @param <T> the type of the aggregation results
      * @param pipeline the aggregation pipeline stages; must not be null

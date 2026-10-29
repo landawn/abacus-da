@@ -1839,4 +1839,43 @@ public class AsyncCassandraExecutorTest extends TestBase {
                 () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning(1L).queryForSingleValue(Boolean.class, query)),
                 () -> cassfix2FailsWith(IllegalArgumentException.class, cassfix2AsyncReturning("yes").queryForSingleValue(Boolean.class, query)));
     }
+
+    // ---- 2026-10-27 sliceK ----
+
+    /**
+     * Pins the findFirst @return clause (mirrored from the 4.x facade): a single-value target over a two-column row fails
+     * {@code get()} with an ExecutionException whose cause is the sync IllegalArgumentException ("Column count must be 1"),
+     * while a multi-column target maps the row.
+     */
+    @Test
+    public void sliceK_findFirstSingleValueTargetOverTwoColumnsFailsGetWithIllegalArgumentException() throws Exception {
+        final Session session = mock(Session.class);
+        final CassandraExecutor executor = newSlicePExecutor(session);
+        final PreparedStatement prepared = mock(PreparedStatement.class);
+        when(prepared.getVariables()).thenReturn(mock(ColumnDefinitions.class));
+        when(prepared.bind(any(Object[].class))).thenReturn(mock(BoundStatement.class));
+        when(session.prepare(anyString())).thenReturn(prepared);
+        final ColumnDefinitions columns = mock(ColumnDefinitions.class);
+        when(columns.size()).thenReturn(2);
+        when(columns.getName(0)).thenReturn("id");
+        when(columns.getName(1)).thenReturn("name");
+        when(session.executeAsync(any(Statement.class))).thenAnswer(inv -> {
+            final Row row = mock(Row.class);
+            when(row.getColumnDefinitions()).thenReturn(columns);
+            when(row.getObject(0)).thenReturn(7L);
+            when(row.getObject(1)).thenReturn("Ada");
+            final ResultSet resultSet = mock(ResultSet.class);
+            when(resultSet.getColumnDefinitions()).thenReturn(columns);
+            when(resultSet.iterator()).thenReturn(List.of(row).iterator());
+            return immediateFuture(resultSet);
+        });
+
+        final java.util.concurrent.ExecutionException failure = assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> executor.async().findFirst(String.class, "SELECT id, name FROM t").get());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> org.junit.jupiter.api.Assertions.assertInstanceOf(IllegalArgumentException.class, failure.getCause()),
+                () -> assertTrue(failure.getCause().getMessage().contains("Column count must be 1"), failure.getCause().getMessage()),
+                () -> org.junit.jupiter.api.Assertions.assertArrayEquals(new Object[] { 7L, "Ada" },
+                        executor.async().findFirst(Object[].class, "SELECT id, name FROM t").get().get()));
+    }
 }

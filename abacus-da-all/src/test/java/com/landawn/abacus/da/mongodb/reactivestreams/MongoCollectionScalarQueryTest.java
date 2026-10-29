@@ -332,4 +332,23 @@ public class MongoCollectionScalarQueryTest extends MongoCollectionExecutorTestS
 
         org.junit.jupiter.api.Assertions.assertAll(checks);
     }
+
+    // ---- 2026-10-27 sliceU ----
+
+    // Pins the queryForSingleValue Javadoc: a dotted propName reads the nested value, and a path through a non-Document value
+    // (an array) is a ClassCastException signalled through the publisher, not thrown when the method is called.
+    @Test
+    public void testQueryForSingleValueDottedPathReadsNestedValueAndSignalsClassCastThroughArray_sliceU() {
+        final Bson filter = new Document("id", 1);
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("address", new Document("city", "Paris")));
+        StepVerifier.create(executor.queryForSingleValue("address.city", filter, String.class)).expectNext("Paris").verifyComplete();
+
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("address", Arrays.asList(new Document("city", "Paris"))));
+        final Mono<String> throughArray = executor.queryForSingleValue("address.city", filter, String.class);
+        StepVerifier.create(throughArray).expectError(ClassCastException.class).verify();
+    }
 }

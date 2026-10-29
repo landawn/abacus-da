@@ -23,6 +23,7 @@ import org.apache.hadoop.hbase.client.IsolationLevel;
 import org.apache.hadoop.hbase.client.Query;
 import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.filter.Filter;
+import org.apache.hadoop.hbase.filter.IncompatibleFilterException;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.visibility.Authorizations;
@@ -157,10 +158,13 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * @param filter the {@link Filter} to apply; pass {@code null} to clear any existing filter
      * @return this query instance, to allow fluent method chaining
+     * @throws IncompatibleFilterException if this query is an {@link AnyScan} with a positive batch
+     *         ({@link AnyScan#setBatch(int)}) and {@code filter}'s {@link Filter#hasFilterRow()} returns {@code true};
+     *         the previous filter is then kept
      * @see #getFilter()
      * @see Filter
      */
-    public AQ setFilter(final Filter filter) {
+    public AQ setFilter(final Filter filter) throws IncompatibleFilterException {
         query.setFilter(filter);
 
         return (AQ) this;

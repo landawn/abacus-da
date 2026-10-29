@@ -173,14 +173,15 @@ public class Neo4jExecutorTest extends TestBase {
     @Test
     public void testLoadAll_ClassWithFilter() {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        when(mockSession.loadAll(Person.class, filter)).thenReturn(Collections.singletonList(new Person()));
+        // the session receives a copy of the filter (2026-10-27 sliceW), so it is matched by type
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class))).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter).size());
     }
 
     @Test
     public void testLoadAll_ClassWithFilterAndDepth() {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
-        when(mockSession.loadAll(Person.class, filter, 1)).thenReturn(Collections.singletonList(new Person()));
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class), eq(1))).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter, 1).size());
     }
 
@@ -188,7 +189,7 @@ public class Neo4jExecutorTest extends TestBase {
     public void testLoadAll_ClassWithFilterAndPagination() {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
         Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, pagination)).thenReturn(Collections.singletonList(new Person()));
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class), same(pagination))).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter, pagination).size());
     }
 
@@ -196,7 +197,7 @@ public class Neo4jExecutorTest extends TestBase {
     public void testLoadAll_ClassWithFilterAndSortOrder() {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
         SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, filter, sortOrder)).thenReturn(Collections.singletonList(new Person()));
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class), same(sortOrder))).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter, sortOrder).size());
     }
 
@@ -204,7 +205,7 @@ public class Neo4jExecutorTest extends TestBase {
     public void testLoadAll_ClassWithFilterPaginationAndDepth() {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
         Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class), same(pagination), eq(1))).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter, pagination, 1).size());
     }
 
@@ -242,7 +243,7 @@ public class Neo4jExecutorTest extends TestBase {
     public void testLoadAll_ClassWithFilterSortOrderAndDepth() {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
         SortOrder sortOrder = new SortOrder();
-        when(mockSession.loadAll(Person.class, filter, sortOrder, 1)).thenReturn(Collections.singletonList(new Person()));
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class), same(sortOrder), eq(1))).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, 1).size());
     }
 
@@ -251,7 +252,7 @@ public class Neo4jExecutorTest extends TestBase {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
         SortOrder sortOrder = new SortOrder();
         Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, sortOrder, pagination)).thenReturn(Collections.singletonList(new Person()));
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class), same(sortOrder), same(pagination))).thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, pagination).size());
     }
 
@@ -260,7 +261,8 @@ public class Neo4jExecutorTest extends TestBase {
         Filter filter = new Filter("name", ComparisonOperator.EQUALS, "John");
         SortOrder sortOrder = new SortOrder();
         Pagination pagination = new Pagination(0, 10);
-        when(mockSession.loadAll(Person.class, filter, sortOrder, pagination, 1)).thenReturn(Collections.singletonList(new Person()));
+        when(mockSession.loadAll(eq(Person.class), isA(Filter.class), same(sortOrder), same(pagination), eq(1)))
+                .thenReturn(Collections.singletonList(new Person()));
         assertEquals(1, executor.loadAll(Person.class, filter, sortOrder, pagination, 1).size());
     }
 

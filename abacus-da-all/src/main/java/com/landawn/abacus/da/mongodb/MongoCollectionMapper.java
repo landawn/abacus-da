@@ -91,10 +91,15 @@ import com.mongodb.client.result.UpdateResult;
  * <ul>
  *   <li>Top-level JavaBean property names are used verbatim as BSON field names, apart from the
  *       special id mapping described above.</li>
+ *   <li>Names in filters and sorts, and {@code propName}/{@code fieldName} arguments, are BSON field names, so the
+ *       mapped id property is addressed as {@code _id}: no {@code id} field is stored, so {@code Filters.eq("id", value)}
+ *       matches nothing and, for a matched document, {@code queryForString("id", filter)} returns a present-but-null
+ *       value.</li>
  *   <li>The framework's {@link MongoDBBase} mapping helpers convert the outer entity to and from a
  *       {@link Document}. The collection's codec registry remains responsible for BSON values stored
  *       inside that document.</li>
- *   <li>BSON {@code null} and missing fields both surface as Java {@code null} in the mapped entity.</li>
+ *   <li>BSON {@code null} and missing fields both surface as Java {@code null} in the mapped entity (a primitive
+ *       property keeps its default value, such as {@code 0}).</li>
  * </ul>
  *
  * <h2>Projection / Sort / Limit Semantics</h2>
@@ -489,7 +494,8 @@ public final class MongoCollectionMapper<T> {
      * @return an Optional containing the entity with only the specified fields populated, or empty if not found
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if a returned
      *         document has multiple non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type, or if a single selected property name is null and a scalar value is extracted from a returned document
+     *         requested type, or if {@code selectPropNames} contains a null name (the driver rejects it while encoding the query,
+     *         whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -528,8 +534,8 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames collection of field names to include (null or empty includes all fields)
      * @return an Optional containing the entity with only the specified fields populated, or empty if not found
      * @throws IllegalArgumentException if {@code objectId} is null, or if a returned document has multiple non-{@code _id} fields for a
-     *         scalar result type or a value that cannot be converted to the requested type, or if a single selected property name is
-     *         null and a scalar value is extracted from a returned document
+     *         scalar result type or a value that cannot be converted to the requested type, or if {@code selectPropNames} contains a
+     *         null name (the driver rejects it while encoding the query, whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -646,7 +652,8 @@ public final class MongoCollectionMapper<T> {
      * @return the matching entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if a returned
      *         document has multiple non-{@code _id} fields for a scalar result type or a value that cannot be converted to the
-     *         requested type, or if a single selected property name is null and a scalar value is extracted from a returned document
+     *         requested type, or if {@code selectPropNames} contains a null name (the driver rejects it while encoding the query,
+     *         whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -688,8 +695,8 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @return the matching entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if {@code objectId} is null, or if a returned document has multiple non-{@code _id} fields for a
-     *         scalar result type or a value that cannot be converted to the requested type, or if a single selected property name is
-     *         null and a scalar value is extracted from a returned document
+     *         scalar result type or a value that cannot be converted to the requested type, or if {@code selectPropNames} contains a
+     *         null name (the driver rejects it while encoding the query, whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -768,8 +775,8 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a
-     *         scalar result type or a value that cannot be converted to the requested type, or if a single selected property name is
-     *         null and a scalar value is extracted from a returned document
+     *         scalar result type or a value that cannot be converted to the requested type, or if {@code selectPropNames} contains a
+     *         null name (the driver rejects it while encoding the query, whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -810,8 +817,8 @@ public final class MongoCollectionMapper<T> {
      * @param sort the sort specification to determine result ordering (null for the natural, unspecified order)
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a
-     *         scalar result type or a value that cannot be converted to the requested type, or if a single selected property name is
-     *         null and a scalar value is extracted from a returned document
+     *         scalar result type or a value that cannot be converted to the requested type, or if {@code selectPropNames} contains a
+     *         null name (the driver rejects it while encoding the query, whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -972,7 +979,7 @@ public final class MongoCollectionMapper<T> {
      * @return a List containing all matching entities with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a
      *         scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or
-     *         if a single selected property name is null and a scalar value is extracted from a returned document
+     *         if {@code selectPropNames} contains a null name (the driver rejects it while encoding the query, whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1011,8 +1018,9 @@ public final class MongoCollectionMapper<T> {
      * @return a List containing the specified range of matching entities with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or
      *         if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection
-     *         fields, or a value that cannot be converted to the requested type, or if a single selected property name is null and a
-     *         scalar value is extracted from a returned document
+     *         fields, or a value that cannot be converted to the requested type, or if {@code selectPropNames} contains a null name and
+     *         {@code count} is positive (the driver rejects it while encoding the query, whatever the mapped type is; a {@code count} of 0
+     *         sends no projection)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1051,7 +1059,7 @@ public final class MongoCollectionMapper<T> {
      * @return a List containing all matching entities with projected fields in sorted order
      * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a
      *         scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or
-     *         if a single selected property name is null and a scalar value is extracted from a returned document
+     *         if {@code selectPropNames} contains a null name (the driver rejects it while encoding the query, whatever the mapped type is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1093,8 +1101,9 @@ public final class MongoCollectionMapper<T> {
      * @return a List containing the specified range of matching entities with projected fields in sorted order
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or
      *         if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection
-     *         fields, or a value that cannot be converted to the requested type, or if a single selected property name is null and a
-     *         scalar value is extracted from a returned document
+     *         fields, or a value that cannot be converted to the requested type, or if {@code selectPropNames} contains a null name and
+     *         {@code count} is positive (the driver rejects it while encoding the query, whatever the mapped type is; a {@code count} of 0
+     *         sends no projection)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1314,10 +1323,10 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Entity> mapper = mongoDB.collectionMapper(Entity.class);
-     * OptionalByte flags = mapper.queryForByte("flags", Filters.eq("id", "789"));
+     * OptionalByte flags = mapper.queryForByte("flags", Filters.eq("deviceId", "789"));
      * byte f = flags.orElse((byte) 0); // present -> the field value; empty (no match) -> the 0 fallback
      * // No match yields empty:
-     * OptionalByte none = mapper.queryForByte("flags", Filters.eq("id", "missing"));
+     * OptionalByte none = mapper.queryForByte("flags", Filters.eq("deviceId", "missing"));
      * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
@@ -1881,7 +1890,8 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @return a Dataset containing the query results with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type, or if a returned
-     *         document cannot be converted to the mapped type
+     *         document cannot be converted to the mapped type, or if {@code selectPropNames} contains a null or duplicated name (each name
+     *         is a Dataset column)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1916,7 +1926,8 @@ public final class MongoCollectionMapper<T> {
      * @param count the maximum number of documents to return
      * @return a Dataset containing the paginated query results with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
-     *         mapped type is neither a bean class nor a Map type, or if a returned document cannot be converted to the mapped type
+     *         mapped type is neither a bean class nor a Map type, or if a returned document cannot be converted to the mapped type, or if
+     *         {@code selectPropNames} contains a null or duplicated name (each name is a Dataset column)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1952,7 +1963,8 @@ public final class MongoCollectionMapper<T> {
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Dataset containing the sorted query results with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type, or if a returned
-     *         document cannot be converted to the mapped type
+     *         document cannot be converted to the mapped type, or if {@code selectPropNames} contains a null or duplicated name (each name
+     *         is a Dataset column)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1990,7 +2002,8 @@ public final class MongoCollectionMapper<T> {
      * @param count the maximum number of documents to return
      * @return a Dataset containing the paginated and sorted query results with projected fields
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
-     *         mapped type is neither a bean class nor a Map type, or if a returned document cannot be converted to the mapped type
+     *         mapped type is neither a bean class nor a Map type, or if a returned document cannot be converted to the mapped type, or if
+     *         {@code selectPropNames} contains a null or duplicated name (each name is a Dataset column)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2191,7 +2204,8 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return a Stream of entities with projected fields matching the filter
-     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code selectPropNames} contains a null name (the driver rejects it
+     *         while encoding the query)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2236,7 +2250,9 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities with projected fields within the specified range
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
+     *         {@code selectPropNames} contains a null name and {@code count} is positive (the driver rejects it while encoding the query; a
+     *         {@code count} of 0 sends no projection)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2277,7 +2293,8 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Stream of entities with projected fields in sorted order
-     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code selectPropNames} contains a null name (the driver rejects it
+     *         while encoding the query)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2323,7 +2340,9 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities with projected fields in sorted order within the specified range
-     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if
+     *         {@code selectPropNames} contains a null name and {@code count} is positive (the driver rejects it while encoding the query; a
+     *         {@code count} of 0 sends no projection)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -2612,8 +2631,9 @@ public final class MongoCollectionMapper<T> {
      * and wrapped in {@code {$set: ...}} (the immutable {@code _id} field is stripped from the
      * converted document first); properties whose getter returns {@code null} are
      * <i>dropped</i> by the bean conversion, so entity nulls cannot be used to clear fields through
-     * this path. Because {@code update} is typed {@code T}, a driver-built {@link Bson} update can be
-     * passed here only when {@code T} is itself a {@link Bson} type such as {@link Document}; for a bean
+     * this path. Because {@code update} is typed {@code T}, a driver-built update such as {@code Updates.set(...)}
+     * can be passed here only when {@code T} is {@link Bson} itself (or {@code Object}); a {@link Document} mapper can pass an operator
+     * document such as {@code new Document("$set", new Document(field, null))}, which is also used verbatim. For a bean
      * mapper, use {@link #collectionExecutor()}{@code .updateOne(objectId, Updates.set(field, null))}
      * when you need to explicitly write {@code null}. If nothing updatable remains (every property
      * is {@code null} or only {@code _id} was set), an {@link IllegalArgumentException} is thrown —
@@ -3505,6 +3525,10 @@ public final class MongoCollectionMapper<T> {
      * {@link #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)} with
      * {@code returnDocument(ReturnDocument.AFTER)} to receive the post-update entity.</p>
      *
+     * <p>The returned document is converted to {@code T} only after the server has applied the update, so a conversion
+     * failure ({@link IllegalArgumentException}, {@link ArrayStoreException} or another {@link RuntimeException}) leaves the
+     * update applied; retrying the call applies it again.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User updates = new User();
@@ -3539,6 +3563,9 @@ public final class MongoCollectionMapper<T> {
      * <p>This method provides fine-grained control over atomic find-and-update operations through
      * FindOneAndUpdateOptions. Options enable returning the updated document, upsert behavior,
      * field projection, sorting, and array filters for nested updates.</p>
+     *
+     * <p>As with {@link #findOneAndUpdate(Bson, Object)}, the returned document is converted only after the server has
+     * applied the update, so a conversion failure leaves the update applied.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3588,6 +3615,9 @@ public final class MongoCollectionMapper<T> {
      * to a {@code $set} stage. Classic update operators such as {@code $inc}, {@code $push}, and
      * {@code $currentDate} are not valid pipeline stages.</p>
      *
+     * <p>As with {@link #findOneAndUpdate(Bson, Object)}, the returned document is converted only after the server has
+     * applied the update, so a conversion failure leaves the update applied.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User visitUpdate = new User();
@@ -3629,7 +3659,8 @@ public final class MongoCollectionMapper<T> {
      * over return behavior, upsert operations, and field projections.</p>
      *
      * <p>This overload uses the same aggregation-update pipeline, literal entity values and permitted-stage
-     * restrictions documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
+     * restrictions documented by {@link #findOneAndUpdate(Bson, Collection)}. The returned document is converted only after
+     * the server has applied the update, so a conversion failure leaves the update applied.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3670,6 +3701,10 @@ public final class MongoCollectionMapper<T> {
      * Unlike update operations that modify specific fields, this replaces the entire document
      * except for the _id field. The operation is atomic, preventing race conditions.</p>
      *
+     * <p>The returned document is converted to {@code T} only after the server has replaced the document, so a conversion
+     * failure ({@link IllegalArgumentException}, {@link ArrayStoreException} or another {@link RuntimeException}) leaves the
+     * replacement in place; retrying the call replaces a matching document again.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User replacement = new User("John Updated", "john.new@example.com", 32);
@@ -3704,6 +3739,9 @@ public final class MongoCollectionMapper<T> {
      * <p>This method provides fine-grained control over atomic find-and-replace operations through
      * FindOneAndReplaceOptions. Options enable returning the updated document, upsert behavior,
      * field projection, sorting, and bypass validation for advanced replacement scenarios.</p>
+     *
+     * <p>As with {@link #findOneAndReplace(Bson, Object)}, the returned document is converted only after the server has
+     * replaced the document, so a conversion failure leaves the replacement in place.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3744,6 +3782,10 @@ public final class MongoCollectionMapper<T> {
      * returning the deleted entity. The operation is atomic, ensuring the entity cannot
      * be modified by other operations between the find and delete.</p>
      *
+     * <p>The returned document is converted to {@code T} only after the server has deleted it, so a conversion failure
+     * ({@link IllegalArgumentException}, {@link ArrayStoreException} or another {@link RuntimeException}) leaves the document
+     * deleted; retrying the call deletes another matching document.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User deletedUser = mapper.findOneAndDelete(
@@ -3782,6 +3824,9 @@ public final class MongoCollectionMapper<T> {
      * FindOneAndDeleteOptions. Options enable field projection, sorting, collation, and hints
      * for optimized atomic deletion scenarios.</p>
      *
+     * <p>As with {@link #findOneAndDelete(Bson)}, the returned document is converted only after the server has deleted it,
+     * so a conversion failure leaves the document deleted.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndDeleteOptions options = new FindOneAndDeleteOptions()
@@ -3817,7 +3862,8 @@ public final class MongoCollectionMapper<T> {
      * <p>This method streams all unique values for the specified field name across the entire
      * collection. Each distinct value is surfaced under {@code fieldName} on an entity of the mapped
      * type, and is only readable if the entity declares a matching property. A single-value {@code T} (such as
-     * {@code String}) gets no {@code $project} stage and receives each value directly, converted to {@code T}.
+     * {@code String}, or a BSON value class such as {@link org.bson.types.Binary} or {@link org.bson.types.Code}) gets no
+     * {@code $project} stage and receives each value directly, converted to {@code T}.
      * This is useful for getting distinct field values for analysis or dropdown populations.</p>
      *
      * <p>For Map, {@link Document} or {@code Object} results, dotted field names produce nested rows, including paths
@@ -3893,6 +3939,15 @@ public final class MongoCollectionMapper<T> {
     private static boolean isSingleValueRowType(final Class<?> rowType) {
         if (rowType.isAssignableFrom(Document.class)) {
             return false;
+        }
+
+        // Binary, Code, Symbol and some BsonValue classes (BsonRegularExpression, BsonString, ...) report a bean Type, but
+        // MongoDBBase.readRow reads them as a single value from the row's sole field (the same isBsonValueClass rule). Routed
+        // as beans, the {fieldName: "$_id"} projection nested a dotted fieldName ({a: {b: v}}, {_id: {part: v}}), so the
+        // value read was the embedded document (a Binary failed with NullPointerException, a Code came back as
+        // Code{code=null}), and the server's $project returned a Code or Symbol as plain text, which could not be read back.
+        if (MongoDBBase.isBsonValueClass(rowType)) {
+            return true;
         }
 
         final Type<?> type = N.typeOf(rowType);
@@ -3974,7 +4029,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param pipeline list of aggregation pipeline stages to execute
      * @return a Stream of entities representing the aggregation results
-     * @throws IllegalArgumentException if {@code pipeline} is null
+     * @throws IllegalArgumentException if {@code pipeline} is null, or if it contains a null stage (rejected by the driver when the
+     *         cursor is opened by this call)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error

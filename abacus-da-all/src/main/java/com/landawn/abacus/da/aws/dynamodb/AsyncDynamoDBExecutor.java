@@ -58,8 +58,9 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <p><strong>Threading model:</strong></p>
  * <ul>
- *   <li>Each method submits a task to the {@link AsyncExecutor} supplied at construction
- *       (typically derived from {@link DynamoDBExecutor#async()}).</li>
+ *   <li>Each method submits a task to the {@link AsyncExecutor} that the wrapped {@link DynamoDBExecutor} was
+ *       constructed with (a shared library-default pool when none was given); this wrapper is obtained from
+ *       {@link DynamoDBExecutor#async()}.</li>
  *   <li>The submitted task invokes the corresponding blocking call on the underlying
  *       {@link DynamoDBExecutor}; the calling thread is never blocked.</li>
  *   <li>Continuations attached via {@link ContinuableFuture#thenRunAsync} and related methods
@@ -69,6 +70,18 @@ import com.landawn.abacus.util.stream.Stream;
  *       including the one for the first page, happens synchronously on whichever thread iterates
  *       the stream, and request/service failures surface there rather than through the future.</li>
  * </ul>
+ *
+ * <p><strong>Arguments are not copied:</strong> on the calling thread a method only checks what its {@code @throws}
+ * clauses name (a {@code null} {@code targetClass}, {@code tableName}, query or scan request, or
+ * {@code BatchGetItemRequest}, and the row type of {@link #query(QueryRequest, Class)}). Every other use of an argument
+ * happens in the submitted task, on the caller's own objects: the task builds the SDK request from the table name, key,
+ * item, update and filter maps, converts an entity, rejects a {@code null} {@code GetItemRequest}, {@code PutItemRequest},
+ * {@code UpdateItemRequest}, {@code DeleteItemRequest} or {@code BatchWriteItemRequest}, and sends the request objects
+ * as they are then. A key, item, map, list, entity or request changed after the call but before the task runs changes
+ * what is sent; an {@code attributesToGet} list emptied in that window projects every attribute. A {@code stream} or
+ * {@code scan} fetches its pages on the thread that consumes the stream, from a request built or shallow-cloned in the
+ * task whose maps (key conditions, filters, expression attribute values) are still the caller's. Keep these arguments
+ * unchanged until the future completes (for a stream, until it is consumed), or pass copies.</p>
  *
  * <p><strong>Key Features:</strong></p>
  * <ul>
@@ -360,7 +373,11 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type to convert the item to
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
-     * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
+     * @param targetClass the class to convert the item to, must not be {@code null}; the supported types are those of
+     *                    {@link DynamoDBExecutor#getItem(String, Map, Class)}: an entity class, which needs a no-args constructor, a
+     *                    builder, or a constructor taking all its properties in declaration order (as a record's canonical
+     *                    constructor does), a {@code Map} class, an object-array or collection class, or a single-value type for an
+     *                    item with exactly one attribute
      * @return a {@link ContinuableFuture} containing the item converted to type T; if the item doesn't exist, the default value
      *         of {@code targetClass}: {@code null} for entity, {@code Map}, collection, array, and most scalar types, the primitive
      *         default (e.g. {@code 0} or {@code false}) for a primitive, an empty {@code Optional}, {@code OptionalInt} (and the
@@ -487,7 +504,11 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type to convert the item to
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
-     * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
+     * @param targetClass the class to convert the item to, must not be {@code null}; the supported types are those of
+     *                    {@link DynamoDBExecutor#getItem(GetItemRequest, Class)}: an entity class, which needs a no-args constructor, a
+     *                    builder, or a constructor taking all its properties in declaration order (as a record's canonical
+     *                    constructor does), a {@code Map} class, an object-array or collection class, or a single-value type for an
+     *                    item with exactly one attribute
      * @return a ContinuableFuture containing the item converted to type T; if the item doesn't exist, the default value of
      *         {@code targetClass}: {@code null} for entity, {@code Map}, collection, array, and most scalar types, the primitive
      *         default (e.g. {@code 0} or {@code false}) for a primitive, an empty {@code Optional}, {@code OptionalInt} (and the
@@ -1773,9 +1794,13 @@ public final class AsyncDynamoDBExecutor {
      * asyncExecutor.query(request)
      *     .thenRunAsync(dataset -> {
      *         dataset.println();   // Print tabular view
-     *         double avgPrice = dataset.<String>getColumn("price").stream()
-     *             .mapToDouble(Double::parseDouble)
-     *             .average().orElse(0);
+     *         // The columns are the returned attribute names: an item without "price" has a null cell, and no item
+     *         // with it (or no item at all) means no such column, for which getColumn throws.
+     *         double avgPrice = !dataset.containsColumn("price") ? 0
+     *             : dataset.<String>getColumn("price").stream()
+     *                 .filter(Objects::nonNull)
+     *                 .mapToDouble(Double::parseDouble)
+     *                 .average().orElse(0);
      *         System.out.println("Average price: " + avgPrice);
      *     }); // returns ContinuableFuture<Void>; the callback receives the Dataset
      *
@@ -1798,7 +1823,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
      *         materialized according to the pagination behavior above; its columns are the attribute names of the items, an
      *         item without attributes is a row of {@code null}s beside items with attributes, and a result whose items all lack
-     *         attributes is an empty Dataset
+     *         attributes is an empty Dataset. When the query matches nothing the Dataset is empty and has no columns, so
+     *         {@code getColumn} throws {@link IllegalArgumentException} on it
      * @throws IllegalArgumentException if {@code queryRequest} is null
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
@@ -1847,10 +1873,11 @@ public final class AsyncDynamoDBExecutor {
      *         // Print tabular view
      *         dataset.println();
      *
-     *         // Perform analysis on a numeric column
-     *         double totalRevenue = dataset.<Number>getColumn("amount").stream()
-     *             .mapToDouble(Number::doubleValue)
-     *             .sum();
+     *         // Perform analysis on a numeric column (an empty result has no columns, so getColumn would throw)
+     *         double totalRevenue = dataset.isEmpty() ? 0.0
+     *             : dataset.<Number>getColumn("amount").stream()
+     *                 .mapToDouble(Number::doubleValue)
+     *                 .sum();
      *         System.out.println("Total revenue: $" + totalRevenue);
      *
      *         // Stream rows as the Sale type
@@ -1884,7 +1911,8 @@ public final class AsyncDynamoDBExecutor {
      *                    (an array, a collection or a single-value type) can be turned into a Dataset, so this method throws
      *                    for it before the task is submitted
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
-     *         and associated type information for type-safe operations
+     *         and associated type information for type-safe operations. When the query matches nothing the Dataset is empty
+     *         and has no columns, for an entity class too, so {@code getColumn} throws {@link IllegalArgumentException} on it
      * @throws IllegalArgumentException if {@code queryRequest} is null, or {@code targetClass} is not {@code null}, a {@code Map} type,
      *         or a bean class (thrown by this call, before any request is sent, even if the query would match nothing)
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
@@ -2019,7 +2047,11 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type to convert each query result item to
      * @param queryRequest the QueryRequest specifying the query parameters including key conditions,
      *                    filter expressions, and projection, must not be {@code null}
-     * @param targetClass the class to convert each result item to, must have a default constructor, must not be {@code null}
+     * @param targetClass the class to convert each result item to, must not be {@code null}; the row types of
+     *                    {@link DynamoDBExecutor#stream(QueryRequest, Class)}: an entity class, which needs a no-args constructor, a
+     *                    builder, or a constructor taking all its properties in declaration order (as a record's canonical
+     *                    constructor does), a {@code Map} class, an object-array or collection class, or a single-value type for
+     *                    items with exactly one attribute
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the query,
      *         each automatically converted to type {@code T} with lazy evaluation and automatic pagination
      * @throws IllegalArgumentException if {@code queryRequest} is null, or if {@code targetClass} is null

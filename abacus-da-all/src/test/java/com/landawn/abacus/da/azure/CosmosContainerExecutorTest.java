@@ -1409,6 +1409,209 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
                 () -> assertEquals("SELECT * FROM test_item c WHERE (c.score ?? c[\"not\"] - 1) > 0", queries.get(5)));
     }
 
+    // ---- 2026-10-27 sliceE ----
+
+    /**
+     * Regression: right after an operator, NOT followed by the start of another operand was read as a property named NOT, so
+     * {@code active = NOT deleted} became {@code c.active = c["NOT"] c.deleted} and {@code score != NOT EXISTS(...)} became
+     * {@code c.score != c["NOT"] EXISTS(...)}: two juxtaposed operands, which Cosmos DB rejects as a syntax error. There NOT is the unary
+     * keyword. Where a property named {@code not} completes the operand (before AND, NOT IN, a sign or a subscript) it is still qualified.
+     */
+    @Test
+    public void testUnaryNotAfterOperatorBeforeOperandIsNotQualified_sliceE() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("active = NOT deleted"),
+                Filters.expr("score != NOT EXISTS(SELECT VALUE t FROM t IN c.tags WHERE t = 1)"), Filters.expr("flag = NOT true"),
+                Filters.expr("name = not 'x' OR score > NOT 1"), Filters.expr("active = NOT NOT deleted"), Filters.expr("active = NOT deleted IS NULL"),
+                Filters.expr("active = NOT IS_DEFINED(score) AND flag = NOT udf.fn(score)"), Filters.expr("score = not AND active"),
+                Filters.expr("score = not NOT IN (1, 2)"), Filters.expr("score = not - 1 OR score = not[0]"));
+        final List<String> screaming = captureConditionQueries(new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE),
+                Filters.expr("active = NOT deleted"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT c.deleted", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score != NOT EXISTS(SELECT value t FROM t IN c.tags WHERE t = 1)", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.flag = NOT true", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.name = not 'x' OR c.score > NOT 1", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT NOT c.deleted", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT IS_NULL(c.deleted)", queries.get(5)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT IS_DEFINED(c.score) AND c.flag = NOT udf.fn(c.score)", queries.get(6)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] AND c.active", queries.get(7)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] NOT IN (1, 2)", queries.get(8)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] - 1 OR c.score = c[\"not\"][0]", queries.get(9)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.ACTIVE = NOT c.DELETED", screaming.get(0)));
+    }
+
+    /**
+     * Covers the remaining follower classes of the unary-NOT rule (review 2026-10-27 r2E): after an operator, NOT before an object,
+     * a parameter, a bitwise NOT, a double-quoted string or a name merely starting like a keyword is the keyword (each was a syntax
+     * error, c["NOT"] juxtaposed with the operand), also after other comparison and arithmetic operators; a property named
+     * {@code not} is kept before IN, LIKE, BETWEEN, NOT LIKE, NOT BETWEEN, a conditional {@code ?} and a bitwise operator.
+     */
+    @Test
+    public void testUnaryNotFollowerClassesAfterAnOperator_r2E() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("active = NOT {\"a\": 1}"), Filters.expr("active = NOT @x"),
+                Filters.expr("score = NOT ~score"), Filters.expr("name = NOT \"x\""), Filters.expr("score * NOT 1 > 0 OR score % NOT 2 > 0 OR score <= NOT 3"),
+                Filters.expr("active = NOT inside"), Filters.expr("score = not IN (1, 2)"), Filters.expr("name = not LIKE 'a%'"),
+                Filters.expr("score = not BETWEEN 1 AND 2"), Filters.expr("name = not NOT LIKE 'a%' OR score = not NOT BETWEEN 1 AND 2"),
+                Filters.expr("score = not ? 1 : 2"), Filters.expr("score = not | 1"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT {\"a\": 1}", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT @x", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = NOT ~c.score", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.name = NOT \"x\"", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score * NOT 1 > 0 OR c.score % NOT 2 > 0 OR c.score <= NOT 3", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT c.inside", queries.get(5)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] IN (1, 2)", queries.get(6)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.name = c[\"not\"] LIKE 'a%'", queries.get(7)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] BETWEEN 1 AND 2", queries.get(8)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.name = c[\"not\"] NOT LIKE 'a%' OR c.score = c[\"not\"] NOT BETWEEN 1 AND 2",
+                        queries.get(9)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] ? 1 : 2", queries.get(10)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] | 1", queries.get(11)));
+    }
+
+    /**
+     * Regression (outside review): the unary-NOT rule took every ESCAPE after NOT as the keyword that continues a predicate, but
+     * ESCAPE is a keyword only before a string literal ({@code LIKE 'a!%' ESCAPE '!'}); anywhere else it is a property name. So
+     * after an operator {@code active = NOT escape} read NOT as a property and juxtaposed two operands
+     * ({@code c.active = c["NOT"] c["escape"]}), which Cosmos DB rejects. NOT is now the keyword there, and an ESCAPE followed by a
+     * string literal still keeps a property named {@code not} before it.
+     */
+    @Test
+    public void testUnaryNotBeforeAPropertyNamedEscape() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("active = NOT escape"), Filters.expr("active = NOT escape.city"),
+                Filters.expr("active = NOT escape AND x = 1"), Filters.expr("active = NOT escape['k']"), Filters.expr("active = NOT ESCAPE"),
+                Filters.expr("score = not ESCAPE '!'"), Filters.expr("score = not escape \"!\""), Filters.expr("name LIKE 'a!%' ESCAPE '!'"),
+                Filters.expr("id = '1' AND NOT escape"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT c[\"escape\"]", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT c[\"escape\"].city", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT c[\"escape\"] AND c.x = 1", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT c[\"escape\"]['k']", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT c[\"escape\"]", queries.get(4)),
+                // Pins: ESCAPE before a string literal is the keyword, so a property named not before it is still qualified.
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] escape '!'", queries.get(5)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.score = c[\"not\"] escape \"!\"", queries.get(6)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.name LIKE 'a!%' escape '!'", queries.get(7)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.id = '1' AND NOT c[\"escape\"]", queries.get(8)));
+    }
+
+    /**
+     * Pins (fixC) the two followers the unary-NOT rule leaves to the identifier scan, which keeps a name before {@code (} (a
+     * function call) or {@code :} (an object key) as written. NOT before {@code (} is therefore always the keyword: after an
+     * operator, after AND/OR, nested, glued to the parenthesis or as a conditional's branch; every output parses with the Cosmos DB
+     * grammar. Before {@code :} a property named {@code not} (a conditional's true branch) stays bare and Cosmos DB rejects the
+     * query as a syntax error (loud; the object-key rule is left for decision, report 2026-10-27 "Left for a decision" item 12).
+     */
+    @Test
+    public void testUnaryNotBeforeParenthesisOrColonIsLeftAsWritten_fixC() {
+        final List<String> queries = captureConditionQueries(executor, Filters.expr("active = NOT (deleted = true)"),
+                Filters.expr("active = NOT(deleted = true)"), Filters.expr("active AND NOT (deleted = true)"), Filters.expr("active OR NOT(deleted = true)"),
+                Filters.expr("active = NOT (NOT (deleted))"), Filters.expr("NOT(NOT(deleted)) OR score >= NOT (1)"),
+                Filters.expr("NOT (deleted = true) AND active"), Filters.expr("flag ? NOT (deleted = true) : active"),
+                Filters.expr("{\"a\": NOT deleted} = {\"a\": true}"), Filters.expr("active = flag ? not : deleted"), Filters.expr("(flag ? not : score) = 1"));
+        final List<String> screaming = captureConditionQueries(new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE),
+                Filters.expr("active = NOT (deleted = true)"), Filters.expr("active AND NOT(NOT(deleted))"));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT (c.deleted = true)", queries.get(0)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT(c.deleted = true)", queries.get(1)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active AND NOT (c.deleted = true)", queries.get(2)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active OR NOT(c.deleted = true)", queries.get(3)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = NOT (NOT (c.deleted))", queries.get(4)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE NOT(NOT(c.deleted)) OR c.score >= NOT (1)", queries.get(5)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE NOT (c.deleted = true) AND c.active", queries.get(6)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.flag ? NOT (c.deleted = true) : c.active", queries.get(7)),
+                // NOT after an object key's colon is the keyword as well.
+                () -> assertEquals("SELECT * FROM test_item c WHERE {\"a\": NOT c.deleted} = {\"a\": true}", queries.get(8)),
+                // Left for decision: the name before ':' is taken as an object key and not qualified (Cosmos DB: syntax error).
+                () -> assertEquals("SELECT * FROM test_item c WHERE c.active = c.flag ? not : c.deleted", queries.get(9)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.flag ? not : c.score) = 1", queries.get(10)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.ACTIVE = NOT (c.DELETED = true)", screaming.get(0)),
+                () -> assertEquals("SELECT * FROM TEST_ITEM c WHERE c.ACTIVE AND NOT(NOT(c.DELETED))", screaming.get(1)));
+    }
+
+    /**
+     * Pins two limitations documented on {@link CosmosContainerExecutor#streamItems(com.landawn.abacus.query.condition.Condition, Class)}:
+     * a {@code ?} conditional operator counts as a placeholder once the condition carries parameter values ({@code IIF} works), and a
+     * path through a bean-typed property is rendered with the sub-entity class's table name ({@code c.address.city} for
+     * {@code homeAddress.city}), while a {@code @Column}-annotated bean property is an ordinary path and the bracket accessor is sent
+     * as written.
+     */
+    @Test
+    public void testDocumentedConditionalOperatorAndSubEntityPathLimitations_sliceE() {
+        final IllegalArgumentException ternary = assertThrows(IllegalArgumentException.class,
+                () -> executor.streamItems(Filters.and(Filters.eq("id", "x"), Filters.expr("(flag ? name : id) = 'a'")), TestItem.class));
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("Query parameter count mismatch: expected 1 placeholders but found 2", ternary.getMessage()),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.id = @p0) AND (IIF(c.flag, c.name, c.id) = 'a')",
+                        captureQuery_sliceE(executor, null, Filters.and(Filters.eq("id", "x"), Filters.expr("IIF(flag, name, id) = 'a'")), TestItem.class)),
+                () -> assertEquals("SELECT * FROM test_item c WHERE (c.flag ? c.name : c.id) = 'a'",
+                        captureQuery_sliceE(executor, null, Filters.expr("(flag ? name : id) = 'a'"), TestItem.class)),
+                () -> assertEquals("SELECT * FROM sub_entity_owner c WHERE c.sub_entity_address.city = @p0",
+                        captureQuery_sliceE(executor, null, Filters.eq("homeAddress.city", "x"), SubEntityOwner.class)),
+                () -> assertEquals("SELECT * FROM sub_entity_owner c WHERE c[\"homeAddress\"][\"city\"] = 'x'",
+                        captureQuery_sliceE(executor, null, Filters.expr("c[\"homeAddress\"][\"city\"] = 'x'"), SubEntityOwner.class)),
+                () -> assertEquals("SELECT * FROM column_address_owner c WHERE c.home_address.city = @p0",
+                        captureQuery_sliceE(executor, null, Filters.eq("homeAddress.city", "x"), ColumnAddressOwner.class)),
+                () -> assertEquals("SELECT VALUE { \"id\": c.id, \"homeAddress\": c.home_address } FROM column_address_owner c",
+                        captureQuery_sliceE(executor, List.of("id", "homeAddress"), null, ColumnAddressOwner.class)));
+    }
+
+    public static class ColumnAddressOwner {
+        private String id;
+        @com.landawn.abacus.annotation.Column
+        private SubEntityAddress homeAddress;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public SubEntityAddress getHomeAddress() {
+            return homeAddress;
+        }
+
+        public void setHomeAddress(final SubEntityAddress homeAddress) {
+            this.homeAddress = homeAddress;
+        }
+    }
+
+    public static class SubEntityAddress {
+        private String city;
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+    }
+
+    public static class SubEntityOwner {
+        private String id;
+        private SubEntityAddress homeAddress;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public SubEntityAddress getHomeAddress() {
+            return homeAddress;
+        }
+
+        public void setHomeAddress(final SubEntityAddress homeAddress) {
+            this.homeAddress = homeAddress;
+        }
+    }
+
     public static class ReservedWordItem {
         private String id;
         private int value;

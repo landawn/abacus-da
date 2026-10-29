@@ -39,8 +39,13 @@ import com.mongodb.client.MongoDatabase;
  * to expose convenience asynchronous wrappers around the otherwise-synchronous driver calls;
  * it does not change the blocking nature of the underlying driver itself.</p>
  *
- * <p><strong>Important:</strong> We recommend defining an "id" property in Java entities/beans to map to the MongoDB "_id"
- * field to keep things as simple as possible.</p>
+ * <p>This class has no {@code close()} method: it neither owns nor closes the {@code MongoClient} that created the
+ * database. The caller closes that client when it is no longer needed; database operations run through the collections,
+ * executors and mappers obtained from this instance then fail with {@link IllegalStateException}.</p>
+ *
+ * <p><strong>Important:</strong> Define a {@code String}- or {@code ObjectId}-typed "id" property (or one annotated with
+ * {@code @Id}) in Java entities to map to MongoDB's "_id" field; an id property of any other type (such as {@code long}) is
+ * stored as an ordinary field under its own name, and MongoDB assigns a separate "_id".</p>
  *
  * @see com.landawn.abacus.da.mongodb.reactivestreams.MongoDB
  * @see com.mongodb.client.model.Filters

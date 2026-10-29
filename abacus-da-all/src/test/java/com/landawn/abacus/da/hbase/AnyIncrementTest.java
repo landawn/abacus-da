@@ -411,4 +411,93 @@ public class AnyIncrementTest extends TestBase {
                 () -> assertThrows(IllegalArgumentException.class, () -> AnyIncrement.of(emptyOptional, 0, 1)),
                 () -> assertArrayEquals(Bytes.toBytes("k"), AnyIncrement.of(java.util.Optional.of("k")).getRow()));
     }
+
+    // ---- 2026-10-27 sliceO ----
+
+    /**
+     * Increment.addColumn registers the family's cell list before it builds the cell, so an addColumn that failed there (a family over
+     * 127 bytes) left an empty family entry behind: hasFamilies() was true without a cell, and HBase's client check that rejects an
+     * increment without columns let it through. Both overloads now remove the entry the failed call added; a family that existed
+     * before the call keeps its cells.
+     */
+    @Test
+    public void testAddColumn_failedAddLeavesNoEmptyFamily_sliceO() {
+        final String longFamily = "f".repeat(128);
+        final AnyIncrement byString = AnyIncrement.of("r");
+        final AnyIncrement byBytes = AnyIncrement.of("r");
+        final AnyIncrement withOtherFamily = AnyIncrement.of("r").addColumn("cf", "q", 1L);
+        final AnyIncrement withSameFamily = AnyIncrement.of("r");
+        withSameFamily.getFamilyCellMap().put(Bytes.toBytes(longFamily), new java.util.ArrayList<>());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            assertThrows(IllegalArgumentException.class, () -> byString.addColumn(longFamily, "q", 1L));
+            assertFalse(byString.hasFamilies());
+            assertEquals(0, byString.numFamilies());
+            assertTrue(byString.getFamilyMapOfLongs().isEmpty());
+        }, () -> {
+            assertThrows(IllegalArgumentException.class, () -> byBytes.addColumn(Bytes.toBytes(longFamily), Bytes.toBytes("q"), 1L));
+            assertFalse(byBytes.hasFamilies());
+            assertTrue(byBytes.isEmpty());
+        }, () -> {
+            assertThrows(IllegalArgumentException.class, () -> withOtherFamily.addColumn(longFamily, "q", 2L));
+            assertEquals(1, withOtherFamily.numFamilies());
+            assertEquals(1L, withOtherFamily.getFamilyMapOfLongs().get(Bytes.toBytes("cf")).get(Bytes.toBytes("q")));
+        }, () -> {
+            assertThrows(IllegalArgumentException.class, () -> withSameFamily.addColumn(longFamily, "q", 2L));
+            assertTrue(withSameFamily.hasFamilies());
+        }, () -> {
+            final AnyIncrement nullFamily = AnyIncrement.of("r");
+            assertThrows(IllegalArgumentException.class, () -> nullFamily.addColumn((String) null, "q", 1L));
+            assertFalse(nullFamily.hasFamilies());
+        });
+    }
+
+    /** Pins the getFamilyMapOfLongs doc: a qualifier queued twice appears once with its last amount, while size() counts both cells. */
+    @Test
+    public void testGetFamilyMapOfLongs_qualifierQueuedTwiceKeepsLastAmount_sliceO() {
+        final AnyIncrement increment = AnyIncrement.of("r").addColumn("cf", "q", 1L).addColumn("cf", "q", 5L);
+        final NavigableMap<byte[], Long> amounts = increment.getFamilyMapOfLongs().get(Bytes.toBytes("cf"));
+
+        assertEquals(2, increment.size());
+        assertEquals(1, amounts.size());
+        assertEquals(5L, amounts.get(Bytes.toBytes("q")));
+    }
+
+    /**
+     * Pins the of(byte[], long, NavigableMap) familyMap doc: the map is retained, so a naturally ordered map makes every later family
+     * lookup (addColumn, has, get) throw ClassCastException, while a Bytes.BYTES_COMPARATOR map works.
+     */
+    @Test
+    public void testOf_familyMapOrdering_naturalOrderThrowsClassCastException_sliceO() {
+        final byte[] row = Bytes.toBytes("r");
+        final AnyIncrement natural = AnyIncrement.of(row, 1L, new TreeMap<>());
+        final AnyIncrement ordered = AnyIncrement.of(row, 1L, new TreeMap<>(Bytes.BYTES_COMPARATOR));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(ClassCastException.class, () -> natural.addColumn("cf", "q", 1L)),
+                () -> assertThrows(ClassCastException.class, () -> natural.has("cf", "q")),
+                () -> assertThrows(ClassCastException.class, () -> natural.get("cf", "q")), () -> assertEquals(1, ordered.addColumn("cf", "q", 1L).size()));
+    }
+
+    // ---- 2026-10-27 r2O ----
+
+    /**
+     * The failed-add cleanup must never throw by itself: on a naturally ordered family map (accepted by of(byte[], long,
+     * NavigableMap)) a null family is still rejected by HBase's own check with IllegalArgumentException, as before the cleanup
+     * existed, not with a NullPointerException from a family lookup made before the add. The cleanup also works on a family map
+     * that is not a TreeMap.
+     */
+    @Test
+    public void testAddColumn_cleanupDoesNotPreemptHBaseArgumentChecks_r2O() {
+        final byte[] row = Bytes.toBytes("r");
+        final AnyIncrement natural = AnyIncrement.of(row, 1L, new TreeMap<>());
+        final AnyIncrement skipList = AnyIncrement.of(row, 1L, new java.util.concurrent.ConcurrentSkipListMap<>(Bytes.BYTES_COMPARATOR));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> natural.addColumn((String) null, "q", 1L)),
+                () -> assertThrows(IllegalArgumentException.class, () -> natural.addColumn((byte[]) null, Bytes.toBytes("q"), 1L)), () -> {
+                    assertThrows(IllegalArgumentException.class, () -> skipList.addColumn("f".repeat(128), "q", 1L));
+                    assertFalse(skipList.hasFamilies());
+                    assertEquals(1, skipList.addColumn("cf", "q", 1L).size());
+                    assertEquals(1, skipList.numFamilies());
+                });
+    }
 }

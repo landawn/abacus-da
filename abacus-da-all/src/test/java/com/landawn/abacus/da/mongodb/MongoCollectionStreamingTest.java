@@ -754,4 +754,109 @@ public class MongoCollectionStreamingTest extends MongoCollectionExecutorTestSup
                             "unchanged message without _id paths: " + e.getMessage());
                 });
     }
+
+    // ---- 2026-10-27 sliceQ ----
+
+    /**
+     * Binary, Code, Symbol and the BsonValue classes report a bean {@code Type}, but {@code MongoDBBase.readRow}/{@code toList}
+     * read them as ONE value from a document's sole field. The executor's single-value routing still classified them as beans: a
+     * single-field projection of a document lacking the field converted its {@code _id} (ParsingException) instead of yielding
+     * {@code null}/empty, the embedded-{@code _id} grouping guard was skipped (the count or another field was converted), and
+     * {@code groupBy(field, Code.class)} re-projected the key through a {@code $project} stage (which turns a JavaScript key into
+     * text, so the read failed live).
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testBsonValueRowTypesFollowTheSingleValueRules_sliceQ() {
+        final ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
+        final org.bson.types.Binary bin = new org.bson.types.Binary((byte) 5, new byte[] { 1, 2 });
+        final org.bson.types.Code code = new org.bson.types.Code("x()");
+
+        Assertions.assertAll(() -> {
+            stubFindRows(Arrays.asList(new Document("_id", id)));
+            Assertions.assertEquals(Arrays.asList((Object) null), executor.list(Arrays.asList("code"), new Document(), org.bson.types.Code.class),
+                    "list, field missing");
+        }, () -> {
+            stubFindRows(Arrays.asList(new Document("_id", id).append("bin", bin), new Document("_id", id)));
+            Assertions.assertEquals(Arrays.asList(bin, null), executor.stream(Arrays.asList("bin"), new Document(), org.bson.types.Binary.class).toList(),
+                    "stream, field missing in the second document");
+        }, () -> {
+            when(mockFindIterable.first()).thenReturn(new Document("_id", id));
+            Assertions.assertTrue(executor.findFirst(Arrays.asList("code"), new Document(), org.bson.types.Code.class).isEmpty(), "findFirst, field missing");
+        }, () -> {
+            stubFindRows(Arrays.asList(new Document("_id", id).append("code", code)));
+            Assertions.assertEquals(Arrays.asList(code), executor.list(Arrays.asList("code"), new Document(), org.bson.types.Code.class),
+                    "list, field present (control)");
+        }, rejectsOnConsumption("groupByAndCount(_id, Code)", () -> executor.groupByAndCount("_id", org.bson.types.Code.class),
+                new Document("_id", code).append("count", 1)),
+                rejectsOnConsumption("groupBy([_id, x], Binary)", () -> executor.groupBy(Arrays.asList("_id", "x"), org.bson.types.Binary.class),
+                        new Document("_id", bin).append("x", "a")),
+                () -> {
+                    aggregateReturns(new Document("_id", code));
+                    org.mockito.Mockito.clearInvocations(mockCollection);
+                    Assertions.assertEquals(Arrays.asList(code), executor.groupBy("code", org.bson.types.Code.class).toList(), "groupBy rows");
+                    final org.mockito.ArgumentCaptor<List> pipeline = org.mockito.ArgumentCaptor.forClass(List.class);
+                    verify(mockCollection).aggregate(pipeline.capture(), eq(Document.class));
+                    Assertions.assertEquals(1, pipeline.getValue().size(), "groupBy(code, Code): the $group stage only: " + pipeline.getValue());
+                });
+    }
+
+    /**
+     * r2Q: the same rule for the remaining row types and routes. {@code Symbol} and a scalar {@code BsonValue} class
+     * ({@code BsonRegularExpression}, which a decoded Document holds for a BSON regex, and {@code BsonTimestamp}, whose
+     * {@code Type} is not a bean, so it is unchanged) are single values on the list, stream, findFirst, gett, embedded-{@code _id}
+     * grouping and {@code groupBy(Collection)} routes; a {@code BsonDocument} row type is a Map and keeps the Map grouping route
+     * (guard against over-reach).
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testEveryBsonValueRowTypeAndRouteFollowsTheSingleValueRules_sliceQ() {
+        final ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
+        final org.bson.types.Symbol symbol = new org.bson.types.Symbol("s");
+        final org.bson.BsonRegularExpression regex = new org.bson.BsonRegularExpression("^a", "i");
+        final org.bson.BsonTimestamp ts = new org.bson.BsonTimestamp(7, 1);
+        final org.bson.types.Code code = new org.bson.types.Code("x()");
+
+        Assertions.assertAll(() -> {
+            stubFindRows(Arrays.asList(new Document("_id", id).append("s", symbol), new Document("_id", id)));
+            Assertions.assertEquals(Arrays.asList(symbol, null), executor.list(Arrays.asList("s"), new Document(), org.bson.types.Symbol.class),
+                    "list Symbol, field missing in the second document");
+        }, () -> {
+            stubFindRows(Arrays.asList(new Document("_id", id).append("re", regex), new Document("_id", id)));
+            Assertions.assertEquals(Arrays.asList(regex, null),
+                    executor.stream(Arrays.asList("re"), new Document(), org.bson.BsonRegularExpression.class).toList(),
+                    "stream BsonRegularExpression, field missing in the second document");
+        }, () -> {
+            stubFindRows(Arrays.asList(new Document("_id", id).append("ts", ts), new Document("_id", id)));
+            Assertions.assertEquals(Arrays.asList(ts, null), executor.stream(Arrays.asList("ts"), new Document(), org.bson.BsonTimestamp.class).toList(),
+                    "stream BsonTimestamp, field missing in the second document");
+        }, () -> {
+            when(mockFindIterable.first()).thenReturn(new Document("_id", id));
+            Assertions.assertTrue(executor.findFirst(Arrays.asList("re"), new Document(), org.bson.BsonRegularExpression.class).isEmpty(),
+                    "findFirst BsonRegularExpression, field missing");
+        }, () -> {
+            when(mockFindIterable.first()).thenReturn(new Document("_id", id));
+            Assertions.assertNull(executor.gett(id, Arrays.asList("s"), org.bson.types.Symbol.class), "gett Symbol, field missing");
+        }, rejectsOnConsumption("groupByAndCount(_id, Symbol)", () -> executor.groupByAndCount("_id", org.bson.types.Symbol.class),
+                new Document("_id", symbol).append("count", 1)), () -> {
+                    aggregateReturns(new Document("_id", code));
+                    org.mockito.Mockito.clearInvocations(mockCollection);
+                    Assertions.assertEquals(Arrays.asList(code), executor.groupBy(Arrays.asList("a.b"), org.bson.types.Code.class).toList(),
+                            "groupBy([a.b], Code) rows");
+                    executor.groupBy(Arrays.asList("a.b"), String.class).toList();
+                    final org.mockito.ArgumentCaptor<List> pipelines = org.mockito.ArgumentCaptor.forClass(List.class);
+                    verify(mockCollection, org.mockito.Mockito.times(2)).aggregate(pipelines.capture(), eq(Document.class));
+                    Assertions.assertEquals(pipelines.getAllValues().get(1), pipelines.getAllValues().get(0),
+                            "groupBy([a.b], Code): the single-value pipeline of String");
+                }, () -> {
+                    aggregateReturns();
+                    org.mockito.Mockito.clearInvocations(mockCollection);
+                    executor.groupBy("a.b", org.bson.BsonDocument.class).toList();
+                    executor.groupBy("a.b", java.util.Map.class).toList();
+                    final org.mockito.ArgumentCaptor<List> pipelines = org.mockito.ArgumentCaptor.forClass(List.class);
+                    verify(mockCollection, org.mockito.Mockito.times(2)).aggregate(pipelines.capture(), eq(Document.class));
+                    Assertions.assertEquals(pipelines.getAllValues().get(1), pipelines.getAllValues().get(0), "groupBy(a.b, BsonDocument): the Map pipeline");
+                    Assertions.assertEquals(2, pipelines.getAllValues().get(0).size(), "$group and $project: " + pipelines.getAllValues().get(0));
+                });
+    }
 }

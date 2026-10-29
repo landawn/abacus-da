@@ -684,4 +684,187 @@ public class CqlMapperTest extends TestBase {
         assertNotNull(s);
         assertTrue(s.contains("foo"), s);
     }
+
+    // ---- 2026-10-27 sliceJ ----
+
+    @Test
+    public void testSaveTo_outputShape_singleLineTrimmedBodiesAttributesInNameOrder() {
+        // Pins the saveTo(File) / saveTo(OutputStream) Javadoc (corrected 2026-10-27, like SqlMapper 4.9.6): the output adds
+        // no indentation or line breaks between elements, uses each statement's trimmed original CQL as the element text
+        // with no whitespace added around it, and emits attributes in name order with "id" sorted among them. The old
+        // example showed an indented, multi-line document with the CQL padded by line breaks.
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "3000");
+        attrs.put("consistency", "QUORUM");
+        final CqlMapper m = new CqlMapper();
+        m.add("statement1", "SELECT * FROM table1 WHERE id = ?", attrs);
+        m.add("statement2", "  INSERT INTO table2 (col1, col2) VALUES (?, ?)  ", null);
+
+        final java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
+        m.saveTo(os);
+        final String xml = os.toString(StandardCharsets.UTF_8);
+        final String afterDeclaration = xml.substring(xml.indexOf("?>") + 2);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(xml.startsWith("<?xml "), xml),
+                () -> assertEquals("<cqlMapper><cql consistency=\"QUORUM\" id=\"statement1\" timeout=\"3000\">SELECT * FROM table1 WHERE id = ?</cql>"
+                        + "<cql id=\"statement2\">INSERT INTO table2 (col1, col2) VALUES (?, ?)</cql></cqlMapper>", afterDeclaration),
+                () -> assertFalse(xml.contains("\n") || xml.contains("\r"), xml));
+
+        // A line break inside a CQL body is the only line break in the output, and the body round-trips unchanged.
+        final CqlMapper multiLine = new CqlMapper();
+        multiLine.add("q", "SELECT *\nFROM t");
+        final java.io.ByteArrayOutputStream os2 = new java.io.ByteArrayOutputStream();
+        multiLine.saveTo(os2);
+        final String xml2 = os2.toString(StandardCharsets.UTF_8);
+        final int bodyStart = xml2.indexOf("<cql id=\"q\">");
+        final int bodyEnd = xml2.indexOf("</cql>");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(bodyStart > 0 && bodyEnd > bodyStart, xml2),
+                () -> assertFalse(xml2.substring(0, bodyStart).contains("\n") || xml2.substring(bodyEnd).contains("\n"), xml2),
+                () -> assertEquals("SELECT *\nFROM t", CqlMapper.loadFrom(new ByteArrayInputStream(os2.toByteArray())).get("q").originalCql()));
+
+        // "Loading the output reads every statement back with the same original CQL": a line feed may be written as the
+        // platform line separator and a carriage return as "&#13;", but neither changes what is read back.
+        final CqlMapper lineEnds = new CqlMapper();
+        lineEnds.add("lf", "SELECT *\nFROM t");
+        lineEnds.add("crlf", "SELECT *\r\nFROM t");
+        lineEnds.add("cr", "SELECT 'a\rb' FROM t");
+        lineEnds.add("tabs", "SELECT\t*  FROM t WHERE a = '<&>\"'");
+        final java.io.ByteArrayOutputStream os3 = new java.io.ByteArrayOutputStream();
+        lineEnds.saveTo(os3);
+        final CqlMapper reloaded = CqlMapper.loadFrom(new ByteArrayInputStream(os3.toByteArray()));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("SELECT *\nFROM t", reloaded.get("lf").originalCql()),
+                () -> assertEquals("SELECT *\r\nFROM t", reloaded.get("crlf").originalCql()),
+                () -> assertEquals("SELECT 'a\rb' FROM t", reloaded.get("cr").originalCql()),
+                () -> assertEquals("SELECT\t*  FROM t WHERE a = '<&>\"'", reloaded.get("tabs").originalCql()), () -> assertEquals(lineEnds, reloaded));
+    }
+
+    @Test
+    public void testSaveToStream_writeOrFlushFailure_isUncheckedIOException() {
+        // Regression: saveTo(OutputStream) documented UncheckedIOException for a failing flush, but the XML serializer
+        // writes and flushes the caller's stream itself, so any write or flush failure surfaced as an UncheckedException
+        // wrapping TransformerException <- SAXException <- IOException. It is now the UncheckedIOException that
+        // saveTo(File) and abacus-query's SqlMapper report, with the stream's IOException as its cause.
+        final CqlMapper m = new CqlMapper();
+        m.add("q", "SELECT * FROM t WHERE k = ?");
+
+        final java.io.IOException flushFailure = new java.io.IOException("flush failed");
+        final OutputStream flushFails = new java.io.ByteArrayOutputStream() {
+            @Override
+            public void flush() throws java.io.IOException {
+                throw flushFailure;
+            }
+        };
+
+        final java.io.IOException writeFailure = new java.io.IOException("write failed");
+        final OutputStream writeFails = new OutputStream() {
+            @Override
+            public void write(final int b) throws java.io.IOException {
+                throw writeFailure;
+            }
+
+            @Override
+            public void write(final byte[] b, final int off, final int len) throws java.io.IOException {
+                throw writeFailure;
+            }
+        };
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> org.junit.jupiter.api.Assertions.assertSame(flushFailure,
+                        assertThrows(com.landawn.abacus.exception.UncheckedIOException.class, () -> m.saveTo(flushFails)).getCause()),
+                () -> org.junit.jupiter.api.Assertions.assertSame(writeFailure,
+                        assertThrows(com.landawn.abacus.exception.UncheckedIOException.class, () -> m.saveTo(writeFails)).getCause()),
+                // Pin: a serializer failure that is not an I/O failure keeps its type (the namespace prefix "p" is undeclared).
+                () -> {
+                    final CqlMapper badPrefix = new CqlMapper();
+                    final Map<String, String> attrs = new HashMap<>();
+                    attrs.put("p:t", "1");
+                    badPrefix.add("q", "SELECT 1 FROM t", attrs);
+                    final RuntimeException ex = assertThrows(RuntimeException.class, () -> badPrefix.saveTo(new java.io.ByteArrayOutputStream()));
+                    assertFalse(ex instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(ex));
+                });
+    }
+
+    @Test
+    public void testIds_insertionOrder() throws Exception {
+        // Pins the ids() Javadoc (2026-10-27, like SqlMapper 4.9.6): the snapshot keeps insertion order, XML document order
+        // for loaded ids, and moves an id that is removed and added again to the end; saveTo writes the same order.
+        final CqlMapper m = new CqlMapper();
+        final java.util.List<String> expected = new java.util.ArrayList<>();
+
+        for (int i = 0; i < 40; i++) {
+            final String id = "id" + ((i * 17) % 40) + (i % 2 == 0 ? "z" : "a");
+            expected.add(id);
+            m.add(id, "SELECT " + i + " FROM t");
+        }
+
+        m.remove(expected.get(3));
+        m.add(expected.get(3), "SELECT 3 FROM t");
+        expected.add(expected.remove(3));
+
+        final java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
+        m.saveTo(os);
+        final String doc = "<cqlMapper><cql id=\"z\">SELECT 1 FROM t</cql><cql id=\"a\">SELECT 2 FROM t</cql>"
+                + "<cql id=\"m\">SELECT 3 FROM t</cql></cqlMapper>";
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(expected, new java.util.ArrayList<>(m.ids())),
+                () -> assertEquals(expected, new java.util.ArrayList<>(CqlMapper.loadFrom(new ByteArrayInputStream(os.toByteArray())).ids())),
+                () -> assertEquals(java.util.List.of("z", "a", "m"),
+                        new java.util.ArrayList<>(CqlMapper.loadFrom(new ByteArrayInputStream(doc.getBytes(StandardCharsets.UTF_8))).ids())));
+    }
+
+    @Test
+    public void testLoadFrom_doctypeDeclaration_isParsingException() {
+        // Pins the class and loadFrom Javadoc (2026-10-27): the XML parser disallows DTDs, so a mapper file that carries a
+        // DOCTYPE header (as MyBatis mapper files do) is rejected with a ParsingException.
+        final String xml = "<?xml version=\"1.0\"?><!DOCTYPE cqlMapper><cqlMapper><cql id=\"a\">SELECT 1 FROM t</cql></cqlMapper>";
+        assertThrows(com.landawn.abacus.exception.ParsingException.class,
+                () -> CqlMapper.loadFrom(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))));
+    }
+
+    @Test
+    public void testSaveToStream_uncheckedStreamFailures_r2C() {
+        // Second-pass review (r2C): the other branches of the saveTo(OutputStream) I/O unwrapping. The serializer wraps a
+        // RuntimeException thrown by the stream as well (UncheckedException <- TransformerException <- the stream's exception):
+        // an abacus UncheckedIOException is rethrown as is, a java.io.UncheckedIOException becomes the abacus one around its
+        // IOException, and a non-I/O failure whose cause chain is cyclic stays an UncheckedException (the search is bounded).
+        final CqlMapper m = new CqlMapper();
+        m.add("q", "SELECT * FROM t WHERE k = ?");
+
+        final com.landawn.abacus.exception.UncheckedIOException abacusFailure = new com.landawn.abacus.exception.UncheckedIOException(
+                new java.io.IOException("abacus"));
+        final java.io.IOException jdkCause = new java.io.IOException("jdk");
+        final IllegalStateException cyclic = new IllegalStateException("a");
+        final IllegalArgumentException cyclicCause = new IllegalArgumentException("b");
+        cyclic.initCause(cyclicCause);
+        cyclicCause.initCause(cyclic);
+
+        org.junit.jupiter.api.Assertions
+                .assertAll(
+                        () -> org.junit.jupiter.api.Assertions
+                                .assertSame(abacusFailure, assertThrows(com.landawn.abacus.exception.UncheckedIOException.class,
+                                        () -> m.saveTo(r2cFailingStream(abacusFailure)))),
+                        () -> org.junit.jupiter.api.Assertions.assertSame(jdkCause, assertThrows(com.landawn.abacus.exception.UncheckedIOException.class,
+                                () -> m.saveTo(r2cFailingStream(new java.io.UncheckedIOException(jdkCause)))).getCause()),
+                        () -> {
+                            final RuntimeException e = assertThrows(com.landawn.abacus.exception.UncheckedException.class,
+                                    () -> m.saveTo(r2cFailingStream(cyclic)));
+                            assertFalse(e instanceof com.landawn.abacus.exception.UncheckedIOException, String.valueOf(e));
+                        });
+    }
+
+    private static OutputStream r2cFailingStream(final RuntimeException failure) {
+        return new OutputStream() {
+            @Override
+            public void write(final int b) {
+                throw failure;
+            }
+
+            @Override
+            public void write(final byte[] b, final int off, final int len) {
+                throw failure;
+            }
+        };
+    }
 }

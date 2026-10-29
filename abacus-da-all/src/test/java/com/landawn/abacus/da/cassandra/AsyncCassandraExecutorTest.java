@@ -1214,4 +1214,122 @@ public class AsyncCassandraExecutorTest extends TestBase {
         // The bind-conversion rejection (it names the column's CQL type), not a parameter-count or marker failure.
         assertTrue(e.getMessage().contains("CQL type int"), e.getMessage());
     }
+
+    // ---- 2026-10-27 sliceG ----
+
+    /**
+     * Pins the AsyncCassandraExecutorBase class Javadoc: get(timeout, unit) bounds only the wait for the first result page. The
+     * mapping that follows (here: list fetching the second page) runs inside get() past the timeout. No timing is involved: the
+     * second page is completed by a helper thread only after the mapping has asked for it, i.e. while get(1 ns) is still running.
+     */
+    @Test
+    public void testSliceG27_getWithTimeoutDoesNotBoundTheMappingOfLaterPages() throws Exception {
+        final ColumnDefinitions columns = sliceG27Columns("v");
+        final AsyncResultSet second = sliceG27Page(columns, null, sliceG27Row(columns, 2L));
+        final java.util.concurrent.CompletableFuture<AsyncResultSet> secondFuture = new java.util.concurrent.CompletableFuture<>();
+        final java.util.concurrent.CountDownLatch fetching = new java.util.concurrent.CountDownLatch(1);
+        final AsyncResultSet first = sliceG27Page(columns, null, sliceG27Row(columns, 1L));
+        when(first.hasMorePages()).thenReturn(true);
+        when(first.fetchNextPage()).thenAnswer(inv -> {
+            fetching.countDown();
+            return secondFuture;
+        });
+        final Thread completer = new Thread(() -> {
+            try {
+                fetching.await();
+                secondFuture.complete(second);
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        completer.setDaemon(true);
+        completer.start();
+
+        try {
+            final ContinuableFuture<java.util.List<Long>> future = sliceG27Async(first).list(Long.class, "SELECT v FROM t");
+
+            assertEquals(Arrays.asList(1L, 2L), future.get(1, java.util.concurrent.TimeUnit.NANOSECONDS));
+        } finally {
+            completer.interrupt();
+        }
+    }
+
+    /**
+     * Pins the list/findFirst(Class, String, ...) @return clauses: a single-value target over a result with two columns fails the
+     * future with an IllegalArgumentException (list checks the columns even when there is no row; findFirst checks the first row).
+     */
+    @Test
+    public void testSliceG27_singleValueTargetOverTwoColumnsFailsTheFuture() {
+        final ColumnDefinitions columns = sliceG27Columns("id", "v");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> sliceG27AssertFailsWithIae(sliceG27Async(sliceG27Page(columns, null)).list(String.class, "SELECT id, v FROM t")),
+                () -> sliceG27AssertFailsWithIae(
+                        sliceG27Async(sliceG27Page(columns, null, sliceG27Row(columns, 1L, 7L))).list(String.class, "SELECT id, v FROM t")),
+                () -> sliceG27AssertFailsWithIae(
+                        sliceG27Async(sliceG27Page(columns, null, sliceG27Row(columns, 1L, 7L))).findFirst(String.class, "SELECT id, v FROM t")),
+                () -> assertTrue(sliceG27Async(sliceG27Page(columns, null)).findFirst(String.class, "SELECT id, v FROM t").get().isEmpty()));
+    }
+
+    private static void sliceG27AssertFailsWithIae(final ContinuableFuture<?> future) {
+        final java.util.concurrent.ExecutionException e = assertThrows(java.util.concurrent.ExecutionException.class, future::get);
+        assertTrue(e.getCause() instanceof IllegalArgumentException, String.valueOf(e.getCause()));
+        assertTrue(e.getCause().getMessage().contains("Column count must be 1"), e.getCause().getMessage());
+    }
+
+    /** A real v4 executor over a mocked session whose every statement returns {@code firstPage}. */
+    private static AsyncCassandraExecutor sliceG27Async(final AsyncResultSet firstPage) {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry.DEFAULT);
+        final ColumnDefinitions noVariables = mock(ColumnDefinitions.class);
+        when(noVariables.size()).thenReturn(0);
+        final com.datastax.oss.driver.api.core.cql.PreparedStatement prepared = mock(com.datastax.oss.driver.api.core.cql.PreparedStatement.class);
+        when(prepared.getVariableDefinitions()).thenReturn(noVariables);
+        when(prepared.bind()).thenReturn(mock(BoundStatement.class));
+        when(session.prepare(anyString())).thenReturn(prepared);
+        when(session.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(firstPage));
+
+        return new CassandraExecutor(session).async();
+    }
+
+    private static ColumnDefinitions sliceG27Columns(final String... names) {
+        final ColumnDefinitions columns = mock(ColumnDefinitions.class);
+        when(columns.size()).thenReturn(names.length);
+
+        for (int i = 0; i < names.length; i++) {
+            final com.datastax.oss.driver.api.core.cql.ColumnDefinition column = mock(com.datastax.oss.driver.api.core.cql.ColumnDefinition.class);
+            when(column.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal(names[i]));
+            when(column.getType()).thenReturn(com.datastax.oss.driver.api.core.type.DataTypes.BIGINT);
+            when(columns.get(i)).thenReturn(column);
+        }
+
+        return columns;
+    }
+
+    private static Row sliceG27Row(final ColumnDefinitions columns, final Object... values) {
+        final Row row = mock(Row.class);
+        when(row.getColumnDefinitions()).thenReturn(columns);
+
+        for (int i = 0; i < values.length; i++) {
+            when(row.getObject(i)).thenReturn(values[i]);
+        }
+
+        return row;
+    }
+
+    private static AsyncResultSet sliceG27Page(final ColumnDefinitions columns, final AsyncResultSet next, final Row... rows) {
+        final AsyncResultSet page = mock(AsyncResultSet.class);
+        when(page.getColumnDefinitions()).thenReturn(columns);
+        when(page.currentPage()).thenReturn(Arrays.asList(rows));
+        when(page.remaining()).thenReturn(rows.length);
+        when(page.hasMorePages()).thenReturn(next != null);
+
+        if (next != null) {
+            when(page.fetchNextPage()).thenReturn(CompletableFuture.completedFuture(next));
+        }
+
+        return page;
+    }
 }

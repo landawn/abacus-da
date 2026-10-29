@@ -1136,4 +1136,104 @@ public class MongoCollectionQueryTest extends MongoCollectionExecutorTestSupport
                 () -> assertEquals(Arrays.asList("department"), plainResult.columnNames()),
                 () -> assertEquals(Arrays.asList("eng", "ops"), plainResult.getColumn("department")));
     }
+
+    // ---- 2026-10-27 sliceU ----
+
+    /**
+     * A BSON value row type (Binary, Code, Symbol) is a single value, as MongoDBBase.readRow now reads it, but the executor's
+     * projection guard classified it as a bean (its Type reports one): with one selected field, a document lacking the field
+     * had its _id converted (ParsingException failed the whole Flux), and a dotted field converted the parent document
+     * (Code{code=null}), as did groupBy on a dotted field. Such a row type now takes the single-value path like String.
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testBsonValueRowTypesReadTheSelectedFieldAsSingleValue_sliceU() {
+        final Bson filter = new Document("k", 1);
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        final org.bson.types.Code code = new org.bson.types.Code("x");
+        final org.bson.types.Binary binary = new org.bson.types.Binary(new byte[] { 1, 2 });
+
+        // Each result is kept as a value or as the failure, so every case below is checked.
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("c", code), new Document("_id", 2));
+        final Object codes = resultOrFailure(() -> executor.list(Arrays.asList("c"), filter, org.bson.types.Code.class).collectList().block());
+
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("bin", binary), new Document("_id", 2));
+        final Object binaries = resultOrFailure(() -> executor.list(Arrays.asList("bin"), filter, org.bson.types.Binary.class).collectList().block());
+
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("a", new Document("b", code)));
+        final Object nested = resultOrFailure(() -> executor.findFirst(Arrays.asList("a.b"), filter, org.bson.types.Code.class).block());
+
+        stubEmits(mockFindPublisher, new Document("_id", 2));
+        final Object missing = resultOrFailure(() -> executor.findFirst(Arrays.asList("c"), filter, org.bson.types.Code.class).block());
+
+        when(mockCollection.aggregate(org.mockito.ArgumentMatchers.anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        stubEmits(mockAggregatePublisher, new Document("_id", code), new Document("_id", null));
+        final Object groups = resultOrFailure(() -> executor.groupBy("a.b", org.bson.types.Code.class).collectList().block());
+        executor.groupBy("a.b", String.class);
+        final org.mockito.ArgumentCaptor<List> pipelines = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mockCollection, org.mockito.Mockito.times(2)).aggregate(pipelines.capture(), eq(Document.class));
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals(Arrays.asList(code), codes, "missing field skipped, as for String"),
+                () -> assertEquals(Arrays.asList(binary), binaries, "missing field skipped, as for String"),
+                () -> assertEquals(code, nested, "dotted field value"), () -> assertEquals(null, missing, "missing field completes empty"),
+                () -> assertEquals(pipelines.getAllValues().get(1), pipelines.getAllValues().get(0), "groupBy pipeline as for String"),
+                () -> assertEquals(Arrays.asList(code), groups, "group keys, null key not emitted"));
+    }
+
+    /**
+     * r2Q: the same rule for the remaining row types and grouping routes. Symbol and a scalar BsonValue class
+     * (BsonRegularExpression, which a decoded Document holds for a BSON regex) are single values; groupBy(Collection) with one
+     * dotted field routes a BSON value row type like String; a BsonDocument row type is a Map and keeps the Map grouping route
+     * (guard against over-reach).
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testEveryBsonValueRowTypeAndGroupRouteFollowsTheSingleValueRules_sliceU() {
+        final Bson filter = new Document("k", 1);
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        final org.bson.types.Symbol symbol = new org.bson.types.Symbol("s");
+        final org.bson.BsonRegularExpression regex = new org.bson.BsonRegularExpression("^a", "i");
+        final org.bson.types.Code code = new org.bson.types.Code("x");
+
+        // Each result is kept as a value or as the failure, so every case below is checked.
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("s", symbol), new Document("_id", 2));
+        final Object symbols = resultOrFailure(() -> executor.list(Arrays.asList("s"), filter, org.bson.types.Symbol.class).collectList().block());
+
+        stubEmits(mockFindPublisher, new Document("_id", 1).append("re", regex), new Document("_id", 2));
+        final Object regexes = resultOrFailure(() -> executor.list(Arrays.asList("re"), filter, org.bson.BsonRegularExpression.class).collectList().block());
+
+        stubEmits(mockFindPublisher, new Document("_id", 2));
+        final Object missing = resultOrFailure(() -> executor.findFirst(Arrays.asList("re"), filter, org.bson.BsonRegularExpression.class).block());
+
+        when(mockCollection.aggregate(org.mockito.ArgumentMatchers.anyList(), eq(Document.class))).thenReturn(mockAggregatePublisher);
+        stubEmits(mockAggregatePublisher, new Document("_id", code));
+        final Object groups = resultOrFailure(() -> executor.groupBy(Arrays.asList("a.b"), org.bson.types.Code.class).collectList().block());
+        executor.groupBy(Arrays.asList("a.b"), String.class);
+        executor.groupBy("a.b", org.bson.BsonDocument.class);
+        executor.groupBy("a.b", Map.class);
+        final org.mockito.ArgumentCaptor<List> pipelines = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mockCollection, org.mockito.Mockito.times(4)).aggregate(pipelines.capture(), eq(Document.class));
+
+        org.junit.jupiter.api.Assertions.assertAll( //
+                () -> assertEquals(Arrays.asList(symbol), symbols, "Symbol: missing field skipped, as for String"),
+                () -> assertEquals(Arrays.asList(regex), regexes, "BsonRegularExpression: missing field skipped, as for String"),
+                () -> assertEquals(null, missing, "BsonRegularExpression: missing field completes empty"),
+                () -> assertEquals(Arrays.asList(code), groups, "groupBy([a.b], Code) group keys"),
+                () -> assertEquals(pipelines.getAllValues().get(1), pipelines.getAllValues().get(0), "groupBy([a.b], Code): pipeline as for String"),
+                () -> assertEquals(pipelines.getAllValues().get(3), pipelines.getAllValues().get(2), "groupBy(a.b, BsonDocument): pipeline as for Map"),
+                () -> assertEquals(2, pipelines.getAllValues().get(2).size(), "$group and $project: " + pipelines.getAllValues().get(2)));
+    }
+
+    private static Object resultOrFailure(final java.util.function.Supplier<?> call) {
+        try {
+            return call.get();
+        } catch (final RuntimeException e) {
+            return e;
+        }
+    }
 }

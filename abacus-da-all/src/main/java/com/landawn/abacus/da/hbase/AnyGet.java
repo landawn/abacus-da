@@ -121,7 +121,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * column in every family of the row.</p>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an empty value wrapper (which converts to no bytes), or an HBase
+     *         operation or {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or its byte representation is empty or
      *         exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
@@ -137,8 +138,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or
-     *         exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*} wrapper
+     *         (bare or held by a present value wrapper; see {@link HBaseExecutor#toRowKeyBytes(Object)}), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the
      *         converted row bytes
@@ -199,11 +200,15 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * // Edge: an empty row key is likewise rejected.
      * AnyGet.of("");              // throws IllegalArgumentException
+     *
+     * // Edge: so is an empty value wrapper, which has no byte representation.
+     * AnyGet.of(Optional.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      * @return a new AnyGet instance configured with the specified row key
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an empty value wrapper (which converts to no bytes), or an HBase
+     *         operation or {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or its byte representation is empty or
      *         exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, int, int)
@@ -241,8 +246,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowOffset the starting offset within the row key byte array
      * @param rowLength the number of bytes to use from the row key
      * @return a new AnyGet instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or
-     *         exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*} wrapper
+     *         (bare or held by a present value wrapper; see {@link HBaseExecutor#toRowKeyBytes(Object)}), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the
      *         converted row bytes

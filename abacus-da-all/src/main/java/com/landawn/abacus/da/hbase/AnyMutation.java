@@ -528,7 +528,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param family the column-family name
      * @param qualifier the column-qualifier name
-     * @param ts the cell timestamp, in milliseconds since the epoch
+     * @param ts the cell timestamp, in milliseconds since the epoch; any primitive {@code byte}, {@code short}, {@code char},
+     *        {@code int} or {@code long} third argument selects this overload, even one meant as a cell value (see
+     *        {@link #has(String, String, Object)})
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if traversal of the requested family reaches a null cell in the mutable family-cell map
      * @see #has(String, String)
@@ -557,12 +559,20 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * // This would return false
      * boolean hasBob = put.has("profile", "name", "Bob");
+     *
+     * // Trap: a primitive byte, short, char, int or long argument selects has(String, String, long) and is compared
+     * // with the cell timestamp, not the value. Box it to look for a numeric value.
+     * AnyPut counter = AnyPut.of("user123").addColumn("stats", "visits", 5);
+     * counter.has("stats", "visits", 5);                    // returns false (timestamp 5)
+     * counter.has("stats", "visits", Integer.valueOf(5));   // returns true
      * }</pre>
      *
      * @param family the column-family name
      * @param qualifier the column-qualifier name
      * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}, so an empty value
-     *        wrapper such as {@code Optional.empty()} encodes to {@code null} bytes like {@code null}
+     *        wrapper such as {@code Optional.empty()} encodes to {@code null} bytes like {@code null}. A primitive
+     *        {@code byte}, {@code short}, {@code char}, {@code int} or {@code long} argument does not reach this overload: it selects
+     *        {@link #has(String, String, long)}, which compares it with the cell timestamp; pass a boxed value instead
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if {@code value} is {@code null} or an empty value wrapper and a queued cell matches {@code family} and
      *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values), or traversal of the requested family reaches a null cell

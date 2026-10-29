@@ -15,6 +15,7 @@ package com.landawn.abacus.da.cassandra;
 
 import static com.landawn.abacus.da.cassandra.CassandraExecutorBase.getKeyNames;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -60,6 +61,11 @@ import com.landawn.abacus.util.stream.Stream;
  * with the same cause). For a {@code stream} method that is the same {@code Stream}, which can be consumed only
  * once: another terminal operation on it throws {@link IllegalStateException}.</p>
  *
+ * <p>{@code get(timeout, unit)} bounds only the wait for the statement's first result page. The result mapping that
+ * follows runs inside that call and is not limited by the timeout (for example, a {@code list} or {@code query} result
+ * blocks while any further result pages are fetched), and a concurrent {@code get} on the same future waits until that
+ * first mapping has finished.</p>
+ *
  * <p>Reads into {@code Boolean}/{@code boolean} targets follow the strict rule described under <i>Boolean Conversion</i>
  * in {@link CassandraExecutorBase}: only an {@code int}/{@code smallint}/{@code tinyint} {@code 1} (true), {@code 0} or
  * {@code -1} (false), and the text {@code 1}/{@code 0}/{@code -1}/{@code y}/{@code Y}/{@code n}/{@code N}/{@code true}/{@code false}
@@ -76,7 +82,8 @@ import com.landawn.abacus.util.stream.Stream;
  * @param <RS> the result set type for the Cassandra driver version
  * @param <ST> the statement type for the Cassandra driver version
  * @param <PS> the prepared statement type for the Cassandra driver version
- * @param <BT> the batch type enum for the Cassandra driver version
+ * @param <BT> the batch type for the Cassandra driver version (the 4.x driver's {@code BatchType} interface or the 3.x
+ *        driver's {@code BatchStatement.Type} enum)
  *
  * @see CassandraExecutorBase
  * @see AsyncCassandraExecutor
@@ -205,7 +212,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       to select all mapped properties
      * @param ids the primary key value(s) identifying the row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
-     *         row matches
+     *         row matches; if more than one row matches, {@code get()} throws an {@code ExecutionException} whose cause
+     *         is a {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code ids} is {@code null} or
      *         empty, if {@code targetClass} is not a bean class, if an id value is {@code null} or an empty character
      *         sequence, if the length of {@code ids} does not match the registered/annotated key columns of
@@ -250,7 +258,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to fetch
      * @param whereClause the WHERE condition identifying at most one row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
-     *         row matches
+     *         row matches; if more than one row matches, {@code get()} throws an {@code ExecutionException} whose cause
+     *         is a {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
@@ -295,7 +304,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       to select all mapped properties
      * @param whereClause the WHERE condition identifying at most one row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
-     *         row matches
+     *         row matches; if more than one row matches, {@code get()} throws an {@code ExecutionException} whose cause
+     *         is a {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
@@ -338,7 +348,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param <T> the entity type
      * @param targetClass the entity class to fetch
      * @param ids the primary key value(s) identifying the row
-     * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @return a future whose payload is the entity instance, or {@code null} if no row matches; if more than one row
+     *         matches, {@code get()} throws an {@code ExecutionException} whose cause is a
+     *         {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code ids} is {@code null} or
      *         empty, if {@code targetClass} is not a bean class, if an id value is {@code null} or an empty character
      *         sequence, if the length of {@code ids} does not match the registered/annotated key columns of
@@ -381,7 +393,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
      * @param ids the primary key value(s) identifying the row
-     * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @return a future whose payload is the entity instance, or {@code null} if no row matches; if more than one row
+     *         matches, {@code get()} throws an {@code ExecutionException} whose cause is a
+     *         {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code ids} is {@code null} or
      *         empty, if {@code targetClass} is not a bean class, if an id value is {@code null} or an empty character
      *         sequence, if the length of {@code ids} does not match the registered/annotated key columns of
@@ -425,7 +439,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param <T> the entity type
      * @param targetClass the entity class to fetch
      * @param whereClause the WHERE condition identifying at most one row
-     * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @return a future whose payload is the entity instance, or {@code null} if no row matches; if more than one row
+     *         matches, {@code get()} throws an {@code ExecutionException} whose cause is a
+     *         {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
@@ -466,7 +482,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
      * @param whereClause the WHERE condition identifying at most one row
-     * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @return a future whose payload is the entity instance, or {@code null} if no row matches; if more than one row
+     *         matches, {@code get()} throws an {@code ExecutionException} whose cause is a
+     *         {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
@@ -1659,7 +1677,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the type each row should be mapped to (must not be {@code null})
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is a {@link List} of mapped rows (empty if no row matches)
+     * @return a future whose payload is a mutable {@link List} of mapped rows (empty if no row matches); if {@code targetClass}
+     *         is a single-value type but the result does not have exactly one column (checked even when no row matches),
+     *         {@code get()} throws an {@code ExecutionException} whose cause is an {@link IllegalArgumentException}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter
      *         value is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
@@ -1670,7 +1690,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
             throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return execute(query, parameters).map(memoize(resultSet -> cassandraExecutor.toList(targetClass, resultSet)));
+        return execute(query, parameters).map(memoize(resultSet -> {
+            final List<T> result = cassandraExecutor.toList(targetClass, resultSet);
+
+            // WHY: as in the sync list(Class, String, ...): for a raw-row target (Row.class or a supertype) toList returns the
+            // driver's ResultSet.all(), which driver 3 returns as the immutable Collections.emptyList() when there is no row
+            // (driver 4's result arrives through ResultSets.wrap, whose all() is an ArrayList). A non-empty list is mutable.
+            return result.isEmpty() ? new ArrayList<>() : result;
+        }));
     }
 
     /**
@@ -2188,7 +2215,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is an {@link Optional} containing the mapped first row, or
      *         empty if the query returned no row; if the first row maps to {@code null} (for example, a
      *         {@code NULL} column read into a single-value reference type), {@code get()} throws an
-     *         {@code ExecutionException} whose cause is a {@link NullPointerException}
+     *         {@code ExecutionException} whose cause is a {@link NullPointerException}, and if {@code targetClass} is a
+     *         single-value type but the first row does not have exactly one column, the cause is an
+     *         {@link IllegalArgumentException}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter
      *         value is rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
@@ -3425,7 +3454,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * // Typical: apply per-statement options (e.g. page size) before executing.
      * Statement<?> paged = SimpleStatement.newInstance("SELECT * FROM users").setPageSize(500);
-     * async.execute(paged).thenRunAsync(rs -> System.out.println(rs)); // prints the result set when ready
+     * async.execute(paged).thenRunAsync(pagedRs -> System.out.println(pagedRs)); // prints the result set when ready
      *
      * // Edge: a null statement is rejected synchronously at the call site (no future is created).
      * async.execute((Statement<?>) null); // throws IllegalArgumentException immediately

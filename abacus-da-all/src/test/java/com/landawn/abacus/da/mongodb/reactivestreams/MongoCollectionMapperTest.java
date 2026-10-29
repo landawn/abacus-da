@@ -1363,6 +1363,232 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
                         "a Document element keeps its values as expressions"));
     }
 
+    // ---- 2026-10-27 sliceV ----
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testFindOneAndModifyConversionFailureIsSignalledAfterTheWriteAndRetryRunsItAgain_sliceV() {
+        // Pins the findOneAndUpdate/findOneAndReplace/findOneAndDelete docs: the returned document is converted to the mapped type
+        // only after the driver's write publisher has emitted it (the server has applied the write), so a conversion failure reaches
+        // onError after the write, and every retry() resubscription runs the write again. The cold Mono below stands in for the
+        // driver's find-and-modify publisher; each subscription counts as one write sent to the server.
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> coll = mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+        final java.util.concurrent.atomic.AtomicInteger writes = new java.util.concurrent.atomic.AtomicInteger();
+        final Mono<Document> returnedDocument = Mono.fromCallable(() -> {
+            writes.incrementAndGet();
+            return new Document("name", "n").append("value", "notANumber"); // cannot be converted to TestEntity's int value
+        });
+        when(coll.findOneAndUpdate(org.mockito.ArgumentMatchers.any(Bson.class), org.mockito.ArgumentMatchers.any(Bson.class))).thenReturn(returnedDocument);
+        when(coll.findOneAndReplace(org.mockito.ArgumentMatchers.any(Bson.class), org.mockito.ArgumentMatchers.any(Document.class)))
+                .thenReturn(returnedDocument);
+        when(coll.findOneAndDelete(org.mockito.ArgumentMatchers.any(Bson.class))).thenReturn(returnedDocument);
+
+        final MongoCollectionMapper<TestEntity> entityMapper = new MongoCollectionMapper<>(new MongoCollectionExecutor(coll), TestEntity.class);
+        final TestEntity entity = new TestEntity();
+        entity.setName("n");
+        final Bson filter = new Document("k", 1);
+
+        final List<java.util.function.Supplier<Mono<TestEntity>>> calls = List.of(() -> entityMapper.findOneAndUpdate(filter, entity),
+                () -> entityMapper.findOneAndReplace(filter, entity), () -> entityMapper.findOneAndDelete(filter));
+
+        org.junit.jupiter.api.Assertions.assertAll(calls.stream().map(call -> (org.junit.jupiter.api.function.Executable) () -> {
+            writes.set(0);
+            StepVerifier.create(call.get().retry(1)).verifyError(IllegalArgumentException.class);
+            assertEquals(2, writes.get(), "the write runs on the first subscription and again on the retry");
+        }));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testDistinctReadsBsonValueRowTypesAsSingleValues_sliceV() {
+        // readRow reads a Binary/Code/Symbol/BsonValue row type as the single value of the row (it is not mapped as a bean), so
+        // distinct must route it like String: group rows {_id: value}, no $project. Through the $project the server returns a
+        // dotted path as {n: {bin: value}} and a JavaScript Code as plain text (both observed live), which the single-value
+        // conversion cannot turn back into the value. The mock answers each pipeline the way the server does.
+        final List<List<? extends Bson>> pipelines = new java.util.ArrayList<>();
+        final org.bson.types.Binary bin1 = new org.bson.types.Binary(new byte[] { 1 });
+        final org.bson.types.Binary bin2 = new org.bson.types.Binary(new byte[] { 2 });
+        final org.bson.types.Code code1 = new org.bson.types.Code("f1");
+        final org.bson.types.Code code2 = new org.bson.types.Code("f2");
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> coll = mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+        when(coll.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenAnswer(invocation -> {
+            final List<Document> pipeline = invocation.getArgument(0);
+            pipelines.add(pipeline);
+            final String field = ((String) ((Document) pipeline.get(0).get("$group")).get("_id")).substring(1);
+            final boolean projected = pipeline.stream().anyMatch(stage -> stage.containsKey("$project"));
+            final List<Document> rows = "n.bin".equals(field)
+                    ? (projected ? List.of(new Document("n", new Document("bin", bin1)), new Document("n", new Document("bin", bin2)))
+                            : List.of(new Document("_id", bin1), new Document("_id", bin2)))
+                    : (projected ? List.of(new Document("c", "f1"), new Document("c", "f2")) : List.of(new Document("_id", code1), new Document("_id", code2)));
+            final com.mongodb.reactivestreams.client.AggregatePublisher<Document> publisher = mock(com.mongodb.reactivestreams.client.AggregatePublisher.class);
+            org.mockito.Mockito.doAnswer(subscribe -> {
+                Flux.fromIterable(rows).subscribe((org.reactivestreams.Subscriber<? super Document>) subscribe.getArgument(0));
+                return null;
+            }).when(publisher).subscribe(org.mockito.ArgumentMatchers.any());
+            return publisher;
+        });
+
+        final MongoCollectionExecutor executor = new MongoCollectionExecutor(coll);
+        final MongoCollectionMapper<org.bson.types.Binary> binaryMapper = new MongoCollectionMapper<>(executor, org.bson.types.Binary.class);
+        final MongoCollectionMapper<org.bson.types.Code> codeMapper = new MongoCollectionMapper<>(executor, org.bson.types.Code.class);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(List.of(bin1, bin2), binaryMapper.distinct("n.bin").collectList().block(), "dotted path into Binary"),
+                () -> assertEquals(List.of(code1, code2), codeMapper.distinct("c").collectList().block(), "Code values"),
+                () -> assertEquals(List.of(new Document("$group", new Document("_id", "$c"))), pipelines.get(pipelines.size() - 1),
+                        "no $project stage for a BSON value row type, as for String"));
+    }
+
+    // ---- 2026-10-27 r2S ----
+
+    @Test
+    public void testDistinctReadsEveryBsonValueRowTypeFromTheGroupRows_r2S() {
+        // isSingleValueRowType follows MongoDBBase.isBsonValueClass (its local copy): Binary, Code (and its subclass CodeWithScope),
+        // Symbol and a scalar BsonValue are read as the single value of each {_id: value} group row, for a top-level, a dotted and an
+        // embedded-_id field, with and without a filter. The stub answers each pipeline as the server does (verified live): a $project
+        // nests a dotted path ({n: {v: value}}, {_id: {part: value}}) and returns a Code or Symbol as plain text, which the single-value
+        // read cannot turn back into the value.
+        final Object[][] cases = { { org.bson.types.Binary.class, new org.bson.types.Binary(new byte[] { 1, 2 }) },
+                { org.bson.types.Code.class, new org.bson.types.Code("f1") },
+                { org.bson.types.Code.class, new org.bson.types.CodeWithScope("g1", new Document("x", 1)) },
+                { org.bson.types.CodeWithScope.class, new org.bson.types.CodeWithScope("g2", new Document("x", 2)) },
+                { org.bson.types.Symbol.class, new org.bson.types.Symbol("s1") }, { org.bson.BsonTimestamp.class, new org.bson.BsonTimestamp(10, 1) },
+                { org.bson.BsonRegularExpression.class, new org.bson.BsonRegularExpression("a+", "i") },
+                { org.bson.BsonValue.class, new org.bson.BsonTimestamp(20, 2) } };
+        final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final Object[] c : cases) {
+            for (final String field : Arrays.asList("v", "n.v", "_id.part")) {
+                for (final boolean filtered : new boolean[] { false, true }) {
+                    final String label = ((Class<?>) c[0]).getSimpleName() + " <- " + c[1] + ", distinct(" + field + (filtered ? ", filter)" : ")");
+                    final List<List<?>> pipelines = new java.util.ArrayList<>();
+                    final MongoCollectionMapper<?> distinctMapper = new MongoCollectionMapper<>(
+                            new MongoCollectionExecutor(serverLikeDistinctCollection(c[1], pipelines)), (Class<?>) c[0]);
+
+                    checks.add(() -> {
+                        final List<?> values = (filtered ? distinctMapper.distinct(field, new Document("ok", true)) : distinctMapper.distinct(field))
+                                .collectList()
+                                .block();
+
+                        assertEquals(Arrays.asList(c[1]), values, label);
+                        assertEquals(new Document("$group", new Document("_id", "$" + field)), pipelines.get(0).get(pipelines.get(0).size() - 1), label);
+                    });
+                }
+            }
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    @Test
+    public void testDistinctPipelineShapeOfNonBsonValueRowTypesIsUnchanged_r2S() {
+        // Guards the isSingleValueRowType rule against over-reach: String/Integer still read the group rows directly (int also drops the
+        // null group), while a bean, Map, Document, Bson, Object and the BSON containers BsonDocument (a Map) and BsonArray (a List),
+        // which isBsonValueClass excludes, still get the $project stage that surfaces the value under the field name.
+        final Object[][] cases = { { String.class, "none" }, { Integer.class, "none" }, { int.class, "match" }, { TestEntity.class, "project" },
+                { java.util.Map.class, "project" }, { Document.class, "project" }, { Bson.class, "project" }, { Object.class, "project" },
+                { org.bson.BsonDocument.class, "project" }, { org.bson.BsonArray.class, "project" } };
+        final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final Object[] c : cases) {
+            for (final String field : Arrays.asList("name", "address.city", "_id.part")) {
+                final List<List<?>> pipelines = new java.util.ArrayList<>();
+                final MongoCollectionMapper<?> distinctMapper = new MongoCollectionMapper<>(
+                        new MongoCollectionExecutor(serverLikeDistinctCollection(null, pipelines)), (Class<?>) c[0]);
+
+                checks.add(() -> {
+                    distinctMapper.distinct(field).collectList().block();
+                    distinctMapper.distinct(field, new Document("ok", true)).collectList().block();
+
+                    for (final List<?> pipeline : pipelines) {
+                        final Object last = pipeline.get(pipeline.size() - 1);
+                        final String label = ((Class<?>) c[0]).getSimpleName() + " " + field + " " + pipeline;
+
+                        switch ((String) c[1]) {
+                            case "none" -> assertEquals(new Document("$group", new Document("_id", "$" + field)), last, label);
+                            case "match" -> assertEquals(new Document("$match", new Document("_id", new Document("$ne", null))), last, label);
+                            default -> org.junit.jupiter.api.Assertions.assertTrue(((Document) last).containsKey("$project"), label);
+                        }
+                    }
+
+                    assertEquals(2, pipelines.size());
+                });
+            }
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    /**
+     * A collection whose {@code aggregate} answers a distinct pipeline as the server does for a stored {@code value}: the group row
+     * {@code {_id: value}} without a {@code $project}; with one, the value under the (nested) field name, a {@code Code} (not a
+     * {@code CodeWithScope}) or {@code Symbol} as its text. A {@code null} value answers no rows.
+     */
+    @SuppressWarnings("unchecked")
+    private static com.mongodb.reactivestreams.client.MongoCollection<Document> serverLikeDistinctCollection(final Object value,
+            final List<List<?>> pipelines) {
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> coll = mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+
+        when(coll.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenAnswer(invocation -> {
+            final List<?> pipeline = invocation.getArgument(0);
+            pipelines.add(pipeline);
+            final List<Document> rows = new java.util.ArrayList<>();
+
+            if (value != null) {
+                final Document group = (Document) pipeline.stream()
+                        .filter(stage -> stage instanceof Document && ((Document) stage).containsKey("$group"))
+                        .findFirst()
+                        .get();
+                final String[] path = ((String) ((Document) group.get("$group")).get("_id")).substring(1).split("\\.");
+                final boolean projected = pipeline.stream().anyMatch(stage -> stage instanceof Document && ((Document) stage).containsKey("$project"));
+
+                if (projected) {
+                    final Object shown = value instanceof org.bson.types.Code && !(value instanceof org.bson.types.CodeWithScope)
+                            ? ((org.bson.types.Code) value).getCode()
+                            : value instanceof org.bson.types.Symbol ? ((org.bson.types.Symbol) value).getSymbol() : value;
+                    rows.add(path.length == 1 ? new Document(path[0], shown) : new Document(path[0], new Document(path[1], shown)));
+                } else {
+                    rows.add(new Document("_id", value));
+                }
+            }
+
+            final com.mongodb.reactivestreams.client.AggregatePublisher<Document> publisher = mock(com.mongodb.reactivestreams.client.AggregatePublisher.class);
+            org.mockito.Mockito.doAnswer(subscribe -> {
+                Flux.fromIterable(rows).subscribe((org.reactivestreams.Subscriber<? super Document>) subscribe.getArgument(0));
+                return null;
+            }).when(publisher).subscribe(org.mockito.ArgumentMatchers.any());
+            return publisher;
+        });
+
+        return coll;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testIdPropertyIsAddressedAsUnderscoreIdInPropNames_r2S() {
+        // Pins the "BSON field names" bullet of the class doc (twin of the sync mapper's _sliceS pin): a String id property is stored
+        // only as _id, so a matched document projected on "id" holds just its _id (as the server returns it - verified live) and
+        // queryForString("id", ...) completes empty, while "_id" reads the id.
+        final ObjectId oid = new ObjectId("507f1f77bcf86cd799439011");
+        final com.mongodb.reactivestreams.client.MongoCollection<Document> collection = mock(com.mongodb.reactivestreams.client.MongoCollection.class);
+        final com.mongodb.reactivestreams.client.FindPublisher<Document> findPublisher = mock(com.mongodb.reactivestreams.client.FindPublisher.class);
+        when(collection.find(org.mockito.ArgumentMatchers.any(Bson.class))).thenReturn(findPublisher);
+        when(findPublisher.projection(org.mockito.ArgumentMatchers.any())).thenReturn(findPublisher);
+        when(findPublisher.sort(org.mockito.ArgumentMatchers.any())).thenReturn(findPublisher);
+        when(findPublisher.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findPublisher);
+        when(findPublisher.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findPublisher);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            Flux.just(new Document("_id", oid)).subscribe((org.reactivestreams.Subscriber<? super Document>) invocation.getArgument(0));
+            return null;
+        }).when(findPublisher).subscribe(org.mockito.ArgumentMatchers.any());
+        final MongoCollectionMapper<TestEntity> idMapper = new MongoCollectionMapper<>(new MongoCollectionExecutor(collection), TestEntity.class);
+
+        StepVerifier.create(idMapper.queryForString("id", new Document())).verifyComplete();
+        StepVerifier.create(idMapper.queryForString("_id", new Document())).expectNext(oid.toHexString()).verifyComplete();
+    }
+
+    // ---- end 2026-10-27 r2S ----
+
     // Helper class for testing
     static class TestEntity {
         private String id;

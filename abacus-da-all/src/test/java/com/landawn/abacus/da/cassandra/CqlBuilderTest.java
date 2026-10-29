@@ -1325,4 +1325,401 @@ public class CqlBuilderTest extends TestBase {
         assertEquals("UPDATE t SET \"desc\" = ? WHERE \"order\" = ?", ParsedCql.parse(cql).parameterizedCql());
         assertEquals("UPDATE t SET \"desc\" = ? WHERE \"order\" = ?", PSC.update("t").set("desc").where(Filters.eq("order", 1)).build().query());
     }
+
+    // ---- 2026-10-27 sliceI ----
+
+    /** An entity with an {@code @Id} key, so set(...) adds the key to the caller's exclusions. */
+    public static class SliceI2KeyedUser {
+        @com.landawn.abacus.annotation.Id
+        private long id;
+        private String firstName;
+        private String lastName;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(final String firstName) {
+            this.firstName = firstName;
+        }
+
+        public String getLastName() {
+            return lastName;
+        }
+
+        public void setLastName(final String lastName) {
+            this.lastName = lastName;
+        }
+    }
+
+    /**
+     * An excluded-name set with its own comparator (a case-insensitive TreeSet holding "FIRSTNAME") excludes firstName on
+     * every path, as abacus-query asks the set itself (and its 4.9.6 Dsl keeps such a set's comparator). set(Class, excluded)
+     * and set(bean, excluded) of a class with a key copied the set into a HashSet (case-sensitive), and insert(map, excluded)
+     * and set(map, excluded) looked each excluded name up in the map; all of them left firstName in.
+     */
+    @Test
+    public void test_sliceI2_sortedExclusionSetKeepsItsComparator() {
+        final java.util.Set<String> caseInsensitive = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        caseInsensitive.add("FIRSTNAME");
+
+        final SliceI2KeyedUser user = new SliceI2KeyedUser();
+        user.setId(1);
+        user.setFirstName("f");
+        user.setLastName("l");
+
+        final java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("id", 1);
+        row.put("firstName", "f");
+        row.put("lastName", "l");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("UPDATE t SET last_name = ? WHERE id = ?",
+                PSC.update("t").set(SliceI2KeyedUser.class, caseInsensitive).where(Filters.eq("id", 1)).build().query()), () -> {
+                    final SP sp = PSC.update("t").set(user, caseInsensitive).where(Filters.eq("id", 1)).build();
+                    assertEquals("UPDATE t SET last_name = ? WHERE id = ?", sp.query());
+                    assertEquals(N.asList("l", 1), sp.parameters());
+                }, () -> {
+                    final SP sp = PSC.insert(row, caseInsensitive).into("t").build();
+                    assertEquals("INSERT INTO t (id, last_name) VALUES (?, ?)", sp.query());
+                    assertEquals(N.asList(1, "l"), sp.parameters());
+                },
+                // Nothing left after the exclusions: rejected like any other all-excluded map.
+                () -> assertThrows(IllegalArgumentException.class, () -> PSC.insert(N.asMap("firstName", "f"), caseInsensitive)),
+                // Pins (unchanged): the bean and class paths already asked the set; the caller's set and map are not modified;
+                // a non-String map key is still rejected before the set is asked about it.
+                () -> assertEquals("INSERT INTO t (id, last_name) VALUES (?, ?)", PSC.insert(user, caseInsensitive).into("t").build().query()),
+                () -> assertEquals("UPDATE slice_i2_keyed_user SET last_name = ? WHERE id = ?",
+                        PSC.update(SliceI2KeyedUser.class, caseInsensitive).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals(N.asList("FIRSTNAME"), new java.util.ArrayList<>(caseInsensitive)),
+                () -> assertEquals(N.asList("id", "firstName", "lastName"), new java.util.ArrayList<>(row.keySet())), () -> {
+                    @SuppressWarnings({ "rawtypes", "unchecked" })
+                    final java.util.Map<String, Object> badKey = new java.util.LinkedHashMap();
+                    ((java.util.Map<Object, Object>) (java.util.Map<?, ?>) badKey).put(7, "x");
+                    badKey.put("firstName", "f");
+                    assertThrows(IllegalArgumentException.class, () -> PSC.insert(badKey, caseInsensitive));
+                    // set(map, excluded) likewise rejects the bad key itself, not with the comparator's ClassCastException.
+                    assertThrows(IllegalArgumentException.class, () -> PSC.update("t").set(badKey, caseInsensitive));
+                }, () -> {
+                    final SP sp = PSC.update("t").set(row, caseInsensitive).where(Filters.eq("id", 1)).build();
+                    assertEquals("UPDATE t SET id = ?, last_name = ? WHERE id = ?", sp.query());
+                    assertEquals(N.asList(1, "l", 1), sp.parameters());
+                }, () -> {
+                    final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                            () -> PSC.update("t").set(N.asMap("firstName", "f"), caseInsensitive));
+                    assertEquals("No properties remain after exclusions are applied", e.getMessage());
+                }, () -> {
+                    // Pins (unchanged): the parent's state checks still come first, and a null key next to a Set.of(...)
+                    // exclusion is the parent's IllegalArgumentException, not a NullPointerException from Set.of's contains.
+                    final com.landawn.abacus.da.cassandra.CqlBuilder closed = PSC.update("t").set("a").where(Filters.eq("id", 1));
+                    closed.build();
+                    assertThrows(IllegalStateException.class, () -> closed.set(N.asMap("firstName", "f"), caseInsensitive));
+
+                    final java.util.Map<String, Object> nullKey = new java.util.LinkedHashMap<>();
+                    nullKey.put(null, 1);
+                    nullKey.put("a", 2);
+                    assertThrows(IllegalArgumentException.class, () -> PSC.update("t").set(nullKey, java.util.Set.of("a")));
+                });
+    }
+
+    /**
+     * onlyIf(Filters.where(...)) rendered "... IF  WHERE b = ?", which Cassandra rejects; an IF clause takes relations only. The
+     * rejection leaves the builder unchanged, so a retry with the relation itself renders normally.
+     */
+    @Test
+    public void test_sliceI2_whereClauseAsIfConditionIsRejected() {
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final com.landawn.abacus.da.cassandra.CqlBuilder builder = PSC.update("t").set("a").where(Filters.eq("k", 1));
+            assertThrows(IllegalArgumentException.class, () -> builder.onlyIf(Filters.where(Filters.eq("b", 2))));
+
+            final SP sp = builder.onlyIf(Filters.eq("b", 2)).build();
+            assertEquals("UPDATE t SET a = ? WHERE k = ? IF b = ?", sp.query());
+            assertEquals(N.asList(1, 2), sp.parameters());
+        }, () -> {
+            final com.landawn.abacus.da.cassandra.CqlBuilder builder = SCCB.deleteFrom("t").where(Filters.eq("k", 1));
+            assertThrows(IllegalArgumentException.class, () -> builder.onlyIf(Filters.where("b = 1")));
+            assertEquals("DELETE FROM t WHERE k = 1 IF EXISTS", builder.ifExists().build().query());
+        },
+                // Pin (unchanged): an appended Where clause still renders the statement's WHERE clause.
+                () -> assertEquals("SELECT a FROM t WHERE c = ?", PSC.select("a").from("t").append(Filters.where(Filters.eq("c", 2))).build().query()));
+    }
+
+    /** A bean used as a sub-entity property; its class name, not the property name, prefixes the columns. */
+    public static class SliceI2Addr {
+        private String street;
+        private String desc;
+
+        public String getStreet() {
+            return street;
+        }
+
+        public void setStreet(final String street) {
+            this.street = street;
+        }
+
+        public String getDesc() {
+            return desc;
+        }
+
+        public void setDesc(final String desc) {
+            this.desc = desc;
+        }
+    }
+
+    /** {@code home} is a sub-entity property; {@code work} is the same bean type mapped as a plain column. */
+    public static class SliceI2Person {
+        @com.landawn.abacus.annotation.Id
+        private long id;
+        private SliceI2Addr home;
+        @com.landawn.abacus.annotation.Column("work")
+        private SliceI2Addr work;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(final long id) {
+            this.id = id;
+        }
+
+        public SliceI2Addr getHome() {
+            return home;
+        }
+
+        public void setHome(final SliceI2Addr home) {
+            this.home = home;
+        }
+
+        public SliceI2Addr getWork() {
+            return work;
+        }
+
+        public void setWork(final SliceI2Addr work) {
+            this.work = work;
+        }
+    }
+
+    /**
+     * Pin for the class Javadoc (doc corrected this round): a sub-entity property's columns are prefixed with the sub-entity
+     * CLASS's table name and only the SELECT alias carries the property name, in every clause; the bare-name expansion is not
+     * keyword-quoted while select(entityClass, true) is; an {@code @Column} bean property is a plain column (UDT field form).
+     */
+    @Test
+    public void test_sliceI2_subEntityColumnsArePrefixedWithTheClassTableName() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("SELECT slice_i2_addr.street AS \"home.street\", slice_i2_addr.desc AS \"home.desc\" FROM t",
+                        PSC.select("home").from("t", SliceI2Person.class).build().query()),
+                () -> assertEquals(
+                        "SELECT id AS \"id\", work AS \"work\", slice_i2_addr.street AS \"home.street\", slice_i2_addr.\"desc\" AS \"home.desc\" FROM t",
+                        PSC.select(SliceI2Person.class, true).from("t").build().query()),
+                () -> assertEquals("SELECT id AS \"id\" FROM t WHERE slice_i2_addr.street = ?",
+                        PSC.select("id").from("t", SliceI2Person.class).where(Filters.eq("home.street", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET slice_i2_addr.street = ? WHERE id = ?",
+                        PSC.update("t", SliceI2Person.class).set("home.street").where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("INSERT INTO t (slice_i2_addr.street) VALUES (?)", PSC.insert("home.street").into("t", SliceI2Person.class).build().query()),
+                () -> assertEquals("DELETE slice_i2_addr.street FROM t WHERE id = ?",
+                        PSC.delete("home.street").from("t", SliceI2Person.class).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET work.street = ? WHERE id = ?",
+                        PSC.update("t", SliceI2Person.class).set("work.street").where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("SELECT home.street AS \"home.street\" FROM t", PSC.select("home.street").from("t").build().query()));
+    }
+
+    /**
+     * Second-pass review (r2C): set(Class, excluded) and set(bean, excluded) of a class with key properties copied the
+     * exclusion set (into a TreeSet only when it was itself a SortedSet), so a case-insensitive set that is not a SortedSet (an
+     * unmodifiable, synchronized or abacus ImmutableSet view of a case-insensitive TreeSet, or a set backed by a
+     * case-insensitive TreeMap) left firstName in, while a class without keys, insert(map/bean) and set(map) excluded it.
+     */
+    @Test
+    public void test_r2C_exclusionSetWithItsOwnMembershipRuleIsAskedForAKeyedClass() {
+        final java.util.function.Supplier<java.util.TreeSet<String>> ci = () -> {
+            final java.util.TreeSet<String> set = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+            set.add("FIRSTNAME");
+            return set;
+        };
+        final java.util.Set<String> backedByMap = java.util.Collections.newSetFromMap(new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER));
+        backedByMap.add("FIRSTNAME");
+        final java.util.List<java.util.Set<String>> views = N.asList(java.util.Collections.unmodifiableSet(ci.get()),
+                java.util.Collections.synchronizedSet(ci.get()), com.landawn.abacus.util.ImmutableSet.wrap(ci.get()), backedByMap);
+
+        final SliceI2KeyedUser user = new SliceI2KeyedUser();
+        user.setId(1);
+        user.setFirstName("f");
+        user.setLastName("l");
+
+        final java.util.List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final java.util.Set<String> view : views) {
+            checks.add(() -> assertEquals("UPDATE t SET last_name = ? WHERE id = ?",
+                    PSC.update("t").set(SliceI2KeyedUser.class, view).where(Filters.eq("id", 1)).build().query(), view.getClass().getName()));
+            checks.add(() -> {
+                final SP sp = PSC.update("t").set(user, view).where(Filters.eq("id", 1)).build();
+                assertEquals("UPDATE t SET last_name = ? WHERE id = ?", sp.query(), view.getClass().getName());
+                assertEquals(N.asList("l", 1), sp.parameters());
+            });
+            checks.add(() -> assertEquals(N.asList("FIRSTNAME"), new java.util.ArrayList<>(view), view.getClass().getName()));
+        }
+
+        // Unchanged: a case-sensitive set still matches exactly; keys are always left out; no name left -> the parent's IAE;
+        // a null element is not asked about; the parent's state checks still come first.
+        checks.add(() -> assertEquals("UPDATE t SET first_name = ?, last_name = ? WHERE id = ?",
+                PSC.update("t").set(SliceI2KeyedUser.class, new java.util.HashSet<>(N.asList("FIRSTNAME"))).where(Filters.eq("id", 1)).build().query()));
+        checks.add(() -> assertEquals("UPDATE t SET first_name = ?, last_name = ? WHERE id = ?",
+                PSC.update("t").set(SliceI2KeyedUser.class, (java.util.Set<String>) null).where(Filters.eq("id", 1)).build().query()));
+        checks.add(() -> assertEquals("UPDATE t SET last_name = ? WHERE id = ?",
+                PSC.update("t").set(user, java.util.Set.of("firstName", "nope")).where(Filters.eq("id", 1)).build().query()));
+        checks.add(() -> {
+            final java.util.Set<String> withNull = new java.util.HashSet<>();
+            withNull.add(null);
+            withNull.add("lastName");
+            assertEquals("UPDATE t SET first_name = ? WHERE id = ?",
+                    PSC.update("t").set(SliceI2KeyedUser.class, withNull).where(Filters.eq("id", 1)).build().query());
+        });
+        checks.add(() -> assertThrows(IllegalArgumentException.class,
+                () -> PSC.update("t").set(SliceI2KeyedUser.class, java.util.Set.of("firstName", "lastName"))));
+        checks.add(() -> {
+            final java.util.Set<String> all = java.util.Collections.unmodifiableSet(ci.get());
+            final java.util.TreeSet<String> both = ci.get();
+            both.add("LASTNAME");
+            assertThrows(IllegalArgumentException.class, () -> PSC.update("t").set(user, java.util.Collections.unmodifiableSet(both)));
+            final com.landawn.abacus.da.cassandra.CqlBuilder afterWhere = PSC.update("t").set("a").where(Filters.eq("id", 1));
+            assertThrows(IllegalStateException.class, () -> afterWhere.set(SliceI2KeyedUser.class, all));
+            assertThrows(IllegalStateException.class, () -> afterWhere.set(user, all));
+        });
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    /**
+     * Pin (r2C, unchanged from HEAD): set(map, excluded) still hands the parent the excluded names themselves, next to the keys
+     * the set matches, so a {@code null} or non-String key equal to an excluded element is still dropped before the parent
+     * validates the keys (insert(map, excluded) validates the keys first, as the parent always did there).
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void test_r2C_setMapStillDropsKeysEqualToAnExcludedElement() {
+        final java.util.Map<String, Object> nullKey = new java.util.LinkedHashMap<>();
+        nullKey.put(null, 1);
+        nullKey.put("a", 2);
+        nullKey.put("b", 3);
+        final java.util.Set<String> nullAndB = new java.util.HashSet<>();
+        nullAndB.add(null);
+        nullAndB.add("b");
+        final java.util.Set<String> onlyNull = new java.util.HashSet<>();
+        onlyNull.add(null);
+
+        final java.util.Map<String, Object> intKey = new java.util.LinkedHashMap();
+        ((java.util.Map) intKey).put(7, "x");
+        intKey.put("a", 2);
+        final java.util.Set<String> seven = new java.util.HashSet(N.asList(7));
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("UPDATE t SET a = ? WHERE id = ?", PSC.update("t").set(nullKey, nullAndB).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET a = ?, b = ? WHERE id = ?", PSC.update("t").set(nullKey, onlyNull).where(Filters.eq("id", 1)).build().query()),
+                () -> assertEquals("UPDATE t SET a = ? WHERE id = ?", PSC.update("t").set(intKey, seven).where(Filters.eq("id", 1)).build().query()),
+                () -> assertThrows(IllegalArgumentException.class, () -> PSC.insert(nullKey, nullAndB)), () -> assertEquals(3, nullKey.size()),
+                () -> assertEquals(2, nullAndB.size()));
+    }
+
+    /**
+     * fixC: set(Class|bean, excluded) of a keyed class, set(map, excluded) and insert(map, excluded) now ask the caller's set
+     * about each name (see above). A set whose contains(String) throws ClassCastException or NullPointerException (a
+     * TreeSet&lt;Integer&gt; passed as a raw Set, a comparator that cannot compare a String) failed those calls, although HEAD
+     * and the parent's own paths (N.excludeAll's safeContains) treat such a probe as "not excluded". It excludes nothing again.
+     * The column-delete factory delete(Class, excluded) failed the same way (on HEAD too) and now tolerates it as well.
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void test_fixC_exclusionSetThatRejectsAStringProbeExcludesNothing() {
+        final java.util.Set<String> intTree = (java.util.Set) new java.util.TreeSet<>(N.asList(7));
+        final java.util.Set<Object> npeTree = new java.util.TreeSet<>(
+                java.util.Comparator.comparing((final Object o) -> o instanceof Integer ? (Integer) o : null));
+        npeTree.add(7);
+        final java.util.Map<String, java.util.Set<String>> rejectingSets = new java.util.LinkedHashMap<>();
+        rejectingSets.put("TreeSet<Integer>", intTree);
+        rejectingSets.put("NPE comparator", (java.util.Set) npeTree);
+
+        final SliceI2KeyedUser user = new SliceI2KeyedUser();
+        user.setId(1);
+        user.setFirstName("f");
+        user.setLastName("l");
+
+        final java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("id", 1);
+        row.put("firstName", "f");
+        row.put("lastName", "l");
+
+        final java.util.Map<String, Object> intKey = new java.util.LinkedHashMap();
+        ((java.util.Map) intKey).put(7, "x");
+        intKey.put("a", 2);
+
+        final java.util.List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final java.util.Map.Entry<String, java.util.Set<String>> e : rejectingSets.entrySet()) {
+            final String name = e.getKey();
+            final java.util.Set<String> rejecting = e.getValue();
+
+            checks.add(() -> assertEquals("UPDATE t SET first_name = ?, last_name = ? WHERE id = ?",
+                    PSC.update("t").set(SliceI2KeyedUser.class, rejecting).where(Filters.eq("id", 1)).build().query(), name));
+            checks.add(() -> {
+                final SP sp = PSC.update("t").set(user, rejecting).where(Filters.eq("id", 1)).build();
+                assertEquals("UPDATE t SET first_name = ?, last_name = ? WHERE id = ?", sp.query(), name);
+                assertEquals(N.asList("f", "l", 1), sp.parameters(), name);
+            });
+            checks.add(() -> {
+                final SP sp = PSC.update("t").set(row, rejecting).where(Filters.eq("id", 1)).build();
+                assertEquals("UPDATE t SET id = ?, first_name = ?, last_name = ? WHERE id = ?", sp.query(), name);
+                assertEquals(N.asList(1, "f", "l", 1), sp.parameters(), name);
+            });
+            checks.add(() -> {
+                final SP sp = PSC.insert(row, rejecting).into("t").build();
+                assertEquals("INSERT INTO t (id, first_name, last_name) VALUES (?, ?, ?)", sp.query(), name);
+                assertEquals(N.asList(1, "f", "l"), sp.parameters(), name);
+            });
+            checks.add(() -> assertEquals("DELETE first_name, last_name FROM t WHERE id = ?",
+                    PSC.delete(SliceI2KeyedUser.class, rejecting).from("t").where(Filters.eq("id", 1)).build().query(), name));
+            // As on HEAD, set(map) still drops a non-String key merely equal to an element (the parent's map lookup), after
+            // the String key "a" is asked about.
+            checks.add(() -> assertEquals("UPDATE t SET a = ? WHERE id = ?", PSC.update("t").set(intKey, rejecting).where(Filters.eq("id", 1)).build().query(),
+                    name));
+            // Pins (unchanged): the parent's paths already ignored such a probe; insert(map) still rejects a non-String key
+            // before any probe; neither the set nor the map is modified.
+            checks.add(() -> assertEquals("UPDATE t SET street = ?, \"desc\" = ? WHERE id = ?",
+                    PSC.update("t").set(SliceI2Addr.class, rejecting).where(Filters.eq("id", 1)).build().query(), name));
+            checks.add(() -> assertEquals("UPDATE slice_i2_keyed_user SET first_name = ?, last_name = ? WHERE id = ?",
+                    PSC.update(SliceI2KeyedUser.class, rejecting).where(Filters.eq("id", 1)).build().query(), name));
+            checks.add(() -> assertEquals("INSERT INTO t (id, first_name, last_name) VALUES (?, ?, ?)", PSC.insert(user, rejecting).into("t").build().query(),
+                    name));
+            checks.add(() -> assertThrows(IllegalArgumentException.class, () -> PSC.insert(intKey, rejecting), name));
+            checks.add(() -> assertEquals(N.asList(7), new java.util.ArrayList<>(rejecting), name));
+            checks.add(() -> assertEquals(N.asList("id", "firstName", "lastName"), new java.util.ArrayList<>(row.keySet()), name));
+        }
+
+        // Pins (unchanged) for delete(Class, excluded) with well-typed sets: the set itself is still asked about each column (a
+        // case-insensitive TreeSet, also one larger than the column list), keys are never deleted, nothing left -> IAE.
+        final java.util.Set<String> caseInsensitive = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        caseInsensitive.add("FIRSTNAME");
+        final java.util.Set<String> largerCaseInsensitive = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        largerCaseInsensitive.addAll(N.asList("LASTNAME", "a", "b", "c", "d", "e", "ID"));
+        checks.add(() -> assertEquals("DELETE last_name FROM t WHERE id = ?",
+                PSC.delete(SliceI2KeyedUser.class, caseInsensitive).from("t").where(Filters.eq("id", 1)).build().query()));
+        checks.add(() -> assertEquals("DELETE first_name FROM t WHERE id = ?",
+                PSC.delete(SliceI2KeyedUser.class, largerCaseInsensitive).from("t").where(Filters.eq("id", 1)).build().query()));
+        checks.add(() -> assertEquals("DELETE first_name FROM t WHERE id = ?",
+                PSC.delete(SliceI2KeyedUser.class, new java.util.HashSet<>(N.asList("lastName", "x1", "x2", "x3", "x4", "FIRSTNAME")))
+                        .from("t")
+                        .where(Filters.eq("id", 1))
+                        .build()
+                        .query()));
+        checks.add(() -> assertThrows(IllegalArgumentException.class, () -> PSC.delete(SliceI2KeyedUser.class, java.util.Set.of("firstName", "lastName"))));
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
 }

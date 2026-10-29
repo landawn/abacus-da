@@ -560,6 +560,102 @@ public class CassandraExecutorBaseStatementTest extends CassandraExecutorBaseTes
         }
     }
 
+    // ---- 2026-10-27 sliceF ----
+
+    // Pins the "Entity-to-CQL mapping" class doc: a bean-typed property without @Column (a sub-entity: a bean, or a List of
+    // beans) is left out by an entity insert/update and by a select-all query, without an error; with @Column it is a column.
+    // Also pins findFirst(Class, Condition)'s named bind markers (the doc used to claim '?' placeholders).
+    @Test
+    public void test_sliceF27_subEntityPropertiesAreLeftOutUnlessColumn() {
+        final SliceF27Address address = new SliceF27Address();
+        address.setStreet("Main");
+        final SliceF27Person person = new SliceF27Person();
+        person.setId(1L);
+        person.setName("n");
+        person.setHome(address);
+        person.setWork(address);
+        person.setHistory(List.of(address));
+
+        final RecordingExecutor recording = new RecordingExecutor();
+        recording.insert(person);
+        recording.update(person);
+        recording.list(SliceF27Person.class, (com.landawn.abacus.query.condition.Condition) null);
+        recording.findFirst(SliceF27Person.class, Filters.eq("name", "n"));
+
+        assertEquals(List.of("INSERT INTO f27_people (id, name, work) VALUES (:id, :name, :work) [1, n, Addr(Main)]",
+                "UPDATE f27_people SET name = :name, work = :work WHERE id = :id [n, Addr(Main), 1]",
+                "SELECT id AS \"id\", name AS \"name\", work AS \"work\" FROM f27_people []",
+                "SELECT id AS \"id\", name AS \"name\", work AS \"work\" FROM f27_people WHERE name = :name LIMIT 1 [n]"), recording.recorded);
+    }
+
+    public static class SliceF27Address {
+        private String street;
+
+        public String getStreet() {
+            return street;
+        }
+
+        public void setStreet(final String street) {
+            this.street = street;
+        }
+
+        @Override
+        public String toString() {
+            return "Addr(" + street + ")";
+        }
+    }
+
+    @Table("f27_people")
+    public static class SliceF27Person {
+        @Id
+        private Long id;
+        private String name;
+        private SliceF27Address home; // a sub-entity: left out
+        @com.landawn.abacus.annotation.Column
+        private SliceF27Address work; // a column
+        private List<SliceF27Address> history; // a sub-entity: left out
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(final Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(final String name) {
+            this.name = name;
+        }
+
+        public SliceF27Address getHome() {
+            return home;
+        }
+
+        public void setHome(final SliceF27Address home) {
+            this.home = home;
+        }
+
+        public SliceF27Address getWork() {
+            return work;
+        }
+
+        public void setWork(final SliceF27Address work) {
+            this.work = work;
+        }
+
+        public List<SliceF27Address> getHistory() {
+            return history;
+        }
+
+        public void setHistory(final List<SliceF27Address> history) {
+            this.history = history;
+        }
+    }
+
     private static java.util.stream.Stream<NamingCase> namingPolicies() {
         return java.util.stream.Stream.of(
                 new NamingCase(NamingPolicy.SNAKE_CASE, "account_id", "display_name", "account_id AS \"accountId\", display_name AS \"displayName\""),

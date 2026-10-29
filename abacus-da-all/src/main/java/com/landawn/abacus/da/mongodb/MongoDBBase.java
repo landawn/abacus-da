@@ -41,6 +41,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
+import java.util.regex.Pattern;
 
 import org.bson.BSONObject;
 import org.bson.BasicBSONObject;
@@ -49,6 +50,7 @@ import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonInvalidOperationException;
 import org.bson.BsonReader;
+import org.bson.BsonRegularExpression;
 import org.bson.BsonType;
 import org.bson.BsonValue;
 import org.bson.BsonWriter;
@@ -61,6 +63,7 @@ import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
 import org.bson.codecs.OverridableUuidRepresentationCodec;
+import org.bson.codecs.PatternCodec;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.configuration.CodecRegistry;
@@ -159,6 +162,16 @@ import com.mongodb.client.MongoIterable;
  *       of this class wrote them, are still read back (see {@link #toEntity(Document, Class)})</li>
  *   <li>Java {@code byte[]} and {@code ByteBuffer} &rarr; BSON binary</li>
  *   <li>Java Maps/POJOs &rarr; BSON documents</li>
+ *   <li>An empty {@code Optional}, {@code Nullable}, {@code OptionalInt} (and the like), or a {@code Holder} or {@code Nullable}
+ *       of {@code null} &rarr; BSON null, which a property of that wrapper type reads back as the empty wrapper (an element of a
+ *       collection, array or map of that wrapper type reads back as {@code null}); any other one &rarr; a BSON string of its
+ *       value's text</li>
+ *   <li>A record held by an entity property, a {@code Map}, a collection or an array &rarr; a BSON document written by the driver's
+ *       record codec, which encodes each component by its declared type: a component declared as {@code Object},
+ *       {@code Number}, an interface and the like is stored as a {@code Document} field holding the same value would be.
+ *       That codec rejects with {@link CodecConfigurationException} a component with a wildcard type argument (such as
+ *       {@code List<?>}) and a generic record held this way (its codec is looked up by its class, without type arguments);
+ *       a record converted by {@link #toDocument(Object)} itself is not affected</li>
  * </ul>
  *
  * <h3>Boolean Conversion:</h3>
@@ -202,9 +215,10 @@ public abstract class MongoDBBase {
     /**
      * Default {@link AsyncExecutor} shared by subclasses for asynchronous MongoDB operations.
      *
-     * <p>Sized for I/O-bound workloads: the core pool is {@code max(64, CPU_CORES * 8)} threads,
-     * the maximum pool is {@code max(128, CPU_CORES * 16)} threads, and idle threads above the
-     * core size are reclaimed after 180&nbsp;seconds.</p>
+     * <p>Sized for I/O-bound workloads: the core pool is {@code max(64, CPU_CORES * 8)} threads, created as tasks arrive
+     * and kept when idle. The maximum pool size {@code max(128, CPU_CORES * 16)} and the 180&nbsp;second keep-alive are
+     * passed as well, but {@link AsyncExecutor} queues tasks in an unbounded queue, so at most the core number of tasks
+     * run at once and further ones wait in that queue.</p>
      */
     protected static final AsyncExecutor DEFAULT_ASYNC_EXECUTOR = new AsyncExecutor(//
             N.max(64, IOUtil.CPU_CORES * 8), // coreThreadPoolSize
@@ -221,6 +235,8 @@ public abstract class MongoDBBase {
             new GeneralCodecRegistry());
     /** Decodes a {@link BsonDocument} into a plain {@link Document} for {@link #toJson(Bson)}. */
     private static final DocumentCodec jsonDocumentCodec = new DocumentCodec(codecRegistry);
+    /** The driver's codec for a {@link Pattern}, which {@link #convertBsonValue(Object, Class)} reads a stored one back with. */
+    private static final PatternCodec PATTERN_CODEC = new PatternCodec();
     private static final Map<Class<?>, Method> classIdSetMethodPool = new ConcurrentHashMap<>();
     /** Marks a type whose decoded values need no conversion beyond the regular pass, see {@link #propConversions(Type)}. */
     private static final PropConversions NO_PROP_CONVERSIONS = new PropConversions(Map.of(), false, null);
@@ -651,13 +667,13 @@ public abstract class MongoDBBase {
      * }</pre>
      *
      * @param <T> the target BSON type
-     * @param json the JSON string to parse; may be {@code null} or empty, in which case an empty
+     * @param json the JSON string to parse; may be {@code null}, empty or blank, in which case an empty
      *             instance of {@code rowType} is returned
      * @param rowType the target class - must not be {@code null} and must be one of: {@link Bson},
      *                {@link Document}, {@link BasicBSONObject}, or {@link BasicDBObject}
      * @return an instance of the specified type populated with the JSON data
      * @throws IllegalArgumentException if {@code rowType} is {@code null} or is not one of the supported BSON types
-     * @throws ParsingException if nonempty {@code json} is malformed or does not represent a JSON object
+     * @throws ParsingException if {@code json} is not blank and is malformed or does not represent a JSON object
      * @throws UncheckedIOException if a delegated value reader cannot read data needed to materialize a JSON value
      * @see Document
      * @see org.bson.BasicBSONObject
@@ -1368,8 +1384,9 @@ public abstract class MongoDBBase {
      * receives a {@code Long} value (and a {@code Box<Address>} an {@code Address} bean), as does a {@code LongBox extends Box<Long>},
      * whether it is an element, a property or {@code rowType} itself. BSON dates read into {@link LocalDate},
      * {@link LocalDateTime} or {@link LocalTime} properties are interpreted in UTC, matching how the driver's codecs write
-     * those types. Embedded bean and record documents, including typed container elements, support the same String/ObjectId
-     * identifier mapping as the outer document, but an embedded document's own id field (including an alias or explicit null)
+     * those types, and a BSON regular expression read into a {@link Pattern} property is compiled with its options as flags,
+     * as the driver's codec writes a {@code Pattern}. Embedded bean and record documents, including typed container elements,
+     * support the same String/ObjectId identifier mapping as the outer document, but an embedded document's own id field (including an alias or explicit null)
      * takes precedence over {@code _id}. When that mapping does not apply, embedded documents retain {@code _id}
      * for ordinary bean-property mapping, including numeric and UUID identifiers. Source maps are not modified.</p>
      *
@@ -1647,7 +1664,8 @@ public abstract class MongoDBBase {
      * Converts decoded values to their declared property types where {@link Beans#mapToBean(Map, Class)} would not:
      * the elements, keys and values of typed collection, array and map properties (including nested bean maps),
      * {@link Date} values of {@link LocalDate}, {@link LocalDateTime} and {@link LocalTime} properties (read in UTC, like
-     * the driver's codecs write them), the JSON text earlier versions of {@link GeneralCodec} stored for a
+     * the driver's codecs write them), {@link BsonRegularExpression} values of {@link Pattern} properties (as the driver's codec
+     * reads them), the JSON text earlier versions of {@link GeneralCodec} stored for a
      * {@code String[]}/{@code Object[]}-like array property, any value of a property whose type comes from a type argument of a generic bean,
      * and every value of an immutable bean (a record). The supplied map and its nested maps are never modified.
      *
@@ -1671,9 +1689,10 @@ public abstract class MongoDBBase {
 
             // A dotted key ("child.tags") names a property of a nested bean, which the flag of beanType does not cover: without
             // this, such a key's array text was parsed only when beanType itself happened to have a String[]-like property.
-            if (value == null
-                    || (propConversions == null && !(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date)
-                            && !(value instanceof String && (parseArrayText || (entry.getKey() != null && entry.getKey().indexOf('.') > 0))))) {
+            if (value == null || (propConversions == null
+                    && !(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date
+                            || value instanceof BsonRegularExpression)
+                    && !(value instanceof String && (parseArrayText || (entry.getKey() != null && entry.getKey().indexOf('.') > 0))))) {
                 continue;
             }
 
@@ -1706,7 +1725,8 @@ public abstract class MongoDBBase {
                 // Earlier versions of GeneralCodec wrote the array as its JSON text; Beans.mapToBean would wrap that text as the
                 // single element.
                 converted = convertBsonValue(value, propInfo.clazz);
-            } else if (!(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date)) {
+            } else if (!(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date
+                    || value instanceof BsonRegularExpression)) {
                 continue;
             } else if (value instanceof Map && Beans.isBeanClass(propInfo.clazz)) {
                 // Beans.mapToBean alone does not apply MongoDB's _id mapping to an embedded document. Build nested beans
@@ -1730,10 +1750,10 @@ public abstract class MongoDBBase {
     }
 
     /**
-     * Converts the elements of a decoded container, or a decoded {@link Date}, to the declared {@code type}. Beans.mapToBean
-     * assigns a decoded List/Map to a typed collection or map property as-is (its container class already matches), which
-     * left Documents, Integers or Strings in a {@code List<Bean>}, {@code List<Long>} or {@code List<Enum>} property, so
-     * reading an element failed later with a ClassCastException.
+     * Converts the elements of a decoded container, or a decoded {@link Date} or {@link BsonRegularExpression}, to the declared
+     * {@code type}. Beans.mapToBean assigns a decoded List/Map to a typed collection or map property as-is (its container class
+     * already matches), which left Documents, Integers or Strings in a {@code List<Bean>}, {@code List<Long>} or
+     * {@code List<Enum>} property, so reading an element failed later with a ClassCastException.
      *
      * @return {@code value} itself when nothing needs converting
      */
@@ -1742,6 +1762,8 @@ public abstract class MongoDBBase {
 
         if (value instanceof Date) {
             return cls == LocalDate.class || cls == LocalDateTime.class || cls == LocalTime.class ? convertBsonValue(value, cls) : value;
+        } else if (value instanceof BsonRegularExpression) {
+            return cls == Pattern.class ? convertBsonValue(value, cls) : value;
         } else if ((value instanceof Collection || value instanceof Object[]) && (type.isCollection() || type.isObjectArray())) {
             // The array type's own element type keeps generic arguments (Box<Long> of a Box<Long>[]); the component class does not.
             final Type<?> elementType = type.isObjectArray() ? type.elementType() : type.parameterTypes().size() == 1 ? type.parameterTypes().get(0) : null;
@@ -1972,7 +1994,10 @@ public abstract class MongoDBBase {
     /**
      * Converts a BSON scalar value, preserving binary payloads for byte-array and ByteBuffer targets.
      * Newly created buffers are ready for reading; an input buffer is never advanced. A {@link Date} requested as
-     * {@link LocalDate}, {@link LocalDateTime} or {@link LocalTime} is read in UTC, as the driver's codecs write those types.
+     * {@link LocalDate}, {@link LocalDateTime} or {@link LocalTime} is read in UTC, as the driver's codecs write those types,
+     * and a {@link BsonRegularExpression} requested as a {@link Pattern} is compiled with its options as flags, as the driver's
+     * codec writes and reads a {@code Pattern} (other BSON value types such as {@link Code}, {@link Symbol} or a {@link BsonValue}
+     * are not unwrapped).
      * A {@link String} enclosed in {@code [...]} requested as an array type whose element type accepts text ({@code String[]},
      * {@code Object[]}, ...) is parsed as the JSON text earlier versions of {@link GeneralCodec} wrote for an array (leniently:
      * unquoted elements, as in {@code [a, b]}, are read too); when it cannot be parsed as an array it becomes the array's
@@ -2003,6 +2028,16 @@ public abstract class MongoDBBase {
             final OffsetDateTime utc = Instant.ofEpochMilli(((Date) value).getTime()).atOffset(ZoneOffset.UTC);
 
             return (T) (targetType == LocalDate.class ? utc.toLocalDate() : targetType == LocalDateTime.class ? utc.toLocalDateTime() : utc.toLocalTime());
+        } else if (value instanceof final BsonRegularExpression regex && targetType == Pattern.class) {
+            // The driver's PatternCodec writes a Pattern as a BSON regular expression, which a Document field holds as a
+            // BsonRegularExpression. N.convert compiled the JSON text of that value ({"pattern": "a+b", "options": "i"}) and
+            // failed, so a Pattern written through the codec registry could not be read back. Decode it as that codec does
+            // (the options become the Pattern's flags).
+            final BsonDocumentReader reader = new BsonDocumentReader(new BsonDocument(_ID, regex));
+            reader.readStartDocument();
+            reader.readName();
+
+            return (T) PATTERN_CODEC.decode(reader, DecoderContext.builder().build());
         } else if (value instanceof final String text && targetType != null && isStringElementArrayType(targetType) && isArrayLiteral(text)) {
             // Earlier versions of GeneralCodec stored an array (the driver has no codec for one) as its N.stringOf JSON text,
             // e.g. ["a", "b"]; it now writes a BSON array, but such stored text must still read back. N.convert wraps a String
@@ -2049,14 +2084,16 @@ public abstract class MongoDBBase {
      * <p>For bean and map targets, rows are converted independently, so {@link Document}, other {@link Map}
      * implementations and bean rows may be mixed. A map target creates every row's map with one factory: when the first
      * non-null row is a Document, {@link IntFunctions#ofMap(Class)} with the row's size, including registered map
-     * creators, as for a Document result; otherwise {@code N.newMap(Class)}, as for other rows.</p>
+     * creators, as for a Document result; otherwise {@code N.newMap(Class)}, as for other rows. For an immutable map type (such
+     * as {@code ImmutableMap}), whose factory creates a mutable map, each filled map is then converted to that type.</p>
      *
      * <p>When the rows are documents (maps), an object-array or {@link Collection} {@code rowType} is a single-value target like
      * a scalar one: each row's sole non-{@code _id} field (or its {@code _id}) is converted to it, so a projected BSON array
      * field reads into a {@code String[]} or {@code List}, and a row with several non-{@code _id} fields is rejected with
      * {@link IllegalArgumentException}. {@link #stream(MongoCursor, Class)} instead returns the field values of each document
      * positionally for such a type ({@code {_id: 7, a: 1}} as {@code [7, 1]}). Other rows must already be instances of such a
-     * {@code rowType}.</p>
+     * {@code rowType}. A BSON value type with bean-like accessors ({@link Binary}, {@link Code}, {@link Symbol} or a
+     * {@link BsonValue} that is neither a document nor an array) is a single-value target as well, not a bean.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2286,7 +2323,8 @@ public abstract class MongoDBBase {
         @SuppressWarnings({ "rawtypes", "unchecked" })
         private void startConversion() {
             try {
-                if (targetType.isBean() || targetType.isMap()) {
+                // A BSON value type (Binary, Code, ...) is a single-value target although its Type reports a bean, as in readRow.
+                if ((targetType.isBean() && !isBsonValueClass(rowType)) || targetType.isMap()) {
                     conversions = targetType.isBean() ? propConversions(targetType) : null;
                     // One map factory per result, chosen by the first non-null row: a Document result keeps its size-aware
                     // creators for every row, and other results their supplier, so a mixed result is not built two ways.
@@ -2297,8 +2335,11 @@ public abstract class MongoDBBase {
                     mode = SCALAR_FROM_MAP;
                 } else if (targetType.isObjectArray() || targetType.isCollection() || !isScalarRow(firstNonNull)) {
                     mode = NOT_CONVERTIBLE;
+                    // Name the row that just started the conversion (the last one kept): when the first non-null row is already a
+                    // rowType instance (a Code for Code.class, a List for List.class), naming it reported a row of the requested
+                    // type as the one that "cannot be converted" instead of the later row that is not of that type.
                     failure = new IllegalArgumentException(
-                            "Cannot convert document: " + firstNonNull + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                            "Cannot convert document: " + rows.get(rows.size() - 1) + " to class: " + ClassUtil.getCanonicalClassName(rowType));
                 } else {
                     mode = SCALAR;
                 }
@@ -2355,9 +2396,9 @@ public abstract class MongoDBBase {
             if (targetType.isMap() && row instanceof final Map<?, ?> map) {
                 final Map<String, Object> rowMap = mapFactory.apply(map.size());
                 rowMap.putAll((Map<String, Object>) map);
-                return rowMap;
+                return asRowType(rowMap, rowType);
             } else if (targetType.isMap()) {
-                return Beans.beanToMap(row, mapFactory);
+                return asRowType(Beans.beanToMap(row, mapFactory), rowType);
             } else if (row instanceof Map) {
                 // Normalize map keys before resolving _id: identity or comparator-based maps otherwise
                 // change field lookup semantics and may lose or overwrite the entity's identifier.
@@ -2436,12 +2477,16 @@ public abstract class MongoDBBase {
      *   <li>{@code null} or an object-array type &rarr; the row values are placed into a new
      *       {@code Object[]} (component type derived from {@code rowType} when supplied).</li>
      *   <li>A {@link Collection} type &rarr; a new collection of that type containing the row's values.</li>
-     *   <li>A {@link Map} type &rarr; a new map of that type populated via {@link #toMap(Document, IntFunction)}.</li>
-     *   <li>A bean class &rarr; delegated to {@link #toEntity(Document, Class)}.</li>
+     *   <li>A {@link Map} type &rarr; a new map of that type populated via {@link #toMap(Document, IntFunction)}. For an immutable
+     *       collection or map type (such as {@code ImmutableList} or {@code ImmutableMap}) the filled collection or map is
+     *       converted to that type.</li>
+     *   <li>A bean class &rarr; delegated to {@link #toEntity(Document, Class)}; not a BSON value type with bean-like accessors
+     *       ({@link Binary}, {@link Code}, {@link Symbol} or a {@link BsonValue} that is neither a document nor an array), which
+     *       is a single value like the types of the next rule.</li>
      *   <li>Any other type when the row has at most one non-{@code _id} field &rarr; that field value is
-     *       converted to {@code rowType}; binary payloads produce byte arrays or readable {@link ByteBuffer} values when requested,
-     *       a {@link Date} requested as {@link LocalDate}, {@link LocalDateTime} or {@link LocalTime} is read in UTC, and other values
-     *       use {@code N.convert}. An {@code _id}-only row uses its id value.</li>
+     *       converted to {@code rowType} by {@link #convertBsonValue(Object, Class)}: binary payloads produce byte arrays or
+     *       readable {@link ByteBuffer} values when requested, a {@link Date} requested as {@link LocalDate}, {@link LocalDateTime}
+     *       or {@link LocalTime} is read in UTC, and other values use {@code N.convert}. An {@code _id}-only row uses its id value.</li>
      * </ul>
      *
      * @param <T> the target type
@@ -2479,10 +2524,12 @@ public abstract class MongoDBBase {
 
             c.addAll(row.values());
 
-            return (T) c;
+            return (T) asRowType(c, rowType);
         } else if (targetType.isMap()) {
-            return (T) toMap(row, IntFunctions.ofMap((Class<Map>) rowType));
-        } else if (targetType.isBean()) {
+            return (T) asRowType(toMap(row, IntFunctions.ofMap((Class<Map>) rowType)), rowType);
+        } else if (targetType.isBean() && !isBsonValueClass(rowType)) {
+            // Not for Binary, Code, ... (Beans.isBeanClass is true for them): mapped as a bean of the row's fields, a Code came
+            // back as Code{code=null} and a Binary failed with a NullPointerException, instead of the field's own value.
             return toEntity(row, rowType);
         } else {
             final String propName = N.defaultIfNull(singleValuePropName(row, rowType), _ID);
@@ -2553,6 +2600,31 @@ public abstract class MongoDBBase {
     }
 
     /**
+     * Returns {@code container}, a map or collection just filled for a row of {@code rowType}, as an instance of {@code rowType}.
+     *
+     * <p><b>WHY:</b> for an immutable row type ({@code ImmutableMap}, {@code ImmutableSortedMap}, {@code ImmutableList},
+     * {@code ImmutableSet}, ...) the map and collection factories create a mutable {@code HashMap}, {@code TreeMap},
+     * {@code ArrayList} or {@code HashSet}, which was returned as it was: a {@code List<ImmutableMap>} held {@code HashMap}s
+     * and failed with {@code ClassCastException} only where the caller read a row. {@code N.convert} wraps the filled
+     * container as the requested type and keeps its values; a container that it cannot turn into the row type (an
+     * {@code EnumMap} row type, whose keys must be enums, or an {@code AbstractQueue}) now fails with
+     * {@code IllegalArgumentException} instead of being returned as a row of another class (a {@code HashMap} or
+     * {@code LinkedList}).</p>
+     */
+    private static Object asRowType(final Object container, final Class<?> rowType) {
+        return rowType.isInstance(container) ? container : N.convert(container, rowType);
+    }
+
+    /**
+     * Returns {@code true} when {@code cls} is one of the {@link #isBsonValueType(Object) BSON value types}: requested as a row
+     * type, it is a single value read from a document's sole field, although most of these classes report a bean {@code Type}.
+     */
+    static boolean isBsonValueClass(final Class<?> cls) {
+        return Binary.class.isAssignableFrom(cls) || Code.class.isAssignableFrom(cls) || Symbol.class.isAssignableFrom(cls)
+                || (BsonValue.class.isAssignableFrom(cls) && !(Map.class.isAssignableFrom(cls) || Collection.class.isAssignableFrom(cls)));
+    }
+
+    /**
      * Returns the row the Dataset should read for a scalar position in {@code extractData}: any row other than a BSON value
      * type is returned as-is, while a {@link #isBsonValueType(Object) BSON value} is wrapped as the one-column map
      * {@code {<column>: value}}. The Dataset reads a scalar row into its single column, but {@code Beans.isBeanClass} is true
@@ -2584,6 +2656,30 @@ public abstract class MongoDBBase {
         }
 
         return new Document(columnNames.iterator().next(), row);
+    }
+
+    /**
+     * Reads a Map row of {@code extractData} with {@link #readRow(Document, Class)}, as a Dataset row.
+     *
+     * <p><b>WHY:</b> for a single-value row type {@code readRow} returns the value of the row's sole field: a BSON value for a
+     * BSON value row type ({@link Binary}, {@link Code}, ...), and for {@code Object} when the field holds one. Passed to the
+     * Dataset as it is, such a value is read as a bean of its own accessors ({@code [type, data]} columns for a {@code Binary},
+     * or a {@code null} selected column). Like a BSON value row itself, it is a scalar that fills the single column (see
+     * {@link #asDatasetRow(Object, Collection, Object)}); any other result is returned as-is.</p>
+     *
+     * @param row the row to read, possibly {@code null}
+     * @param rowType the requested row type
+     * @param selectPropNames the selected column names, or null/empty when they are taken from {@code firstRow}
+     * @param firstRow the first non-null row of the result
+     * @return the row for the Dataset
+     * @throws IllegalArgumentException if the row cannot be read as {@code rowType}, or a BSON value read from it does not fit a
+     *         single column
+     */
+    private static Object readDatasetRow(final Document row, final Class<?> rowType, final Collection<String> selectPropNames, final Object firstRow)
+            throws IllegalArgumentException {
+        final Object value = readRow(row, rowType);
+
+        return value == null ? null : asDatasetRow(value, selectPropNames, firstRow);
     }
 
     /**
@@ -2827,7 +2923,9 @@ public abstract class MongoDBBase {
      * being read as a bean of its own properties, and is rejected with {@link IllegalArgumentException} unless the Dataset
      * has exactly one column (so also when it is the first row and {@code selectPropNames} is null or empty). With a Map
      * target, a Map first row and no {@code selectPropNames} it is always rejected, even when every map has a single key,
-     * since the column names are then collected from every row.</p>
+     * since the column names are then collected from every row. Such a type requested as {@code rowType} reads each Map row
+     * into the value of its sole non-{@code _id} field, as {@link #readRow(Document, Class)} does, and that value is such a
+     * scalar as well (a document with an {@code _id} needs a single selected column).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2931,9 +3029,9 @@ public abstract class MongoDBBase {
                 // map or bean rows. Other maps are read like documents; a bean row is copied to a bean target.
                 for (final Object row : rowList) {
                     if (row == null || row instanceof Document) {
-                        newRowList.add(readRow((Document) row, rowType));
+                        newRowList.add(readDatasetRow((Document) row, rowType, selectPropNames, first.get()));
                     } else if (row instanceof Map) {
-                        newRowList.add(readRow(new Document((Map<String, Object>) row), rowType));
+                        newRowList.add(readDatasetRow(new Document((Map<String, Object>) row), rowType, selectPropNames, first.get()));
                     } else {
                         // Only bean-to-bean rows are copied. Positional rows (Object[], typed arrays, collections)
                         // and scalars are interpreted by Dataset later and must not be forced through copyAs.
@@ -2960,7 +3058,7 @@ public abstract class MongoDBBase {
                     if (row == null) {
                         newRowList.add(null);
                     } else if (row instanceof Map) {
-                        newRowList.add(readRow(new Document((Map<String, Object>) row), rowType));
+                        newRowList.add(readDatasetRow(new Document((Map<String, Object>) row), rowType, selectPropNames, first.get()));
                     } else {
                         // As in the Document branch, only bean rows are copied: positional rows (Object[], collections) and
                         // scalars are interpreted by the Dataset against selectPropNames, and copyAs rejects them as non-beans.
@@ -3355,10 +3453,14 @@ public abstract class MongoDBBase {
      * {@link MongoDBBase#toDocument(Object)}), a {@link ByteBuffer} or {@code byte[]} as BSON binary, other arrays as BSON
      * arrays whose elements are encoded through the codec registry exactly as the elements of a {@code List} are, and other
      * types (including value types with bean accessors, such as {@code GregorianCalendar}) as their {@link N#stringOf(Object)}
-     * string form. Decoding mirrors this: entity classes are read as Documents and then mapped to the bean, while other types
-     * parse a BSON string via {@link N#valueOf(String, Class)} (which also reads the JSON text earlier versions wrote for an
-     * array) and convert any other BSON value (as decoded for a {@link Document} field, a BSON array as a {@code List}) to the
-     * target type.
+     * string form, or as BSON null when that form is {@code null} (an empty {@code Optional}, a {@code Holder} of {@code null},
+     * ...). The codec of a non-bean type that receives a value of another class (the driver hands the codec of a declared type,
+     * such as {@code Object} or {@code Number} for a record component, values of any class) encodes it through the registry's
+     * codec for the value's own class, as a {@link Document} field holding that value is encoded, except a {@link ByteBuffer},
+     * a {@code byte[]} or another array, which it writes itself as above. Decoding mirrors this: entity classes are read as
+     * Documents and then mapped to the bean, while other types parse a BSON string via {@link N#valueOf(String, Class)} (which
+     * also reads the JSON text earlier versions wrote for an array) and convert any other BSON value (as decoded for a
+     * {@link Document} field, a BSON array as a {@code List}) to the target type.
      */
     static class GeneralCodec<T> implements Codec<T>, OverridableUuidRepresentationCodec<T> {
 
@@ -3391,7 +3493,8 @@ public abstract class MongoDBBase {
          *
          * <p>The codec serializes bean-style entity classes as BSON documents, a {@link ByteBuffer} or {@code byte[]} as BSON
          * binary, other arrays as BSON arrays (each element encoded through {@link MongoDBBase#codecRegistry}), and other values
-         * as strings using {@code N.stringOf(Object)}.</p>
+         * as strings using {@code N.stringOf(Object)}, except a value of another class and an empty value wrapper (see
+         * {@link #encode(BsonWriter, Object, EncoderContext)}).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3443,7 +3546,11 @@ public abstract class MongoDBBase {
          * bytes of a {@link ByteBuffer}, and a {@code byte[]}, are written as BSON binary; any other array is written as a BSON
          * array, each element through the codec its class has in this codec's registry (as the codec of a {@code List} writes
          * the same element: a {@code char} as a one-character string, a nested array as a nested BSON array, {@code null} as
-         * BSON null); and all other types as their {@code N.stringOf(Object)} string representation.
+         * BSON null); a value of another class than this codec's (passed to the codec of a declared type such as {@code Object}
+         * or {@code Number}) through the codec its own class has in this codec's registry, as a {@link Document} field holding it
+         * is written; and all other values as their {@code N.stringOf(Object)} string representation, or as BSON null when
+         * that representation is {@code null} (an empty {@code Optional}, {@code Nullable} or {@code OptionalInt}, a
+         * {@code Holder} of {@code null}, ...).
          *
          * @param writer destination writer; must not be null
          * @param value the value to encode; must not be null for bean types, while null scalar values are forwarded to the writer
@@ -3452,8 +3559,8 @@ public abstract class MongoDBBase {
          *         {@code encoderContext} is null, or a bean value cannot be converted to a BSON document, or a scalar value is null
          *         and the writer rejects the resulting null string
          * @throws BsonInvalidOperationException if the writer is not positioned to accept the encoded value
-         * @throws CodecConfigurationException if a bean property value or an array element has no usable BSON codec (for example
-         *         a {@code UUID} when the registry specifies no UUID representation)
+         * @throws CodecConfigurationException if a bean property value, an array element or a value of another class than this
+         *         codec's has no usable BSON codec (for example a {@code UUID} when the registry specifies no UUID representation)
          * @throws RuntimeException if a bean getter or nested codec throws while converting or encoding {@code value}
          */
         @Override
@@ -3496,8 +3603,25 @@ public abstract class MongoDBBase {
                 }
 
                 writer.writeEndArray();
+            } else if (value != null && value.getClass() != cls) {
+                // WHY: the codec registry resolves a value by its own class (in a Document, a List, an array), so this codec only
+                // sees a value of another class when the driver looks a codec up by a DECLARED type: the record codec encodes each
+                // component (and the elements of a component's typed container) with the codec of its declared type, and Object,
+                // Number, an interface, ... have no driver codec. Rendered through N.stringOf, a Number component holding 11 was
+                // stored as the text "11", which then failed to read back ("No public static method or constructor found in
+                // java.lang.Number"), and the values of a Map<String, Object> component turned into text (1 -> "1"). Encode the
+                // value as a Document field holding it is encoded, with the registry's codec for its own class.
+                ((Codec<Object>) registry.get(value.getClass())).encode(writer, value, ELEMENT_CONTEXT);
             } else {
-                writer.writeString(N.stringOf(value));
+                final String text = N.stringOf(value);
+
+                if (text == null && value != null) {
+                    // WHY: an empty Optional/Nullable/OptionalInt/... or a Holder of null has no string form, and writeString(null)
+                    // failed the whole write ("value can not be null"). Store BSON null, as DynamoDB stores NULL for such a value.
+                    writer.writeNull();
+                } else {
+                    writer.writeString(text);
+                }
             }
         }
 

@@ -292,9 +292,19 @@ public final class cs { // NOSONAR
     public static final String durability = "durability";
 
     /**
+     * Parameter name for an asynchronous DynamoDB (AWS SDK v2) client.
+     */
+    public static final String dynamoDBAsyncClient = "dynamoDBAsyncClient";
+
+    /**
      * Parameter name for a {@code DynamoDBExecutor} instance.
      */
     public static final String dynamoDBExecutor = "dynamoDBExecutor";
+
+    /**
+     * Parameter name for a synchronous DynamoDB (AWS SDK v2) client.
+     */
+    public static final String dynamoDBSyncClient = "dynamoDBSyncClient";
 
     /**
      * Parameter name for a BSON encoder context.

@@ -168,4 +168,124 @@ public class AsyncMongoCollectionExecutorTest extends AsyncMongoCollectionExecut
             realExecutor.shutdown();
         }
     }
+
+    // ---- 2026-10-27 sliceR ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testArgumentsAreReadOnlyWhenTheSubmittedTaskRuns_sliceR() throws Exception {
+        // Pins the class-level "Arguments are not copied" note: the eager checks run at the call site, but the
+        // task reads the caller's (mutable) arguments only when it runs.
+        final AtomicReference<Runnable> submitted = new AtomicReference<>();
+        final MongoCollection<Document> mockColl = mock(MongoCollection.class);
+        final AsyncMongoCollectionExecutor deferred = new AsyncMongoCollectionExecutor(new MongoCollectionExecutor(mockColl, directExecutor),
+                new AsyncExecutor(submitted::set));
+        final List<Integer> sizesSeen = new java.util.ArrayList<>();
+        when(mockColl.insertMany(org.mockito.ArgumentMatchers.anyList())).thenAnswer(inv -> {
+            sizesSeen.add(((List<?>) inv.getArgument(0)).size());
+            return null;
+        });
+
+        final List<Document> cleared = new java.util.ArrayList<>(List.of(new Document("a", 1)));
+        final ContinuableFuture<?> clearedFuture = deferred.insertMany(cleared); // accepted by the eager non-empty check
+        cleared.clear();
+        submitted.get().run();
+
+        final List<Document> grown = new java.util.ArrayList<>(List.of(new Document("b", 1)));
+        final ContinuableFuture<?> grownFuture = deferred.insertMany(grown);
+        grown.add(new Document("b", 2));
+        submitted.get().run();
+
+        Assertions.assertAll(() -> Assertions.assertInstanceOf(IllegalArgumentException.class,
+                Assertions.assertThrows(ExecutionException.class, clearedFuture::get).getCause()), () -> {
+                    grownFuture.get();
+                    Assertions.assertEquals(List.of(2), sizesSeen);
+                });
+    }
+
+    @Test
+    public void testMapOverAStreamFutureReappliesTheFunctionOnEveryGet_sliceR() throws Exception {
+        // Pins the class-level map note: ContinuableFuture.map re-runs its function per get(), so a function that
+        // consumes the delivered stream fails on the second get().
+        final Document filter = new Document("k", "v");
+        when(mockCollExecutor.stream(filter)).thenReturn(com.landawn.abacus.util.stream.Stream.of(new Document("a", 1), new Document("a", 2)));
+
+        final ContinuableFuture<List<Document>> mapped = asyncExecutor.stream(filter).map(s -> s.toList());
+
+        Assertions.assertEquals(2, mapped.get().size());
+        Assertions.assertInstanceOf(IllegalStateException.class, Assertions.assertThrows(ExecutionException.class, mapped::get).getCause());
+        verify(mockCollExecutor).stream(filter);
+    }
+
+    @Test
+    public void testWatchWithRowTypeDeliversTheDriverCodecLookupFailureThroughTheFuture_sliceR() throws Exception {
+        // The driver resolves the codec for rowType when it creates the change-stream iterable, without contacting the
+        // server, so no MongoDB is needed here (nothing listens on port 1; the client never connects).
+        try (com.mongodb.client.MongoClient client = com.mongodb.client.MongoClients
+                .create("mongodb://localhost:1/?serverSelectionTimeoutMS=100&connectTimeoutMS=100")) {
+            // A collection passed in as-is keeps the client's plain registry, which has no codec for a bean class.
+            final AsyncMongoCollectionExecutor plainRegistry = new MongoCollectionExecutor(client.getDatabase("sliceR").getCollection("c"), directExecutor)
+                    .async();
+            final AsyncMongoCollectionExecutor frameworkRegistry = new MongoCollectionExecutor(
+                    new MongoDB(client.getDatabase("sliceR")).db().getCollection("c"), directExecutor).async();
+
+            final ContinuableFuture<?> byClass = plainRegistry.watch(TestEntity.class); // returns normally
+            final ContinuableFuture<?> byPipeline = plainRegistry.watch(Collections.<Bson> emptyList(), TestEntity.class);
+
+            Assertions.assertAll(
+                    () -> Assertions.assertInstanceOf(org.bson.codecs.configuration.CodecConfigurationException.class,
+                            Assertions.assertThrows(ExecutionException.class, byClass::get).getCause()),
+                    () -> Assertions.assertInstanceOf(org.bson.codecs.configuration.CodecConfigurationException.class,
+                            Assertions.assertThrows(ExecutionException.class, byPipeline::get).getCause()),
+                    () -> Assertions.assertNotNull(frameworkRegistry.watch(TestEntity.class).get()));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testTypedFindOneAndWriteFailsItsFutureOnlyAfterTheWriteWasSent_sliceR() {
+        // Pins the typed findOneAndUpdate/Replace/Delete note: the returned document is converted to rowType after the driver
+        // call (proven live: the document stayed deleted/updated/replaced), so a conversion failure does not mean "not written".
+        final MongoCollection<Document> mockColl = mock(MongoCollection.class);
+        final AsyncMongoCollectionExecutor async = new MongoCollectionExecutor(mockColl, directExecutor).async();
+        final Document filter = new Document("k", 1);
+        final Document update = new Document("$set", new Document("z", 7));
+        final Document replacement = new Document("k", 1).append("r", 1);
+        final Document twoFields = new Document("_id", 1).append("x", 1).append("y", 2); // no single-value Integer form
+        when(mockColl.findOneAndDelete(filter)).thenReturn(twoFields);
+        when(mockColl.findOneAndUpdate(filter, update)).thenReturn(twoFields);
+        when(mockColl.findOneAndReplace(filter, replacement)).thenReturn(twoFields);
+
+        final ContinuableFuture<Integer> deleted = async.findOneAndDelete(filter, Integer.class);
+        final ContinuableFuture<Integer> updated = async.findOneAndUpdate(filter, update, Integer.class);
+        final ContinuableFuture<Integer> replaced = async.findOneAndReplace(filter, replacement, Integer.class);
+
+        Assertions.assertAll(
+                () -> Assertions.assertInstanceOf(IllegalArgumentException.class, Assertions.assertThrows(ExecutionException.class, deleted::get).getCause()),
+                () -> Assertions.assertInstanceOf(IllegalArgumentException.class, Assertions.assertThrows(ExecutionException.class, updated::get).getCause()),
+                () -> Assertions.assertInstanceOf(IllegalArgumentException.class, Assertions.assertThrows(ExecutionException.class, replaced::get).getCause()),
+                () -> verify(mockColl).findOneAndDelete(filter), () -> verify(mockColl).findOneAndUpdate(filter, update),
+                () -> verify(mockColl).findOneAndReplace(filter, replacement));
+    }
+
+    @Test
+    public void testAggregateNullStageFailsTheFutureNotTheCallSite_sliceR() throws Exception {
+        // The driver rejects a null stage while it builds the aggregate operation, before any server contact, so no MongoDB is
+        // needed (nothing listens on port 1). Only the null pipeline itself is checked eagerly on the calling thread.
+        try (com.mongodb.client.MongoClient client = com.mongodb.client.MongoClients
+                .create("mongodb://localhost:1/?serverSelectionTimeoutMS=100&connectTimeoutMS=100")) {
+            final AsyncMongoCollectionExecutor async = new MongoCollectionExecutor(new MongoDB(client.getDatabase("sliceR")).db().getCollection("c"),
+                    directExecutor).async();
+
+            final ContinuableFuture<?> lastNull = async.aggregate(java.util.Arrays.asList(new Document("$match", new Document()), null));
+            final ContinuableFuture<?> firstNull = async.aggregate(java.util.Arrays.asList(null, new Document("$match", new Document())), Document.class);
+
+            Assertions.assertAll(
+                    () -> Assertions.assertInstanceOf(IllegalArgumentException.class,
+                            Assertions.assertThrows(ExecutionException.class, lastNull::get).getCause()),
+                    () -> Assertions.assertInstanceOf(IllegalArgumentException.class,
+                            Assertions.assertThrows(ExecutionException.class, firstNull::get).getCause()),
+                    () -> Assertions.assertThrows(IllegalArgumentException.class, () -> async.aggregate((List<Bson>) null)));
+        }
+    }
 }

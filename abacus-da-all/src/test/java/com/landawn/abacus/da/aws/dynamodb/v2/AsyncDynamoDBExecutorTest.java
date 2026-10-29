@@ -2657,4 +2657,244 @@ public class AsyncDynamoDBExecutorTest extends MockitoTestBase {
             this.id = id;
         }
     }
+
+    // ---- 2026-10-27 sliceD ----
+
+    /**
+     * Pins the targetClass contract of getItem(GetItemRequest, Class): an entity class needs no no-args constructor (a record is
+     * built through its canonical constructor, a builder-based bean through its builder; the doc used to require a public no-arg
+     * constructor), an object-array or collection class takes every attribute, and a single-value type takes an item with exactly
+     * one attribute: any other item fails the future with IllegalArgumentException.
+     */
+    @Test
+    public void testTypedGetItemBuildsRecordsAndBuilderBeansAndRejectsMultiAttributeSingleValue_1027sliceD() throws Exception {
+        final Map<String, AttributeValue> item = Map.of("id", AttributeValue.fromS("a"), "n", AttributeValue.fromN("3"));
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().item(item).build()));
+        final Map<String, AttributeValue> key = Map.of("id", AttributeValue.fromS("a"));
+        final GetItemRequest request = GetItemRequest.builder().tableName("TestTable").key(key).build();
+        final java.util.concurrent.TimeUnit seconds = java.util.concurrent.TimeUnit.SECONDS;
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(new Record_1027sliceD("a", 3), asyncExecutor.getItem(request, Record_1027sliceD.class).get(5, seconds)),
+                () -> assertEquals(new Record_1027sliceD("a", 3), asyncExecutor.getItem("TestTable", key, Record_1027sliceD.class).get(5, seconds)), () -> {
+                    final BuilderBean_1027sliceD bean = asyncExecutor.getItem(request, BuilderBean_1027sliceD.class).get(5, seconds);
+                    assertEquals("a", bean.getId());
+                    assertEquals(3, bean.getN());
+                }, () -> assertEquals(2, asyncExecutor.getItem(request, Object[].class).get(5, seconds).length),
+                () -> assertEquals(2, asyncExecutor.getItem(request, List.class).get(5, seconds).size()), () -> {
+                    final ExecutionException e = assertThrows(ExecutionException.class, () -> asyncExecutor.getItem(request, String.class).get(5, seconds));
+                    assertTrue(e.getCause() instanceof IllegalArgumentException, String.valueOf(e.getCause()));
+                    assertTrue(e.getCause().getMessage().startsWith("Column count must be 1"), e.getCause().getMessage());
+                });
+    }
+
+    /**
+     * Pins the stream/scan threading notes for conversion failures: items are converted while the stream is consumed, so a
+     * failure (here a single-value row type for two-attribute items) is thrown by the stream operation itself, unwrapped, and
+     * the returned future completes normally.
+     */
+    @Test
+    public void testStreamAndScanThrowConversionFailuresFromTraversalNotThroughFuture_1027sliceD() throws Exception {
+        final Map<String, AttributeValue> item = Map.of("id", AttributeValue.fromS("a"), "n", AttributeValue.fromN("3"));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(item)).build()));
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(ScanResponse.builder().items(List.of(item)).build()));
+
+        final CompletableFuture<Stream<String>> queryFuture = asyncExecutor.stream(QueryRequest.builder().tableName("TestTable").build(), String.class);
+        final CompletableFuture<Stream<Integer>> scanFuture = asyncExecutor.scan(ScanRequest.builder().tableName("TestTable").build(), Integer.class);
+        final Stream<String> queryStream = queryFuture.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        final Stream<Integer> scanStream = scanFuture.get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertFalse(queryFuture.isCompletedExceptionally()),
+                () -> assertFalse(scanFuture.isCompletedExceptionally()),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, queryStream::toList).getMessage().startsWith("Column count must be 1")),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, scanStream::toList).getMessage().startsWith("Column count must be 1")));
+    }
+
+    /**
+     * Pins the Mapper type-parameter doc: an entity without setters (a record, or a builder-based bean) is accepted, its key and
+     * item are written from its getters, and read items are built through its canonical constructor or builder.
+     */
+    @Test
+    public void testMapperAcceptsRecordAndBuilderEntitiesWithoutSetters_1027sliceD() throws Exception {
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture
+                .completedFuture(GetItemResponse.builder().item(Map.of("id", AttributeValue.fromS("a"), "n", AttributeValue.fromN("3"))).build()));
+        when(mockDynamoDbAsyncClient.putItem(any(PutItemRequest.class))).thenReturn(CompletableFuture.completedFuture(PutItemResponse.builder().build()));
+        final AsyncDynamoDBExecutor.Mapper<Record_1027sliceD> recordMapper = asyncExecutor.mapper(Record_1027sliceD.class, "TestTable", null);
+        final AsyncDynamoDBExecutor.Mapper<BuilderBean_1027sliceD> builderMapper = asyncExecutor.mapper(BuilderBean_1027sliceD.class, "TestTable", null);
+        final java.util.concurrent.TimeUnit seconds = java.util.concurrent.TimeUnit.SECONDS;
+
+        assertEquals(new Record_1027sliceD("a", 3), recordMapper.getItem(new Record_1027sliceD("a", 0)).get(5, seconds));
+        final BuilderBean_1027sliceD read = builderMapper.getItem(BuilderBean_1027sliceD.builder().id("a").build()).get(5, seconds);
+        recordMapper.putItem(new Record_1027sliceD("b", 4)).get(5, seconds);
+        builderMapper.putItem(BuilderBean_1027sliceD.builder().id("c").n(5).build()).get(5, seconds);
+
+        final ArgumentCaptor<GetItemRequest> gets = ArgumentCaptor.forClass(GetItemRequest.class);
+        final ArgumentCaptor<PutItemRequest> puts = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(mockDynamoDbAsyncClient, times(2)).getItem(gets.capture());
+        verify(mockDynamoDbAsyncClient, times(2)).putItem(puts.capture());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals("a", read.getId()), () -> assertEquals(3, read.getN()),
+                () -> assertEquals(List.of(Map.of("id", AttributeValue.fromS("a")), Map.of("id", AttributeValue.fromS("a"))),
+                        gets.getAllValues().stream().map(GetItemRequest::key).toList()),
+                () -> assertEquals(Map.of("id", AttributeValue.fromS("b"), "n", AttributeValue.fromN("4")), puts.getAllValues().get(0).item()),
+                () -> assertEquals(Map.of("id", AttributeValue.fromS("c"), "n", AttributeValue.fromN("5")), puts.getAllValues().get(1).item()));
+    }
+
+    /** sync(null) used to report the sync executor constructor's parameter ("dynamoDBClient"), which this method does not have. */
+    @Test
+    public void testSyncBridgeNullClientMessageNamesItsOwnParameter_1027sliceD() {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> asyncExecutor.sync(null));
+
+        assertTrue(e.getMessage().contains("dynamoDBSyncClient"), e.getMessage());
+    }
+
+    /**
+     * Pins the query(QueryRequest, Class) and Mapper.query @return notes: a query that matches nothing gives an empty Dataset
+     * without any columns, for a bean row type too (its properties become columns only for a non-empty result).
+     */
+    @Test
+    public void testQueryMatchingNothingIsEmptyDatasetWithoutColumnsForBeanRowsToo_1027sliceD() throws Exception {
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(QueryResponse.builder().build()));
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final java.util.concurrent.TimeUnit seconds = java.util.concurrent.TimeUnit.SECONDS;
+
+        final Dataset beanRows = asyncExecutor.query(queryRequest, TestEntity.class).get(5, seconds);
+        final Dataset mapperRows = asyncExecutor.mapper(TestEntity.class, "TestTable", null).query(queryRequest).get(5, seconds);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(0, beanRows.size()), () -> assertTrue(beanRows.columnNames().isEmpty()),
+                () -> assertEquals(0, mapperRows.size()), () -> assertTrue(mapperRows.columnNames().isEmpty()));
+    }
+
+    /**
+     * Pins the Mapper.list/query/stream notes: a request without a table name is sent to the mapper's table; with an
+     * exclusiveStartKey, list and query read only the page DynamoDB returns, while stream starts there and follows
+     * lastEvaluatedKey to the last page.
+     */
+    @Test
+    public void testMapperQueriesUseMapperTableAndExclusiveStartKeyRules_1027sliceD() throws Exception {
+        final Map<String, AttributeValue> esk = Map.of("id", AttributeValue.fromS("0"));
+        final Map<String, AttributeValue> lek = Map.of("id", AttributeValue.fromS("1"));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenAnswer(invocation -> {
+            final QueryRequest request = invocation.getArgument(0);
+            return CompletableFuture.completedFuture(esk.equals(request.exclusiveStartKey())
+                    ? QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("1")))).lastEvaluatedKey(lek).build()
+                    : QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.fromS("2")))).build());
+        });
+        final AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class, "TestTable", null);
+        final QueryRequest noTable = QueryRequest.builder().exclusiveStartKey(esk).build();
+        final java.util.concurrent.TimeUnit seconds = java.util.concurrent.TimeUnit.SECONDS;
+
+        final List<String> listed = mapper.list(noTable).get(5, seconds).stream().map(TestEntity::getId).toList();
+        final int queried = mapper.query(noTable).get(5, seconds).size();
+        final List<String> streamed = mapper.stream(noTable).get(5, seconds).map(TestEntity::getId).toList();
+
+        final ArgumentCaptor<QueryRequest> sent = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(mockDynamoDbAsyncClient, times(4)).query(sent.capture());
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertEquals(List.of("1"), listed), () -> assertEquals(1, queried),
+                () -> assertEquals(List.of("1", "2"), streamed),
+                () -> assertEquals(java.util.Collections.nCopies(4, "TestTable"), sent.getAllValues().stream().map(QueryRequest::tableName).toList()));
+    }
+
+    // ---- 2026-10-27 r2D ----
+
+    /**
+     * The async executor reads rows through the synchronous executor's readRow (getItem) and row mapper (list, stream, scan,
+     * batchGetItem), so an abacus immutable row class completes with rows of that class (HEAD: the HashMap/ArrayList/HashSet/TreeMap
+     * stand-in).
+     */
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void testImmutableRowClassesThroughTheAsyncExecutor_r2D() throws Exception {
+        final Map<String, AttributeValue> item = new java.util.LinkedHashMap<>();
+        item.put("id", AttributeValue.fromS("a"));
+        item.put("n", AttributeValue.fromN("2"));
+        final Map<String, Object> expectedMap = new HashMap<>();
+        expectedMap.put("id", "a");
+        expectedMap.put("n", "2");
+        final Map<String, KeysAndAttributes> keys = new java.util.LinkedHashMap<>();
+        keys.put("TestTable", KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.fromS("a")))).build());
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(GetItemResponse.builder().item(item).build()));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(QueryResponse.builder().items(List.of(item)).build()));
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class)))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(ScanResponse.builder().items(List.of(item)).build()));
+        when(mockDynamoDbAsyncClient.batchGetItem(any(BatchGetItemRequest.class))).thenAnswer(
+                invocation -> CompletableFuture.completedFuture(BatchGetItemResponse.builder().responses(Map.of("TestTable", List.of(item))).build()));
+        final GetItemRequest getItemRequest = GetItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.fromS("a"))).build();
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final java.util.concurrent.TimeUnit seconds = java.util.concurrent.TimeUnit.SECONDS;
+
+        final Object mapRow = asyncExecutor.getItem(getItemRequest, com.landawn.abacus.util.ImmutableMap.class).get(5, seconds);
+        final Object setRow = asyncExecutor.getItem(getItemRequest, com.landawn.abacus.util.ImmutableSortedSet.class).get(5, seconds);
+        final Object listRow = asyncExecutor.list(queryRequest, com.landawn.abacus.util.ImmutableList.class).get(5, seconds).get(0);
+        final Object streamRow = asyncExecutor.stream(queryRequest, com.landawn.abacus.util.ImmutableSet.class).get(5, seconds).first().orElseNull();
+        final Object scanRow = asyncExecutor.scan(ScanRequest.builder().tableName("TestTable").build(), com.landawn.abacus.util.ImmutableNavigableMap.class)
+                .get(5, seconds)
+                .first()
+                .orElseNull();
+        final Object batchRow = asyncExecutor.batchGetItem(keys, com.landawn.abacus.util.ImmutableSortedMap.class).get(5, seconds).get("TestTable").get(0);
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertTrue(mapRow instanceof com.landawn.abacus.util.ImmutableMap, mapRow.getClass().getName()),
+                () -> assertEquals(expectedMap, mapRow),
+                () -> assertTrue(setRow instanceof com.landawn.abacus.util.ImmutableSortedSet, setRow.getClass().getName()),
+                () -> assertEquals(List.of("2", "a"), new ArrayList<>((Collection<?>) setRow)),
+                () -> assertTrue(listRow instanceof com.landawn.abacus.util.ImmutableList, listRow.getClass().getName()),
+                () -> assertEquals(List.of("a", "2"), listRow),
+                () -> assertTrue(streamRow instanceof com.landawn.abacus.util.ImmutableSet, streamRow.getClass().getName()),
+                () -> assertTrue(scanRow instanceof com.landawn.abacus.util.ImmutableNavigableMap, scanRow.getClass().getName()),
+                () -> assertEquals(expectedMap, scanRow),
+                () -> assertTrue(batchRow instanceof com.landawn.abacus.util.ImmutableSortedMap, batchRow.getClass().getName()),
+                () -> assertEquals(expectedMap, batchRow));
+    }
+
+    public record Record_1027sliceD(@com.landawn.abacus.annotation.Id String id, int n) {
+    }
+
+    public static final class BuilderBean_1027sliceD {
+        @com.landawn.abacus.annotation.Id
+        private final String id;
+        private final int n;
+
+        private BuilderBean_1027sliceD(final String id, final int n) {
+            this.id = id;
+            this.n = n;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public int getN() {
+            return n;
+        }
+
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        public static final class Builder {
+            private String id;
+            private int n;
+
+            public Builder id(final String id) {
+                this.id = id;
+                return this;
+            }
+
+            public Builder n(final int n) {
+                this.n = n;
+                return this;
+            }
+
+            public BuilderBean_1027sliceD build() {
+                return new BuilderBean_1027sliceD(id, n);
+            }
+        }
+    }
 }

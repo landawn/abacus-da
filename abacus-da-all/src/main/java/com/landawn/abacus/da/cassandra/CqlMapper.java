@@ -38,6 +38,7 @@ import org.xml.sax.SAXException;
 
 import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.ParsingException;
+import com.landawn.abacus.exception.UncheckedException;
 import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
@@ -96,6 +97,8 @@ import com.landawn.abacus.util.XmlUtil;
  *   </cql>
  * </cqlMapper>
  * }</pre>
+ * <p>The document must not contain a {@code <!DOCTYPE>} declaration: the XML parser disallows DTDs, so such a
+ * document is rejected with a {@link ParsingException}.</p>
  *
  * <h3>Parameter Binding</h3>
  * <p>The CQL stored in the mapper may use any of the binding styles supported by {@link ParsedCql}:</p>
@@ -208,7 +211,7 @@ public final class CqlMapper {
      * @throws RuntimeException if a file is not found, the XML parser cannot be created, or the required
      *         {@code <cqlMapper>} root element is missing
      * @throws UncheckedIOException if a file cannot be read
-     * @throws ParsingException if any XML file is malformed
+     * @throws ParsingException if any XML file is malformed or contains a {@code DOCTYPE} declaration
      * @see #loadFrom(File...)
      */
     public static CqlMapper loadFrom(final String filePath) throws IllegalArgumentException, RuntimeException, UncheckedIOException, ParsingException {
@@ -255,7 +258,7 @@ public final class CqlMapper {
      * @throws RuntimeException if the XML parser cannot be created, or the required {@code <cqlMapper>} root element
      *         is missing
      * @throws UncheckedIOException if a file cannot be read
-     * @throws ParsingException if any XML file is malformed
+     * @throws ParsingException if any XML file is malformed or contains a {@code DOCTYPE} declaration
      */
     public static CqlMapper loadFrom(final File... files) throws IllegalArgumentException, RuntimeException, UncheckedIOException, ParsingException {
         N.checkArgNotEmpty(files, cs.files);
@@ -294,7 +297,7 @@ public final class CqlMapper {
      * @throws RuntimeException if the XML parser cannot be created, or the required {@code <cqlMapper>} root element
      *         is missing
      * @throws UncheckedIOException if an I/O error occurs reading the stream
-     * @throws ParsingException if the XML content is malformed
+     * @throws ParsingException if the XML content is malformed or contains a {@code DOCTYPE} declaration
      */
     public static CqlMapper loadFrom(final InputStream is) throws IllegalArgumentException, RuntimeException, UncheckedIOException, ParsingException {
         N.checkArgNotNull(is, cs.is);
@@ -429,21 +432,26 @@ public final class CqlMapper {
      * throw {@link UnsupportedOperationException}; use {@link #add} / {@link #remove} to change the
      * mapper's contents.</p>
      *
+     * <p>The snapshot iterates in insertion order, the order in which the ids were added: ids loaded from XML
+     * keep their document order (file by file), and an id that is removed and added again moves to the end.
+     * {@link #saveTo(File)} writes the statements in the same order.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper m = new CqlMapper();
      * m.ids();                                       // returns [] (empty set for an empty mapper)
      * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
      * m.add("findAll", "SELECT * FROM users", null);
-     * m.ids();                                       // returns a set containing "findUserById" and "findAll"
+     * m.ids();                                       // returns [findUserById, findAll] (insertion order)
      * m.remove("findAll");
      * m.ids();                                       // returns ["findUserById"] (a fresh snapshot after removal)
      * m.ids().clear();                              // throws UnsupportedOperationException (read-only set)
      * }</pre>
      *
-     * @return a read-only snapshot of the set of all CQL statement IDs currently in this mapper
+     * @return a read-only snapshot of the set of all CQL statement IDs currently in this mapper, in insertion order
      */
     public ImmutableSet<String> ids() {
+        // ImmutableSet.copyOf keeps the encounter order of any source, so the snapshot keeps cqlMap's insertion order.
         return ImmutableSet.copyOf(cqlMap.keySet());
     }
 
@@ -740,18 +748,21 @@ public final class CqlMapper {
      * added CQL statements or creating configuration backups. The generated XML will
      * include all statements with their IDs and attributes.</p>
      *
-     * <p>The output format matches the input format expected by {@link #loadFrom(String)}:</p>
+     * <p>The output format matches the input format expected by {@link #loadFrom(String)}. Structure of the output
+     * (the actual output adds no indentation or line breaks between elements, so it is a single line unless a CQL
+     * body contains line breaks; it is prefixed by an XML declaration; the statements are in {@link #ids()} order, each
+     * element's text is the statement's {@link ParsedCql#originalCql() original CQL}, which is already trimmed, with no
+     * whitespace added around it; attributes are written in name order, the {@code id} attribute sorted together with
+     * the others):</p>
      * <pre>{@code
-     * <?xml version="1.0" encoding="UTF-8"?>
      * <cqlMapper>
-     *   <cql id="statement1" timeout="3000">
-     *     SELECT * FROM table1 WHERE id = ?
-     *   </cql>
-     *   <cql id="statement2">
-     *     INSERT INTO table2 (col1, col2) VALUES (?, ?)
-     *   </cql>
+     *     <cql id="statement1" timeout="3000">SELECT * FROM table1 WHERE id = ?</cql>
+     *     <cql id="statement2">INSERT INTO table2 (col1, col2) VALUES (?, ?)</cql>
      * </cqlMapper>
      * }</pre>
+     * <p>Text is escaped as XML requires; the serializer may also write a line feed inside a CQL body as the platform
+     * line separator and a carriage return as a character reference. Loading the output reads every statement back
+     * with the same original CQL.</p>
      *
      * <p>If the parent directory of {@code file} does not yet exist, this method attempts to
      * create it.</p>
@@ -777,8 +788,8 @@ public final class CqlMapper {
      * @param file the target file where the XML will be written
      * @throws IllegalArgumentException if {@code file} is null
      * @throws IllegalStateException if a stored id, CQL statement or attribute value contains a character that is not
-     *         allowed in XML 1.0 (such as most control characters below U+0020); this is checked before the file is
-     *         opened, so an existing file is left unchanged
+     *         allowed in XML 1.0 (such as most control characters below U+0020) or an unpaired surrogate; this is checked
+     *         before the file is opened, so an existing file is left unchanged
      * @throws UncheckedIOException if the parent directory cannot be created, the file cannot be opened for writing,
      *         or writing, flushing or closing the file fails
      * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
@@ -814,7 +825,8 @@ public final class CqlMapper {
     /**
      * Writes all CQL statements in this mapper to the supplied output stream as XML.
      *
-     * <p>The output format matches the input format expected by {@link #loadFrom(String)}. The stream is
+     * <p>The output format matches the input format expected by {@link #loadFrom(String)} and has the shape described
+     * for {@link #saveTo(File)} (a single line unless a CQL body contains line breaks). The stream is
      * flushed but <i>not</i> closed by this method; the caller retains ownership and is responsible for
      * closing it.</p>
      *
@@ -834,11 +846,12 @@ public final class CqlMapper {
      * @param os the output stream to write to (not closed by this method)
      * @throws IllegalArgumentException if {@code os} is null
      * @throws IllegalStateException if a stored id, CQL statement or attribute value contains a character that is not
-     *         allowed in XML 1.0 (such as most control characters below U+0020); this is checked before anything is written
+     *         allowed in XML 1.0 (such as most control characters below U+0020) or an unpaired surrogate; this is
+     *         checked before anything is written
      * @throws RuntimeException if the XML parser cannot be created, or the DOM document cannot be transformed into XML
-     *         and written to the stream
      * @throws DOMException if a stored attribute name is not a valid XML name
-     * @throws UncheckedIOException if flushing the stream fails
+     * @throws UncheckedIOException if writing to or flushing the stream fails; its cause is the stream's
+     *         {@code IOException}
      * @see #saveTo(File)
      * @see #loadFrom(String)
      */
@@ -898,17 +911,51 @@ public final class CqlMapper {
     /**
      * Serializes {@code doc} to {@code os} and flushes (but does not close) the stream.
      *
-     * @throws RuntimeException if the document cannot be transformed into XML and written to the stream
-     * @throws UncheckedIOException if flushing the stream fails
+     * @throws RuntimeException if the document cannot be transformed into XML
+     * @throws UncheckedIOException if writing to or flushing the stream fails
      */
     private static void write(final Document doc, final OutputStream os) throws RuntimeException, UncheckedIOException {
-        XmlUtil.transform(doc, os);
+        try {
+            XmlUtil.transform(doc, os);
+        } catch (final UncheckedException e) {
+            // WHY: the serializer writes AND flushes the stream itself, and XmlUtil reports a stream IOException as an
+            // UncheckedException wrapping TransformerException <- SAXException <- IOException, so a failing write or
+            // flush never reached the documented UncheckedIOException below. Unwrap it, as saveTo(File) and
+            // abacus-query's SqlMapper.saveTo(OutputStream) report I/O failures; other serializer failures stay as thrown.
+            throw ioFailureOrSelf(e);
+        }
 
         try {
             os.flush();
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * Returns {@code e} itself if it is an {@link UncheckedIOException}, otherwise an {@code UncheckedIOException} for
+     * the first {@link IOException} (or the first {@code UncheckedIOException}) in its cause chain, or {@code e} if the
+     * chain holds neither.
+     */
+    private static UncheckedException ioFailureOrSelf(final UncheckedException e) {
+        if (e instanceof UncheckedIOException) {
+            return e;
+        }
+
+        int depth = 0;
+
+        // Bounded: a cause chain may be cyclic.
+        for (Throwable cause = e.getCause(); cause != null && depth < 64; cause = cause.getCause(), depth++) {
+            if (cause instanceof final UncheckedIOException uioe) {
+                return uioe;
+            }
+
+            if (cause instanceof final IOException ioe) {
+                return new UncheckedIOException(ioe);
+            }
+        }
+
+        return e;
     }
 
     /**

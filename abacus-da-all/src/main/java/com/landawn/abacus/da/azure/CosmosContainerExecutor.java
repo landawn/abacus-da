@@ -1410,7 +1410,9 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items to read
      * @param partitionKey the partition key identifying the partition to scan (must not be null)
-     * @param options query options controlling the scan behavior (can be null for default behavior)
+     * @param options query options controlling the scan behavior (can be null for default behavior). The SDK stores
+     *                {@code partitionKey} into a non-null {@code options} object, so reusing that object for a later query scopes the
+     *                query to this partition.
      * @param targetClass the class type for deserializing the response items (must not be null)
      * @return a CosmosPagedIterable for iterating through all items;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
@@ -1508,7 +1510,9 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items to stream
      * @param partitionKey the partition key identifying the partition to scan (must not be null)
-     * @param options query options controlling the scan behavior (can be null for default behavior)
+     * @param options query options controlling the scan behavior (can be null for default behavior). The SDK stores
+     *                {@code partitionKey} into a non-null {@code options} object, so reusing that object for a later query scopes the
+     *                query to this partition.
      * @param targetClass the class type for deserializing the items (must not be null)
      * @return a {@link Stream} of items for functional processing;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
@@ -1615,7 +1619,8 @@ public class CosmosContainerExecutor {
      * @return a CosmosPagedIterable for iterating through query results;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
      * @throws IllegalArgumentException if {@code query} or {@code targetClass} is null. Neither is checked eagerly by the SDK, so an unchecked
-     *         null would only fail once the result is consumed.
+     *         null would only fail once the result is consumed. The SDK also throws it, when the query is created, if {@code options} sets both
+     *         a partition key and a feed range.
      */
     public <T> CosmosPagedIterable<T> queryItems(final String query, final CosmosQueryRequestOptions options, final Class<T> targetClass)
             throws IllegalArgumentException {
@@ -1706,7 +1711,8 @@ public class CosmosContainerExecutor {
      * @return a CosmosPagedIterable for iterating through query results;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
      * @throws IllegalArgumentException if {@code querySpec} or {@code targetClass} is null. Neither is checked eagerly by the SDK, so an
-     *         unchecked null would only fail once the result is consumed.
+     *         unchecked null would only fail once the result is consumed. The SDK also throws it, when the query is created, if
+     *         {@code options} sets both a partition key and a feed range.
      * @see SqlQuerySpec
      * @see CosmosQueryRequestOptions
      */
@@ -1801,7 +1807,8 @@ public class CosmosContainerExecutor {
      * @return a Stream of query results for functional processing;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
      * @throws IllegalArgumentException if {@code query} or {@code targetClass} is null. Neither is checked eagerly by the SDK, so an unchecked
-     *         null would only fail once the result is consumed.
+     *         null would only fail once the result is consumed. The SDK also throws it, when the query is created, if {@code options} sets both
+     *         a partition key and a feed range.
      */
     public final <T> Stream<T> streamItems(final String query, final CosmosQueryRequestOptions options, final Class<T> targetClass)
             throws IllegalArgumentException {
@@ -1895,7 +1902,8 @@ public class CosmosContainerExecutor {
      * @return a Stream of query results for functional processing;
      *         Cosmos service failures are raised as {@link CosmosException} when the returned results are consumed.
      * @throws IllegalArgumentException if {@code querySpec} or {@code targetClass} is null. Neither is checked eagerly by the SDK, so an
-     *         unchecked null would only fail once the result is consumed.
+     *         unchecked null would only fail once the result is consumed. The SDK also throws it, when the query is created, if
+     *         {@code options} sets both a partition key and a feed range.
      */
     public final <T> Stream<T> streamItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> targetClass)
             throws IllegalArgumentException {
@@ -1954,6 +1962,20 @@ public class CosmosContainerExecutor {
      * subquery's own identifiers as {@code T}, {@code c.CHILDREN}, {@code T.X}), which silently matches nothing. Supply such a subquery
      * through {@code Filters.subQuery(...)}, whose SQL is left untouched, and keep the outer accessors in the surrounding condition.</p>
      *
+     * <p>Every single {@code ?} outside string literals is counted as a positional placeholder, including Cosmos DB's conditional
+     * operator ({@code flag ? a : b}) in a {@code Filters.expr(...)} or in a subquery's SQL text; when the condition also carries
+     * parameter values, the counts then differ and the call fails with an {@code IllegalArgumentException}. Write such a conditional as
+     * {@code IIF(flag, a, b)}. The coalesce operator {@code ??} is never counted.</p>
+     *
+     * <p>A property whose type is a bean, or a collection of beans, is a sub-entity to the SQL builder, which writes a path through it
+     * with the sub-entity class's table name rather than the property name: {@code Filters.eq("homeAddress.city", "x")} on a property
+     * {@code homeAddress} of type {@code Address} renders {@code c.address.city = @p0}, which silently matches nothing unless the
+     * property is named like that table, and selecting such a property or path through {@code selectPropNames} renders a projection
+     * that Cosmos DB rejects. Annotate such a property with {@link com.landawn.abacus.annotation.Column @Column} (without a name) so
+     * that it is mapped as an ordinary property ({@code c.homeAddress.city} under {@link NamingPolicy#CAMEL_CASE}; selecting it
+     * projects the whole nested object), or write the path with the bracket accessor, whose names are sent as written, for example
+     * {@code Filters.expr("c[\"homeAddress\"][\"city\"] = 'x'")}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * import static com.landawn.abacus.query.Filters.*;
@@ -1995,8 +2017,10 @@ public class CosmosContainerExecutor {
      *         names from it), if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
      *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank or comment-only {@code SqlExpression} (rejected by
-     *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
-     *         parameter values when the parameter list is nonempty
+     *         {@code SqlBuilder.where(Condition)}), if the generated query has a different number of positional placeholders and
+     *         parameter values when the parameter list is nonempty, or if the Cosmos SDK's default JSON serializer cannot convert a
+     *         condition value (for example a bean without properties or a {@code java.util.Optional}); values are converted when the
+     *         query is created
      * @see Condition for condition construction
      * @see com.landawn.abacus.query.Filters for available filter operations
      */
@@ -2045,8 +2069,10 @@ public class CosmosContainerExecutor {
      *         names from it), if
      *         {@code whereClause} has a null operator or is or contains a {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN,
      *         {@code ON}/{@code USING} connector, quantified-subquery operand, or blank or comment-only {@code SqlExpression} (rejected by
-     *         {@code SqlBuilder.where(Condition)}), or if the generated query has a different number of positional placeholders and
-     *         parameter values when the parameter list is nonempty
+     *         {@code SqlBuilder.where(Condition)}), if the generated query has a different number of positional placeholders and
+     *         parameter values when the parameter list is nonempty, if the Cosmos SDK's default JSON serializer cannot convert a
+     *         condition value (for example a bean without properties or a {@code java.util.Optional}), or if {@code options} sets both
+     *         a partition key and a feed range (rejected by the SDK); all of these are detected when the query is created
      */
     @Beta
     public final <T> Stream<T> streamItems(final Condition whereClause, final CosmosQueryRequestOptions options, final Class<T> targetClass)
@@ -2100,8 +2126,10 @@ public class CosmosContainerExecutor {
      *         names from it), if
      *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
      *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
-     *         or blank or comment-only {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a
-     *         different number of positional placeholders and parameter values when the parameter list is nonempty
+     *         or blank or comment-only {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), if the generated query has a
+     *         different number of positional placeholders and parameter values when the parameter list is nonempty, or if the Cosmos SDK's
+     *         default JSON serializer cannot convert a condition value (for example a bean without properties or a
+     *         {@code java.util.Optional}); values are converted when the query is created
      * @throws IllegalStateException if the generated selected-property expressions cannot be converted to a Cosmos projection
      */
     @Beta
@@ -2172,8 +2200,11 @@ public class CosmosContainerExecutor {
      *         names from it), if
      *         {@code selectPropNames} contains a null, empty, or blank element, if {@code whereClause} has a null operator or is or contains a
      *         {@code Criteria}, standalone {@code SubQuery}, SQL clause, JOIN, {@code ON}/{@code USING} connector, quantified-subquery operand,
-     *         or blank or comment-only {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), or if the generated query has a
-     *         different number of positional placeholders and parameter values when the parameter list is nonempty
+     *         or blank or comment-only {@code SqlExpression} (rejected by {@code SqlBuilder.where(Condition)}), if the generated query has a
+     *         different number of positional placeholders and parameter values when the parameter list is nonempty, if the Cosmos SDK's
+     *         default JSON serializer cannot convert a condition value (for example a bean without properties or a
+     *         {@code java.util.Optional}), or if {@code options} sets both a partition key and a feed range (rejected by the SDK); all of
+     *         these are detected when the query is created
      * @throws IllegalStateException if the generated selected-property expressions cannot be converted to a Cosmos projection
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations
@@ -3048,8 +3079,69 @@ public class CosmosContainerExecutor {
         }
 
         // On the right-hand side of an operator, clause keywords such as ORDER can also be
-        // legitimate property names. Preserve actual literals and predicate operators.
-        return "=<>!+-*/%".indexOf(previousChar) >= 0 && !isCosmosLiteralKeyword(identifier);
+        // legitimate property names. Preserve actual literals and predicate operators. NOT followed by the start of another operand
+        // (active = NOT deleted, score != NOT EXISTS(...)) is the unary keyword there too: read as a property, two operands would be
+        // juxtaposed (c.active = c["NOT"] c.deleted), which Cosmos DB rejects as a syntax error.
+        return "=<>!+-*/%".indexOf(previousChar) >= 0 && !isCosmosLiteralKeyword(identifier)
+                && !("NOT".equals(identifier) && startsCosmosNegatedOperand(query, next));
+    }
+
+    /**
+     * Whether the text at {@code start} begins an operand that a complete operand cannot be followed by: a name (other than a
+     * keyword that continues a predicate, such as AND, IN or IS, or an ESCAPE followed by a string literal; any other
+     * {@code escape} is a property name), a literal keyword, a string, a number, an object, a parameter, or
+     * a bitwise NOT. A sign, {@code .}, {@code [}, {@code (} or {@code ?} is not included: the caller keeps a property named
+     * {@code not} before a sign, {@code .} or {@code [} before reaching this check ({@code score = not - 1}, {@code not[0]}), a
+     * {@code NOT} followed by {@code (} is never qualified, and {@code not ? a : b} is a valid conditional on such a property.
+     */
+    private static boolean startsCosmosNegatedOperand(final String query, final int start) {
+        if (start >= query.length()) {
+            return false;
+        }
+
+        final char ch = query.charAt(start);
+
+        if (ch == '\'' || ch == '"' || ch == '{' || ch == '@' || ch == '~' || ch >= '0' && ch <= '9') {
+            return true;
+        }
+
+        if (!Character.isJavaIdentifierStart(ch) || ch == '$') {
+            return false;
+        }
+
+        int end = start + 1;
+
+        while (end < query.length() && Character.isJavaIdentifierPart(query.charAt(end))) {
+            end++;
+        }
+
+        return switch (query.substring(start, end).toUpperCase(Locale.ROOT)) {
+            case "AND", "OR", "IN", "LIKE", "BETWEEN", "IS", "WITHIN" -> false;
+            // WHY (outside review): ESCAPE is a keyword only before a string literal (LIKE 'a!%' ESCAPE '!'; see the escapeKeyword
+            // rule of the condition rewriter); elsewhere it is a property name, so "active = NOT escape" negates that property. Taken
+            // as a keyword here, NOT was read as a property and two operands were juxtaposed (c.active = c["NOT"] c["escape"]).
+            case "ESCAPE" -> {
+                int afterEscape = end;
+
+                while (afterEscape < query.length() && Character.isWhitespace(query.charAt(afterEscape))) {
+                    afterEscape++;
+                }
+
+                yield !(afterEscape < query.length() && (query.charAt(afterEscape) == '\'' || query.charAt(afterEscape) == '"'));
+            }
+            // "not NOT IN (...)" negates a predicate on a property named not; "NOT NOT x" is a double negation.
+            case "NOT" -> {
+                int afterNot = end;
+
+                while (afterNot < query.length() && Character.isWhitespace(query.charAt(afterNot))) {
+                    afterNot++;
+                }
+
+                yield !(startsWithCosmosKeyword(query, afterNot, "IN") || startsWithCosmosKeyword(query, afterNot, "LIKE")
+                        || startsWithCosmosKeyword(query, afterNot, "BETWEEN"));
+            }
+            default -> true;
+        };
     }
 
     /**

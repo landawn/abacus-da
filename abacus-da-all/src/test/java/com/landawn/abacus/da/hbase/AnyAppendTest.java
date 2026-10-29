@@ -376,4 +376,45 @@ public class AnyAppendTest extends TestBase {
                 () -> assertThrows(IllegalArgumentException.class, () -> AnyAppend.of(emptyOptional, 0, 1)),
                 () -> assertArrayEquals(Bytes.toBytes("k"), AnyAppend.of(java.util.Optional.of("k")).getRow()));
     }
+
+    // ---- 2026-10-27 sliceO ----
+
+    /**
+     * Pins the of(byte[], long, NavigableMap) familyMap doc: the map is retained, so a naturally ordered map makes every later family
+     * lookup (addColumn, add, has, get) throw ClassCastException, while a Bytes.BYTES_COMPARATOR map works.
+     */
+    @Test
+    public void testOf_familyMapOrdering_naturalOrderThrowsClassCastException_sliceO() {
+        final byte[] row = Bytes.toBytes("r");
+        final AnyAppend natural = AnyAppend.of(row, 1L, new TreeMap<>());
+        final AnyAppend ordered = AnyAppend.of(row, 1L, new TreeMap<>(Bytes.BYTES_COMPARATOR));
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(ClassCastException.class, () -> natural.addColumn("cf", "q", "v")),
+                () -> assertThrows(ClassCastException.class, () -> natural.add(new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v")))),
+                () -> assertThrows(ClassCastException.class, () -> natural.has("cf", "q")),
+                () -> assertThrows(ClassCastException.class, () -> natural.get("cf", "q")), () -> assertEquals(1, ordered.addColumn("cf", "q", "v").size()));
+    }
+
+    // ---- 2026-10-27 r2O ----
+
+    /**
+     * Guards why AnyAppend, unlike AnyPut, AnyIncrement and AnyDelete, needs no failed-add cleanup: Append.addColumn builds the cell
+     * before it registers the family, so an add that fails (a family over 127 bytes) leaves no empty family entry behind.
+     */
+    @Test
+    public void testAddColumn_failedAddLeavesNoEmptyFamily_r2O() {
+        final String longFamily = "f".repeat(128);
+        final AnyAppend byString = AnyAppend.of("r");
+        final AnyAppend byBytes = AnyAppend.of("r");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            assertThrows(IllegalArgumentException.class, () -> byString.addColumn(longFamily, "q", "v"));
+            assertTrue(byString.isEmpty());
+            assertEquals(0, byString.numFamilies());
+        }, () -> {
+            assertThrows(IllegalArgumentException.class, () -> byBytes.addColumn(Bytes.toBytes(longFamily), Bytes.toBytes("q"), Bytes.toBytes("v")));
+            assertTrue(byBytes.isEmpty());
+            assertEquals(0, byBytes.numFamilies());
+        });
+    }
 }

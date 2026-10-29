@@ -157,8 +157,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * whose timestamp is in the future relative to the server clock are not affected.</p>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
-     *         representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an empty value wrapper (which converts to no bytes), or an HBase
+     *         operation or {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or its byte representation is empty or
+     *         exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyDelete(final Object rowKey) throws IllegalArgumentException, RuntimeException {
@@ -177,8 +178,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
-     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an empty value wrapper (which converts to no bytes), or an HBase
+     *         operation or {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or its byte representation is empty or
+     *         exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyDelete(final Object rowKey, final long timestamp) throws IllegalArgumentException, RuntimeException {
@@ -193,7 +195,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -212,8 +215,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), {@code rowLength} is zero or exceeds 32,767 bytes,
+     *         or {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -234,9 +238,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  other constructors, a negative value is not rejected here, but the
      *                  no-timestamp {@code addFamily}, {@code addColumn} and {@code addColumns}
      *                  overloads then throw {@code IllegalArgumentException}
-     * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
+     * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists, ordered by
+     *                  {@code Bytes.BYTES_COMPARATOR} (with a naturally ordered map, every later {@code add*}, {@code has}
+     *                  and {@code get} call throws {@link ClassCastException})
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is an empty value wrapper (which
-     *         converts to no bytes) or converts to an empty byte array
+     *         converts to no bytes), an HBase operation or {@code Any*} wrapper, bare or held by a present value wrapper
+     *         (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or converts to an empty byte array
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException, RuntimeException {
@@ -305,8 +312,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @return a new AnyDelete instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
-     *         representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an empty value wrapper (which converts to no bytes), or an HBase
+     *         operation or {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or its byte representation is empty or
+     *         exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object, long)
      * @see #addColumn(String, String)
@@ -344,8 +352,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  reused as the exact version timestamp by no-timestamp {@code addColumn} and
      *                  as an inclusive upper bound by no-timestamp {@code addColumns}/{@code addFamily}
      * @return a new AnyDelete instance configured for timestamp-based deletion
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
-     *         representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an empty value wrapper (which converts to no bytes), or an HBase
+     *         operation or {@code Any*} wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or its byte representation is empty or
+     *         exceeds 32,767 bytes, or {@code timestamp} is negative
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #addFamily(String, long)
@@ -382,7 +391,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyDelete instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -424,8 +434,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
      * @return a new AnyDelete instance configured with partial row key and timestamp control
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, {@code rowLength} is zero or exceeds 32,767 bytes, or
-     *         {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (see {@link HBaseExecutor#toRowKeyBytes(Object)}), {@code rowLength} is zero or exceeds 32,767 bytes,
+     *         or {@code timestamp} is negative
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -467,10 +478,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  {@code addFamily}, {@code addColumn} and {@code addColumns} overloads then
      *                  throw {@code IllegalArgumentException}
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists;
-     *                  retained by reference
+     *                  retained by reference. Order it by {@code Bytes.BYTES_COMPARATOR}, as HBase's own family
+     *                  maps are: with a naturally ordered map (a plain {@code new TreeMap<>()}) every later
+     *                  {@code add*}, {@code has} and {@code get} call throws {@link ClassCastException}
      * @return a new AnyDelete instance with the specified configuration
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is an empty value wrapper (which
-     *         converts to no bytes) or converts to an empty byte array
+     *         converts to no bytes), an HBase operation or {@code Any*} wrapper, bare or held by a present value wrapper
+     *         (see {@link HBaseExecutor#toRowKeyBytes(Object)}), or converts to an empty byte array
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #of(Object)
      * @see #of(Delete)

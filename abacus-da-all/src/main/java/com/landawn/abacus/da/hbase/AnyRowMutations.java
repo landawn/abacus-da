@@ -89,7 +89,9 @@ public final class AnyRowMutations implements Row {
      * {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key shared by all mutations in this batch
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyRowMutations(final Object rowKey) throws IllegalArgumentException, RuntimeException {
@@ -102,7 +104,9 @@ public final class AnyRowMutations implements Row {
      *
      * @param rowKey the row key shared by all mutations in this batch
      * @param initialCapacity the initial capacity for the internal mutation list
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     AnyRowMutations(final Object rowKey, final int initialCapacity) throws IllegalArgumentException, RuntimeException {
@@ -148,11 +152,16 @@ public final class AnyRowMutations implements Row {
      *
      * // Edge: a null row key is rejected by the underlying RowMutations
      * AnyRowMutations.of((Object) null);   // throws IllegalArgumentException
+     *
+     * // Edge: an empty value wrapper converts to no bytes and is rejected like null
+     * AnyRowMutations.of(Optional.empty()); // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key shared by all mutations in this batch; must not be {@code null}
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (such as an empty {@code Optional}, which
+     *         converts to no bytes), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     public static AnyRowMutations of(final Object rowKey) throws IllegalArgumentException, RuntimeException {
@@ -181,7 +190,9 @@ public final class AnyRowMutations implements Row {
      * @param rowKey the row key shared by all mutations in this batch; must not be {@code null}
      * @param initialCapacity the initial capacity for the internal mutation list
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or its byte representation is empty or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
+     *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
     public static AnyRowMutations of(final Object rowKey, final int initialCapacity) throws IllegalArgumentException, RuntimeException {

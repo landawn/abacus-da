@@ -1500,6 +1500,333 @@ public class MongoCollectionMapperTest extends MockitoTestBase {
 
     // ---- end 2026-10-24 verify4 ----
 
+    // ---- 2026-10-27 sliceS ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testIdPropertyIsAddressedAsUnderscoreIdAndOtherIdTypesStayOrdinaryFields_sliceS() {
+        // Pins the "Property <-> Field Mapping" class doc of MongoCollectionMapper and the "Important" class doc of MongoDB:
+        // a propName is a BSON field name and a String/ObjectId id property is stored only as _id, so the matched document
+        // (projecting "id" returns just its _id, as the server does - verified live) has no "id" field to read, while
+        // "_id" reads the id; an id property of any other type (long) is written as an ordinary "id" field, not as _id.
+        final ObjectId oid = new ObjectId("507f1f77bcf86cd799439011");
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+        final com.mongodb.client.FindIterable<Document> findIterable = mock(com.mongodb.client.FindIterable.class);
+        when(collection.find(org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class))).thenReturn(findIterable);
+        when(findIterable.projection(org.mockito.ArgumentMatchers.any())).thenReturn(findIterable);
+        when(findIterable.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findIterable);
+        when(findIterable.first()).thenReturn(new Document("_id", oid));
+        final MongoCollectionMapper<DottedEntity> idMapper = new MongoCollectionMapper<>(
+                new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), DottedEntity.class);
+
+        final LongIdEntity longIdEntity = new LongIdEntity();
+        longIdEntity.setId(7L);
+        longIdEntity.setName("seven");
+        final Document stored = MongoDBBase.toDocument(longIdEntity);
+
+        Assertions.assertAll(() -> Assertions.assertTrue(idMapper.queryForString("id", new Document()).isPresent()),
+                () -> Assertions.assertNull(idMapper.queryForString("id", new Document()).orElse("not-null")),
+                () -> Assertions.assertEquals(oid.toHexString(), idMapper.queryForString("_id", new Document()).orElse(null)),
+                () -> Assertions.assertEquals(7L, stored.get("id")), () -> Assertions.assertFalse(stored.containsKey("_id"), stored::toJson));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testDocumentMapperOperatorDocumentUpdateIsSentVerbatim_sliceS() {
+        // Pins the updateOne(String, T) doc: a Document mapper (which cannot take a driver-built Updates.set(...)) writes an
+        // explicit null through an operator document, which reaches the driver unchanged; a plain Document is wrapped in $set
+        // without its immutable _id.
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+        final MongoCollectionMapper<Document> documentMapper = new MongoCollectionMapper<>(
+                new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), Document.class);
+        final Document operatorUpdate = new Document("$set", new Document("age", null));
+        final org.mockito.ArgumentCaptor<org.bson.conversions.Bson> update = org.mockito.ArgumentCaptor.forClass(org.bson.conversions.Bson.class);
+
+        documentMapper.updateOne("507f1f77bcf86cd799439011", operatorUpdate);
+        documentMapper.updateOne("507f1f77bcf86cd799439011", new Document("_id", new ObjectId()).append("age", 3));
+        verify(collection, org.mockito.Mockito.times(2)).updateOne(org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class), update.capture());
+
+        Assertions.assertAll(() -> Assertions.assertSame(operatorUpdate, update.getAllValues().get(0)),
+                () -> Assertions.assertEquals(new Document("$set", new Document("age", null)), update.getAllValues().get(0)),
+                () -> Assertions.assertEquals(new Document("$set", new Document("age", 3)), update.getAllValues().get(1)));
+    }
+
+    @Test
+    public void testAggregateRejectsNullStageFromThisCall_sliceS() {
+        // Pins the aggregate(List) @throws: the driver rejects a null pipeline stage with IllegalArgumentException while it builds
+        // the operation, before server selection, so this call throws it. No server is involved: the client points at an unused
+        // port that is never reached (a regression would surface as a MongoTimeoutException after 1 ms instead).
+        try (com.mongodb.client.MongoClient client = com.mongodb.client.MongoClients.create("mongodb://localhost:1/?serverSelectionTimeoutMS=1")) {
+            final MongoCollectionMapper<Document> documentMapper = new MongoCollectionMapper<>(
+                    new MongoCollectionExecutor(client.getDatabase("sliceS").getCollection("c"), mock(com.landawn.abacus.util.AsyncExecutor.class)),
+                    Document.class);
+            final org.bson.conversions.Bson match = new Document("$match", new Document());
+
+            Assertions.assertAll(() -> Assertions.assertThrows(IllegalArgumentException.class, () -> documentMapper.aggregate(Arrays.asList(match, null))),
+                    () -> Assertions.assertThrows(IllegalArgumentException.class, () -> documentMapper.aggregate(Arrays.asList(null, match))));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testFindOneAndWriteConvertsOnlyAfterTheDriverWrite_sliceS() {
+        // Pins the findOneAndUpdate/Replace/Delete docs: the returned document is converted after the driver call returns,
+        // so a conversion failure (strict Boolean: "yes" is rejected) is thrown once the write has already been sent and
+        // applied (live: the document was updated/replaced/deleted, and a retried findOneAndDelete deleted another one).
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+        final Document unconvertible = new Document("flag", "yes");
+        when(collection.findOneAndUpdate(org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class),
+                org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class))).thenReturn(unconvertible);
+        when(collection.findOneAndReplace(org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class), org.mockito.ArgumentMatchers.any(Document.class)))
+                .thenReturn(unconvertible);
+        when(collection.findOneAndDelete(org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class))).thenReturn(unconvertible);
+        final MongoCollectionMapper<FlagEntity> flagMapper = new MongoCollectionMapper<>(
+                new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), FlagEntity.class);
+        final FlagEntity payload = new FlagEntity();
+        payload.setName("x");
+        final Document filter = new Document("name", "a");
+
+        Assertions.assertAll(() -> Assertions.assertThrows(IllegalArgumentException.class, () -> flagMapper.findOneAndUpdate(filter, payload)),
+                () -> Assertions.assertThrows(IllegalArgumentException.class, () -> flagMapper.findOneAndReplace(filter, payload)),
+                () -> Assertions.assertThrows(IllegalArgumentException.class, () -> flagMapper.findOneAndDelete(filter)),
+                () -> verify(collection).findOneAndUpdate(org.mockito.ArgumentMatchers.eq(filter),
+                        org.mockito.ArgumentMatchers.any(org.bson.conversions.Bson.class)),
+                () -> verify(collection).findOneAndReplace(org.mockito.ArgumentMatchers.eq(filter), org.mockito.ArgumentMatchers.any(Document.class)),
+                () -> verify(collection).findOneAndDelete(filter));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testDistinctOfBsonValueRowTypeReadsDottedAndEmbeddedIdPaths_sliceS() {
+        // MongoDBBase.readRow reads a Binary/Code/Symbol/BsonValue row type as a single value although Binary/Code's Type reports a bean.
+        // distinct must then send the group-only pipeline it sends for String: re-projecting a dotted name nests the value
+        // ({a: {b: v}}, {_id: {part: v}}) and the single-value read received the embedded document instead of v. The stub returns
+        // the document shape the server returns for each pipeline (the server would also turn a projected Code into its text; the
+        // _r2S tests stub that too).
+        final org.bson.types.Binary binary = new org.bson.types.Binary(new byte[] { 1, 2 });
+        final org.bson.types.Code code = new org.bson.types.Code("x");
+        final List<List<?>> pipelines = new java.util.ArrayList<>();
+        final java.util.function.Function<Class<?>, MongoCollectionMapper<?>> mapperOf = rowType -> {
+            final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+            final Object value = rowType == org.bson.types.Code.class ? code : binary;
+
+            when(collection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenAnswer(invocation -> {
+                final List<?> pipeline = invocation.getArgument(0);
+                pipelines.add(pipeline);
+                final Document group = (Document) pipeline.stream()
+                        .filter(stage -> stage instanceof Document && ((Document) stage).containsKey("$group"))
+                        .findFirst()
+                        .get();
+                final String field = ((String) ((Document) group.get("$group")).get("_id")).substring(1);
+                final boolean projected = pipeline.stream().anyMatch(stage -> stage instanceof Document && ((Document) stage).containsKey("$project"));
+                final Document row;
+
+                if (!projected) {
+                    row = new Document("_id", value);
+                } else if (field.indexOf('.') < 0) {
+                    row = new Document(field, value);
+                } else {
+                    final String[] path = field.split("\\.");
+                    row = new Document(path[0], new Document(path[1], value));
+                }
+
+                final com.mongodb.client.AggregateIterable<Document> iterable = mock(com.mongodb.client.AggregateIterable.class);
+                MongoIterableStubs.stubRows(iterable, Arrays.asList(row));
+                return iterable;
+            });
+
+            return new MongoCollectionMapper<>(new MongoCollectionExecutor(collection, mock(com.landawn.abacus.util.AsyncExecutor.class)), rowType);
+        };
+
+        Assertions
+                .assertAll(() -> Assertions.assertEquals(Arrays.asList(binary), mapperOf.apply(org.bson.types.Binary.class).distinct("a").toList()),
+                        () -> Assertions.assertEquals(Arrays.asList(binary), mapperOf.apply(org.bson.types.Binary.class).distinct("a.b").toList()),
+                        () -> Assertions.assertEquals(Arrays.asList(binary), mapperOf.apply(
+                                org.bson.types.Binary.class).distinct("_id.part").toList()),
+                        () -> Assertions.assertEquals(Arrays.asList(code), mapperOf.apply(org.bson.types.Code.class).distinct("a.b", new Document()).toList()),
+                        () -> Assertions.assertTrue(
+                                pipelines.stream()
+                                        .allMatch(pipeline -> pipeline.stream()
+                                                .noneMatch(stage -> stage instanceof Document && ((Document) stage).containsKey("$project"))),
+                                () -> String.valueOf(pipelines)));
+    }
+
+    public static class FlagEntity {
+        private String id;
+        private Boolean flag;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public Boolean getFlag() {
+            return flag;
+        }
+
+        public void setFlag(Boolean flag) {
+            this.flag = flag;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+    public static class LongIdEntity {
+        private long id;
+        private String name;
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+    // ---- end 2026-10-27 sliceS ----
+
+    // ---- 2026-10-27 r2S ----
+
+    @Test
+    public void testDistinctReadsEveryBsonValueRowTypeFromTheGroupRows_r2S() {
+        // isSingleValueRowType follows MongoDBBase.isBsonValueClass: Binary, Code (and its subclass CodeWithScope), Symbol and a scalar
+        // BsonValue are read as the single value of each {_id: value} group row, for a top-level, a dotted and an embedded-_id field,
+        // with and without a filter. The stub answers each pipeline as the server does (verified live): a $project nests a dotted path
+        // ({n: {v: value}}, {_id: {part: value}}) and returns a Code or Symbol as plain text, which the single-value read cannot turn
+        // back into the value.
+        final Object[][] cases = { { org.bson.types.Binary.class, new org.bson.types.Binary(new byte[] { 1, 2 }) },
+                { org.bson.types.Code.class, new org.bson.types.Code("f1") },
+                { org.bson.types.Code.class, new org.bson.types.CodeWithScope("g1", new Document("x", 1)) },
+                { org.bson.types.CodeWithScope.class, new org.bson.types.CodeWithScope("g2", new Document("x", 2)) },
+                { org.bson.types.Symbol.class, new org.bson.types.Symbol("s1") }, { org.bson.BsonTimestamp.class, new org.bson.BsonTimestamp(10, 1) },
+                { org.bson.BsonRegularExpression.class, new org.bson.BsonRegularExpression("a+", "i") },
+                { org.bson.BsonValue.class, new org.bson.BsonTimestamp(20, 2) } };
+        final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final Object[] c : cases) {
+            for (final String field : Arrays.asList("v", "n.v", "_id.part")) {
+                for (final boolean filtered : new boolean[] { false, true }) {
+                    final String label = ((Class<?>) c[0]).getSimpleName() + " <- " + c[1] + ", distinct(" + field + (filtered ? ", filter)" : ")");
+                    final List<List<?>> pipelines = new java.util.ArrayList<>();
+                    final MongoCollectionMapper<?> distinctMapper = new MongoCollectionMapper<>(
+                            new MongoCollectionExecutor(serverLikeDistinctCollection(c[1], pipelines), mock(com.landawn.abacus.util.AsyncExecutor.class)),
+                            (Class<?>) c[0]);
+
+                    checks.add(() -> {
+                        final List<?> values = filtered ? distinctMapper.distinct(field, new Document("ok", true)).toList()
+                                : distinctMapper.distinct(field).toList();
+
+                        Assertions.assertEquals(Arrays.asList(c[1]), values, label);
+                        Assertions.assertEquals(new Document("$group", new Document("_id", "$" + field)), N.lastOrNullIfEmpty(pipelines.get(0)), label);
+                    });
+                }
+            }
+        }
+
+        Assertions.assertAll(checks);
+    }
+
+    @Test
+    public void testDistinctPipelineShapeOfNonBsonValueRowTypesIsUnchanged_r2S() {
+        // Guards the isSingleValueRowType rule against over-reach: String/Integer still read the group rows directly (int also drops the
+        // null group), while a bean, Map, Document, Bson, Object and the BSON containers BsonDocument (a Map) and BsonArray (a List),
+        // which isBsonValueClass excludes, still get the $project stage that surfaces the value under the field name.
+        final Object[][] cases = { { String.class, "none" }, { Integer.class, "none" }, { int.class, "match" }, { DottedEntity.class, "project" },
+                { java.util.Map.class, "project" }, { Document.class, "project" }, { org.bson.conversions.Bson.class, "project" }, { Object.class, "project" },
+                { org.bson.BsonDocument.class, "project" }, { org.bson.BsonArray.class, "project" } };
+        final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+
+        for (final Object[] c : cases) {
+            for (final String field : Arrays.asList("name", "address.city", "_id.part")) {
+                final List<List<?>> pipelines = new java.util.ArrayList<>();
+                final MongoCollectionMapper<?> distinctMapper = new MongoCollectionMapper<>(
+                        new MongoCollectionExecutor(serverLikeDistinctCollection(null, pipelines), mock(com.landawn.abacus.util.AsyncExecutor.class)),
+                        (Class<?>) c[0]);
+
+                checks.add(() -> {
+                    distinctMapper.distinct(field).toList();
+                    distinctMapper.distinct(field, new Document("ok", true)).toList();
+
+                    for (final List<?> pipeline : pipelines) {
+                        final Object last = N.lastOrNullIfEmpty(pipeline);
+                        final String label = ((Class<?>) c[0]).getSimpleName() + " " + field + " " + pipeline;
+
+                        switch ((String) c[1]) {
+                            case "none" -> Assertions.assertEquals(new Document("$group", new Document("_id", "$" + field)), last, label);
+                            case "match" -> Assertions.assertEquals(new Document("$match", new Document("_id", new Document("$ne", null))), last, label);
+                            default -> Assertions.assertTrue(((Document) last).containsKey("$project"), label);
+                        }
+                    }
+
+                    Assertions.assertEquals(2, pipelines.size());
+                });
+            }
+        }
+
+        Assertions.assertAll(checks);
+    }
+
+    /**
+     * A collection whose {@code aggregate} answers a distinct pipeline as the server does for a stored {@code value}: the group row
+     * {@code {_id: value}} without a {@code $project}; with one, the value under the (nested) field name, a {@code Code} (not a
+     * {@code CodeWithScope}) or {@code Symbol} as its text. A {@code null} value answers no rows.
+     */
+    @SuppressWarnings("unchecked")
+    private static com.mongodb.client.MongoCollection<Document> serverLikeDistinctCollection(final Object value, final List<List<?>> pipelines) {
+        final com.mongodb.client.MongoCollection<Document> collection = mock(com.mongodb.client.MongoCollection.class);
+
+        when(collection.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(Document.class))).thenAnswer(invocation -> {
+            final List<?> pipeline = invocation.getArgument(0);
+            pipelines.add(pipeline);
+            final List<Document> rows = new java.util.ArrayList<>();
+
+            if (value != null) {
+                final Document group = (Document) pipeline.stream()
+                        .filter(stage -> stage instanceof Document && ((Document) stage).containsKey("$group"))
+                        .findFirst()
+                        .get();
+                final String[] path = ((String) ((Document) group.get("$group")).get("_id")).substring(1).split("\\.");
+                final boolean projected = pipeline.stream().anyMatch(stage -> stage instanceof Document && ((Document) stage).containsKey("$project"));
+
+                if (projected) {
+                    final Object shown = value instanceof org.bson.types.Code && !(value instanceof org.bson.types.CodeWithScope)
+                            ? ((org.bson.types.Code) value).getCode()
+                            : value instanceof org.bson.types.Symbol ? ((org.bson.types.Symbol) value).getSymbol() : value;
+                    rows.add(path.length == 1 ? new Document(path[0], shown) : new Document(path[0], new Document(path[1], shown)));
+                } else {
+                    rows.add(new Document("_id", value));
+                }
+            }
+
+            final com.mongodb.client.AggregateIterable<Document> iterable = mock(com.mongodb.client.AggregateIterable.class);
+            MongoIterableStubs.stubRows(iterable, rows);
+            return iterable;
+        });
+
+        return collection;
+    }
+
+    // ---- end 2026-10-27 r2S ----
+
     public static class DottedEntity {
         private String id;
         private String name;

@@ -52,8 +52,12 @@ import com.datastax.oss.driver.api.core.detach.AttachmentPoint;
 import com.datastax.oss.driver.api.core.type.DataType;
 import com.datastax.oss.driver.api.core.type.DataTypes;
 import com.datastax.oss.driver.api.core.type.UserDefinedType;
+import com.datastax.oss.driver.api.core.type.codec.MappingCodec;
+import com.datastax.oss.driver.api.core.type.codec.TypeCodec;
 import com.datastax.oss.driver.api.core.type.codec.TypeCodecs;
 import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
+import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
+import com.datastax.oss.driver.api.core.type.reflect.GenericType;
 import com.datastax.oss.driver.internal.core.cql.DefaultColumnDefinition;
 import com.datastax.oss.driver.internal.core.cql.DefaultColumnDefinitions;
 import com.datastax.oss.driver.internal.core.cql.DefaultRow;
@@ -426,9 +430,13 @@ class CassandraExecutorDeepReview2026BindBlobRowConversionTest {
         }
 
         Fixture(final String[] variableNames, final DataType... variableTypes) {
+            this(CodecRegistry.DEFAULT, variableNames, variableTypes);
+        }
+
+        Fixture(final CodecRegistry registry, final String[] variableNames, final DataType... variableTypes) {
             final DriverContext context = mock(DriverContext.class);
             when(session.getContext()).thenReturn(context);
-            when(context.getCodecRegistry()).thenReturn(CodecRegistry.DEFAULT);
+            when(context.getCodecRegistry()).thenReturn(registry);
             final ColumnDefinitions variables = mock(ColumnDefinitions.class);
             when(variables.size()).thenReturn(variableNames.length);
 
@@ -768,5 +776,1198 @@ class CassandraExecutorDeepReview2026BindBlobRowConversionTest {
         public List<List<Long>> longLists;
         public List<List<String>> textLists;
         public Map<String, List<Long>> longListMap;
+    }
+
+    // ---- 2026-10-27 sliceH ----
+
+    // N.convert converts a ByteBuffer to any target other than String/byte[] from the base64 of the bytes BEFORE its position: "" for
+    // a buffer at position 0. A buffer bound to an int, bigint, uuid, timestamp, ... column was therefore converted to null and bound
+    // as NULL (a null written in place of the value); the driver itself rejects such a value. It is now bound unchanged.
+    @Test
+    void sliceH_aBufferBoundToANonBlobColumnIsBoundUnchanged() {
+        final DataType[] types = { DataTypes.INT, DataTypes.BIGINT, DataTypes.UUID, DataTypes.TIMEUUID, DataTypes.TIMESTAMP, DataTypes.DATE, DataTypes.TIME,
+                DataTypes.DECIMAL, DataTypes.VARINT, DataTypes.DOUBLE, DataTypes.mapOf(DataTypes.TEXT, DataTypes.INT) };
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final DataType type : types) {
+            checks.add(() -> {
+                final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+                assertSame(buffer, boundValue(type, buffer), type.asCql(false, true));
+            });
+        }
+
+        assertAll(checks);
+    }
+
+    // N.convert(value, ByteBuffer.class) base64-decodes the value's text into a buffer positioned at its limit: a value whose text
+    // happens to be base64 (true, 1234, a StringBuilder "AQID") was bound to a blob column as an EMPTY blob. Of the JDK and abacus
+    // classes only byte[] and text (a String, StringBuilder or StringBuffer, see sbfix below) have a blob form; any other such value,
+    // a CharBuffer included, is bound unchanged, so the driver rejects it (application values and Optional-like wrappers follow their
+    // own rules, tested below).
+    @Test
+    void sliceH_nonTextValuesBoundToABlobColumnAreBoundUnchanged() {
+        final Object[] values = { Boolean.TRUE, 1234, 12345678L, new BigDecimal("1234"), java.nio.CharBuffer.wrap(BASE64),
+                com.landawn.abacus.util.MutableInt.of(1234), new AtomicLong(1234) };
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final Object value : values) {
+            checks.add(() -> assertSame(value, boundValue(DataTypes.BLOB, value), value.getClass().getSimpleName()));
+        }
+
+        // Pins: byte[] and base64 String text keep their blob form.
+        checks.add(() -> assertBuffer(BYTES, boundValue(DataTypes.BLOB, BYTES)));
+        checks.add(() -> assertBuffer(BYTES, boundValue(DataTypes.BLOB, BASE64)));
+        assertAll(checks);
+    }
+
+    // The same empty text made a blob read into a number, date/time, UUID, Map, Optional-like or String[] target (or bean property) null,
+    // 0 or empty, silently. Such a target has no blob form and is rejected; a CharSequence target gets the base64 text like a String.
+    // (fixD: an Optional, Nullable or Holder target now holds the blob converted to its element type; a primitive Optional is rejected.)
+    @Test
+    void sliceH_blobReadIntoATargetWithoutABlobFormIsRejected() {
+        final Class<?>[] targets = { Long.class, long.class, Integer.class, java.util.UUID.class, Instant.class, java.time.LocalDate.class,
+                java.util.Date.class, java.util.OptionalInt.class };
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final Class<?> target : targets) {
+            checks.add(() -> assertBlobRejected(() -> CassandraExecutor.toList(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), target), target.getName()));
+        }
+
+        // A Map or String[] class is a row shape for toList; as a single-value target (first column) it has no blob form either.
+        for (final Class<?> target : new Class<?>[] { Long.class, Map.class, String[].class }) {
+            checks.add(() -> {
+                try (Fixture fixture = new Fixture(DataTypes.BLOB)) {
+                    when(fixture.session.execute(any(Statement.class))).thenAnswer(invocation -> rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)));
+                    assertBlobRejected(() -> fixture.executor.queryForSingleValue(target, QUERY), "queryForSingleValue " + target.getName());
+                }
+            });
+        }
+
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.toEntity(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)).one(), SliceHLong.class), "Long"));
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.toEntity(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)).one(), SliceHInt.class), "int"));
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.toEntity(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)).one(), SliceHUuid.class), "UUID"));
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor
+                .toEntity(rows(new String[] { "nested.v" }, DataTypes.BLOB, new Object[][] { { ByteBuffer.wrap(BYTES) } }).one(), SliceHLongHolder.class),
+                "nested Long"));
+        // extractData types a column by the bean's getter.
+        checks.add(
+                () -> assertBlobRejected(() -> CassandraExecutor.extractData(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), SliceHLongBean.class), "Dataset"));
+
+        // Pins: CharSequence gets the base64 text; byte[], ByteBuffer, Object, collection and Object[] targets keep the blob.
+        checks.add(() -> assertEquals(BASE64, CassandraExecutor.toList(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), CharSequence.class).get(0)));
+        checks.add(() -> assertEquals(BASE64, CassandraExecutor.toEntity(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)).one(), SliceHText.class).v));
+        checks.add(() -> assertArrayEquals(BYTES, CassandraExecutor.toList(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), byte[].class).get(0)));
+        checks.add(() -> {
+            final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+
+            try (Fixture fixture = new Fixture(DataTypes.BLOB)) {
+                when(fixture.session.execute(any(Statement.class))).thenAnswer(invocation -> rows(DataTypes.BLOB, buffer));
+                assertSame(buffer, fixture.executor.queryForSingleValue(Object.class, QUERY).get());
+                assertEquals(List.of(buffer), fixture.executor.queryForSingleValue(List.class, QUERY).get());
+                assertArrayEquals(new Object[] { buffer }, fixture.executor.queryForSingleValue(Object[].class, QUERY).get());
+            }
+        });
+
+        assertAll(checks);
+    }
+
+    // A UDT timestamp field converted a ByteBuffer value through the same empty text into a null Instant and wrote NULL; it now
+    // fails with the driver's CodecNotFoundException, as a value the timestamp conversion rejects does.
+    @Test
+    void sliceH_aBufferForAUdtTimestampFieldIsRejected() {
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(fieldType(DataTypes.TIMESTAMP), Map.class);
+
+        assertThrows(com.datastax.oss.driver.api.core.type.codec.CodecNotFoundException.class,
+                () -> mapCodec.encode(Map.of("v", ByteBuffer.wrap(BYTES)), ProtocolVersion.V4));
+    }
+
+    // Beans.isBeanClass accepts an @Entity-annotated Map subclass, so toEntity built it as an immutable bean of its Map accessors and
+    // failed with UnsupportedOperationException ("No all arguments constructor found"), not the IllegalArgumentException documented
+    // (and thrown for a plain Map class) for a class that is not a bean.
+    @Test
+    void sliceH_toEntityRejectsEveryMapType() {
+        final ResultSet resultSet = rows(new String[] { "name" }, DataTypes.TEXT, new Object[][] { { "Ada" }, { "Ada" } });
+        final Row row = resultSet.one();
+
+        assertAll(() -> {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity(row, R2HEntityMap.class));
+            assertTrue(e.getMessage().contains("Not a bean class"), e.getMessage());
+            assertTrue(e.getMessage().contains("toMap"), e.getMessage());
+        }, () -> assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity(row, LinkedHashMap.class)),
+                // Pin: the row readers still fill an @Entity Map subclass.
+                () -> assertEquals("Ada", CassandraExecutor.toList(resultSet, R2HEntityMap.class).get(0).get("name")));
+    }
+
+    // N.convert reads a value bound to a map column as JSON text; text that is not a JSON object failed with ParsingException, which
+    // escaped the keep-the-original fallback (it catches ClassCastException and IllegalArgumentException only), so the bind threw
+    // ParsingException instead of binding the value for the driver to reject (CodecNotFoundException), as documented.
+    @Test
+    void sliceH_aValueThatIsNotAJsonObjectIsKeptForAMapColumn() {
+        final DataType mapType = DataTypes.mapOf(DataTypes.TEXT, DataTypes.INT);
+
+        assertAll(() -> assertSame("abc", boundValue(mapType, "abc")), () -> assertSame(Instant.EPOCH, boundValue(mapType, Instant.EPOCH)),
+                // Pin: JSON object text still converts to a map.
+                () -> assertEquals(Map.of("a", 1), boundValue(mapType, "{\"a\": 1}")));
+    }
+
+    // N.newCollection / IntFunctions.ofMap create a mutable stand-in (ArrayList, HashSet, HashMap, TreeMap) for an immutable abacus
+    // class, so rows read as ImmutableMap/ImmutableList/ImmutableSet/ImmutableSortedMap were HashMaps etc. typed as that class (heap
+    // pollution), and a UDTCodec for such a class decoded to the stand-in. Each row is now an instance of the requested class.
+    @Test
+    void sliceH_immutableRowClassesGetRowsOfThatClass() {
+        final String[] names = { "name", "age" };
+        final Object[][] values = { { "Ada", "36" }, { "Grace", "45" } };
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final Class<?> rowClass : new Class<?>[] { com.landawn.abacus.util.ImmutableMap.class, com.landawn.abacus.util.ImmutableSortedMap.class,
+                com.landawn.abacus.util.ImmutableList.class, com.landawn.abacus.util.ImmutableSet.class }) {
+            checks.add(() -> {
+                final List<?> rows = CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), rowClass);
+                assertEquals(2, rows.size(), rowClass.getSimpleName());
+                rows.forEach(row -> assertInstanceOf(rowClass, row, rowClass.getSimpleName()));
+                assertEquals(
+                        Map.class.isAssignableFrom(rowClass) ? Map.of("name", "Ada", "age", "36")
+                                : rowClass == com.landawn.abacus.util.ImmutableSet.class ? Set.of("Ada", "36") : List.of("Ada", "36"),
+                        rows.get(0), rowClass.getSimpleName());
+            });
+            checks.add(() -> {
+                try (Fixture fixture = new Fixture(DataTypes.TEXT)) {
+                    when(fixture.session.execute(any(Statement.class))).thenAnswer(invocation -> rows(names, DataTypes.TEXT, values));
+                    assertInstanceOf(rowClass, fixture.executor.findFirst(rowClass, QUERY).get(), "findFirst " + rowClass.getSimpleName());
+                }
+            });
+        }
+
+        final UserDefinedType textType = fieldType(DataTypes.TEXT);
+        final CassandraExecutor.UDTCodec<com.landawn.abacus.util.ImmutableList> listCodec = CassandraExecutor.UDTCodec.create(textType,
+                com.landawn.abacus.util.ImmutableList.class);
+        final CassandraExecutor.UDTCodec<com.landawn.abacus.util.ImmutableMap> mapCodec = CassandraExecutor.UDTCodec.create(textType,
+                com.landawn.abacus.util.ImmutableMap.class);
+        checks.add(() -> assertInstanceOf(com.landawn.abacus.util.ImmutableList.class,
+                listCodec.decode(listCodec.encode(com.landawn.abacus.util.ImmutableList.of("x"), ProtocolVersion.V4), ProtocolVersion.V4)));
+        checks.add(() -> {
+            final Object decoded = mapCodec.decode(mapCodec.encode(com.landawn.abacus.util.ImmutableMap.of("v", "x"), ProtocolVersion.V4), ProtocolVersion.V4);
+            assertInstanceOf(com.landawn.abacus.util.ImmutableMap.class, decoded);
+            assertEquals(Map.of("v", "x"), decoded);
+        });
+
+        // Pins: mutable and @Entity Map row classes are unchanged; ImmutableBiMap still fails before reading a value.
+        checks.add(() -> assertInstanceOf(LinkedHashMap.class, CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), LinkedHashMap.class).get(0)));
+        checks.add(() -> assertInstanceOf(R2HEntityMap.class, CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), R2HEntityMap.class).get(0)));
+        checks.add(() -> assertThrows(IllegalArgumentException.class,
+                () -> CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), com.landawn.abacus.util.ImmutableBiMap.class)));
+        assertAll(checks);
+    }
+
+    // verify1 (regression in this round's blob-column bind rule): a value of an application class with a converter to ByteBuffer
+    // registered with abacus (a protobuf ByteString-like wrapper) went through N.convert, which applies the converter, and bound
+    // its bytes; the new rule bound it unchanged (CodecNotFoundException). Only JDK and abacus values, which cannot have a
+    // converter, are bound unchanged.
+    @Test
+    void sliceH_applicationValuesWithAConverterAreConvertedForABlobColumn() {
+        example.cassandra.BlobFixtures.register();
+
+        try (Fixture fixture = new Fixture(new String[] { "v", "id" }, DataTypes.BLOB, DataTypes.INT)) {
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = ?", new example.cassandra.BlobFixtures.BlobBox(BYTES), 1);
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = ?", Boolean.TRUE, 1);
+
+            assertAll(() -> assertBuffer(BYTES, fixture.binds.get(0)[0]),
+                    // Pin: a JDK value without a blob form is still bound unchanged.
+                    () -> assertSame(Boolean.TRUE, fixture.binds.get(1)[0]));
+        }
+    }
+
+    // verify1 (regression in this round's blob read rule): a class whose abacus Type the application registered may build its
+    // value from the ByteBuffer itself (N.convert hands it the buffer); the new rule rejected every non-blob target.
+    @Test
+    void sliceH_applicationTypesBuildTheirValueFromABlob() {
+        example.cassandra.BlobFixtures.register();
+
+        assertAll(
+                () -> assertArrayEquals(BYTES,
+                        CassandraExecutor.toList(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), example.cassandra.BlobFixtures.TypedBox.class).get(0).bytes()),
+                () -> assertArrayEquals(BYTES, CassandraExecutor.toEntity(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)).one(), SliceHTypedBox.class).v.bytes()),
+                () -> assertArrayEquals(BYTES,
+                        CassandraExecutor.toEntity(rows(DataTypes.listOf(DataTypes.BLOB), new ArrayList<>(List.of(ByteBuffer.wrap(BYTES)))).one(),
+                                SliceHTypedBoxes.class).v.get(0).bytes()));
+    }
+
+    // verify1 (pre-existing): a blob read into a property declared as a collection of an element type (List<byte[]>, List<String>,
+    // Set<String>, List<List<byte[]>> elements) went through N.convert's empty-text path and became null ([null] for an element).
+    // It is now the collection of that one blob, converted to the element type as a top-level blob is.
+    @Test
+    void sliceH_aBlobForACollectionPropertyIsThatCollectionOfTheConvertedBlob() {
+        final String[] names = { "bytes", "texts", "textSet", "buffers" };
+        final Object[][] values = { { ByteBuffer.wrap(BYTES), ByteBuffer.wrap(BYTES), ByteBuffer.wrap(BYTES), ByteBuffer.wrap(BYTES) } };
+        final SliceHBlobCollections c = CassandraExecutor.toEntity(rows(names, DataTypes.BLOB, values).one(), SliceHBlobCollections.class);
+        final SliceHBlobCollectionsHolder holder = CassandraExecutor.toEntity(
+                rows(new String[] { "inner.texts" }, DataTypes.BLOB, new Object[][] { { ByteBuffer.wrap(BYTES) } }).one(), SliceHBlobCollectionsHolder.class);
+        final SliceHNestedBlobs nested = CassandraExecutor
+                .toEntity(rows(DataTypes.listOf(DataTypes.BLOB), new ArrayList<>(List.of(ByteBuffer.wrap(BYTES)))).one(), SliceHNestedBlobs.class);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(fieldType(DataTypes.BLOB), Map.class);
+        final CassandraExecutor.UDTCodec<SliceHUdtTexts> udtCodec = CassandraExecutor.UDTCodec.create(fieldType(DataTypes.BLOB), SliceHUdtTexts.class);
+
+        assertAll(() -> assertEquals(1, c.bytes.size()), () -> assertArrayEquals(BYTES, c.bytes.get(0)), () -> assertEquals(List.of(BASE64), c.texts),
+                () -> assertEquals(Set.of(BASE64), c.textSet), () -> assertEquals(List.of(ByteBuffer.wrap(BYTES)), c.buffers),
+                () -> assertEquals(List.of(BASE64), holder.inner.texts), () -> assertArrayEquals(BYTES, nested.v.get(0).get(0)),
+                () -> assertEquals(List.of(BASE64), udtCodec.decode(mapCodec.encode(Map.of("v", BYTES), ProtocolVersion.V4), ProtocolVersion.V4).v),
+                // An element type without a blob form is rejected, as at top level.
+                () -> assertBlobRejected(() -> CassandraExecutor.toEntity(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)).one(), SliceHBlobLongs.class),
+                        "List<Long>"));
+    }
+
+    // verify1 (pre-existing heap pollution): a scalar element for a parameterized element type other than a collection or map was
+    // converted to the raw class, so a list<int> column read into a List<Optional<Long>> held Optional values of the wrong element
+    // type (Optional<String> "7"), where a top-level Optional<Long> property holds an Optional<Long>.
+    @Test
+    void sliceH_scalarElementsForParameterizedElementTypesKeepTheirTypeArguments() {
+        final Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put("a", 7);
+        final SliceHOptionalElements e = CassandraExecutor.toEntity(
+                rows(new String[] { "list", "map", "single" }, DataTypes.INT, new Object[][] { { new ArrayList<>(List.of(7)), counts, 7 } }).one(),
+                SliceHOptionalElements.class);
+
+        assertAll(() -> assertEquals(java.util.Optional.of(7L), e.list.get(0)), () -> assertInstanceOf(Long.class, e.list.get(0).get()),
+                () -> assertEquals(java.util.Optional.of(7L), e.map.get("a")), () -> assertInstanceOf(Long.class, e.map.get("a").get()),
+                // Pin: the top-level property, which these elements now match.
+                () -> assertEquals(java.util.Optional.of(7L), e.single));
+    }
+
+    // verify1 (delta): a value of an application class goes through convertValue so that a registered converter applies; without
+    // one, N.convert base64-decodes the value's text into a buffer positioned at its limit, so a driver CqlDuration ("1h"), a Guava
+    // UnsignedLong (1234) or a BSON ObjectId (24 hex digits) was bound as an EMPTY blob again. Such a buffer has no blob content: the
+    // value is bound unchanged and the driver rejects it.
+    @Test
+    void verify1_applicationValuesWithoutABlobFormAreBoundUnchanged() {
+        example.cassandra.BlobFixtures.register();
+        final Object[] values = { com.datastax.oss.driver.api.core.data.CqlDuration.from("1h"), com.google.common.primitives.UnsignedLong.valueOf(1234),
+                new org.bson.types.ObjectId("0123456789abcdef01234567") };
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final DataType type : new DataType[] { DataTypes.BLOB, DataTypes.custom("org.example.X") }) {
+            for (final Object value : values) {
+                checks.add(() -> {
+                    try (Fixture fixture = new Fixture(new String[] { "v", "id" }, type, DataTypes.INT)) {
+                        fixture.executor.execute("UPDATE t SET v = ? WHERE id = ?", value, 1);
+                        assertSame(value, fixture.binds.get(0)[0], value.getClass().getSimpleName() + " -> " + type.asCql(false, true));
+                    }
+                });
+            }
+        }
+
+        // Pin: a registered converter's buffer is still bound.
+        checks.add(() -> {
+            try (Fixture fixture = new Fixture(new String[] { "v", "id" }, DataTypes.BLOB, DataTypes.INT)) {
+                fixture.executor.execute("UPDATE t SET v = ? WHERE id = ?", new example.cassandra.BlobFixtures.BlobBox(BYTES), 1);
+                assertBuffer(BYTES, fixture.binds.get(0)[0]);
+            }
+        });
+        assertAll(checks);
+    }
+
+    // verify2 (regression in this round's blob-column bind rule): an EMPTY Optional-like value bound to a blob or custom column was
+    // bound as NULL (N.convert maps it to null, as for an int or text column); the rule binding JDK and abacus values unchanged made
+    // it fail with CodecNotFoundException, also for an entity insert with an empty Optional<ByteBuffer> or Nullable<byte[]> property.
+    // An empty wrapper binds NULL again, and a present one binds its content by the blob rules (N.convert had bound an empty blob).
+    @Test
+    void sliceH_optionalLikeValuesForABlobColumnBindTheirContent() {
+        final Object[] empties = { java.util.Optional.empty(), com.landawn.abacus.util.u.Optional.empty(), com.landawn.abacus.util.u.Nullable.empty(),
+                com.landawn.abacus.util.u.Nullable.of(null), com.landawn.abacus.util.Holder.of(null), java.util.OptionalInt.empty(),
+                com.landawn.abacus.util.u.OptionalInt.empty() };
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final DataType type : new DataType[] { DataTypes.BLOB, DataTypes.custom("org.apache.cassandra.db.marshal.BytesType") }) {
+            for (final Object empty : empties) {
+                checks.add(() -> assertEquals(null, boundWithKey(type, empty), empty + " -> " + type.asCql(false, true)));
+            }
+        }
+
+        final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+        final java.util.Optional<Boolean> present = java.util.Optional.of(true);
+        checks.add(() -> assertSame(buffer, boundWithKey(DataTypes.BLOB, java.util.Optional.of(buffer))));
+        checks.add(() -> assertBuffer(BYTES, boundWithKey(DataTypes.BLOB, com.landawn.abacus.util.u.Nullable.of(BYTES))));
+        checks.add(() -> assertBuffer(BYTES, boundWithKey(DataTypes.BLOB, com.landawn.abacus.util.Holder.of(BASE64))));
+        // A present value without a blob form is bound unchanged, in its wrapper, for the driver to reject.
+        checks.add(() -> assertSame(present, boundWithKey(DataTypes.BLOB, present)));
+        // Pin: an empty wrapper for another column type binds NULL, as before.
+        checks.add(() -> assertEquals(null, boundWithKey(DataTypes.TEXT, java.util.Optional.empty())));
+        // An entity insert with empty Optional<ByteBuffer> and Nullable<byte[]> properties binds NULL for both.
+        checks.add(() -> {
+            try (Fixture fixture = new Fixture(new String[] { "id", "data", "bytes" }, DataTypes.INT, DataTypes.BLOB, DataTypes.BLOB)) {
+                final SliceHOptionalBlobs entity = new SliceHOptionalBlobs();
+                entity.setId(1);
+                fixture.executor.insert(entity);
+
+                assertEquals(Arrays.asList(1, null, null), Arrays.asList(fixture.binds.get(0)));
+            }
+        });
+        assertAll(checks);
+    }
+
+    // r2H (second-pass review): the remaining branches of the final blob-column bind rule (every other wrapper kind of wrappedValue,
+    // the built-in gate for enums, the position guard's boundary). A present wrapper's content follows the
+    // rules of a bare value: an application value is converted by its registered converter, one without a converter stays in its
+    // wrapper (the driver rejects it), text that is not base64 is rejected, a nested wrapper is unwrapped, and a primitive Optional's
+    // number has no blob form. A converter's EMPTY buffer (position 0) is an empty blob and is bound; only a buffer with bytes before
+    // its position and none after it (N.convert's decoding of the value's text) makes the value be bound unchanged.
+    @Test
+    void r2H_wrapperContentAndConverterBuffersFollowTheBareValueRules() {
+        example.cassandra.BlobFixtures.register();
+        final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+        final java.util.Optional<Object> noConverter = java.util.Optional.of(com.datastax.oss.driver.api.core.data.CqlDuration.from("1h"));
+        final List<Executable> checks = new ArrayList<>();
+
+        // The wrapper kinds the optional-like test above does not cover: empty -> NULL; present without a blob form -> the wrapper.
+        for (final Object empty : new Object[] { java.util.OptionalLong.empty(), java.util.OptionalDouble.empty(),
+                com.landawn.abacus.util.u.OptionalBoolean.empty(), com.landawn.abacus.util.u.OptionalChar.empty(),
+                com.landawn.abacus.util.u.OptionalByte.empty(), com.landawn.abacus.util.u.OptionalShort.empty(), com.landawn.abacus.util.u.OptionalLong.empty(),
+                com.landawn.abacus.util.u.OptionalFloat.empty(), com.landawn.abacus.util.u.OptionalDouble.empty(),
+                java.util.Optional.of(java.util.Optional.empty()) }) {
+            checks.add(() -> assertEquals(null, boundWithKey(DataTypes.BLOB, empty), String.valueOf(empty)));
+        }
+
+        for (final Object present : new Object[] { java.util.OptionalInt.of(5), java.util.OptionalLong.of(1234), java.util.OptionalDouble.of(1.5),
+                com.landawn.abacus.util.u.OptionalBoolean.of(true), com.landawn.abacus.util.u.OptionalChar.of('A'),
+                com.landawn.abacus.util.u.OptionalByte.of((byte) 5), com.landawn.abacus.util.u.OptionalShort.of((short) 1234),
+                com.landawn.abacus.util.u.OptionalLong.of(1234), com.landawn.abacus.util.u.OptionalFloat.of(1.5f),
+                com.landawn.abacus.util.u.OptionalDouble.of(1.5), noConverter }) {
+            checks.add(() -> assertSame(present, boundWithKey(DataTypes.BLOB, present), String.valueOf(present)));
+        }
+
+        // A JDK enum whose name is valid base64 ("NEW") is built-in and kept; a driver enum ("ANY") is an application class, converted
+        // from its text and then kept by the position guard (HEAD bound both as an EMPTY blob).
+        for (final Object value : new Object[] { Thread.State.NEW, com.datastax.oss.driver.api.core.DefaultConsistencyLevel.ANY }) {
+            checks.add(() -> assertSame(value, boundWithKey(DataTypes.BLOB, value), String.valueOf(value)));
+        }
+
+        checks.add(() -> assertBuffer(BYTES, boundWithKey(DataTypes.BLOB, java.util.Optional.of(new example.cassandra.BlobFixtures.BlobBox(BYTES)))));
+        checks.add(() -> assertSame(buffer, boundWithKey(DataTypes.BLOB, java.util.Optional.of(java.util.Optional.of(buffer)))));
+        checks.add(() -> {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> boundWithKey(DataTypes.BLOB, com.landawn.abacus.util.u.Nullable.of("not base64!")));
+            assertTrue(e.getMessage().contains("parameter 'v' (index 0)") && e.getMessage().contains("not valid base64"), e.getMessage());
+        });
+        checks.add(() -> assertBuffer(new byte[0], boundWithKey(DataTypes.BLOB, new example.cassandra.BlobFixtures.EmptyBox())));
+        assertAll(checks);
+    }
+
+    // r2H (second-pass review): TypeFactory.registerType(Class, Function, Function) builds the Type itself (an anonymous class in
+    // com.landawn.abacus.type) that converts a value from its text only; for a blob that text is the empty base64 of the bytes before
+    // the buffer's position, which HEAD handed to the from-string function (a TextBox of ""). Such a Type counts as an abacus one, so
+    // the blob is rejected; only a Type class of the application's own (TypedBox, above) receives the buffer. A Serializable target,
+    // which a String satisfies, gets the base64 text as a CharSequence does (HEAD: "").
+    @Test
+    void r2H_aBlobIsRejectedForATypeRegisteredFromStringFunctions() {
+        example.cassandra.BlobFixtures.register();
+
+        assertAll(
+                () -> assertBlobRejected(
+                        () -> CassandraExecutor.toList(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), example.cassandra.BlobFixtures.TextBox.class), "TextBox"),
+                () -> assertBlobRejected(() -> CassandraExecutor.toEntity(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)).one(), R2HTextBoxBean.class),
+                        "TextBox property"),
+                // Pins: that Type still converts text, and a Serializable target gets the blob's base64 text.
+                () -> assertEquals("abc", CassandraExecutor.toList(rows(DataTypes.TEXT, "abc"), example.cassandra.BlobFixtures.TextBox.class).get(0).text()),
+                () -> assertEquals(BASE64, CassandraExecutor.toList(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), java.io.Serializable.class).get(0)));
+    }
+
+    // r2X (second-pass cross-check): a row class the factories cannot create and N.convert cannot copy their stand-in into (EnumMap,
+    // whose keys must be enums; AbstractQueue) fails with IllegalArgumentException from asRowClass, through toList (createRowMapper)
+    // and findFirst (readRow), where HEAD returned the HashMap / LinkedList stand-in typed as that class. Same as BigQuery/DynamoDB.
+    @Test
+    void r2X_aRowClassTheStandInCannotBecomeFailsWithIllegalArgumentException() {
+        final String[] names = { "name", "age" };
+        final Object[][] values = { { "Ada", "36" } };
+
+        assertAll(
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), java.util.EnumMap.class)),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), java.util.AbstractQueue.class)),
+                () -> {
+                    try (Fixture fixture = new Fixture(DataTypes.TEXT)) {
+                        when(fixture.session.execute(any(Statement.class))).thenAnswer(invocation -> rows(names, DataTypes.TEXT, values));
+                        assertThrows(IllegalArgumentException.class, () -> fixture.executor.findFirst(java.util.EnumMap.class, QUERY));
+                        assertThrows(IllegalArgumentException.class, () -> fixture.executor.findFirst(java.util.AbstractQueue.class, QUERY));
+                    }
+                },
+                // Pin: a mutable row class keeps the factory's own instance.
+                () -> assertEquals(java.util.LinkedList.class,
+                        CassandraExecutor.toList(rows(names, DataTypes.TEXT, values), java.util.LinkedList.class).get(0).getClass()));
+    }
+
+    // ---- 2026-10-27 fixD ----
+
+    // fixD (decision G): the blob-column bind rule binds a present Optional-like value's content (an Optional<ByteBuffer>, a
+    // Nullable<byte[]>, a Holder<ByteBuffer>, the base64 text of an Optional<String>), but a blob read into such a property was
+    // rejected with IllegalArgumentException (HEAD: an EMPTY value), so an entity written through that rule could not be read back.
+    // The blob is now converted to the wrapper's declared element type by the top-level blob rules and wrapped; NULL stays empty.
+    @Test
+    void fixD_optionalLikePropertiesReadBackTheBlobTheirValueWasBoundFrom() {
+        final String[] names = { "id", "data", "bytes", "holder", "text" };
+        final Object[] bound;
+
+        try (Fixture fixture = new Fixture(names, DataTypes.INT, DataTypes.BLOB, DataTypes.BLOB, DataTypes.BLOB, DataTypes.BLOB)) {
+            final FixDOptionalBlobs entity = new FixDOptionalBlobs();
+            entity.setId(1);
+            entity.setData(java.util.Optional.of(ByteBuffer.wrap(BYTES)));
+            entity.setBytes(com.landawn.abacus.util.u.Nullable.of(BYTES));
+            entity.setHolder(com.landawn.abacus.util.Holder.of(ByteBuffer.wrap(BYTES)));
+            entity.setText(com.landawn.abacus.util.u.Optional.of(BASE64));
+            fixture.executor.insert(entity);
+            bound = fixture.binds.get(0);
+        }
+
+        final FixDOptionalBlobs read = CassandraExecutor.toEntity(rows(names, DataTypes.BLOB, new Object[][] { bound }).one(), FixDOptionalBlobs.class);
+        final FixDOptionalBlobs nulls = CassandraExecutor.toEntity(rows(names, DataTypes.BLOB, new Object[][] { { 1, null, null, null, null } }).one(),
+                FixDOptionalBlobs.class);
+
+        assertAll(() -> assertEquals(1, bound[0]), () -> assertBuffer(BYTES, bound[1]), () -> assertBuffer(BYTES, bound[2]),
+                () -> assertBuffer(BYTES, bound[3]), () -> assertBuffer(BYTES, bound[4]),
+                // Read back: the same content, each in its declared element type.
+                () -> assertBuffer(BYTES, read.getData().get()), () -> assertArrayEquals(BYTES, read.getBytes().get()),
+                () -> assertBuffer(BYTES, read.getHolder().value()), () -> assertEquals(com.landawn.abacus.util.u.Optional.of(BASE64), read.getText()),
+                // Pins: a NULL column is an empty wrapper (a Holder of null), as before.
+                () -> assertEquals(java.util.Optional.empty(), nulls.getData()),
+                () -> assertEquals(com.landawn.abacus.util.u.Nullable.empty(), nulls.getBytes()), () -> assertEquals(null, nulls.getHolder().value()),
+                () -> assertEquals(com.landawn.abacus.util.u.Optional.empty(), nulls.getText()));
+    }
+
+    // fixD (decision G): every read path that knows the declared wrapper type converts the blob to that element type: a dotted column, a
+    // UDT field read into a bean, a collection element, a nested wrapper, extractData (the getter's declared type) and a wrapper of a
+    // collection or a StringBuilder. A single-value target without a declared element type (Optional.class, Nullable.class, ...) holds
+    // the buffer. An element type without a blob form (Optional<Long>, List<Optional<Long>>) and a primitive Optional (OptionalInt,
+    // u.OptionalLong, which hold no object) stay rejected.
+    @Test
+    void fixD_everyReadPathWrapsTheBlobConvertedToTheDeclaredElementType() {
+        final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(fieldType(DataTypes.BLOB), Map.class);
+        final CassandraExecutor.UDTCodec<FixDUdtBytes> udtCodec = CassandraExecutor.UDTCodec.create(fieldType(DataTypes.BLOB), FixDUdtBytes.class);
+        final List<Executable> checks = new ArrayList<>();
+
+        checks.add(
+                () -> assertBuffer(BYTES, CassandraExecutor.toEntity(rows(new String[] { "nested.data" }, DataTypes.BLOB, new Object[][] { { buffer } }).one(),
+                        FixDOptionalBlobsHolder.class).nested.getData().get()));
+        checks.add(() -> assertArrayEquals(BYTES, udtCodec.decode(mapCodec.encode(Map.of("v", BYTES), ProtocolVersion.V4), ProtocolVersion.V4).v.get()));
+        checks.add(() -> {
+            final FixDWrapperElements e = CassandraExecutor
+                    .toEntity(
+                            rows(new String[] { "buffers", "texts" }, DataTypes.listOf(DataTypes.BLOB),
+                                    new Object[][] { { new ArrayList<>(List.of(buffer)), new ArrayList<>(List.of(buffer)) } }).one(),
+                            FixDWrapperElements.class);
+            assertSame(buffer, e.buffers.get(0).get());
+            assertEquals(com.landawn.abacus.util.u.Nullable.of(BASE64), e.texts.get(0));
+        });
+        checks.add(() -> {
+            final FixDNestedWrappers n = CassandraExecutor.toEntity(
+                    rows(new String[] { "nested", "list", "builder" }, DataTypes.BLOB, new Object[][] { { buffer, buffer, buffer } }).one(),
+                    FixDNestedWrappers.class);
+            assertArrayEquals(BYTES, n.nested.get().get());
+            assertArrayEquals(BYTES, n.list.get().get(0));
+            assertInstanceOf(StringBuilder.class, n.builder.get());
+            assertEquals(BASE64, n.builder.get().toString());
+        });
+        checks.add(() -> assertEquals(List.of(java.util.Optional.of(BASE64)),
+                CassandraExecutor.extractData(rows(DataTypes.BLOB, buffer), FixDOptionalTextBean.class).getColumn("v")));
+        // No declared element type: the wrapper holds the buffer itself.
+        checks.add(() -> assertSame(buffer, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), java.util.Optional.class).get(0).get()));
+        checks.add(() -> assertSame(buffer, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), com.landawn.abacus.util.u.Optional.class).get(0).get()));
+        checks.add(() -> assertSame(buffer, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), com.landawn.abacus.util.u.Nullable.class).get(0).get()));
+        checks.add(() -> assertSame(buffer, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), com.landawn.abacus.util.Holder.class).get(0).value()));
+        checks.add(() -> {
+            try (Fixture fixture = new Fixture(DataTypes.BLOB)) {
+                when(fixture.session.execute(any(Statement.class))).thenAnswer(invocation -> rows(DataTypes.BLOB, buffer));
+                assertSame(buffer, fixture.executor.queryForSingleValue(java.util.Optional.class, QUERY).get().get());
+            }
+        });
+
+        // Rejections: no blob form for the element type, or a primitive Optional.
+        for (final String property : new String[] { "longs", "optionalInt", "optionalLong" }) {
+            checks.add(() -> assertBlobRejected(
+                    () -> CassandraExecutor.toEntity(rows(new String[] { property }, DataTypes.BLOB, new Object[][] { { buffer } }).one(), FixDRejected.class),
+                    property));
+        }
+
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.toEntity(
+                rows(new String[] { "longList" }, DataTypes.listOf(DataTypes.BLOB), new Object[][] { { new ArrayList<>(List.of(buffer)) } }).one(),
+                FixDRejected.class), "List<Optional<Long>>"));
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.extractData(rows(DataTypes.BLOB, buffer), FixDOptionalLongBean.class), "Dataset"));
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), java.util.OptionalInt.class), "OptionalInt.class"));
+        assertAll(checks);
+    }
+
+    // fixD (finding D): the blob read rule gave the base64 text to a target that a String is an instance of (CharSequence,
+    // Serializable, ...), but rejected a StringBuilder or StringBuffer, which are CharSequences too (HEAD: an empty one). They now get
+    // the base64 text in their own type; a CharSequence class abacus does not build from text (CharBuffer) stays rejected. A target the
+    // buffer itself is (Comparable, Object) keeps the buffer.
+    @Test
+    void fixD_aBlobReadIntoAStringBuilderOrStringBufferIsItsBase64Text() {
+        final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+        final List<Executable> checks = new ArrayList<>();
+
+        checks.add(() -> {
+            final StringBuilder builder = CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), StringBuilder.class).get(0);
+            assertEquals(BASE64, builder.toString());
+            assertEquals(0, buffer.position());
+        });
+        checks.add(() -> assertEquals(BASE64, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), StringBuffer.class).get(0).toString()));
+        checks.add(() -> {
+            final FixDBuilders b = CassandraExecutor
+                    .toEntity(rows(new String[] { "builder", "buffer" }, DataTypes.BLOB, new Object[][] { { buffer, buffer } }).one(), FixDBuilders.class);
+            assertEquals(BASE64, b.builder.toString());
+            assertEquals(BASE64, b.buffer.toString());
+        });
+        checks.add(() -> {
+            try (Fixture fixture = new Fixture(DataTypes.BLOB)) {
+                when(fixture.session.execute(any(Statement.class))).thenAnswer(invocation -> rows(DataTypes.BLOB, buffer));
+                assertEquals(BASE64, fixture.executor.queryForSingleValue(StringBuilder.class, QUERY).get().toString());
+            }
+        });
+        // Pins: a String-satisfied target gets the base64 String; a type the buffer is keeps it; CharBuffer has no blob form.
+        checks.add(() -> assertEquals(BASE64, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), java.io.Serializable.class).get(0)));
+        checks.add(() -> assertEquals(BASE64, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), CharSequence.class).get(0)));
+        checks.add(() -> assertSame(buffer, CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), Comparable.class).get(0)));
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.toList(rows(DataTypes.BLOB, buffer), java.nio.CharBuffer.class), "CharBuffer"));
+        assertAll(checks);
+    }
+
+    // vfixD: extractData took a wrapper property's element type from the getter's generic return type alone, which keeps the type
+    // variable of a generic superclass (Optional<T> on a class extending a Base<String>) and has none for a raw Optional getter of an
+    // Optional<String> field, so its Dataset column held an Optional of the buffer where toEntity holds the Optional<String> of the
+    // base64 text (and an Optional<Long> declared through Base<Long> was not rejected). It now uses the property's type, as toEntity
+    // does; a property whose type is of another class than its getter's (@Type("String") on an Optional getter) keeps the getter's
+    // own type, so the column still holds values of the getter's class.
+    @Test
+    void fixD_extractDataConvertsABlobForTheWrapperTypeThePropertyDeclares() {
+        final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final Class<?> beanClass : new Class<?>[] { FixDGenericText.class, FixDRawGetter.class }) {
+            checks.add(() -> assertEquals(List.of(java.util.Optional.of(BASE64)),
+                    CassandraExecutor.extractData(rows(DataTypes.BLOB, buffer), beanClass).getColumn("v"), beanClass.getSimpleName()));
+        }
+
+        checks.add(() -> assertBlobRejected(() -> CassandraExecutor.extractData(rows(DataTypes.BLOB, buffer), FixDGenericLong.class),
+                "Optional<Long> via Base<Long>"));
+        // Pins: toEntity reads the same value; a getter whose property type is of another class keeps the getter's declared type.
+        checks.add(() -> assertEquals(java.util.Optional.of(BASE64),
+                CassandraExecutor.toEntity(rows(DataTypes.BLOB, buffer).one(), FixDGenericText.class).getV()));
+        checks.add(() -> assertEquals(List.of(java.util.Optional.of(BASE64)),
+                CassandraExecutor.extractData(rows(DataTypes.BLOB, buffer), FixDTypedGetter.class).getColumn("v")));
+        assertAll(checks);
+    }
+
+    // sbfix (outside review, issue 2): a blob reads into a StringBuilder or StringBuffer as its base64 text (fixD), but binding one
+    // back to a blob column (or a custom-type column, or a blob UDT field) left it unchanged, so the driver rejected it
+    // (CodecNotFoundException): only a String was decoded. Such text is now decoded like a String, in a wrapper too, and text that
+    // is not base64 is rejected the same way. A CharBuffer, which abacus does not build from text, still has no blob form.
+    @Test
+    void sbfix_aStringBuilderOrStringBufferBoundToABlobIsDecodedLikeAString() {
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final DataType type : new DataType[] { DataTypes.BLOB, DataTypes.custom("org.apache.cassandra.db.marshal.BytesType") }) {
+            final String name = type.asCql(false, true);
+            checks.add(() -> assertBuffer(BYTES, boundValue(type, new StringBuilder(BASE64))));
+            checks.add(() -> assertBuffer(BYTES, boundValue(type, new StringBuffer(BASE64))));
+            checks.add(() -> assertBuffer(new byte[0], boundValue(type, new StringBuilder())));
+            checks.add(() -> assertBuffer(BYTES, boundWithKey(type, java.util.Optional.of(new StringBuilder(BASE64)))));
+            checks.add(() -> assertBuffer(BYTES, boundWithKey(type, com.landawn.abacus.util.u.Nullable.of(new StringBuffer(BASE64)))));
+            checks.add(() -> assertBuffer(BYTES, boundWithKey(type, com.landawn.abacus.util.Holder.of(new StringBuilder(BASE64)))));
+            checks.add(() -> assertBuffer(BYTES, boundWithKey(type, com.landawn.abacus.util.u.Optional.of(new StringBuffer(BASE64)))));
+            // Pin: a CharBuffer is bound unchanged, in a wrapper too.
+            checks.add(() -> {
+                final java.nio.CharBuffer chars = java.nio.CharBuffer.wrap(BASE64);
+                assertSame(chars, boundValue(type, chars), name);
+            });
+            checks.add(() -> {
+                final java.util.Optional<java.nio.CharBuffer> wrapped = java.util.Optional.of(java.nio.CharBuffer.wrap(BASE64));
+                assertSame(wrapped, boundWithKey(type, wrapped), name);
+            });
+        }
+
+        // Positional, collection and named parameters all decode it; the value itself is not changed.
+        checks.add(() -> {
+            final StringBuilder builder = new StringBuilder(BASE64);
+
+            try (Fixture fixture = new Fixture(DataTypes.BLOB)) {
+                fixture.executor.execute(UPDATE, builder);
+                fixture.executor.execute(UPDATE, List.of(new StringBuffer(BASE64)));
+                fixture.executor.execute("UPDATE t SET v = :v WHERE id = 1", N.asMap("v", new StringBuilder(BASE64)));
+
+                assertEquals(3, fixture.binds.size());
+                fixture.binds.forEach(bind -> assertBuffer(BYTES, bind[0]));
+            }
+
+            assertEquals(BASE64, builder.toString());
+        });
+
+        // Text that is not base64 is rejected with the parameter named, bare or in a wrapper, before anything is bound.
+        for (final Object invalid : new Object[] { new StringBuilder("not base64!"), new StringBuffer("AQ=D"), java.util.Optional.of(new StringBuilder("#")),
+                com.landawn.abacus.util.Holder.of(new StringBuffer("#")) }) {
+            checks.add(() -> {
+                try (Fixture fixture = new Fixture(new String[] { "v", "id" }, DataTypes.BLOB, DataTypes.INT)) {
+                    final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                            () -> fixture.executor.execute("UPDATE t SET v = ? WHERE id = ?", invalid, 1), invalid.toString());
+                    assertTrue(e.getMessage().contains("parameter 'v' (index 0)"), e.getMessage());
+                    assertTrue(e.getMessage().contains("not valid base64"), e.getMessage());
+                    assertEquals(0, fixture.binds.size());
+                }
+            });
+        }
+
+        // Round trip: a blob read into StringBuilder/StringBuffer properties binds back to the same bytes on insert.
+        checks.add(() -> {
+            final ByteBuffer buffer = ByteBuffer.wrap(BYTES);
+            final SbFixTextBlobs entity = CassandraExecutor
+                    .toEntity(rows(new String[] { "builder", "buffer" }, DataTypes.BLOB, new Object[][] { { buffer, buffer } }).one(), SbFixTextBlobs.class);
+            assertEquals(BASE64, entity.getBuilder().toString());
+            assertEquals(BASE64, entity.getBuffer().toString());
+            entity.setId(1);
+
+            try (Fixture fixture = new Fixture(new String[] { "id", "builder", "buffer" }, DataTypes.INT, DataTypes.BLOB, DataTypes.BLOB)) {
+                fixture.executor.insert(entity);
+
+                final Object[] bind = fixture.binds.get(0);
+                assertEquals(1, bind[0]);
+                assertBuffer(BYTES, bind[1]);
+                assertBuffer(BYTES, bind[2]);
+            }
+        });
+        assertAll(checks);
+    }
+
+    // sbfix: a StringBuilder or StringBuffer written to a blob UDT field is decoded as a String is (it failed with
+    // CodecNotFoundException); invalid text is rejected naming the field.
+    @Test
+    void sbfix_aStringBuilderOrStringBufferWrittenToABlobUdtFieldIsDecoded() {
+        final UserDefinedType blobType = fieldType(DataTypes.BLOB);
+        final CassandraExecutor.UDTCodec<Map> mapCodec = CassandraExecutor.UDTCodec.create(blobType, Map.class);
+        final CassandraExecutor.UDTCodec<SbFixBuilderField> beanCodec = CassandraExecutor.UDTCodec.create(blobType, SbFixBuilderField.class);
+
+        assertAll(
+                () -> assertEquals(ByteBuffer.wrap(BYTES),
+                        mapCodec.decode(mapCodec.encode(Map.of("v", new StringBuilder(BASE64)), ProtocolVersion.V4), ProtocolVersion.V4).get("v")),
+                () -> assertEquals(ByteBuffer.wrap(BYTES),
+                        mapCodec.decode(mapCodec.encode(Map.of("v", new StringBuffer(BASE64)), ProtocolVersion.V4), ProtocolVersion.V4).get("v")),
+                () -> {
+                    final SbFixBuilderField bean = new SbFixBuilderField();
+                    bean.setV(new StringBuilder(BASE64));
+                    assertEquals(ByteBuffer.wrap(BYTES), mapCodec.decode(beanCodec.encode(bean, ProtocolVersion.V4), ProtocolVersion.V4).get("v"));
+                    // Round trip: the field reads back into the StringBuilder property as the same text.
+                    assertEquals(BASE64, beanCodec.decode(beanCodec.encode(bean, ProtocolVersion.V4), ProtocolVersion.V4).getV().toString());
+                }, () -> {
+                    final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                            () -> mapCodec.encode(Map.of("v", new StringBuffer("not base64!")), ProtocolVersion.V4));
+                    assertTrue(e.getMessage().contains("UDT field 'v' (index 0)"), e.getMessage());
+                    assertTrue(e.getMessage().contains("not valid base64"), e.getMessage());
+                },
+                // Pin: a CharBuffer still has no blob form.
+                () -> assertThrows(com.datastax.oss.driver.api.core.type.codec.CodecNotFoundException.class,
+                        () -> mapCodec.encode(Map.of("v", java.nio.CharBuffer.wrap(BASE64)), ProtocolVersion.V4)));
+    }
+
+    // sbfix (outside review): the rejection message for a blob read into a target without a blob form claimed a complete list of
+    // the targets a blob converts to ("converts only to byte[], ByteBuffer or String"; then a longer list that still missed
+    // collections, wrappers of containers, Object/Comparable and application types). It now names the rejected type and gives
+    // examples without claiming the list is complete; the class documentation has the full rule.
+    @Test
+    void sbfix_theBlobRejectionMessageNamesTheTypeAndGivesExamples() {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> CassandraExecutor.toList(rows(DataTypes.BLOB, ByteBuffer.wrap(BYTES)), Long.class));
+
+        assertAll(
+                () -> assertTrue(e.getMessage().contains("Cannot convert a blob (ByteBuffer of 3 bytes) to java.lang.Long: that type has no blob form"),
+                        e.getMessage()),
+                () -> assertTrue(e.getMessage()
+                        .contains("for example, as byte[], ByteBuffer or its base64 text, alone or in a collection or an Optional," + " Nullable or Holder"),
+                        e.getMessage()),
+                () -> org.junit.jupiter.api.Assertions.assertFalse(e.getMessage().contains("only"), e.getMessage()));
+    }
+
+    // wrapcodec (outside review): codec acceptance was checked only on the wrapper, and a present Optional/Nullable/Holder was then
+    // converted by abacus rules alone. An Optional<WrapPayload> was therefore bound as the wrapper to a blob or custom-type column (the
+    // driver has no codec for it: CodecNotFoundException) although a registered TypeCodec<WrapPayload> binds the bare value, and for
+    // a text column it was silently stored as abacus's text of the value (JSON: {"n": 7}) instead of the codec's ("P:7"). The
+    // content is now offered to the codecs first, for every column type and through nested wrappers.
+    @Test
+    void wrapcodec_aWrappedValueBindsThroughTheCodecRegisteredForItsContent() {
+        final DataType custom = DataTypes.custom("com.example.PayloadType");
+        final MutableCodecRegistry registry = payloadRegistry(custom);
+        final WrapPayload payload = new WrapPayload(7);
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final DataType type : new DataType[] { DataTypes.BLOB, custom, DataTypes.TEXT }) {
+            final String name = type.asCql(false, true);
+            // Pin: the bare value was always bound as is, for its codec.
+            checks.add(() -> assertSame(payload, boundWithKey(registry, type, payload), "bare -> " + name));
+
+            for (final Object wrapped : new Object[] { java.util.Optional.of(payload), com.landawn.abacus.util.u.Optional.of(payload),
+                    com.landawn.abacus.util.u.Nullable.of(payload), com.landawn.abacus.util.Holder.of(payload),
+                    java.util.Optional.of(com.landawn.abacus.util.u.Nullable.of(payload)) }) {
+                checks.add(() -> assertSame(payload, boundWithKey(registry, type, wrapped), wrapped + " -> " + name));
+            }
+        }
+
+        // The codec stores its own form, which is not abacus's text of the value (what the wrapped value was bound as before).
+        checks.add(() -> assertEquals("P:7",
+                TypeCodecs.TEXT.decode(registry.codecFor(DataTypes.TEXT, payload).encode(payload, ProtocolVersion.V4), ProtocolVersion.V4)));
+        checks.add(() -> assertEquals("{\"n\": 7}", N.convert(payload, String.class)));
+        // An entity insert binds an Optional<WrapPayload> property's content for its codec.
+        checks.add(() -> {
+            try (Fixture fixture = new Fixture(registry, new String[] { "id", "payload" }, DataTypes.INT, custom)) {
+                final WrapPayloadEntity entity = new WrapPayloadEntity();
+                entity.setId(1);
+                entity.setPayload(java.util.Optional.of(payload));
+                fixture.executor.insert(entity);
+
+                assertEquals(1, fixture.binds.get(0)[0]);
+                assertSame(payload, fixture.binds.get(0)[1]);
+            }
+        });
+        // Pins: without a codec for the content, the wrapped value follows the bare value's rules: kept in its wrapper for a blob
+        // column (the driver rejects it), converted by N.convert for a text column; an empty wrapper still binds NULL.
+        checks.add(() -> {
+            final java.util.Optional<WrapPayload> wrapped = java.util.Optional.of(payload);
+            assertSame(wrapped, boundWithKey(DataTypes.BLOB, wrapped));
+        });
+        checks.add(() -> assertEquals("{\"n\": 7}", boundWithKey(DataTypes.TEXT, java.util.Optional.of(payload))));
+        checks.add(() -> assertEquals(null, boundWithKey(registry, custom, java.util.Optional.empty())));
+        checks.add(() -> assertEquals(null, boundWithKey(registry, DataTypes.TEXT, java.util.Optional.empty())));
+        assertAll(checks);
+    }
+
+    // wrapcodec: a codec registered for the wrapper class itself is still asked first, so it keeps receiving the wrapper.
+    @Test
+    void wrapcodec_aCodecRegisteredForTheWrapperItselfStillTakesPrecedence() {
+        final MutableCodecRegistry registry = payloadRegistry(DataTypes.custom("com.example.PayloadType"));
+        registry.register(new MappingCodec<String, java.util.Optional<WrapPayload>>(TypeCodecs.TEXT, new GenericType<java.util.Optional<WrapPayload>>() {
+        }) {
+            @Override
+            protected java.util.Optional<WrapPayload> innerToOuter(final String value) {
+                return java.util.Optional.ofNullable(value == null ? null : new WrapPayload(Integer.parseInt(value.substring(4))));
+            }
+
+            @Override
+            protected String outerToInner(final java.util.Optional<WrapPayload> value) {
+                return value == null ? null : value.map(p -> "OPT:" + p.n()).orElse(null);
+            }
+        });
+        final java.util.Optional<WrapPayload> wrapped = java.util.Optional.of(new WrapPayload(7));
+
+        assertSame(wrapped, boundWithKey(registry, DataTypes.TEXT, wrapped));
+    }
+
+    // wrapcodec: a present wrapper's content goes through the same conversion rules as a bare value, so a wrapped number that the
+    // column would change is rejected (Optional.of(1.5) was bound to an int column as 1; a bare 1.5 was already rejected).
+    @Test
+    void wrapcodec_aWrappedValueIsConvertedByTheBareValueRules() {
+        final List<Executable> checks = new ArrayList<>();
+
+        for (final Object[] lossy : new Object[][] { { DataTypes.INT, java.util.Optional.of(1.5), "Double value 1.5" },
+                { DataTypes.INT, com.landawn.abacus.util.u.Nullable.of(Fraction.of(3, 2)), "Fraction value 3/2" },
+                { DataTypes.BIGINT, java.util.Optional.of(java.util.Optional.of(2.5)), "Double value 2.5" },
+                { DataTypes.FLOAT, com.landawn.abacus.util.Holder.of(1e300), "Double value 1.0E300" } }) {
+            checks.add(() -> {
+                final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> boundWithKey((DataType) lossy[0], lossy[1]),
+                        lossy[1].toString());
+                assertTrue(e.getMessage().contains("Cannot bind " + lossy[2]), e.getMessage());
+                assertTrue(e.getMessage().contains("parameter 'v' (index 0)"), e.getMessage());
+            });
+        }
+
+        // Pins: content that converts exactly, or is of the column's type, binds as before; content without a form for the column
+        // keeps its wrapper (the driver rejects it); an empty wrapper is NULL for a scalar column.
+        checks.add(() -> assertEquals(1.5, boundWithKey(DataTypes.DOUBLE, java.util.Optional.of(1.5))));
+        checks.add(() -> assertEquals(5L, boundWithKey(DataTypes.BIGINT, java.util.Optional.of(5))));
+        checks.add(() -> assertEquals(5, boundWithKey(DataTypes.INT, java.util.OptionalInt.of(5))));
+        checks.add(() -> assertEquals("x", boundWithKey(DataTypes.TEXT, com.landawn.abacus.util.Holder.of("x"))));
+        checks.add(() -> {
+            final java.util.Optional<String> text = java.util.Optional.of("abc");
+            assertSame(text, boundWithKey(DataTypes.INT, text));
+        });
+        checks.add(() -> assertEquals(null, boundWithKey(DataTypes.INT, java.util.Optional.empty())));
+        checks.add(() -> assertEquals(null, boundWithKey(DataTypes.TEXT, com.landawn.abacus.util.u.Nullable.empty())));
+        assertAll(checks);
+    }
+
+    // A registry with a WrapPayload codec for text (written "P:<n>"), blob and the given custom type (one byte, <n>).
+    private static MutableCodecRegistry payloadRegistry(final DataType custom) {
+        final MutableCodecRegistry registry = new DefaultCodecRegistry("wrapcodec");
+        registry.register(new MappingCodec<String, WrapPayload>(TypeCodecs.TEXT, GenericType.of(WrapPayload.class)) {
+            @Override
+            protected WrapPayload innerToOuter(final String value) {
+                return value == null ? null : new WrapPayload(Integer.parseInt(value.substring(2)));
+            }
+
+            @Override
+            protected String outerToInner(final WrapPayload value) {
+                return value == null ? null : "P:" + value.n();
+            }
+        }, payloadBlobCodec(TypeCodecs.BLOB), payloadBlobCodec(TypeCodecs.custom(custom)));
+        return registry;
+    }
+
+    private static TypeCodec<WrapPayload> payloadBlobCodec(final TypeCodec<ByteBuffer> inner) {
+        return new MappingCodec<ByteBuffer, WrapPayload>(inner, GenericType.of(WrapPayload.class)) {
+            @Override
+            protected WrapPayload innerToOuter(final ByteBuffer value) {
+                return value == null ? null : new WrapPayload(value.duplicate().get());
+            }
+
+            @Override
+            protected ByteBuffer outerToInner(final WrapPayload value) {
+                return value == null ? null : ByteBuffer.wrap(new byte[] { (byte) value.n() });
+            }
+        };
+    }
+
+    private static Object boundWithKey(final CodecRegistry registry, final DataType type, final Object value) {
+        try (Fixture fixture = new Fixture(registry, new String[] { "v", "id" }, type, DataTypes.INT)) {
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = ?", value, 1);
+            return fixture.binds.get(0)[0];
+        }
+    }
+
+    // An application value class that a registered codec maps to a column (abacus's own text of it is JSON).
+    public static final class WrapPayload {
+        private final int n;
+
+        public WrapPayload(final int n) {
+            this.n = n;
+        }
+
+        public int n() {
+            return n;
+        }
+
+        @Override
+        public String toString() {
+            return "WrapPayload(" + n + ")";
+        }
+    }
+
+    public static class WrapPayloadEntity {
+        private int id;
+        private java.util.Optional<WrapPayload> payload = java.util.Optional.empty();
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+
+        public java.util.Optional<WrapPayload> getPayload() {
+            return payload;
+        }
+
+        public void setPayload(final java.util.Optional<WrapPayload> payload) {
+            this.payload = payload;
+        }
+    }
+
+    // The value bound for marker 'v' of "UPDATE t SET v = ? WHERE id = ?" (two markers, so a single wrapper is never a bean container).
+    private static Object boundWithKey(final DataType type, final Object value) {
+        try (Fixture fixture = new Fixture(new String[] { "v", "id" }, type, DataTypes.INT)) {
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = ?", value, 1);
+            return fixture.binds.get(0)[0];
+        }
+    }
+
+    private static void assertBlobRejected(final Executable executable, final String message) {
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, executable, message);
+        assertTrue(e.getMessage().contains("Cannot convert a blob"), message + ": " + e.getMessage());
+    }
+
+    public static class SliceHLong {
+        public Long v = 99L;
+    }
+
+    public static class SliceHInt {
+        public int v = 99;
+    }
+
+    public static class SliceHUuid {
+        public java.util.UUID v = java.util.UUID.randomUUID();
+    }
+
+    public static class SliceHText {
+        public CharSequence v;
+    }
+
+    public static class SliceHLongHolder {
+        public SliceHLong nested = new SliceHLong();
+    }
+
+    public static class SliceHLongBean {
+        private Long v;
+
+        public Long getV() {
+            return v;
+        }
+
+        public void setV(final Long v) {
+            this.v = v;
+        }
+    }
+
+    public static class SliceHTypedBox {
+        public example.cassandra.BlobFixtures.TypedBox v;
+    }
+
+    public static class SliceHTypedBoxes {
+        public List<example.cassandra.BlobFixtures.TypedBox> v;
+    }
+
+    public static class SliceHBlobCollections {
+        public List<byte[]> bytes;
+        public List<String> texts;
+        public Set<String> textSet;
+        public List<ByteBuffer> buffers;
+    }
+
+    public static class SliceHBlobCollectionsHolder {
+        public SliceHBlobCollections inner = new SliceHBlobCollections();
+    }
+
+    public static class SliceHNestedBlobs {
+        public List<List<byte[]>> v;
+    }
+
+    public static class SliceHBlobLongs {
+        public List<Long> v;
+    }
+
+    public static class SliceHUdtTexts {
+        public List<String> v;
+    }
+
+    public static class SliceHOptionalElements {
+        public List<java.util.Optional<Long>> list;
+        public Map<String, java.util.Optional<Long>> map;
+        public java.util.Optional<Long> single;
+    }
+
+    public static class SbFixTextBlobs {
+        private int id;
+        private StringBuilder builder;
+        private StringBuffer buffer;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+
+        public StringBuilder getBuilder() {
+            return builder;
+        }
+
+        public void setBuilder(final StringBuilder builder) {
+            this.builder = builder;
+        }
+
+        public StringBuffer getBuffer() {
+            return buffer;
+        }
+
+        public void setBuffer(final StringBuffer buffer) {
+            this.buffer = buffer;
+        }
+    }
+
+    public static class SbFixBuilderField {
+        private StringBuilder v;
+
+        public StringBuilder getV() {
+            return v;
+        }
+
+        public void setV(final StringBuilder v) {
+            this.v = v;
+        }
+    }
+
+    public static class SliceHOptionalBlobs {
+        private int id;
+        private java.util.Optional<ByteBuffer> data = java.util.Optional.empty();
+        private com.landawn.abacus.util.u.Nullable<byte[]> bytes = com.landawn.abacus.util.u.Nullable.empty();
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+
+        public java.util.Optional<ByteBuffer> getData() {
+            return data;
+        }
+
+        public void setData(final java.util.Optional<ByteBuffer> data) {
+            this.data = data;
+        }
+
+        public com.landawn.abacus.util.u.Nullable<byte[]> getBytes() {
+            return bytes;
+        }
+
+        public void setBytes(final com.landawn.abacus.util.u.Nullable<byte[]> bytes) {
+            this.bytes = bytes;
+        }
+    }
+
+    public static class R2HTextBoxBean {
+        public example.cassandra.BlobFixtures.TextBox v;
+    }
+
+    public static class FixDOptionalBlobs {
+        private int id;
+        private java.util.Optional<ByteBuffer> data = java.util.Optional.empty();
+        private com.landawn.abacus.util.u.Nullable<byte[]> bytes = com.landawn.abacus.util.u.Nullable.empty();
+        private com.landawn.abacus.util.Holder<ByteBuffer> holder = com.landawn.abacus.util.Holder.of(null);
+        private com.landawn.abacus.util.u.Optional<String> text = com.landawn.abacus.util.u.Optional.empty();
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(final int id) {
+            this.id = id;
+        }
+
+        public java.util.Optional<ByteBuffer> getData() {
+            return data;
+        }
+
+        public void setData(final java.util.Optional<ByteBuffer> data) {
+            this.data = data;
+        }
+
+        public com.landawn.abacus.util.u.Nullable<byte[]> getBytes() {
+            return bytes;
+        }
+
+        public void setBytes(final com.landawn.abacus.util.u.Nullable<byte[]> bytes) {
+            this.bytes = bytes;
+        }
+
+        public com.landawn.abacus.util.Holder<ByteBuffer> getHolder() {
+            return holder;
+        }
+
+        public void setHolder(final com.landawn.abacus.util.Holder<ByteBuffer> holder) {
+            this.holder = holder;
+        }
+
+        public com.landawn.abacus.util.u.Optional<String> getText() {
+            return text;
+        }
+
+        public void setText(final com.landawn.abacus.util.u.Optional<String> text) {
+            this.text = text;
+        }
+    }
+
+    public static class FixDOptionalBlobsHolder {
+        public FixDOptionalBlobs nested = new FixDOptionalBlobs();
+    }
+
+    public static class FixDUdtBytes {
+        public java.util.Optional<byte[]> v;
+    }
+
+    public static class FixDWrapperElements {
+        public List<java.util.Optional<ByteBuffer>> buffers;
+        public List<com.landawn.abacus.util.u.Nullable<String>> texts;
+    }
+
+    public static class FixDNestedWrappers {
+        public java.util.Optional<java.util.Optional<byte[]>> nested;
+        public java.util.Optional<List<byte[]>> list;
+        public java.util.Optional<StringBuilder> builder;
+    }
+
+    public static class FixDOptionalTextBean {
+        private java.util.Optional<String> v;
+
+        public java.util.Optional<String> getV() {
+            return v;
+        }
+
+        public void setV(final java.util.Optional<String> v) {
+            this.v = v;
+        }
+    }
+
+    public static class FixDOptionalLongBean {
+        private java.util.Optional<Long> v;
+
+        public java.util.Optional<Long> getV() {
+            return v;
+        }
+
+        public void setV(final java.util.Optional<Long> v) {
+            this.v = v;
+        }
+    }
+
+    public static class FixDRejected {
+        public java.util.Optional<Long> longs;
+        public java.util.OptionalInt optionalInt;
+        public com.landawn.abacus.util.u.OptionalLong optionalLong;
+        public List<java.util.Optional<Long>> longList;
+    }
+
+    public static class FixDBuilders {
+        public StringBuilder builder;
+        public StringBuffer buffer;
+    }
+
+    public static class FixDGenericBase<T> {
+        private java.util.Optional<T> v;
+
+        public java.util.Optional<T> getV() {
+            return v;
+        }
+
+        public void setV(final java.util.Optional<T> v) {
+            this.v = v;
+        }
+    }
+
+    public static class FixDGenericText extends FixDGenericBase<String> {
+    }
+
+    public static class FixDGenericLong extends FixDGenericBase<Long> {
+    }
+
+    public static class FixDRawGetter {
+        private java.util.Optional<String> v;
+
+        @SuppressWarnings("rawtypes")
+        public java.util.Optional getV() {
+            return v;
+        }
+
+        public void setV(final java.util.Optional<String> v) {
+            this.v = v;
+        }
+    }
+
+    public static class FixDTypedGetter {
+        private java.util.Optional<String> v;
+
+        @com.landawn.abacus.annotation.Type("String")
+        public java.util.Optional<String> getV() {
+            return v;
+        }
+
+        public void setV(final java.util.Optional<String> v) {
+            this.v = v;
+        }
     }
 }

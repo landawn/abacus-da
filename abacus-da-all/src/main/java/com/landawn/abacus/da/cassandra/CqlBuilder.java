@@ -217,15 +217,24 @@ import com.landawn.abacus.util.u.Optional;
  * other expressions, including one string that holds more than a name ({@code "desc, limit"}, {@code "desc DESC"},
  * {@code "desc = desc + 1"}; pass the names as separate arguments, and a direction as a {@link SortDirection}, instead),
  * to aliases, to raw expression text ({@code Filters.expr(...)} and the sort list of a {@code Criteria} or appended
- * {@code OrderBy}/{@code GroupBy} clause, which reach the builder as expression text), to the column list that a
- * sub-entity property expands to (for an entity whose {@code addr} property is a bean, {@code select("addr")} renders
- * {@code addr.street AS "addr.street", addr.desc AS "addr.desc"}), or to {@code null},
+ * {@code OrderBy}/{@code GroupBy} clause, which reach the builder as expression text), to the column list that a bare
+ * sub-entity property name expands to ({@code select("home")}, described next), or to {@code null},
  * {@code nan} and {@code infinity}, which are also literal values ({@code SELECT NULL FROM t} is valid CQL); quote such a
  * name yourself. A non-reserved keyword such as {@code group}, {@code value}, {@code key} or {@code ttl} is valid
  * unquoted and is rendered unquoted. Mapping a property or entity to a quoted name, for example
  * {@code @Column("\"desc\"")} or {@code @Table("\"order\"")}, or passing the quoted name (the Java string
  * {@code "\"desc\""}), still works, but is no longer needed for a reserved keyword: a quoted name is rendered verbatim
  * by every naming policy, and is case-sensitive in CQL.</p>
+ *
+ * <p>A sub-entity property (a bean-typed property not mapped by {@code @Column}) has its columns prefixed with the table
+ * name of the sub-entity's <i>class</i>, not with the property name, which only the SELECT alias carries: for an entity
+ * whose {@code home} property is an {@code Addr} bean, {@code PSC.select("home")} renders
+ * {@code addr.street AS "home.street", addr.desc AS "home.desc"} (the expanded list is not keyword-quoted, whereas
+ * {@code select(entityClass, true)}, which lists each nested property, renders {@code addr."desc" AS "home.desc"}), and
+ * the dotted name {@code "home.street"} renders {@code addr.street} in every clause ({@code SELECT}, {@code WHERE},
+ * {@code SET}, {@code INSERT}, column {@code DELETE}), not the UDT-field reference {@code home.street}. A bean property mapped with
+ * {@code @Column} is a plain column instead ({@code "home.street"} then renders {@code home.street}), as is any dotted
+ * name rendered without that entity class.</p>
  *
  * <p>The named-parameter DSLs ({@code NSB}, {@code NSC}, {@code NAC}, {@code NLC}) name a value's marker after its
  * property or column, unquoted, so a reserved-keyword column gets a reserved marker ({@code UPDATE t SET "desc" = :desc}),
@@ -1491,7 +1500,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *         the table or required {@code where(...)} clause has not yet been supplied, an IF clause already exists,
      *         or USING TIMESTAMP was specified
      * @throws IllegalArgumentException if {@code cond} is {@code null}, uses an unsupported CQL condition (including LIKE, OR,
-     *         BETWEEN, NOT IN, or a subquery), has an empty junction/IN list or a null IN value,
+     *         BETWEEN, NOT IN, or a subquery), is a clause such as a WHERE clause ({@code Filters.where(...)}) rather than a
+     *         relation, has an empty junction/IN list or a null IN value,
      *         or compares null with an operator other than {@code =} or {@code !=}
      * @see #onlyIf(String)
      * @see com.landawn.abacus.query.Filters
@@ -1714,18 +1724,30 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p>Overridden so that, for an entity bean, the primary-key properties (via {@code @Id} / registered keys) are
      * excluded from the SET list as well: Cassandra rejects SET on partition/clustering key columns, which belong in
      * the WHERE clause. A {@code String} (column name) or {@code Map} (property values) entity is handed to the
-     * parent builder unchanged.</p>
+     * parent builder, which sets every map entry (keys included) that {@code excludedPropNames} does not exclude; as for a
+     * bean, a map key is excluded when {@code excludedPropNames.contains(key)}, so a {@code SortedSet} such as
+     * {@code new TreeSet<>(String.CASE_INSENSITIVE_ORDER)} keeps its comparator.</p>
      *
      * @param entity the entity bean whose updatable properties supply the SET values, or a column name / property map
      * @param excludedPropNames properties to exclude from the update (may be {@code null})
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalStateException if this builder is closed or is not an UPDATE statement
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, a Collection or array, a blank String, any
-     *         other object that is neither a Map nor an entity bean, or a bean with no updatable (non-key) property left
-     *         after the exclusions are applied
+     * @throws IllegalStateException if this builder is closed or is not an UPDATE statement, or {@code where(...)} (or
+     *         another clause that follows SET) has already been called
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, a Collection or array, a blank String, an empty
+     *         Map or a Map with a {@code null}, blank or non-String key or with no entry left after the exclusions are
+     *         applied, any other object that is neither a Map nor an entity bean, or a bean with no updatable (non-key)
+     *         property left after the exclusions are applied
      */
     @Override
     public CqlBuilder set(final Object entity, final Set<String> excludedPropNames) throws IllegalStateException, IllegalArgumentException {
+        if (entity instanceof final Map<?, ?> props && N.notEmpty(excludedPropNames)) {
+            // WHY: the parent drops excluded map keys by looking each excluded name up in its copy of the map (Maps.removeKeys),
+            // which ignores a SortedSet's comparator: a case-insensitive TreeSet holding "FIRSTNAME" left the key firstName
+            // in, while insert(map, excluded) and set(bean, excluded) ask the set. The keys the set itself matches are added to
+            // the names handed over, so the parent still runs its state checks first and keeps its column order and errors.
+            return super.set(entity, withMatchedMapKeys(props, excludedPropNames));
+        }
+
         // Anything but an entity bean goes to the parent unchanged, so that its state checks (closed / not UPDATE)
         // precede the argument error; withIdPropNames would otherwise reject a non-bean first.
         if (entity == null || entity instanceof String || entity instanceof Map || entity instanceof Collection || entity.getClass().isArray()
@@ -1740,12 +1762,15 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * Sets the columns to update to the updatable properties of {@code entityClass}, excluding {@code excludedPropNames}.
      *
      * <p>Overridden so that the primary-key properties (via {@code @Id} / registered keys) are excluded from the SET
-     * list as well: Cassandra rejects SET on partition/clustering key columns, which belong in the WHERE clause.</p>
+     * list as well: Cassandra rejects SET on partition/clustering key columns, which belong in the WHERE clause. A property
+     * is excluded when {@code excludedPropNames.contains(name)}, so the set's own membership rule applies (for example the
+     * comparator of {@code new TreeSet<>(String.CASE_INSENSITIVE_ORDER)}, also through an unmodifiable view of it).</p>
      *
      * @param entityClass the entity class whose updatable properties become the SET columns
      * @param excludedPropNames properties to exclude from the update (may be {@code null})
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalStateException if this builder is closed or is not an UPDATE statement
+     * @throws IllegalStateException if this builder is closed or is not an UPDATE statement, or {@code where(...)} (or
+     *         another clause that follows SET) has already been called
      * @throws IllegalArgumentException if {@code entityClass} is {@code null} or is not an entity bean class, or no
      *         updatable (non-key) property is left after the exclusions are applied
      */
@@ -1761,8 +1786,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
-     * @return {@code excludedPropNames} plus the key property names of {@code entityClass}, or {@code excludedPropNames}
-     *         itself when the class declares no key property
+     * @return the key property names of {@code entityClass} plus every updatable property name that
+     *         {@code excludedPropNames} itself reports as contained, or {@code excludedPropNames} itself when the class
+     *         declares no key property
      * @throws IllegalArgumentException if {@code entityClass} is not an entity bean class
      */
     private static Set<String> withIdPropNames(final Class<?> entityClass, final Set<String> excludedPropNames) throws IllegalArgumentException {
@@ -1772,10 +1798,68 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             return excludedPropNames;
         }
 
-        final Set<String> result = N.isEmpty(excludedPropNames) ? N.newHashSet(idPropNames.size()) : N.newHashSet(excludedPropNames);
-        result.addAll(idPropNames);
+        final Set<String> result = N.newHashSet(idPropNames);
+
+        if (N.notEmpty(excludedPropNames)) {
+            // WHY: the parent asks the exclusion set itself (QueryUtil.updatePropNames -> N.excludeAll), so a set with its own
+            // membership rule, such as new TreeSet<>(String.CASE_INSENSITIVE_ORDER) holding "FIRSTNAME" or an unmodifiable or
+            // synchronized view of one, excludes firstName from a class without keys. Copying it (into a HashSet, or into a
+            // TreeSet only when it is itself a SortedSet) lost that rule for a class with keys; ask the caller's set about each
+            // name the parent checks instead, as set(Map, Set) does for map keys.
+            for (final String propName : QueryUtil.updatePropNames(entityClass, null)) {
+                if (excludes(excludedPropNames, propName)) {
+                    result.add(propName);
+                }
+            }
+        }
 
         return result;
+    }
+
+    /**
+     * Returns {@code excludedPropNames} plus every String key of {@code props} that {@code excludedPropNames} itself reports
+     * as contained, for the parent's map-lookup removal; or {@code excludedPropNames} itself if it matches no key.
+     *
+     * @param props the SET property map
+     * @param excludedPropNames the non-empty excluded names
+     * @return the names whose map-lookup removal drops exactly the keys the set matches (and what the parent dropped before)
+     */
+    private static Set<String> withMatchedMapKeys(final Map<?, ?> props, final Set<String> excludedPropNames) {
+        Set<String> result = null;
+
+        for (final Object key : props.keySet()) {
+            // Only String keys are asked about: a null or non-String key is the parent's to validate (or to drop, when it
+            // equals an excluded element).
+            if (key instanceof final String propName && excludes(excludedPropNames, propName)) {
+                if (result == null) {
+                    result = N.newHashSet(excludedPropNames);
+                }
+
+                result.add(propName);
+            }
+        }
+
+        return result == null ? excludedPropNames : result;
+    }
+
+    /**
+     * {@code excludedPropNames.contains(propName)}, except that a probe the set rejects with a {@code ClassCastException} or
+     * {@code NullPointerException} is answered {@code false}.
+     *
+     * @param excludedPropNames the caller's excluded names
+     * @param propName the property name or map key to test
+     * @return whether {@code excludedPropNames} itself reports {@code propName} as contained
+     */
+    private static boolean excludes(final Set<String> excludedPropNames, final String propName) {
+        // WHY: the parent never lets an exclusion probe fail (N.excludeAll's safeContains), and set(...)/insert(map), which now
+        // ask the caller's set directly, used to copy it or remove map keys by lookup. A set that cannot even compare a String
+        // (a TreeSet<Integer> passed as a raw Set, a comparator throwing NPE) must exclude nothing, not fail
+        // set(...)/insert(map)/delete(Class).
+        try {
+            return excludedPropNames.contains(propName);
+        } catch (final ClassCastException | NullPointerException e) {
+            return false;
+        }
     }
 
     /**
@@ -3226,8 +3310,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException if {@code cond} is {@code null}; if {@code cond} or a nested condition is not supported by CQL (a binary
      *         operator other than {@code =}, {@code !=}, {@code >}, {@code >=}, {@code <}, {@code <=} or {@code LIKE};
      *         {@code LIKE} in an IF clause; BETWEEN, NOT BETWEEN, NOT IN, a sub-query, HAVING or another clause
-     *         condition; a composable predicate such as NOT or EXISTS; an OR junction; or an unrecognized condition
-     *         type), compares a column with {@code null} (allowed only with {@code =} or {@code !=} in an IF clause),
+     *         condition, including a WHERE clause in an IF clause; a composable predicate such as NOT or EXISTS; an OR
+     *         junction; or an unrecognized condition type), compares a column with {@code null} (allowed only with {@code =} or {@code !=} in an IF clause),
      *         has an empty junction or IN list or a {@code null} IN value, or references a blank column name or one
      *         containing a CQL comment token
      */
@@ -3308,6 +3392,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             throw new IllegalArgumentException("Cassandra CQL does not support NOT IN or sub-queries: " + rejected);
         } else if (cond instanceof final Where where) {
+            if (_renderingIfCondition) {
+                // WHY: onlyIf(Filters.where(...)) rendered "... IF  WHERE b = ?", which Cassandra rejects ("no viable alternative
+                // at input 'WHERE'"); an IF clause takes relations only (junctions reject a nested Where already).
+                throw new IllegalArgumentException(
+                        "A Cassandra CQL lightweight-transaction IF condition cannot be a WHERE clause; pass the relation itself to onlyIf(...), without Filters.where(...)");
+            }
 
             _sb.append(_SPACE);
             _sb.append(where.operator().toString());
@@ -3382,7 +3472,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         propNames.removeAll(keyPropNames(entityClass));
 
         if (N.notEmpty(excludedPropNames)) {
-            propNames.removeAll(excludedPropNames);
+            // Same membership test as ArrayList.removeAll (the set is asked about each column), but a probe the set rejects
+            // with ClassCastException/NullPointerException excludes nothing instead of failing, as on every other path.
+            propNames.removeIf(propName -> excludes(excludedPropNames, propName));
         }
 
         // An empty column list changes DELETE's meaning to deletion of the entire row. A column-delete factory
@@ -3742,7 +3834,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * <p>This method allows fine-grained control over which properties to include in the INSERT
          * statement. Properties in the exclusion set will not be included even if they have values
          * and are normally insertable. As for {@link #insert(Object)}, a property whose value is {@code null} is left out
-         * and an id property holding {@code 0} is kept.</p>
+         * and an id property holding {@code 0} is kept. For a {@code Map} entity, as for a bean, a key is excluded when
+         * {@code excludedPropNames.contains(key)}, so a {@code SortedSet} such as
+         * {@code new TreeSet<>(String.CASE_INSENSITIVE_ORDER)} keeps its comparator.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3774,7 +3868,16 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 instance._op = OperationType.ADD;
                 instance.setEntityClass(entity.getClass());
 
-                if (entity instanceof String || entity instanceof Map || !Beans.isBeanClass(entity.getClass())) {
+                if (entity instanceof Map && N.notEmpty(excludedPropNames)) {
+                    // WHY: parseInsertEntity drops excluded keys by looking each one up in the map (Maps.removeKeys), which
+                    // ignores a SortedSet's comparator: a case-insensitive TreeSet holding "FIRSTNAME" left the key firstName in,
+                    // although it excludes property firstName from a bean (QueryUtil.insertPropNames asks the set) and
+                    // abacus-query 4.9.6's Dsl.insert(map, excluded) asks the set as well. The map is copied and its keys
+                    // validated first, so the set is asked only about non-blank String keys.
+                    parseInsertEntity(instance, entity, null);
+                    instance._props.keySet().removeIf(propName -> excludes(excludedPropNames, propName));
+                    N.checkArgument(!instance._props.isEmpty(), "entity map must contain at least one non-excluded property");
+                } else if (entity instanceof String || entity instanceof Map || !Beans.isBeanClass(entity.getClass())) {
                     parseInsertEntity(instance, entity, excludedPropNames);
                 } else {
                     instance._props = insertPropsOf(entity, excludedPropNames);
@@ -4586,8 +4689,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT statement for an entity class with optional sub-entity properties.
          *
          * <p>When includeSubEntityProperties is true, properties of nested entity objects are also
-         * included in the selection with appropriate prefixes. This is useful for fetching related
-         * entities in a single query.</p>
+         * included in the selection, each prefixed with the table name of the nested entity's class and aliased
+         * with its property path (an {@code Addr} property {@code home} selects {@code addr.street AS "home.street"};
+         * see the class documentation). This is useful for fetching related entities in a single query.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

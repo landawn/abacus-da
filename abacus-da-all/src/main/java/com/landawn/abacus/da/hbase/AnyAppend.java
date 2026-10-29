@@ -134,7 +134,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the append operation
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (which converts to no bytes), or its byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (which converts to no bytes), or its byte
      *         representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      */
@@ -193,7 +194,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position within the converted row-key bytes (0-based)
      * @param rowLength the number of bytes to use from the converted row-key bytes
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -211,7 +213,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param rowKey the row key as a byte array
      * @param timestamp the append's default timestamp; existing cells retain their own timestamps; a negative
      *                  value is retained without validation, unlike {@link #setTimestamp(long)}
-     * @param familyMap a pre-populated map of column families to their cells
+     * @param familyMap a pre-populated map of column families to their cells, ordered by {@code Bytes.BYTES_COMPARATOR} (with a
+     *                  naturally ordered map, every later {@code addColumn}, {@code add}, {@code has} and {@code get} call throws
+     *                  {@link ClassCastException})
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      */
     AnyAppend(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) throws IllegalArgumentException {
@@ -252,7 +256,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * @param rowKey the row key to append data to; converted to bytes automatically
      * @return a new AnyAppend instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or an empty value wrapper (such as an empty {@code Optional}, which
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, an HBase operation or {@code Any*} wrapper, bare or held by a
+     *         present value wrapper (not a row-key value), or an empty value wrapper (such as an empty {@code Optional}, which
      *         converts to no bytes), or its byte representation is empty or exceeds 32,767 bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
      * @see #addColumn(String, String, Object)
@@ -341,7 +346,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param rowOffset the starting position within the converted row-key bytes (0-based)
      * @param rowLength the number of bytes to use for the row key
      * @return a new AnyAppend instance configured for the specified row key portion
-     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null}, or {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} or is an HBase operation or {@code Any*}
+     *         wrapper (bare or held by a present value wrapper), or {@code rowLength} is zero or exceeds 32,767 bytes
      * @throws NegativeArraySizeException if {@code rowLength} is negative
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @throws RuntimeException if converting {@code rowKey} to bytes invokes a failing string conversion
@@ -375,7 +381,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param rowKey the row key as a byte array; must not be {@code null} or empty
      * @param timestamp the default timestamp for subsequently added columns (milliseconds since epoch); a negative
      *                  value is retained without validation, unlike {@link #setTimestamp(long)}
-     * @param familyMap a map of column family names to lists of cells to append
+     * @param familyMap a map of column family names to lists of cells to append; retained by reference. Order it by
+     *                  {@code Bytes.BYTES_COMPARATOR}, as HBase's own family maps are: with a naturally ordered map (a plain
+     *                  {@code new TreeMap<>()}) every later {@code addColumn}, {@code add}, {@code has} and {@code get} call throws
+     *                  {@link ClassCastException}
      * @return a new AnyAppend instance configured with the specified data
      * @throws IllegalArgumentException if {@code rowKey} or {@code familyMap} is {@code null}, or {@code rowKey} is empty
      * @see #of(Object)

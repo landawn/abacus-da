@@ -277,4 +277,17 @@ public class AnyRowMutationsTest extends TestBase {
                 () -> assertNotSame(row, viaObject.getRow()), () -> assertArrayEquals(Bytes.toBytes("row-bytes"), plain.getRow()),
                 () -> assertArrayEquals(Bytes.toBytes("row-bytes"), sized.getRow()), () -> assertArrayEquals(Bytes.toBytes("row-bytes"), viaObject.getRow()));
     }
+
+    // ---- 2026-10-27 sliceO ----
+
+    /** Pins the of(Object) / of(Object, int) docs: an empty value wrapper converts to no bytes and is rejected like a null row key. */
+    @Test
+    public void testOf_emptyValueWrapperRowKey_throwsIllegalArgumentException_sliceO() {
+        final Object emptyOptional = java.util.Optional.empty();
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> assertThrows(IllegalArgumentException.class, () -> AnyRowMutations.of(emptyOptional)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyRowMutations.of(emptyOptional, 4)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AnyRowMutations.of(com.landawn.abacus.util.Holder.of(null))),
+                () -> assertArrayEquals(Bytes.toBytes("k"), AnyRowMutations.of(java.util.Optional.of("k")).getRow()));
+    }
 }

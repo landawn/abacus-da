@@ -33,16 +33,24 @@ final class CassandraTestFixture implements AutoCloseable {
     final CassandraExecutor executor;
 
     CassandraTestFixture() {
-        this(null);
+        this(new CodecRegistry(), null);
     }
 
     CassandraTestFixture(final CassandraExecutor.StatementSettings settings) {
+        this(new CodecRegistry(), settings);
+    }
+
+    CassandraTestFixture(final CodecRegistry codecRegistry) {
+        this(codecRegistry, null);
+    }
+
+    private CassandraTestFixture(final CodecRegistry codecRegistry, final CassandraExecutor.StatementSettings settings) {
         final Configuration configuration = mock(Configuration.class);
         final ProtocolOptions protocolOptions = mock(ProtocolOptions.class);
         when(session.init()).thenReturn(session);
         when(session.getCluster()).thenReturn(cluster);
         when(cluster.getConfiguration()).thenReturn(configuration);
-        when(configuration.getCodecRegistry()).thenReturn(new CodecRegistry());
+        when(configuration.getCodecRegistry()).thenReturn(codecRegistry);
         when(configuration.getProtocolOptions()).thenReturn(protocolOptions);
         when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
         when(session.prepare(anyString())).thenReturn(prepared);

@@ -44,6 +44,14 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code query}, {@code stream}, {@code exists}, {@code count}, {@code insert}/{@code update}/{@code delete});
  * each result is wrapped in a {@code ContinuableFuture}.</p>
  *
+ * <p><b>Work on the calling thread:</b> every method that runs CQL text (the {@code String}-query methods and the
+ * entity, {@code Condition} and batch methods, which build CQL text) binds a prepared statement on the calling thread,
+ * as described in {@link AsyncCassandraExecutorBase}. When the {@link CassandraExecutor}'s prepared-statement cache has
+ * no entry for that CQL text (always the first time it is used), the statement is prepared through the session's
+ * blocking {@code prepare}: the calling thread waits for that round trip to Cassandra, and on a driver I/O thread (for
+ * example inside a callback run directly on a {@code ResultSetFuture} returned by the session) the call throws
+ * {@link IllegalStateException}. The {@link Statement} overloads submit the given statement without preparing it.</p>
+ *
  * @deprecated The Cassandra Java Driver 3.x is no longer maintained. Use
  *             {@link com.landawn.abacus.da.cassandra.AsyncCassandraExecutor} for new
  *             applications (which requires Cassandra Java Driver 4.x).
@@ -263,7 +271,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @return a future that completes with an {@code Optional} of the first mapped row, or empty
      *         if no row exists; if the first row maps to {@code null} (for example, a {@code NULL} column
      *         read into a single-value reference type), {@code get()} throws an {@code ExecutionException}
-     *         whose cause is a {@link NullPointerException}
+     *         whose cause is a {@link NullPointerException}, and if {@code targetClass} is a single-value type but the
+     *         first row does not have exactly one column, the cause is an {@link IllegalArgumentException}
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
      *         parameter markers, the supplied parameter count or names do not match the prepared statement, or a parameter value is
      *         rejected when converted to its column's type (see <i>Number Conversion</i> and <i>Date, Timestamp, Inet and Blob
@@ -396,6 +405,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     /**
      * Asynchronously executes a parameterless CQL query.
      *
+     * <p>The returned {@code ResultSet} is the driver's own: consuming it past the rows already fetched fetches the next page
+     * synchronously, so a failure to fetch a later page (for example a read timeout) is thrown by the consuming call
+     * ({@code one()}, {@code all()}, {@code iterator().hasNext()}, ...) instead of being reported by the future.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -432,6 +445,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
 
     /**
      * Asynchronously executes a CQL query with positional parameters.
+     *
+     * <p>The returned {@code ResultSet} is the driver's own: consuming it past the rows already fetched fetches the next page
+     * synchronously, so a failure to fetch a later page (for example a read timeout) is thrown by the consuming call
+     * ({@code one()}, {@code all()}, {@code iterator().hasNext()}, ...) instead of being reported by the future.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -473,6 +490,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     /**
      * Asynchronously executes a CQL query with named parameters.
      *
+     * <p>The returned {@code ResultSet} is the driver's own: consuming it past the rows already fetched fetches the next page
+     * synchronously, so a failure to fetch a later page (for example a read timeout) is thrown by the consuming call
+     * ({@code one()}, {@code all()}, {@code iterator().hasNext()}, ...) instead of being reported by the future.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncCassandraExecutor async = executor.async();
@@ -510,6 +531,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
 
     /**
      * Asynchronously executes a pre-built {@link Statement}.
+     *
+     * <p>The returned {@code ResultSet} is the driver's own: consuming it past the rows already fetched fetches the next page
+     * synchronously, so a failure to fetch a later page (for example a read timeout) is thrown by the consuming call
+     * ({@code one()}, {@code all()}, {@code iterator().hasNext()}, ...) instead of being reported by the future.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

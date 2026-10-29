@@ -162,15 +162,49 @@ import lombok.experimental.Accessors;
  * an {@link IllegalArgumentException} naming the parameter, the value and the column's CQL type, instead of being bound truncated
  * or as {@code Infinity}. An exact conversion is bound ({@code 2.0} to an {@code int} column binds {@code 2}), as is a number
  * rounded to the nearest {@code float} or {@code double} ({@code 0.1} to a {@code float} column binds {@code 0.1f}), and a value
- * out of the integer column's range, or a {@code NaN} or infinite value for it, fails with {@link ArithmeticException}. This
+ * out of the integer column's range, or a {@code NaN} or infinite value for it or for a {@code decimal} column, fails with
+ * {@link ArithmeticException}. This
  * check applies to binding only: a column value read into a narrower target (a {@code double} column into an {@code int}
  * property) is converted as {@code N.convert} converts it.
- * A {@code String} bound to a {@code blob} column (or to a custom-type column, which the driver also binds from a
+ * A {@code String} (or a {@code StringBuilder} or {@code StringBuffer}) bound to a {@code blob} column (or to a custom-type
+ * column, which the driver also binds from a
  * {@link ByteBuffer}, or written to a {@code blob} UDT field) is base64 text: it is decoded into the
  * blob's bytes, and text that is not valid base64 is rejected with an {@link IllegalArgumentException}. A {@code blob} read into a
  * {@code String} target or bean property (including a nested dotted column and a UDT field read into a bean) is the base64 text
  * of the buffer's remaining bytes; the driver's buffer is not consumed. {@code byte[]} and {@link ByteBuffer} targets receive the
- * blob's bytes, and a {@code ByteBuffer} bound to a {@code text} column is the base64 text of its remaining bytes.</p>
+ * blob's bytes, and a {@code ByteBuffer} bound to a {@code text} column is the base64 text of its remaining bytes. A value of
+ * another JDK or abacus class bound to a {@code blob} column (a {@code Boolean} or a number, for example), except a value wrapper (see
+ * below), is bound unchanged, and the driver rejects it with a {@link CodecNotFoundException}; a value of an application class is
+ * converted by {@code N.convert}, which
+ * applies a converter registered for its class with {@code N.registerConverter}, and is bound unchanged (rejected by the driver) when
+ * that conversion yields a buffer with bytes before its position and none after it, which has no content to bind: {@code N.convert}'s
+ * base64 reading of the value's text when no converter is registered (a driver {@code CqlDuration} or a Guava {@code UnsignedLong},
+ * for example); a converter's empty buffer (position 0) is bound as an empty blob. An empty {@code Optional}-like
+ * value (an empty {@code Optional} or {@code OptionalInt}, a {@code Nullable} or {@code Holder} of {@code null}, ...) bound to a
+ * {@code blob} (or custom-type) column binds {@code NULL}, as for an {@code int} or {@code text} column. A present one, bound to
+ * any column, binds as its content would: content that the column's codec or a registered codec (a {@code TypeCodec} for its
+ * class) accepts is bound as is, and other content is converted by these rules (for a {@code blob} column a {@code ByteBuffer}, a
+ * {@code byte[]}, base64 text or an application value its converter turns into a buffer); content that has no form for the column
+ * is bound unchanged in its wrapper and rejected by the driver. A {@code blob} read into a target or bean property
+ * that a {@code String} is an instance of and the buffer is not ({@code CharSequence}, {@code Serializable}, ...) receives the
+ * base64 text, and one read into a {@code StringBuilder} or {@code StringBuffer} receives that text as such; a target the buffer
+ * already is ({@code Object}, {@code Comparable}) and a collection or {@code Object[]} target hold the buffer itself, and a bean
+ * property declared as a collection of an element type holds the blob converted to that type ({@code List<byte[]>}: its bytes,
+ * {@code List<String>}: its base64 text; {@code List<Long>} is rejected). A {@code blob} read into a {@code java.util.Optional},
+ * an abacus {@code Optional} or {@code Nullable}, or a {@code Holder} is that wrapper of the blob converted to its declared element
+ * type by these rules, so a wrapper bound to a {@code blob} column reads back ({@code Optional<ByteBuffer>}: the buffer,
+ * {@code Nullable<byte[]>}: its bytes, {@code Optional<String>}: its base64 text; {@code Optional<Long>} is rejected); a target
+ * that declares no element type (a single-value {@code Optional.class}) holds the buffer, and a {@code NULL} column is an empty
+ * wrapper (in an entity or single value; an {@code extractData} {@code Dataset} keeps {@code null}). A {@code blob} has no
+ * other form: one read into a target or bean property of another type (a number or other primitive, a date/time type,
+ * {@code UUID}, {@code Map}, a primitive {@code Optional} such as {@code OptionalInt}, a {@code CharSequence} class abacus
+ * does not build from text such as {@code CharBuffer}, or an array whose element type is not {@code byte}, {@code ByteBuffer}
+ * or a supertype of it, such as {@code String[]}) is rejected with an
+ * {@link IllegalArgumentException}, unless that type is an application class whose abacus {@code Type} is a class of the
+ * application's own (registered with {@code TypeFactory.registerType(Class, Type)}), which converts the buffer; a {@code Type} that
+ * {@code TypeFactory.registerType} builds from to/from-string functions converts a value from its text only and is rejected like a
+ * built-in one. A {@code ByteBuffer} bound to a column of a type without a blob form is bound
+ * unchanged, which the driver rejects with a {@link CodecNotFoundException}.</p>
  *
  * <h2>Row Conversion with {@code N.convert}</h2>
  * <p>Loading this class registers a converter with abacus-common for driver rows, so {@code N.convert(row, targetClass)} maps a
@@ -593,6 +627,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * objects of the specified class to/from JSON strings. This is useful for storing
      * complex Java objects as text columns in Cassandra.</p>
      *
+     * <p>The driver ignores a codec that collides with one it already has, logging a warning: registering a class that it
+     * already maps to {@code text} (such as {@code String}), or the same class a second time, leaves the registry unchanged.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Register codec for custom class
@@ -627,7 +664,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>This static utility method allows registration of type codecs in external codec
      * registries. The codec will handle automatic JSON serialization/deserialization for
-     * the specified class type.</p>
+     * the specified class type. A codec that collides with one the registry already has (a class it already maps to
+     * {@code text}, such as {@code String}, or one registered before) is ignored by the driver, which logs a warning.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -733,6 +771,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final List<String> columnNameList = new ArrayList<>(columnCount);
         final List<List<Object>> columnList = new ArrayList<>(columnCount);
         final Class<?>[] columnClasses = new Class<?>[columnCount];
+        // The declared type of an Optional, Nullable or Holder column property, for which a blob is converted (see toWrapperValue).
+        final Type<?>[] wrapperTypes = new Type<?>[columnCount];
         final Map<String, String> columnToPropNameMap = isEntity ? QueryUtil.columnToPropNameMap(targetClass) : null;
 
         for (int i = 0; i < columnCount; i++) {
@@ -748,6 +788,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 }
 
                 columnClasses[i] = method != null ? method.getReturnType() : null;
+                // WHY (fixD): the getter's class alone has no element type, so a blob for an Optional<Long> property would be held in an
+                // Optional as the buffer; convert it for the declared type, as toEntity does (an Optional<String> gets the base64 text).
+                wrapperTypes[i] = method != null && isObjectWrapperClass(columnClasses[i]) ? wrapperPropType(targetClass, method) : null;
             } else {
                 // null = no per-column conversion (raw driver values), per the documented contract for
                 // non-bean targets; nested Row values still flatten through readRow below. Object[].class
@@ -768,6 +811,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 } else if (propValue == null || targetClass == null || isMap || columnClasses[i] == null
                         || columnClasses[i].isAssignableFrom(propValue.getClass())) {
                     columnList.get(i).add(propValue);
+                } else if (wrapperTypes[i] != null && propValue instanceof ByteBuffer) {
+                    columnList.get(i).add(toElementValue(wrapperTypes[i], propValue));
                 } else {
                     columnList.get(i).add(decodeValue(propValue, columnClasses[i]));
                 }
@@ -840,7 +885,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if {@code resultSet} or {@code targetClass} is {@code null}, or if {@code targetClass} is a single-value
      *         type but the result set does not have exactly one column
      * @throws RuntimeException if the driver fails to fetch a remaining result page, a column value cannot be converted
-     *         to the requested Java type, or a bean property cannot be read or written
+     *         to the requested Java type, a bean property cannot be read or written, or a bean cannot be created (see
+     *         {@link #toEntity(Row, Class)})
      */
     public static <T> List<T> toList(final ResultSet resultSet, final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(resultSet, cs.resultSet);
@@ -882,7 +928,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     path that does not resolve, or whose last property is read-only, is ignored</li>
      * <li><strong>Type conversion:</strong> Automatic conversion between compatible types (see the class documentation for
      *     the {@code timestamp}, {@code date}, {@code inet} and {@code blob} rules; a {@code blob} read into a {@code String}
-     *     property is the base64 text of its bytes), for top-level and nested properties alike. A collection or map column read
+     *     property is the base64 text of its bytes, one read into a property declared as a collection of an element type is that
+     *     collection of the blob converted to the element type, one read into an {@code Optional}, {@code Nullable} or
+     *     {@code Holder} property is that wrapper of the blob converted to its element type (an {@code Optional<ByteBuffer>} the
+     *     buffer, a {@code Nullable<byte[]>} its bytes), and one read into a number, date/time, {@code UUID} or other property
+     *     without a blob form fails the row), for top-level and nested properties alike. A collection or map column read
      *     into a property declared as a parameterized collection or map (for example {@code List<byte[]>} or
      *     {@code Map<String, String>}) or as an object array has each element, key and value converted by the same rules for the
      *     declared element type, nested containers included (a {@code list<timestamp>} into a {@code List<LocalDateTime>}, a
@@ -925,12 +975,25 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param entityClass the target entity class with getter/setter methods (must not be {@code null})
      * @return a new instance of the entity class populated with row data
      * @throws IllegalArgumentException if {@code row} or {@code entityClass} is {@code null}, or {@code entityClass} is not a bean class (it has no property
-     *         getter/setter methods or public fields)
-     * @throws RuntimeException if a column value cannot be converted to the requested Java type or a bean property cannot be read or written
+     *         getter/setter methods or public fields, or it is a {@code Map} type, including an {@code @Entity}-annotated {@code Map} subclass;
+     *         use {@link #toMap(Row, IntFunction)} for a map)
+     * @throws RuntimeException if a column value cannot be converted to the requested Java type or a bean property cannot be read or written,
+     *         or the entity cannot be created: an {@link UnsupportedOperationException} for a class with neither a no-argument constructor, a
+     *         builder, nor a constructor taking all its properties, and an {@link IllegalArgumentException} for a dotted column whose
+     *         intermediate property is unset and of a class without a no-argument constructor (such as a record)
      */
     public static <T> T toEntity(final Row row, final Class<T> entityClass) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(row, cs.row);
         N.checkArgNotNull(entityClass, cs.entityClass);
+
+        if (Map.class.isAssignableFrom(entityClass)) {
+            // WHY: Beans.isBeanClass (and so ParserUtil.getBeanInfo) also accepts an @Entity-annotated Map subclass, which is then built as
+            // an immutable bean of its Map accessors (keySet, size, ...) and failed with a misleading UnsupportedOperationException ("No all
+            // arguments constructor found"); getBeanInfo rejects a plain Map type (HashMap) with IllegalArgumentException. Reject every Map
+            // type alike, as the DynamoDB and MongoDB toEntity do. The row readers (toList, findFirst, ...) fill a Map row type instead.
+            throw new IllegalArgumentException("Not a bean class: " + ClassUtil.getCanonicalClassName(entityClass)
+                    + " - a Map type is not an entity; use toMap(Row, IntFunction) to copy a Row into a Map");
+        }
 
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
         final int columnCount = columnDefinitions.size();
@@ -1114,7 +1177,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * converts a {@code ByteBuffer} to {@code null} for {@code byte[]}, and a {@code byte[]} to a
      * {@code ByteBuffer} whose position already equals its limit (so the driver would encode an empty blob).
      * A {@code ByteBuffer} converted to {@code String} is the base64 text of its remaining bytes, its position unchanged
-     * ({@code N.convert} encodes only the bytes before the position, so a blob read into a {@code String} became {@code ""}).
+     * ({@code N.convert} encodes only the bytes before the position, so a blob read into a {@code String} became {@code ""}); so is
+     * one converted to another type that a {@code String} is an instance of and the buffer is not (a {@link CharSequence} or
+     * {@code Serializable}), and a {@code StringBuilder} or {@code StringBuffer} (a {@code CharSequence} type abacus builds from
+     * text) receives that text as such. A {@code ByteBuffer} converted to {@code java.util.Optional}, an abacus {@code Optional} or
+     * {@code Nullable}, or a {@code Holder} is that wrapper of the buffer itself, since a class declares no element type (a value
+     * for a declared wrapper type, such as a bean property, is converted to its element type instead: see
+     * {@link #toWrapperValue(Class, Type, ByteBuffer)}). A {@code ByteBuffer} converted to any other type
+     * that it is not an instance of is rejected with {@link IllegalArgumentException} ({@code N.convert} converted the empty text before
+     * its position, into {@code null}, a primitive default or an empty value), except a collection type or an array type whose element
+     * type the buffer is, which holds the buffer as its only element, and a type whose abacus {@code Type} is a class of the
+     * application's own (not one in {@code com.landawn.abacus.type}, which also holds the {@code Type} that
+     * {@code TypeFactory.registerType} builds from to/from-string functions), which {@code N.convert} hands the buffer.
      * A {@link LocalTime} is converted to {@code java.sql.Time} here as well (keeping milliseconds), because
      * {@code N.convert} rejects one with a fractional second or on a whole minute. The {@code timestamp} mappings that
      * {@code N.convert} rejects are handled here too: a {@link java.time.LocalDateTime} bound to a {@code timestamp} column
@@ -1129,10 +1203,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * An {@link InetAddress} converted to {@code String} is its {@link InetAddress#getHostAddress() host address} ({@code N.convert}
      * renders {@code InetAddress.toString()}, for example {@code "/127.0.0.1"}).
      * Every other conversion is delegated to {@code N.convert}.
+     * @throws IllegalArgumentException if {@code value} is a {@code ByteBuffer} and {@code targetClass} has no blob form (see above)
      * @throws RuntimeException if {@code value} cannot be converted to {@code targetClass}
      */
     @SuppressWarnings("unchecked")
-    static <T> T convertValue(final Object value, final Class<T> targetClass) throws RuntimeException {
+    static <T> T convertValue(final Object value, final Class<T> targetClass) throws IllegalArgumentException, RuntimeException {
         if (targetClass == byte[].class && value instanceof final ByteBuffer byteBuffer) {
             return (T) remainingBytes(byteBuffer);
         } else if (targetClass == ByteBuffer.class && value instanceof final byte[] bytes) {
@@ -1143,6 +1218,37 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             // content, as for a byte[] target above) through a duplicate, leaving the caller's buffer untouched; base64 is the text
             // form a String bound to a blob column is decoded from (see toBindValue).
             return (T) Strings.base64Encode(remainingBytes(byteBuffer));
+        } else if (value instanceof final ByteBuffer byteBuffer && !targetClass.isInstance(byteBuffer) && !Collection.class.isAssignableFrom(targetClass)
+                && !(targetClass.isArray() && targetClass.getComponentType().isInstance(byteBuffer)) && isBuiltinType(targetClass)) {
+            // WHY: N.convert converts any other target from the buffer's text, the base64 of the bytes BEFORE its position: "" for a blob
+            // the driver decodes (positioned at 0). That empty text became null for a number, date/time, UUID, Map or String[] target,
+            // the primitive default (0) for a primitive one and "" or Optional.of("") for a CharSequence or Optional-like one, so a blob
+            // read into such a target or bean property was silently lost, and a ByteBuffer bound to an int, bigint, timestamp, uuid, map,
+            // ... column was bound as NULL (a null was written). A target that String satisfies (CharSequence, Serializable, ...) gets the
+            // base64 text, as a String target does above; a StringBuilder or StringBuffer gets it too, and an Optional-like wrapper holds
+            // the converted blob (both below). Any other target has no blob form and is rejected: a read fails, and toBindValue keeps the
+            // original buffer, which the driver rejects (CodecNotFoundException) as it does without conversion. A collection or array
+            // target that holds the buffer as its single element (N.convert wraps it) is unchanged, and so is a class whose abacus Type
+            // is a class of the application's own (registered with TypeFactory.registerType), which may build its value from the buffer
+            // itself; a Type that registerType builds from to/from-string functions converts from the empty text and is rejected.
+            if (targetClass.isAssignableFrom(String.class)) {
+                return (T) Strings.base64Encode(remainingBytes(byteBuffer));
+            } else if (CharSequence.class.isAssignableFrom(targetClass) && N.typeOf(targetClass).isCharSequence()) {
+                // WHY (fixD): a StringBuilder or StringBuffer is a CharSequence too, but no String is one, so the rule above rejected it
+                // (HEAD: an empty one). It gets the base64 text as that type, which abacus builds from text; a CharSequence class abacus
+                // does not build from text (a CharBuffer: N.convert fails, "Conversion returned java.lang.String") is rejected below.
+                return N.convert(Strings.base64Encode(remainingBytes(byteBuffer)), targetClass);
+            } else if (isObjectWrapperClass(targetClass)) {
+                // WHY (fixD): a wrapper bound to a blob column binds its content (toBindValue), so a blob reads back into one; see
+                // toWrapperValue. A class declares no element type (a single-value Optional.class target), so the wrapper holds the
+                // buffer itself, as an Object target does.
+                return (T) toWrapperValue(targetClass, null, byteBuffer);
+            }
+
+            throw new IllegalArgumentException(
+                    "Cannot convert a blob (ByteBuffer of " + byteBuffer.remaining() + " bytes) to " + ClassUtil.getCanonicalClassName(targetClass)
+                            + ": that type has no blob form (a blob reads, for example, as byte[], ByteBuffer or its base64 text, alone or in a"
+                            + " collection or an Optional, Nullable or Holder)");
         } else if (targetClass == java.sql.Time.class && value instanceof final LocalTime localTime) {
             return (T) fromTimeOfDay(localTime, targetClass);
         } else if (targetClass == Instant.class && value instanceof final java.time.LocalDateTime localDateTime) {
@@ -1186,6 +1292,133 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         return N.convert(value, targetClass);
     }
 
+    private static final Object NOT_A_WRAPPER = new Object();
+
+    // The content of a value wrapper: java.util.Optional, OptionalInt, OptionalLong or OptionalDouble, abacus u.Optional, u.Nullable,
+    // u.OptionalBoolean/Char/Byte/Short/Int/Long/Float/Double or Holder; null when it is empty (a Nullable or Holder of null included).
+    // NOT_A_WRAPPER for any other value.
+    private static Object wrappedValue(final Object value) {
+        if (value instanceof final java.util.Optional<?> optional) {
+            return optional.orElse(null);
+        } else if (value instanceof final java.util.OptionalInt optional) {
+            return optional.isPresent() ? (Object) optional.getAsInt() : null;
+        } else if (value instanceof final java.util.OptionalLong optional) {
+            return optional.isPresent() ? (Object) optional.getAsLong() : null;
+        } else if (value instanceof final java.util.OptionalDouble optional) {
+            return optional.isPresent() ? (Object) optional.getAsDouble() : null;
+        } else if (value instanceof final Optional<?> optional) {
+            return optional.orElseNull();
+        } else if (value instanceof final Nullable<?> nullable) {
+            return nullable.orElseNull();
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalBoolean optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalChar optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalByte optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalShort optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalInt optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalLong optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalFloat optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.u.OptionalDouble optional) {
+            return optional.isPresent() ? (Object) optional.get() : null;
+        } else if (value instanceof final com.landawn.abacus.util.Holder<?> holder) {
+            return holder.value();
+        }
+
+        return NOT_A_WRAPPER;
+    }
+
+    // Whether cls is a value wrapper of an object: java.util.Optional, u.Optional, u.Nullable or Holder, which a blob is read into as
+    // its element (toWrapperValue). A primitive wrapper (OptionalInt, u.OptionalLong, ...) is not: a blob has no primitive form.
+    private static boolean isObjectWrapperClass(final Class<?> cls) {
+        return cls == java.util.Optional.class || cls == Optional.class || cls == Nullable.class || cls == com.landawn.abacus.util.Holder.class;
+    }
+
+    // The declared type of the Optional, Nullable or Holder property that getter reads on beanClass (extractData): the property's type
+    // as toEntity converts it (PropInfo.type) when that is of the getter's class, else the getter's generic return type.
+    // WHY (vfixD): the getter's generic return type alone kept the type variable of a generic superclass (Optional<T> on a class
+    // extending Base<String>) and has no element type for a raw Optional getter of an Optional<String> field, so the Dataset held an
+    // Optional of the buffer where toEntity holds the Optional<String> of its base64 text.
+    private static Type<?> wrapperPropType(final Class<?> beanClass, final Method getter) {
+        final PropInfo propInfo = ParserUtil.getBeanInfo(beanClass).getPropInfo(Beans.getPropNameByMethod(getter));
+
+        return propInfo != null && propInfo.clazz == getter.getReturnType() ? propInfo.type
+                : com.landawn.abacus.type.TypeFactory.getType(getter.getGenericReturnType());
+    }
+
+    /**
+     * Returns the blob {@code byteBuffer} as a value of the wrapper class {@code wrapperClass} ({@code java.util.Optional}, abacus
+     * {@code Optional} or {@code Nullable}, or {@code Holder}): the blob converted to the wrapper's declared element type
+     * {@code elementType} by {@link #toElementValue(Type, Object)} (the top-level blob rules: a {@code ByteBuffer} or {@code Object}
+     * element is the buffer, a {@code byte[]} its bytes, a {@code String} its base64 text, ...), or the buffer itself when no
+     * element type is declared ({@code null}).
+     * @throws IllegalArgumentException if the element type has no blob form (an {@code Optional<Long>})
+     * @throws RuntimeException if the blob cannot be converted to the element type
+     */
+    private static Object toWrapperValue(final Class<?> wrapperClass, final Type<?> elementType, final ByteBuffer byteBuffer)
+            throws IllegalArgumentException, RuntimeException {
+        // WHY (fixD): toBindValue binds a present wrapper's content to a blob column, but a blob read into a wrapper type was rejected
+        // (HEAD: N.convert wrapped the empty text before the buffer's position, an Optional.of("") or Optional of an empty buffer), so
+        // a wrapper property could not be read back. The element is converted for the DECLARED element type (an Optional<Long>
+        // fails as a Long does), so the wrapper never holds a value of another type.
+        final Object element = elementType == null ? byteBuffer : toElementValue(elementType, byteBuffer);
+
+        if (wrapperClass == java.util.Optional.class) {
+            return java.util.Optional.ofNullable(element);
+        } else if (wrapperClass == Optional.class) {
+            return Optional.ofNullable(element);
+        } else if (wrapperClass == Nullable.class) {
+            return Nullable.of(element);
+        }
+
+        return com.landawn.abacus.util.Holder.of(element);
+    }
+
+    // Whether abacus converts a value to targetClass with one of its own Type implementations (package com.landawn.abacus.type), not
+    // with a Type class the application registered (TypeFactory.registerType), whose valueOf(Object) may accept the value as it is.
+    // The Type that registerType builds from to/from-string functions is an anonymous class of TypeFactory, which converts a value
+    // from its text only (AbstractType.valueOf(Object)), so it counts as an abacus one.
+    private static boolean isBuiltinType(final Class<?> targetClass) {
+        return N.typeOf(targetClass).getClass().getName().startsWith("com.landawn.abacus.type.");
+    }
+
+    // Whether a value of cls is text for a blob: a String, or a CharSequence class abacus builds from text (a StringBuilder or
+    // StringBuffer). A blob reads into such a target as its base64 text (convertValue), so a value of it binds back by decoding its
+    // text (toBindValue, UDT field writes); another CharSequence class (a CharBuffer) has no blob form either way.
+    private static boolean isBlobTextClass(final Class<?> cls) {
+        return cls == String.class || (CharSequence.class.isAssignableFrom(cls) && N.typeOf(cls).isCharSequence());
+    }
+
+    // Whether cls is a class abacus refuses to register a converter for (N.registerConverter): a primitive or an array of one, a class
+    // of a JDK module, or a class in a java.*, javax.* or com.landawn.abacus.* package (abacus-common's package-private
+    // CommonUtil.isBuiltinClass). A value of any other class may have a converter registered, which N.convert applies first.
+    private static boolean isBuiltinClass(final Class<?> cls) {
+        Class<?> type = cls;
+
+        while (type.isArray()) {
+            type = type.getComponentType();
+        }
+
+        if (type.isPrimitive()) {
+            return true;
+        }
+
+        final Module module = type.getModule();
+
+        if (module.isNamed() && module.getLayer() == ModuleLayer.boot() && (module.getName().startsWith("java.") || module.getName().startsWith("jdk."))) {
+            return true;
+        }
+
+        final String packageName = type.getPackageName();
+
+        return packageName.startsWith("java.") || packageName.startsWith("javax.") || packageName.startsWith("com.landawn.abacus.");
+    }
+
     // A copy of the buffer's remaining bytes (a blob's content); the buffer's position, limit and mark are unchanged.
     private static byte[] remainingBytes(final ByteBuffer byteBuffer) {
         final ByteBuffer duplicate = byteBuffer.duplicate();
@@ -1197,9 +1430,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Converts a bind value that the column's codec does not accept to the column's Java type {@code javaClass}, as
-     * {@link #prepareStatement(String, Object...)} binds it. Text for a {@code blob} (or custom-type) column is base64-decoded into
-     * a buffer positioned at 0. Any other value is converted by {@link #convertValue(Object, Class)}; a value that conversion rejects
-     * with {@link ClassCastException} or {@link IllegalArgumentException} is returned unchanged, so the driver reports it (a
+     * {@link #prepareStatement(String, Object...)} binds it; a value wrapper is unwrapped first (see
+     * {@link #toParameterValue(Object, Class, DataType, ColumnDefinitions, Map, int)}). For a {@code blob} (or custom-type) column,
+     * text (a {@code String}, {@code StringBuilder} or {@code StringBuffer}; see {@link #isBlobTextClass(Class)}) is base64-decoded
+     * into a buffer positioned at 0, a {@code byte[]} is wrapped, any other value of a JDK or abacus class for such a column is returned
+     * unchanged (the driver rejects it), and a value of an application class is converted (a converter registered for its class with
+     * {@code N.registerConverter} applies), but returned unchanged when the conversion yields a buffer with bytes before its position
+     * and none after it, which has no content to bind ({@code N.convert}'s base64 decoding of the value's text without a converter; a
+     * converter's empty buffer, at position 0, is returned as an empty blob). Any other value is
+     * converted by {@link #convertValue(Object, Class)}; a value that conversion rejects
+     * with {@link ClassCastException}, {@link IllegalArgumentException} or {@link ParsingException} (text that is not a JSON object for a
+     * {@code map} column) is returned unchanged, so the driver reports it (a
      * {@link CodecNotFoundException}). A conversion that would change a number is rejected instead of bound: a number with a
      * fractional part (see {@link #isLossyNumberConversion(Object, Object)}) for an integer column ({@code tinyint},
      * {@code smallint}, {@code int}, {@code bigint}, {@code varint} or {@code counter}), and a finite number beyond the range of a
@@ -1207,35 +1448,57 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @throws IllegalArgumentException if the conversion would change a number as described above, or text bound to a {@code blob}
      *         column is not valid base64; the message names the parameter, the value or problem, and the column's CQL type
-     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it
+     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it or for a
+     *         {@code decimal} column
      * @throws RuntimeException if the conversion fails otherwise
      */
     private static Object toBindValue(final Object value, final Class<?> javaClass, final DataType colType, final ColumnDefinitions variables,
             final Map<Integer, String> namedParameters, final int index) throws IllegalArgumentException, ArithmeticException, RuntimeException {
-        if (javaClass == ByteBuffer.class && value instanceof final String text) {
+        if (javaClass == ByteBuffer.class && value instanceof final CharSequence chars && isBlobTextClass(value.getClass())) {
             // WHY: N.convert(String, ByteBuffer.class) base64-decodes the text but returns the buffer positioned at its limit, so the
             // driver bound an EMPTY blob; and text that is not base64 failed inside that conversion, was bound unchanged and surfaced
             // only as the driver's CodecNotFoundException. Decode into a buffer positioned at 0 (the text form a blob read into a
-            // String has, see convertValue), and reject invalid text here, outside the keep-the-original fallback below.
+            // String has, see convertValue), and reject invalid text here, outside the keep-the-original fallback below. A
+            // StringBuilder or StringBuffer is text the same way: a blob reads into one as its base64 text, so it binds back.
+            final String text = chars.toString();
+
             try {
                 return ByteBuffer.wrap(Strings.base64Decode(text));
             } catch (final IllegalArgumentException e) {
                 throw new IllegalArgumentException("Cannot bind text to " + describeParameter(variables, namedParameters, index) + " of CQL type "
                         + colType.asCql(false, true) + ": the text is not valid base64 (" + e.getMessage() + ")", e);
             }
+        } else if (javaClass == ByteBuffer.class && !(value instanceof byte[]) && isBuiltinClass(value.getClass())) {
+            // WHY: N.convert(value, ByteBuffer.class) base64-decodes the value's text (toString()) into a buffer positioned at its limit,
+            // so a value whose text happens to be valid base64 (Boolean true, the number 1234) was bound as an EMPTY blob, while any
+            // other value failed that conversion and was bound unchanged. Of the built-in classes only a byte[] (wrapped by
+            // convertValue) and text (decoded above) have a blob form: bind any other one unchanged, so the driver rejects it
+            // (CodecNotFoundException). A value of an application class still goes through convertValue: abacus applies a converter
+            // registered for its class (N.registerConverter, which refuses built-in classes) before that text conversion.
+            return value;
         }
 
         final Object converted;
 
         try {
             converted = convertValue(value, javaClass);
-        } catch (final ClassCastException | IllegalArgumentException e) {
-            // Type conversion failed, keep original value
+        } catch (final ClassCastException | IllegalArgumentException | ParsingException e) {
+            // Type conversion failed, keep original value. ParsingException: N.convert reads a value bound to a map column as JSON
+            // text, and text that is not a JSON object (for example "abc") fails with it, not with IllegalArgumentException.
             if (logger.isDebugEnabled()) {
                 logger.debug("Failed to convert parameter at index {} from {} to {}; keeping original value", index, value.getClass().getName(),
                         javaClass.getName(), e);
             }
 
+            return value;
+        }
+
+        if (javaClass == ByteBuffer.class && converted instanceof final ByteBuffer buffer && buffer.position() > 0 && !buffer.hasRemaining()) {
+            // WHY (verify1): an application value without a registered converter reaches N.convert's text conversion, which
+            // base64-decodes its text into a buffer positioned at its limit (no remaining bytes), so a CqlDuration "1h", a Guava
+            // UnsignedLong or a BSON ObjectId was bound as an EMPTY blob. A buffer with bytes before its position and none after it
+            // has no blob content the driver would write (a converter's unflipped buffer looks the same): bind the value unchanged,
+            // so the driver rejects it (CodecNotFoundException) as it does a JDK value without a blob form.
             return value;
         }
 
@@ -1407,9 +1670,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * {@link java.time.ZonedDateTime}/{@link java.time.OffsetDateTime} property, rejects a {@code date} {@link LocalDate} for an
      * {@code Instant}, {@code LocalDateTime}, {@code ZonedDateTime} or {@code OffsetDateTime} property (see
      * {@link #decodeValue(Object, Class)} and {@link #convertValue(Object, Class)}: the JVM default zone is used), renders an
-     * {@code inet} {@link InetAddress} as {@code "/address"} for a {@code String} property, and turns a BLOB {@code ByteBuffer} into
-     * {@code ""} for a {@code String} property (here it becomes the base64 text of the buffer's remaining bytes). Any other value is
-     * returned unchanged.
+     * {@code inet} {@link InetAddress} as {@code "/address"} for a {@code String} property, turns a BLOB {@code ByteBuffer} into
+     * {@code ""} for a {@code String} property (here it becomes the base64 text of the buffer's remaining bytes), and into
+     * {@code null}, a primitive default or an empty value for a property of a type without a blob form, such as a number, date/time,
+     * {@code UUID} or {@code Map} (here it is rejected, see {@link #convertValue(Object, Class)}). Any other value, and a
+     * {@code ByteBuffer} for a collection property (see {@link #toPropValue(PropInfo, Object)}), is returned unchanged.
      * @throws RuntimeException if {@code value} cannot be converted to {@code propClass}
      */
     private static Object toPropValue(final Class<?> propClass, final Object value) throws RuntimeException {
@@ -1417,7 +1682,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         // LocalDate or LocalTime and for LocalDate -> Instant or a java.time date-time, yields offset UTC for Instant ->
         // ZonedDateTime/OffsetDateTime, renders InetAddress.toString() for a String, and encodes only the bytes before a ByteBuffer's
         // position ("" for a blob) for a String; route those pairs through decodeValue like the other driver values it cannot map.
-        return ((propClass == byte[].class || propClass == String.class) && value instanceof ByteBuffer)
+        // A ByteBuffer for any other non-collection property was converted from that same empty text (a Long or UUID property
+        // silently became null, an int 0); decodeValue rejects such a target instead.
+        return (value instanceof ByteBuffer && !propClass.isInstance(value) && !Collection.class.isAssignableFrom(propClass))
                 || (value instanceof LocalTime && propClass != LocalTime.class && isTimeOfDayTarget(propClass))
                 || (value instanceof Instant && (propClass == java.time.LocalDateTime.class || propClass == java.time.ZonedDateTime.class
                         || propClass == java.time.OffsetDateTime.class || propClass == LocalDate.class || propClass == LocalTime.class
@@ -1430,11 +1697,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Converts a driver-decoded value for {@code propInfo}, as {@link PropInfo#setPropValue(Object, Object)} then stores it. A
      * collection or map for a property declared as a parameterized collection or map, or as an object array, has its elements
-     * (keys and values) converted to the declared element types (see {@link #toContainerValue(Type, Object)}); any other value is
-     * converted as {@link #toPropValue(Class, Object)} converts it.
+     * (keys and values) converted to the declared element types (see {@link #toContainerValue(Type, Object)}); a {@code ByteBuffer}
+     * (a blob) for a collection property becomes a collection of that single element, and one for an {@code Optional},
+     * {@code Nullable} or {@code Holder} property that wrapper of it, converted to the declared element type (see
+     * {@link #toElementValue(Type, Object)}); any other value is converted as {@link #toPropValue(Class, Object)} converts it.
      * @throws RuntimeException if {@code value}, or one of its elements, cannot be converted to the property's (element) type
      */
     private static Object toPropValue(final PropInfo propInfo, final Object value) throws RuntimeException {
+        if (value instanceof ByteBuffer && (propInfo.type.isCollection() || isObjectWrapperClass(propInfo.clazz))) {
+            // A blob for a collection or wrapper property: see toElementValue (PropInfo.setPropValue's N.convert set a collection to null
+            // and a wrapper to one of the empty text; the class alone, below, would drop the declared element type).
+            return toElementValue(propInfo.type, value);
+        }
+
         if (value instanceof Collection || value instanceof Map) {
             // WHY: PropInfo.setPropValue stores a driver collection or map as is when the property's raw class accepts it (a List
             // property, an ArrayList), so a List<byte[]> or List<String> property of a list<blob> column held ByteBuffers, a
@@ -1543,8 +1818,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * of that type is converted ({@link #decodeValue(Object, Class)}): for example a {@code blob} to {@code byte[]} or base64 text, a
      * {@code timestamp} to a {@code LocalDateTime} in the JVM default zone, an {@code inet} to its address text. A nested
      * collection or map is converted element by element ({@link #toContainerValue(Type, Object)}) and then to {@code type}'s
-     * container class (for example a {@code String[]}) if it is not one already; a single value for a collection or map
-     * {@code type} is converted by {@code N.convert} to that type, element type included. Returns {@code value} itself when it
+     * container class (for example a {@code String[]}) if it is not one already; a single value for a collection, map or other
+     * parameterized {@code type} (such as {@code Optional<Long>}) is converted by {@code N.convert} to that type, type arguments
+     * included, except a blob, which for a collection type becomes that collection of the blob converted to the element type, for an
+     * {@code Optional}, {@code Nullable} or {@code Holder} type that wrapper of the blob converted to the element type (see
+     * {@link #toWrapperValue(Class, Type, ByteBuffer)}), and is otherwise converted by {@link #decodeValue(Object, Class)}. Returns
+     * {@code value} itself when it
      * already is a {@code type} (a nested container: when its elements also fit), and keeps a {@code null}, a UDT value and a tuple
      * value as the driver decodes them, as a UDT or tuple column is set.
      * @throws RuntimeException if {@code value} cannot be converted to {@code type}
@@ -1566,10 +1845,31 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             return value;
         }
 
+        if (value instanceof final ByteBuffer byteBuffer && type.isCollection()) {
+            // WHY: N.convert converted a blob (ByteBuffer) for a parameterized collection type from the buffer's empty text, so a
+            // List<byte[]>, List<String> or Set<String> property read from a blob column (top-level, dotted or a UDT field) became
+            // null, and such an element of a list<blob> became [null]. As N.convert holds any other single value for a collection
+            // type, the result is that collection of the one blob, converted to the element type by the top-level blob rules
+            // (List<byte[]>: its bytes, List<String>: its base64 text, List<ByteBuffer>: the buffer, List<Long>: rejected).
+            final Type<?> elementType = type.elementType();
+            final List<Object> single = new ArrayList<>(1);
+            single.add(elementType == null ? byteBuffer : toElementValue(elementType, byteBuffer));
+
+            return cls.isInstance(single) ? single : N.convert(single, type);
+        }
+
+        if (value instanceof final ByteBuffer byteBuffer && isObjectWrapperClass(cls)) {
+            // A blob for a wrapper type (an Optional<ByteBuffer> property, a list<blob> element of a List<Nullable<String>>, a nested
+            // Optional<Optional<byte[]>>): see toWrapperValue. decodeValue would convert for the raw class, ignoring the element type.
+            return toWrapperValue(cls, type.elementType(), byteBuffer);
+        }
+
         // WHY (r2 verify): a scalar for a parameterized collection or map element type (a set<int> column into a List<List<Long>>
         // property) is converted to that full type, as PropInfo.setPropValue's N.convert of the whole container did before; the raw
-        // class (N.convert(3, List.class)) dropped the element type and stored a List<Integer> in it.
-        return type.isCollection() || type.isMap() ? N.convert(value, type) : decodeValue(value, cls);
+        // class (N.convert(3, List.class)) dropped the element type and stored a List<Integer> in it. The same holds for any other
+        // parameterized element type: a list<int> column into a List<Optional<Long>> held Optional values of the raw conversion
+        // (Optional<String> "7") where a top-level Optional<Long> property holds an Optional<Long>. A blob keeps the blob rules.
+        return !type.parameterTypes().isEmpty() && !(value instanceof ByteBuffer) ? N.convert(value, type) : decodeValue(value, cls);
     }
 
     /**
@@ -1637,9 +1937,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 }
             }
 
-            res = c;
+            res = asRowClass(c, rowClass);
         } else if (rowType.isMap()) {
-            res = toMap(row, IntFunctions.ofMap((Class<Map>) rowClass));
+            res = asRowClass(toMap(row, IntFunctions.ofMap((Class<Map>) rowClass)), rowClass);
         } else if (rowType.isBean()) {
             res = toEntity(row, rowClass);
         } else if (columnCount == 1) {
@@ -1658,6 +1958,23 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         return (T) res;
+    }
+
+    /**
+     * Returns the filled collection or map {@code filled} as an instance of {@code rowClass}: itself when it already is one, and
+     * otherwise a copy converted by {@code N.convert} (an immutable class such as {@code ImmutableMap} or {@code ImmutableList}).
+     * @throws RuntimeException if {@code filled} cannot be converted to {@code rowClass}
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T asRowClass(final Object filled, final Class<T> rowClass) throws RuntimeException {
+        // WHY: N.newCollection and IntFunctions.ofMap create a mutable stand-in (ArrayList, HashSet, HashMap, TreeMap) for an immutable
+        // abacus class (ImmutableList, ImmutableSet, ImmutableMap, ImmutableSortedMap), so toList/list/stream/findFirst(ImmutableMap.class,
+        // ...) returned a HashMap typed as an ImmutableMap (heap pollution: ClassCastException only where the caller used a row), and
+        // a UDTCodec for such a class decoded to an ArrayList or HashMap. N.convert wraps the filled container, values kept; a class
+        // that cannot be created (ImmutableBiMap) still fails before any value is read, as before. A stand-in that N.convert cannot
+        // turn into the row class (an EnumMap row class, whose keys must be enums, or an AbstractQueue) now fails with
+        // IllegalArgumentException instead of being returned as a row of another class (a HashMap or LinkedList).
+        return rowClass.isInstance(filled) ? (T) filled : N.convert(filled, rowClass);
     }
 
     /**
@@ -1705,11 +2022,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     }
                 }
 
-                return (T) c;
+                return asRowClass(c, rowClass);
             };
         } else if (rowType.isMap()) {
             //noinspection rawtypes
-            mapper = row -> (T) toMap(row, IntFunctions.ofMap((Class<Map>) rowClass));
+            mapper = row -> asRowClass(toMap(row, IntFunctions.ofMap((Class<Map>) rowClass)), rowClass);
         } else if (rowType.isBean()) {
             mapper = row -> toEntity(row, rowClass);
         } else if (columnCount == 1) {
@@ -2587,7 +2904,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * unchanged, and the driver then fails with a {@link CodecNotFoundException}. A conversion that would change a number is
      * rejected (see <i>Number and Blob Conversion</i> in the class documentation): a number with a fractional part (such as a
      * {@code Double}, {@code Float}, {@code BigDecimal} or {@code Fraction}) for an integer column, and a finite number beyond the
-     * range of a {@code float} or {@code double} column. A {@code String} for a {@code blob} column is decoded as base64.</p>
+     * range of a {@code float} or {@code double} column. A {@code String}, {@code StringBuilder} or {@code StringBuffer} for a
+     * {@code blob} column is decoded as base64, and any other
+     * value of a JDK or abacus class for it except a {@code byte[]} is bound unchanged; an empty {@code Optional}-like value for it is
+     * bound as {@code null}. A present {@code Optional}-like value for any column is bound as its content would be, so a codec
+     * registered for the content's class applies and a wrapped number is checked like a bare one.</p>
      *
      * @param query the CQL text or mapper identifier
      * @param parameters positional values, a single positional array/collection, or a named map/bean
@@ -2595,7 +2916,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if {@code query} is {@code null}, an unmapped query contains malformed or mixed
      *         parameter markers, named values cannot be resolved, the positional value count does not match, a value's
      *         conversion to its column's type would change the number, or text for a {@code blob} column is not valid base64
-     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it
+     * @throws ArithmeticException if a value is out of the range of its integer column, or is {@code NaN} or infinite for it or for a
+     *         {@code decimal} column
      * @throws RuntimeException if the driver fails to prepare the resolved CQL or the session is closed, a bean property
      *         getter fails, or the driver rejects a bound value
      */
@@ -2738,11 +3060,57 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             } else {
                 // A value the conversion rejects is kept (the driver reports it); a lossy number conversion or invalid base64 text
                 // for a blob column throws IllegalArgumentException naming the parameter.
-                values[i] = toBindValue(values[i], javaClass, colType, columnDefinitions, namedParameters, i);
+                values[i] = toParameterValue(values[i], javaClass, colType, columnDefinitions, namedParameters, i);
             }
         }
 
         return bind(preStmt, values);
+    }
+
+    /**
+     * Converts a non-null bind value that neither the column's codec nor a registered codec accepts (see
+     * {@link #acceptsParameter(DataType, Object)}), as {@link #prepareStatement(String, Object...)} binds it. A present value wrapper
+     * (see {@link #wrappedValue(Object)}; a nested one included) binds as its content would: content of the column's Java type, or
+     * content the column's codec or a registered codec accepts, is bound as is, and other content is converted by
+     * {@link #toBindValue}; content that conversion keeps unchanged (it has no form for the column) leaves the wrapper itself
+     * unchanged, so the driver reports it. An empty wrapper is {@code null} for a {@code blob} (or custom-type) column and is
+     * converted as a whole for any other column ({@code N.convert} gives {@code null} for a scalar column). Any other value is
+     * converted by {@link #toBindValue}.
+     *
+     * @throws IllegalArgumentException if the value or the wrapper's content cannot be bound without changing it (see
+     *         {@link #toBindValue})
+     * @throws ArithmeticException if the value or the wrapper's content is out of the range of its column (see {@link #toBindValue})
+     * @throws RuntimeException if a codec lookup or the conversion fails otherwise
+     */
+    private Object toParameterValue(final Object value, final Class<?> javaClass, final DataType colType, final ColumnDefinitions variables,
+            final Map<Integer, String> namedParameters, final int index) throws IllegalArgumentException, ArithmeticException, RuntimeException {
+        final Object content = wrappedValue(value);
+
+        if (content == null) {
+            // WHY (verify2): the blob rule binds a JDK or abacus value unchanged, which made an EMPTY Optional-like value
+            // (Optional.empty(), Nullable.of(null), Holder.of(null), OptionalInt.empty(), ...) fail with CodecNotFoundException,
+            // where N.convert had bound NULL, as it still does for an int or text column (an entity insert with an empty
+            // Optional<ByteBuffer> or Nullable<byte[]> property, which reads back as empty).
+            if (javaClass == ByteBuffer.class) {
+                return null;
+            }
+        } else if (content != NOT_A_WRAPPER) {
+            // WHY (outside review): codec acceptance was checked only on the wrapper, and its content was converted by abacus rules
+            // alone (N.convert for most columns, the blob rules for a blob column). So an Optional<Payload> was rejected for a blob or
+            // custom-type column (CodecNotFoundException) even though a registered TypeCodec<Payload> accepts the Payload bound bare,
+            // and for any other column it was silently stored in abacus's form (JSON or toString() text for a text column) instead
+            // of the codec's; a wrapped number also skipped the lossy-number check (Optional.of(1.5) was bound to an int column as
+            // 1). Offer the content to the codecs first and convert it by the same rules as a bare value.
+            if (javaClass.isAssignableFrom(content.getClass()) || acceptsParameter(colType, content)) {
+                return content;
+            }
+
+            final Object bound = toParameterValue(content, javaClass, colType, variables, namedParameters, index);
+
+            return bound == content ? value : bound;
+        }
+
+        return toBindValue(value, javaClass, colType, variables, namedParameters, index);
     }
 
     /**
@@ -3041,7 +3409,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Sets one UDT field, with the same fallbacks as ordinary binding when no registered codec accepts the value: a {@code byte[]}
-     * or base64 {@code String} for a BLOB field, a {@link Date}/{@link Calendar} for a TIME field, and for a TIMESTAMP field any value that
+     * or base64 text (a {@code String}, {@code StringBuilder} or {@code StringBuffer}) for a BLOB field, a {@link Date}/{@link Calendar}
+     * for a TIME field, and for a TIMESTAMP field any value that
      * {@link #convertValue(Object, Class)} turns into an {@link Instant}: a {@link java.time.LocalDateTime} (in the JVM default
      * time zone), a {@link LocalDate} (the start of that day in the JVM default time zone), a {@link java.time.ZonedDateTime} or
      * {@link java.time.OffsetDateTime}, and also a {@code Date},
@@ -3049,7 +3418,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * {@code timestamp} column is converted. A value the conversion rejects fails with the driver's original
      * {@link CodecNotFoundException}.
      *
-     * @throws IllegalArgumentException if a {@code String} for a BLOB field is not valid base64
+     * @throws IllegalArgumentException if text for a BLOB field is not valid base64
      * @throws RuntimeException if no codec supports the field value, the value cannot be encoded, or the field index is invalid
      */
     private static void setUdtField(final UserDefinedType cqlType, final UdtValue udtValue, final int index, final Object value)
@@ -3066,14 +3435,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     // Preserve any registered byte[] codec; otherwise use the driver's native BLOB representation.
                     udtValue.setByteBuffer(index, ByteBuffer.wrap(bytes));
                     return;
-                } else if (value instanceof final String text && cqlType.getFieldTypes().get(index).getProtocolCode() == ProtocolConstants.DataType.BLOB) {
-                    // WHY: the same rule as a String bound to a blob column (toBindValue): the text is base64, decoded into a buffer
-                    // positioned at 0, and text that is not base64 is rejected with a message naming the field (this failed with
-                    // CodecNotFoundException, while the column path bound an empty blob).
+                } else if (value instanceof final CharSequence chars && isBlobTextClass(value.getClass())
+                        && cqlType.getFieldTypes().get(index).getProtocolCode() == ProtocolConstants.DataType.BLOB) {
+                    // WHY: the same rule as text bound to a blob column (toBindValue): a String, StringBuilder or StringBuffer is base64,
+                    // decoded into a buffer positioned at 0, and text that is not base64 is rejected with a message naming the field
+                    // (this failed with CodecNotFoundException, while the column path bound an empty blob).
                     final byte[] bytes;
 
                     try {
-                        bytes = Strings.base64Decode(text);
+                        bytes = Strings.base64Decode(chars.toString());
                     } catch (final IllegalArgumentException decodeFailure) {
                         throw new IllegalArgumentException("Cannot set text to UDT field '" + cqlType.getFieldNames().get(index).asInternal() + "' (index "
                                 + index + ") of CQL type blob: the text is not valid base64 (" + decodeFailure.getMessage() + ")", decodeFailure);
@@ -3176,11 +3546,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * {@link CassandraExecutor#toEntity(Row, Class)} converts a column value, including the elements of a collection or map
          * field read into a parameterized collection, map or object-array property.</p>
          *
+         * <p>An entity property that holds a bean value of this codec (or a collection of them) must be annotated with
+         * {@code @Column} for the entity operations to write and read it: a bean-typed property without it is a sub-entity, which
+         * an entity {@code insert} or {@code update} and a query selecting all properties leave out without an error (see
+         * <i>Entity-to-CQL mapping</i> in {@link CassandraExecutorBase}).</p>
+         *
          * <p>A {@code byte[]} field value is accepted for a CQL {@code blob}. A registered codec for that
          * Java type takes precedence; otherwise the bytes are wrapped in a {@link ByteBuffer} for the
-         * driver's standard BLOB codec. A {@code String} field value for a {@code blob} is likewise accepted as base64 text,
-         * as a {@code String} bound to a {@code blob} column is: it is decoded into the field's bytes, and text that is not valid
-         * base64 is rejected with an {@link IllegalArgumentException}. Blob fields decoded into {@code byte[]} bean properties are
+         * driver's standard BLOB codec. A {@code String}, {@code StringBuilder} or {@code StringBuffer} field value for a {@code blob}
+         * is likewise accepted as base64 text, as such text bound to a {@code blob} column is: it is decoded into the field's
+         * bytes, and text that is not valid base64 is rejected with an {@link IllegalArgumentException}. Blob fields decoded into
+         * {@code byte[]} bean properties are
          * copied from the buffer's remaining bytes, and those decoded into {@code String} bean properties are the base64 text of
          * those bytes.</p>
          *
@@ -3296,7 +3672,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             coll.add(udtValue.getObject(i));
                         }
 
-                        return (T) coll;
+                        // An immutable collection class gets a converted copy of the filled stand-in (see asRowClass).
+                        return asRowClass(coll, javaClazz);
                     } else if (Map.class.isAssignableFrom(javaClazz)) {
                         final Map<String, Object> map = N.newMap((Class<Map<String, Object>>) javaClazz);
                         final List<String> fieldNames = fieldNames();
@@ -3307,7 +3684,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                             map.put(fieldNames.get(i), udtValue.getObject(i));
                         }
 
-                        return (T) map;
+                        // An immutable map class gets a converted copy of the filled stand-in (see asRowClass).
+                        return asRowClass(map, javaClazz);
                     } else if (Beans.isBeanClass(javaClazz)) {
                         final BeanInfo beanInfo = ParserUtil.getBeanInfo(javaClazz);
                         final PropInfo[] propInfos = fieldPropInfos(beanInfo);
@@ -3334,7 +3712,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                 /**
                  * @throws IllegalArgumentException if the non-null value has an unsupported Java type, a collection has more elements than UDT
-                 *         fields, or a {@code String} for a {@code blob} field is not valid base64
+                 *         fields, or text for a {@code blob} field is not valid base64
                  * @throws RuntimeException if reading a bean property, resolving a field codec, or encoding a field value fails
                  */
                 @Override
@@ -3442,7 +3820,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @return a ByteBuffer containing the serialized value, or {@code null} for a {@code null} value
          * @deprecated Use {@link #encode(Object, ProtocolVersion)} instead.
          * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type,
-         *         a collection with more elements than UDT fields, or a {@code String} for a {@code blob} field that is not valid base64
+         *         a collection with more elements than UDT fields, or text for a {@code blob} field that is not valid base64
          * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB, TIME or TIMESTAMP conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec while serializing
          * @throws RuntimeException if mapping the non-null value invokes a failing bean accessor, cannot create the target Java object, or a
@@ -3508,7 +3886,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param protocolVersion the protocol version to use for encoding
          * @return a ByteBuffer containing the encoded value, or {@code null} for a {@code null} value
          * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type,
-         *         a collection with more elements than UDT fields, or a {@code String} for a {@code blob} field that is not valid base64
+         *         a collection with more elements than UDT fields, or text for a {@code blob} field that is not valid base64
          * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB, TIME or TIMESTAMP conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec while serializing
          * @throws RuntimeException if mapping the non-null value invokes a failing bean accessor, cannot create the target Java object, or a
@@ -3609,7 +3987,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param value the value to format
          * @return a CQL UDT literal, or {@link CassandraExecutorBase#NULL_STR} if the value is null
          * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type,
-         *         a collection with more elements than UDT fields, or a {@code String} for a {@code blob} field that is not valid base64
+         *         a collection with more elements than UDT fields, or text for a {@code blob} field that is not valid base64
          * @throws CodecNotFoundException if neither a registered codec nor a supported BLOB, TIME or TIMESTAMP conversion can map a non-null
          *         field value to its CQL type, or a field codec reports a missing codec while serializing
          * @throws RuntimeException if mapping the non-null value invokes a failing bean accessor, cannot create the target Java object, or a

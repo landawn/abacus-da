@@ -540,4 +540,167 @@ class CassandraRowMappingTest {
     public static class R2EntityMap extends LinkedHashMap<String, Object> {
         private static final long serialVersionUID = 1L;
     }
+
+    // ---- 2026-10-27 sliceK ----
+
+    // toEntity documents IllegalArgumentException for a class that is not a bean, but an @Entity-annotated Map subclass (which
+    // Beans.isBeanClass accepts) was built as an immutable bean of its Map accessors and failed with UnsupportedOperationException
+    // ("No all arguments constructor found"). Every Map type is now rejected alike (the 4.x executor's rule); the row readers still
+    // fill such a Map row type (pinned).
+    @Test
+    void sliceK_toEntityRejectsEveryMapTypeWithIllegalArgumentException() {
+        final Row row = row(new String[] { "name" }, "Ada");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity(row, R2EntityMap.class));
+            org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("toMap"), e.getMessage());
+        }, () -> assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity(row, LinkedHashMap.class)),
+                () -> assertEquals(Map.of("name", "Ada"), CassandraExecutor.toList(result(row), R2EntityMap.class).get(0)),
+                () -> assertEquals(R2EntityMap.class, CassandraExecutor.toList(result(row), R2EntityMap.class).get(0).getClass()));
+    }
+
+    // N.newCollection / IntFunctions.ofMap return a mutable stand-in for an immutable row class (ArrayList for ImmutableList,
+    // HashSet for ImmutableSet, HashMap for ImmutableMap, TreeMap for ImmutableSortedMap), and that stand-in was handed back as the
+    // row: toList(rs, ImmutableMap.class) returned a List<ImmutableMap> holding HashMaps (ClassCastException only where a row was
+    // read), and a nested row read into an ImmutableMap property type by extractData was a HashMap. Rows now are of the class asked.
+    @Test
+    void sliceK_immutableRowClassesGetRowsOfThatClass() {
+        final Row row = row(new String[] { "id", "name" }, 7L, "Ada");
+        final List<org.junit.jupiter.api.function.Executable> checks = new ArrayList<>();
+
+        for (final Class<?> rowClass : new Class<?>[] { com.landawn.abacus.util.ImmutableMap.class, com.landawn.abacus.util.ImmutableSortedMap.class,
+                com.landawn.abacus.util.ImmutableList.class, com.landawn.abacus.util.ImmutableSet.class }) {
+            checks.add(() -> {
+                final Object mapped = CassandraExecutor.toList(result(row), rowClass).get(0);
+                org.junit.jupiter.api.Assertions.assertInstanceOf(rowClass, mapped, rowClass.getName());
+                assertEquals(Map.class.isAssignableFrom(rowClass) ? Map.of("id", 7L, "name", "Ada")
+                        : rowClass == com.landawn.abacus.util.ImmutableSet.class ? java.util.Set.of(7L, "Ada") : List.of(7L, "Ada"), mapped);
+            });
+        }
+
+        checks.add(() -> {
+            final com.landawn.abacus.util.Dataset dataset = CassandraExecutor
+                    .extractData(result(row(new String[] { "nested" }, row(new String[] { "value" }, "Ada"))), ImmutableHolder.class);
+            org.junit.jupiter.api.Assertions.assertInstanceOf(com.landawn.abacus.util.ImmutableMap.class, dataset.getColumn("nested").get(0));
+        });
+
+        // A UDTCodec for an immutable collection or map class decoded to the stand-in (N.newCollection/N.newMap) as well.
+        final com.datastax.driver.core.ProtocolVersion v4 = com.datastax.driver.core.ProtocolVersion.V4;
+        checks.add(() -> {
+            final CassandraExecutor.UDTCodec<com.landawn.abacus.util.ImmutableList> listCodec = CassandraExecutor.UDTCodec.create(textUserType("v"),
+                    com.landawn.abacus.util.ImmutableList.class);
+            final Object list = listCodec.deserialize(listCodec.serialize(com.landawn.abacus.util.ImmutableList.of("x"), v4), v4);
+            org.junit.jupiter.api.Assertions.assertInstanceOf(com.landawn.abacus.util.ImmutableList.class, list);
+            assertEquals(List.of("x"), list);
+        });
+        checks.add(() -> {
+            final CassandraExecutor.UDTCodec<com.landawn.abacus.util.ImmutableMap> mapCodec = CassandraExecutor.UDTCodec.create(textUserType("v"),
+                    com.landawn.abacus.util.ImmutableMap.class);
+            final Object map = mapCodec.deserialize(mapCodec.serialize(com.landawn.abacus.util.ImmutableMap.of("v", "x"), v4), v4);
+            org.junit.jupiter.api.Assertions.assertInstanceOf(com.landawn.abacus.util.ImmutableMap.class, map);
+            assertEquals(Map.of("v", "x"), map);
+        });
+
+        // Pins: mutable row classes keep the instance the factory created.
+        checks.add(() -> assertEquals(LinkedHashMap.class, CassandraExecutor.toList(result(row), LinkedHashMap.class).get(0).getClass()));
+        checks.add(() -> assertEquals(ArrayList.class, CassandraExecutor.toList(result(row), List.class).get(0).getClass()));
+
+        org.junit.jupiter.api.Assertions.assertAll(checks);
+    }
+
+    /** A one-field {@code text} UDT built through the driver's package-private constructors. */
+    private static com.datastax.driver.core.UserType textUserType(final String fieldName) throws Exception {
+        final var fieldConstructor = com.datastax.driver.core.UserType.Field.class.getDeclaredConstructor(String.class, DataType.class);
+        fieldConstructor.setAccessible(true);
+        final var typeConstructor = com.datastax.driver.core.UserType.class.getDeclaredConstructor(String.class, String.class, boolean.class,
+                java.util.Collection.class, com.datastax.driver.core.ProtocolVersion.class, com.datastax.driver.core.CodecRegistry.class);
+        typeConstructor.setAccessible(true);
+        return typeConstructor.newInstance("ks", "text_holder", false, List.of(fieldConstructor.newInstance(fieldName, DataType.text())),
+                com.datastax.driver.core.ProtocolVersion.V4, new com.datastax.driver.core.CodecRegistry());
+    }
+
+    public static class ImmutableHolder {
+        private com.landawn.abacus.util.ImmutableMap<String, Object> nested;
+
+        public com.landawn.abacus.util.ImmutableMap<String, Object> getNested() {
+            return nested;
+        }
+
+        public void setNested(final com.landawn.abacus.util.ImmutableMap<String, Object> nested) {
+            this.nested = nested;
+        }
+    }
+
+    // ---- 2026-10-27 r2K ----
+
+    // The test above reaches readRow's map branch (a nested row of an extractData column) and createRowMapper's collection and map
+    // branches (toList), but not readRow's collection branch: a nested row of an extractData column typed ImmutableList was the
+    // ArrayList stand-in on HEAD. Pinned: toEntity (whose setter already converted the stand-in) and a List property, which keeps it.
+    @Test
+    void r2K_aNestedRowReadIntoAnImmutableCollectionTypeIsOfThatType() {
+        final Row nested = row(new String[] { "id", "name" }, 7L, "Ada");
+
+        org.junit.jupiter.api.Assertions.assertAll(() -> {
+            final com.landawn.abacus.util.Dataset dataset = CassandraExecutor.extractData(result(row(new String[] { "list" }, nested)),
+                    ImmutableCollectionHolder.class);
+            org.junit.jupiter.api.Assertions.assertInstanceOf(com.landawn.abacus.util.ImmutableList.class, dataset.getColumn("list").get(0));
+            assertEquals(List.of(7L, "Ada"), dataset.getColumn("list").get(0));
+        }, () -> {
+            final ImmutableCollectionHolder holder = CassandraExecutor.toEntity(row(new String[] { "set" }, nested), ImmutableCollectionHolder.class);
+            org.junit.jupiter.api.Assertions.assertInstanceOf(com.landawn.abacus.util.ImmutableSet.class, holder.getSet());
+            assertEquals(java.util.Set.of(7L, "Ada"), holder.getSet());
+        }, () -> assertEquals(ArrayList.class,
+                CassandraExecutor.toEntity(row(new String[] { "plain" }, nested), ImmutableCollectionHolder.class).getPlain().getClass()));
+    }
+
+    // r2X (second-pass cross-check): a row class the factories cannot create and N.convert cannot copy their stand-in into (EnumMap,
+    // whose keys must be enums; AbstractQueue) fails with IllegalArgumentException from toRowClass, through toList (createRowMapper)
+    // and findFirst (readRow), where HEAD returned the HashMap / LinkedList stand-in typed as that class. Same as BigQuery/DynamoDB.
+    @Test
+    void r2X_aRowClassTheStandInCannotBecomeFailsWithIllegalArgumentException() {
+        final Row row = row(new String[] { "id", "name" }, 7L, "Ada");
+        final ResultSet rows = result(row);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList(rows, java.util.EnumMap.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList(rows, java.util.AbstractQueue.class)), () -> {
+                    try (CassandraTestFixture fixture = new CassandraTestFixture()) {
+                        when(fixture.session.execute(any(Statement.class))).thenReturn(rows);
+                        assertThrows(IllegalArgumentException.class, () -> fixture.executor.findFirst(java.util.EnumMap.class, "SELECT id, name FROM t"));
+                        assertThrows(IllegalArgumentException.class, () -> fixture.executor.findFirst(java.util.AbstractQueue.class, "SELECT id, name FROM t"));
+                    }
+                },
+                // Pin: a mutable row class keeps the factory's own instance.
+                () -> assertEquals(java.util.LinkedList.class, CassandraExecutor.toList(rows, java.util.LinkedList.class).get(0).getClass()));
+    }
+
+    public static class ImmutableCollectionHolder {
+        private com.landawn.abacus.util.ImmutableList<Object> list;
+        private com.landawn.abacus.util.ImmutableSet<Object> set;
+        private List<Object> plain;
+
+        public com.landawn.abacus.util.ImmutableList<Object> getList() {
+            return list;
+        }
+
+        public void setList(final com.landawn.abacus.util.ImmutableList<Object> list) {
+            this.list = list;
+        }
+
+        public com.landawn.abacus.util.ImmutableSet<Object> getSet() {
+            return set;
+        }
+
+        public void setSet(final com.landawn.abacus.util.ImmutableSet<Object> set) {
+            this.set = set;
+        }
+
+        public List<Object> getPlain() {
+            return plain;
+        }
+
+        public void setPlain(final List<Object> plain) {
+            this.plain = plain;
+        }
+    }
 }
