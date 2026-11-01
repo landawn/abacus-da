@@ -1,19 +1,13 @@
 # abacus-da
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.9.1)
-[![Javadocs](https://img.shields.io/badge/javadoc-2.9.1-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.9.1/index.html)
+[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.9.2)
+[![Javadocs](https://img.shields.io/badge/javadoc-2.9.2-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.9.2/index.html)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE.txt)
 
 **abacus-da** is a Java data-access toolkit for MongoDB, Cassandra, DynamoDB, HBase,
 Azure Cosmos DB, Google BigQuery, and Neo4j OGM. It wraps native clients with
 conveniences for entity mapping, CRUD, parameterized queries, tabular results,
 and streams, while retaining access to native request and response types.
-
-This guide describes **version 2.9.1 and Java 21**, as configured in this checkout's
-[pom.xml](./pom.xml). Dependency examples use that version. If it is not available
-in your repository, install this checkout locally or select a published release
-with its matching documentation and dependencies. See [CHANGES.md](./CHANGES.md)
-for release history.
 
 The integrations share conventions, but their query syntax, keys, transactions,
 consistency, pagination, and async behavior remain backend-specific. The wrappers
@@ -85,22 +79,7 @@ For synchronous MongoDB, add these dependencies inside your application's Maven
 <dependency>
     <groupId>com.landawn.abacus</groupId>
     <artifactId>abacus-da-mongodb</artifactId>
-    <version>2.9.1</version>
-</dependency>
-<dependency>
-    <groupId>com.landawn.abacus</groupId>
-    <artifactId>abacus-common</artifactId>
-    <version>8.3.0</version>
-</dependency>
-<dependency>
-    <groupId>com.landawn.abacus</groupId>
-    <artifactId>abacus-query</artifactId>
-    <version>4.9.5</version>
-</dependency>
-<dependency>
-    <groupId>org.mongodb</groupId>
-    <artifactId>mongodb-driver-sync</artifactId>
-    <version>5.13.0</version>
+    <version>2.9.2</version>
 </dependency>
 ```
 
@@ -114,10 +93,7 @@ java {
 }
 
 dependencies {
-    implementation("com.landawn.abacus:abacus-da-mongodb:2.9.1")
-    implementation("com.landawn.abacus:abacus-common:8.3.0")
-    implementation("com.landawn.abacus:abacus-query:4.9.5")
-    implementation("org.mongodb:mongodb-driver-sync:5.13.0")
+    implementation("com.landawn.abacus:abacus-da-mongodb:2.9.2")
 }
 ```
 
