@@ -105,16 +105,16 @@ appropriate backend module and add its driver alongside the core dependencies.
 
 | API | Additional Maven coordinates (`groupId:artifactId:version`) |
 | --- | --- |
-| MongoDB sync | `org.mongodb:mongodb-driver-sync:5.13.0` |
-| MongoDB reactive | `org.mongodb:mongodb-driver-reactivestreams:5.13.0`, `io.projectreactor:reactor-core:3.8.7` |
-| Cassandra driver 4 | `org.apache.cassandra:java-driver-core:4.19.3` |
+| MongoDB sync | `org.mongodb:mongodb-driver-sync:5.14.0` |
+| MongoDB reactive | `org.mongodb:mongodb-driver-reactivestreams:5.14.0`, `io.projectreactor:reactor-core:3.8.8` |
+| Cassandra driver 4 | `org.apache.cassandra:java-driver-core:4.19.4` |
 | Cassandra driver 3 | `com.datastax.cassandra:cassandra-driver-core:3.11.5`, `com.datastax.cassandra:cassandra-driver-mapping:3.11.5`, `com.codahale.metrics:metrics-core:3.0.2` |
-| DynamoDB SDK v2 | `software.amazon.awssdk:dynamodb:2.55.6` |
+| DynamoDB SDK v2 | `software.amazon.awssdk:dynamodb:2.57.8` |
 | DynamoDB SDK v1 | `com.amazonaws:aws-java-sdk-dynamodb:1.12.797` |
-| HBase | `org.apache.hbase:hbase-client:2.6.6`, `org.apache.hbase:hbase-common:2.6.6` |
+| HBase | `org.apache.hbase:hbase-client:2.6.7`, `org.apache.hbase:hbase-common:2.6.7` |
 | Cosmos DB | `com.azure:azure-cosmos:4.83.0` |
-| BigQuery | `com.google.cloud:google-cloud-bigquery:2.72.0` |
-| Neo4j | `org.neo4j:neo4j-ogm-core:5.0.10`, plus the OGM transport implementation for your connection |
+| BigQuery | `com.google.cloud:google-cloud-bigquery:2.74.0` |
+| Neo4j | `org.neo4j:neo4j-ogm-core:5.0.11`, plus the OGM transport implementation for your connection |
 
 Cassandra 4 uses Apache Cassandra artifact coordinates but retains Java packages
 under `com.datastax.oss.driver.api`. The driver-3 adapter requires the legacy API.
