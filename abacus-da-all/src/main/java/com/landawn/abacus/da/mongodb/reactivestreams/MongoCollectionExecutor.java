@@ -2397,13 +2397,15 @@ public final class MongoCollectionExecutor {
     private static <T> Function<Document, T> toEntity(final Class<T> rowType, final Collection<String> selectPropNames) {
         if (selectPropNames != null && selectPropNames.size() == 1 && isSingleValueType(rowType)) {
             final String propName = selectPropNames.iterator().next();
+            // The same mapper processes every result row, so parse a dotted path only once.
+            final List<String> path = propName != null && propName.indexOf('.') >= 0 ? java.util.Arrays.asList(propName.split("\\.")) : null;
 
             return doc -> {
                 if (doc == null) {
                     return null;
                 }
 
-                final Object value = getPropValueByPath(doc, propName);
+                final Object value = path == null ? getPropValueByPath(doc, propName) : doc.getEmbedded(path, Object.class);
 
                 return value == null ? null : MongoDB.convertBsonValue(value, rowType);
             };

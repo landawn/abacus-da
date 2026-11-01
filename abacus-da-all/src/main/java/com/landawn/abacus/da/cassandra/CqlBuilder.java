@@ -4014,7 +4014,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method generates an INSERT statement template based on the entity class structure,
          * excluding specified properties. This is useful for creating reusable INSERT templates
-         * that exclude certain fields like auto-generated IDs or timestamps.</p>
+         * that omit application-managed fields. Cassandra does not generate missing primary-key values.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4691,7 +4691,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * <p>When includeSubEntityProperties is true, properties of nested entity objects are also
          * included in the selection, each prefixed with the table name of the nested entity's class and aliased
          * with its property path (an {@code Addr} property {@code home} selects {@code addr.street AS "home.street"};
-         * see the class documentation). This is useful for fetching related entities in a single query.</p>
+         * see the class documentation). This only renders column paths; it does not join related tables. The paths
+         * must identify fields of UDT columns in the selected table for Cassandra to accept the query.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

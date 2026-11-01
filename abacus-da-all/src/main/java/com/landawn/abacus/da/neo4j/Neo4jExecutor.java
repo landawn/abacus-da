@@ -17,6 +17,7 @@ package com.landawn.abacus.da.neo4j;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -130,7 +131,9 @@ import com.landawn.abacus.util.u.Optional;
  * {@code Filter} and {@code Filter.NestedPathSegment} classes on the classpath do not declare exactly the fields of
  * Neo4j-OGM 5.0.10, or if the filter's private comparison function, which a copy reads reflectively and shares, cannot
  * be accessed. A filter passed as it is keeps the resolution of the first class it is used with, and a {@code Filters}
- * object it belongs to can then send two of its filters under one parameter name, the last value winning.</p>
+ * object it belongs to can then send two of its filters under one parameter name, the last value winning.
+ * For {@link #count(Class, Iterable)}, an iterable other than a {@link Collection} or {@link Filters} is first
+ * materialized once, so falling back to the original filter objects also works with a single-use iterable.</p>
  *
  * <h2>Null Arguments</h2>
  * <p>A {@code null} argument that Neo4j-OGM can never accept is rejected up front with an
@@ -2544,14 +2547,16 @@ public final class Neo4jExecutor {
      * example below) or any other iterable, such as a plain {@code List} &mdash; are therefore sent as copies in a new
      * {@code Filters} object, each copy indexed by its position: two filters on the same property get distinct
      * parameters ({@code age > $age_0 AND age < $age_1}), and the caller's {@code Filter} and {@code Filters} objects are
-     * not modified (neither re-indexed nor resolved). An empty iterable is passed on as it is. So is an iterable that
-     * contains a {@code null} element (Neo4j-OGM then throws a {@code NullPointerException}), an instance of a
+     * not modified (neither re-indexed nor resolved). Empty iterables remain empty. Original filter objects are passed on
+     * when an iterable contains a {@code null} element (Neo4j-OGM then throws a {@code NullPointerException}), an instance of a
      * {@code Filter} subclass, or a filter whose nested path holds an instance of a {@code Filter.NestedPathSegment}
      * subclass: Neo4j-OGM then resolves its filters in place, and two filters of a plain list on the same property share
-     * one parameter, the last value wins and the count is silently wrong. Every iterable is passed on as it is (with a
+     * one parameter, the last value wins and the count is silently wrong. All filter objects are passed on without copying (with a
      * warning logged once) if the Neo4j-OGM {@code Filter} and {@code Filter.NestedPathSegment} classes on the classpath
      * do not declare exactly the fields of Neo4j-OGM 5.0.10, or if the filter's private comparison function, which the
      * copy reads reflectively, cannot be accessed (see "Filter Arguments" in the class documentation).
+     * An iterable other than a {@link Collection} or {@link Filters} is consumed once into a list before copying:
+     * if a filter cannot be copied, that list preserves every original filter, including those already inspected.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2933,13 +2938,26 @@ public final class Neo4jExecutor {
 
         /**
          * Returns a new {@code Filters} object of copies of the filters of {@code filters} (a {@link Filters} object or any
-         * other iterable), indexed by position, or {@code filters} itself when it is empty or holds a filter that cannot be
-         * copied faithfully.
+         * other iterable), indexed by position, or the original filter objects when the input is empty or a filter cannot
+         * be copied faithfully. General iterables are first snapshotted; collections and {@code Filters} retain their identity
+         * on this fallback path.
          */
         static Iterable<Filter> indexedCopiesOf(final Iterable<Filter> filters) {
-            final Filters copies = copiesOrNull(filters);
+            final Iterable<Filter> replayable;
 
-            return copies == null ? filters : copies;
+            if (filters instanceof Collection<?> || filters instanceof Filters) {
+                replayable = filters;
+            } else {
+                // Copying may stop at an unsupported filter. Preserve a single-use iterable before that
+                // inspection so the fallback cannot silently drop the prefix or reuse an exhausted iterator.
+                final List<Filter> snapshot = new ArrayList<>();
+                filters.forEach(snapshot::add);
+                replayable = snapshot;
+            }
+
+            final Filters copies = copiesOrNull(replayable);
+
+            return copies == null ? replayable : copies;
         }
 
         /**

@@ -163,6 +163,12 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code com.landawn.abacus.da.aws.dynamodb.v2} sub-package and wraps {@code software.amazon.awssdk.services.dynamodb}
  * types; the two are not interchangeable.</p>
  *
+ * <p><b>Collection rows:</b> reads with a collection row class decode each attribute in the item's iteration order.
+ * {@link java.util.concurrent.ArrayBlockingQueue} rows have capacity for all attributes (one for an empty projected row)
+ * and reject null values. {@link java.util.concurrent.CopyOnWriteArrayList} rows preserve nulls and duplicates and are
+ * constructed in bulk, avoiding a backing-array copy for every attribute. Attribute iteration order is not a service
+ * guarantee; use a bean or map row when values must be identified by name.</p>
+ *
  * <p><b>Naming convention:</b> this executor mirrors the AWS DynamoDB SDK vocabulary ({@code getItem},
  * {@code batchGetItem}, {@code query}, {@code scan}, {@code putItem}, {@code updateItem},
  * {@code deleteItem}, {@code batchWriteItem}), augmented with a few abacus-style conveniences
@@ -1729,13 +1735,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
 
             return (T) a;
         } else if (rowType.isCollection()) {
-            final Collection<Object> c = N.newCollection((Class<Collection>) rowClass);
-
-            for (final Map.Entry<String, AttributeValue> entry : row.entrySet()) {
-                c.add(toValue(entry.getValue()));
-            }
-
-            return (T) toRowClass(c, rowClass);
+            return (T) readCollectionRow(row, (Class<Collection>) rowClass, DynamoDBExecutor::toValue);
         } else if (rowType.isMap()) {
             return (T) toRowClass(toMap(row, IntFunctions.ofMap((Class<Map>) rowClass)), rowClass);
         } else if (rowType.isBean()) {
@@ -1785,15 +1785,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
                 return (T) a;
             };
         } else if (rowType.isCollection()) {
-            return row -> {
-                final Collection<Object> c = N.newCollection((Class<Collection>) rowClass);
-
-                for (final Map.Entry<String, AttributeValue> entry : row.entrySet()) {
-                    c.add(toValue(entry.getValue()));
-                }
-
-                return (T) toRowClass(c, rowClass);
-            };
+            return row -> (T) readCollectionRow(row, (Class<Collection>) rowClass, DynamoDBExecutor::toValue);
         } else if (rowType.isMap()) {
             //noinspection rawtypes
             return row -> (T) toRowClass(toMap(row, IntFunctions.ofMap((Class<Map>) rowClass)), rowClass);

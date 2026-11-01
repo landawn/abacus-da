@@ -66,8 +66,8 @@ import com.landawn.abacus.util.N;
  *   <li>{@link #setCaching(int)} controls the target number of <em>rows</em> fetched in a scanner request.</li>
  *   <li>{@link #setBatch(int)} caps the number of <em>cells</em> in each {@code Result}, splitting
  *       wide rows across results when necessary.</li>
- *   <li>{@link #setMaxResultSize(long)} caps the total bytes transferred per RPC, providing an
- *       OOM safeguard independent of row/column counts.</li>
+ *   <li>{@link #setMaxResultSize(long)} controls the requested response size per RPC. It does not cap
+ *       the memory needed to assemble a complete row; use batching or partial results when processing wide rows.</li>
  *   <li>{@link #setLimit(int)} bounds the total number of rows returned by the scan.</li>
  *   <li>{@link #setAsyncPrefetch(boolean)} lets the client overlap I/O with processing.</li>
  * </ul>
@@ -1635,8 +1635,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Returns the maximum result size in bytes for this scan.
      * <p>
-     * This setting limits the total amount of data that can be returned by a single
-     * RPC call, helping to prevent out-of-memory errors for large scans.
+     * This is the configured response-size setting for an RPC, not a bound on the size of a complete
+     * row returned to the application. With neither batching nor partial results enabled, the client
+     * can accumulate fragments from multiple RPCs before returning a row.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1648,7 +1649,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * long size = scan.getMaxResultSize();  // returns 1048576
      * }</pre>
      *
-     * @return the maximum result size in bytes
+     * @return the configured response size in bytes, or {@code -1} to use the client's configured default
      * @see #setMaxResultSize(long)
      */
     public long getMaxResultSize() {
@@ -1658,10 +1659,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Sets the maximum result size in bytes for this scan.
      * <p>
-     * This setting provides a safeguard against retrieving too much data in a single
-     * RPC call. The scan will return fewer rows if necessary to stay under this limit.
-     * This is particularly useful for preventing out-of-memory errors when scanning
-     * tables with very large rows.
+     * This setting controls the requested response size per RPC. It does not bound the memory required
+     * for a whole row: by default, the client combines partial responses until a complete row is available.
+     * For wide rows, consider {@link #setBatch(int)} or {@link #setAllowPartialResults(boolean)} and consume
+     * the resulting row fragments incrementally.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1677,9 +1678,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                           .setCaching(100);
      * }</pre>
      *
-     * @param maxResultSize the maximum result size in bytes
+     * @param maxResultSize the requested response size in bytes; {@code -1} uses the client's configured default
      * @return this AnyScan instance for method chaining
      * @see #getMaxResultSize()
+     * @see #setBatch(int)
+     * @see #setAllowPartialResults(boolean)
      */
     public AnyScan setMaxResultSize(final long maxResultSize) {
         scan.setMaxResultSize(maxResultSize);

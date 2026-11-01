@@ -52,6 +52,7 @@ import com.landawn.abacus.util.N;
  * </ul>
  *
  * <h2>Common usage patterns</h2>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Basic query with filtering
@@ -413,7 +414,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
 
     /**
      * Returns the raw {@code loadColumnFamiliesOnDemand} setting as it was supplied to
-     * {@link #setLoadColumnFamiliesOnDemand(boolean)} — or {@code null} when the setting has not
+     * {@code setLoadColumnFamiliesOnDemand(boolean)} — or {@code null} when the setting has not
      * been explicitly configured. Use {@link #doLoadColumnFamiliesOnDemand()} to get the effective
      * {@code boolean} value ({@code false} when the setting has not been explicitly configured).
      *

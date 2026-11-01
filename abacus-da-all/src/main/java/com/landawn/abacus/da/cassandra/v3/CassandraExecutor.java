@@ -924,6 +924,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *       {@code null} for wrappers and other reference types.</li>
      * </ul>
      *
+     * <p>Single-value conversion is applied independently to each row, including rows decoded by a custom codec.
+     * An earlier value that already has the requested type does not change how later values or {@code NULL}s are mapped.</p>
+     *
      * <p>For mapped targets, remaining rows are converted as pages are consumed, without first collecting
      * the driver rows. If mapping a row fails, that row has been consumed, but later rows are not drained.</p>
      *
@@ -1904,35 +1907,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         return isTimeOfDayTarget(targetClass) && value instanceof Long ? timeOfDayValue(value, targetClass, columnDefinitions.getType(index)) : value;
     }
 
-    private static Object timeOfDayValue(final Object value, final Class<?> targetClass, final UserType userType, final int index) {
-        if (isTimeOfDayTarget(targetClass) && value instanceof Long) {
-            int i = 0;
-
-            // Field by position (the bean decode loop reads fields by position); a linear scan, but only for a Long read into
-            // a time type.
-            for (final UserType.Field field : userType) {
-                if (i++ == index) {
-                    return timeOfDayValue(value, targetClass, field.getType());
-                }
-            }
-        }
-
-        return value;
-    }
-
-    // The CQL type of the UDT field at position index (fields by position, as the bean decode loop reads them), or null.
-    private static DataType udtFieldType(final UserType userType, final int index) {
-        int i = 0;
-
-        for (final UserType.Field field : userType) {
-            if (i++ == index) {
-                return field.getType();
-            }
-        }
-
-        return null;
-    }
-
     // The date/time types that a time column or UDT field accepts when bound (see toTimeOfDay), so each reads back.
     private static boolean isTimeOfDayTarget(final Class<?> targetClass) {
         return targetClass == LocalTime.class || Date.class.isAssignableFrom(targetClass) || java.util.Calendar.class.isAssignableFrom(targetClass)
@@ -1941,7 +1915,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     private static Object timeOfDayValue(final Object value, final Class<?> targetClass, final DataType cqlType) {
-        if (cqlType == null || cqlType.getName() != DataType.Name.TIME || !(value instanceof final Long nanosOfDay)) {
+        if (!isTimeOfDayTarget(targetClass) || cqlType == null || cqlType.getName() != DataType.Name.TIME || !(value instanceof final Long nanosOfDay)) {
             return value;
         }
 
@@ -2108,9 +2082,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Builds a specialized {@code Row -> T} mapper for the given target class and column metadata.
      *
      * <p>The returned function chooses one of several strategies up front (array, collection,
-     * map, bean, or single-value) and uses that strategy for every row. For single-value
-     * conversions the mapper caches whether the runtime column type is already assignable
-     * to {@code T} to skip {@code N.convert} on later rows.</p>
+     * map, bean, or single-value) and uses that strategy for every row. Single-value conversions
+     * check each decoded value independently: a value already of the requested type is reused,
+     * while other values, including {@code NULL}, receive the normal target conversion.</p>
      *
      * @param <T> the target type
      * @param rowClass the target class for row conversion
@@ -2168,37 +2142,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         } else if (rowType.isBean()) {
             mapper = row -> toEntity(row, rowClass);
         } else if (columnCount == 1) {
-            mapper = new Function<>() {
-                private boolean isAssignable = false;
-                private Class<?> valueClass = null;
-
-                /**
-                 * @throws RuntimeException if the row does not match the target type, a column cannot be read or converted, or a mapped bean
-                 *         cannot be populated
-                 */
-                @SuppressWarnings("null")
-                @Override
-                public T apply(final Row row) throws RuntimeException {
-                    if (isAssignable) {
-                        return (T) row.getObject(0);
-                    }
-
-                    final Object value = row.getObject(0);
-
-                    // Let conversion supply the target's default for NULL (primitive default, empty Optional-like, or null).
-                    if (valueClass == null && value != null) {
-                        valueClass = value.getClass();
-                        isAssignable = rowClass.isAssignableFrom(valueClass);
-
-                        if (isAssignable) {
-                            return (T) value;
-                        } else {
-                            return convertValue(timeOfDayValue(value, rowClass, columnDefinitions, 0), rowClass);
-                        }
-                    } else {
-                        return convertValue(timeOfDayValue(value, rowClass, columnDefinitions, 0), rowClass);
-                    }
-                }
+            mapper = row -> {
+                final Object value = row.getObject(0);
+                // Codec results may vary by row. In particular, NULL still needs the target's default after an
+                // assignable Optional-like value; caching the first value's assignability bypassed that conversion.
+                return rowClass.isInstance(value) ? (T) value : convertValue(timeOfDayValue(value, rowClass, columnDefinitions, 0), rowClass);
             };
         } else {
             throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)
@@ -4082,8 +4030,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         final PropInfo[] propInfos = fieldPropInfos(beanInfo);
                         Object targetBean = beanInfo.createBeanResult();
                         PropInfo propInfo = null;
+                        final Iterator<UserType.Field> fields = userType.iterator();
 
+                        // Advance metadata alongside values. Looking each field up from the beginning made decoding
+                        // UDTs with many time or collection properties quadratic in their field count.
                         for (int idx = 0; idx < propInfos.length; idx++) {
+                            final DataType fieldType = fields.next().getType();
                             propInfo = propInfos[idx];
 
                             if (propInfo != null && !isReadOnlyProperty(propInfo)) {
@@ -4098,8 +4050,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                                         fieldValue instanceof ByteBuffer && (propInfo.type.isCollection() || isObjectWrapperClass(propInfo.clazz))
                                                 ? toElementValue(propInfo.type, fieldValue, null)
                                                 : fieldValue instanceof Collection || fieldValue instanceof Map
-                                                        ? toContainerPropValue(propInfo, fieldValue, udtFieldType(userType, idx))
-                                                        : toPropValue(propInfo.clazz, timeOfDayValue(fieldValue, propInfo.clazz, userType, idx)));
+                                                        ? toContainerPropValue(propInfo, fieldValue, fieldType)
+                                                        : toPropValue(propInfo.clazz, timeOfDayValue(fieldValue, propInfo.clazz, fieldType)));
                             }
                         }
 

@@ -157,7 +157,7 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
     }
 
     /**
-     * Returns the operation identifier set via {@link #setId(String)}. HBase echoes the id in
+     * Returns the operation identifier set via {@code setId(String)}. HBase echoes the id in
      * its slow-operation log, which makes it useful for correlating client-side traces with
      * server-side log entries.
      *

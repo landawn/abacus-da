@@ -70,6 +70,12 @@ class CassandraRowMappingTest {
     }
 
     @Test
+    void scalarMappingChecksEachDecodedValueRatherThanCachingTheFirstRuntimeType() {
+        assertEquals(Arrays.asList("7", "8", null, "9"), CassandraExecutor.toList(result(row(new String[] { "value" }, "7"), row(new String[] { "value" }, 8L),
+                row(new String[] { "value" }, (Object) null), row(new String[] { "value" }, "9")), String.class));
+    }
+
+    @Test
     void dataExtractionConvertsNestedRowsAndAllowsAnEmptySchema() {
         final Row outer = row(new String[] { "nested", "empty" }, row(new String[] { "value" }, "Ada"), null);
         final var untyped = CassandraExecutor.extractData(result(outer));

@@ -359,6 +359,24 @@ class CassandraScalarNullMappingTest {
         }
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("optionalLikeTypes")
+    void optionalLikeDefaultsStillApplyAfterAnAssignableValue(final Class<?> optionalType, final Object empty) throws Exception {
+        try (CassandraTestFixture fixture = new CassandraTestFixture()) {
+            stubQuery(fixture, empty, null, empty, null);
+            final List<Object> expected = List.of(empty, empty, empty, empty);
+
+            assertEquals(expected, fixture.executor.list(optionalType, QUERY));
+            assertEquals(expected, fixture.executor.async().list(optionalType, QUERY).get(5, TimeUnit.SECONDS));
+            try (var stream = fixture.executor.stream(optionalType, QUERY)) {
+                assertEquals(expected, stream.toList());
+            }
+            try (var stream = fixture.executor.async().stream(optionalType, QUERY).get(5, TimeUnit.SECONDS)) {
+                assertEquals(expected, stream.toList());
+            }
+        }
+    }
+
     static Stream<Arguments> optionalLikeTypes() {
         return Stream.of(Arguments.of(com.landawn.abacus.util.u.Optional.class, com.landawn.abacus.util.u.Optional.empty()),
                 Arguments.of(com.landawn.abacus.util.u.Nullable.class, com.landawn.abacus.util.u.Nullable.empty()),

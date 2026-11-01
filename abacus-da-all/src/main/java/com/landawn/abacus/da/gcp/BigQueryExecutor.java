@@ -25,7 +25,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -615,7 +617,10 @@ public class BigQueryExecutor {
             // an isJsonRawValue property as JSON; but a type variable bound to a text type (Box<StringBuilder>, Box<String>,
             // SbBox extends Box<StringBuilder>) is stored in an erased Object field, which would take the String or the
             // REPEATED List as is, so it is converted like any other type-variable property.
-            final boolean converts = value != null && (entityInfo.isImmutable
+            // Repeated-value decoding already applies the property's full element type. Re-converting that container
+            // for a record copies it again and tries to construct a zero-capacity queue for an empty repeated value.
+            final boolean decodedRepeatedValue = isRepeatedCell(cell) && isInstanceOf(propInfo.jsonXmlType.javaType(), value);
+            final boolean converts = value != null && ((entityInfo.isImmutable && !decodedRepeatedValue)
                     || (!isInstanceOf(propInfo.clazz, value) && (!propInfo.jsonXmlType.isCharSequence() || isStoredAsIs(propInfo, value))));
 
             propInfo.setPropValue(entity, converts ? N.convert(value, propInfo.jsonXmlType) : value);
@@ -661,7 +666,7 @@ public class BigQueryExecutor {
             final Object plain = !propType.isMap() ? readRow(subFields, struct, List.class)
                     : subFields == null ? readRow(struct, Map.class) : toMap(subFields, struct, IntFunctions.ofMap());
 
-            return propType.valueOf(N.toJson(plain));
+            return valueOfJson(propType, plain);
         }
 
         if (propType.isBean() && propType.isParameterizedType()) {
@@ -801,7 +806,8 @@ public class BigQueryExecutor {
      * BigQuery's typed accessors before constructing the container, preserving readable buffers and timestamp precision;
      * {@code STRUCT} elements of a bean element type (a parameterized one, such as {@code GenericValue<Long>}, with its type
      * arguments) are mapped like a {@code STRUCT} property.
-     * Other parameterized values use the property's JSON codec so their elements are converted as well.
+     * Other parameterized values use the property's JSON codec so their elements are converted as well. An
+     * {@link ArrayBlockingQueue} property, raw or parameterized, is sized for all elements (at least one).
      *
      * @param field the schema field describing the repeated elements
      * @param values the repeated values, normally wrapped in {@link FieldValue}
@@ -810,7 +816,7 @@ public class BigQueryExecutor {
      * @throws RuntimeException if a repeated element cannot be decoded or converted, a nested record's schema is invalid,
      *         or the requested container cannot be constructed or populated
      */
-    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @SuppressWarnings({ "unchecked" })
     private static Object convertRepeatedValue(final Field field, final List<?> values, final Type<?> targetType) throws RuntimeException {
         final Class<?> elementClass = targetType.isObjectArray() ? targetType.javaType().getComponentType()
                 : targetType.isCollection() && targetType.isParameterizedType() ? targetType.parameterTypes().get(0).javaType() : null;
@@ -818,7 +824,7 @@ public class BigQueryExecutor {
         if (elementClass != null && isDecodedElementClass(field, elementClass, targetType)) {
             final Type<?> elementType = elementTypeOf(targetType, elementClass);
             final Object[] array = targetType.isObjectArray() ? N.newArray(elementClass, values.size()) : null;
-            final Collection<Object> collection = array == null ? N.newCollection((Class<Collection>) targetType.javaType()) : null;
+            final Collection<Object> collection = array == null ? newValueCollection(targetType.javaType(), values.size()) : null;
 
             // Repeated values may use a sequential List; indexed reads would make decoding quadratic.
             int index = 0;
@@ -832,7 +838,7 @@ public class BigQueryExecutor {
                 }
             }
 
-            return array == null ? collection : array;
+            return array == null ? toRowClass(collection, targetType.javaType()) : array;
         }
 
         // A STRUCT element of a Collection or array element type (List<List<Long>>, Long[][], List<Object[]>) is unwrapped as
@@ -842,7 +848,32 @@ public class BigQueryExecutor {
         // stored as is in a List<List<Object>> / List<Object[]>, whose elements must be Lists / arrays.
         final boolean recordsAsValueLists = elementClass != null && (Collection.class.isAssignableFrom(elementClass) || elementClass.isArray());
         final Object unwrapped = unwrapRepeatedValue(field, values, recordsAsValueLists);
-        return targetType.isParameterizedType() ? targetType.valueOf(N.toJson(unwrapped)) : unwrapped;
+        return targetType.isParameterizedType() || targetType.javaType() == ArrayBlockingQueue.class ? valueOfJson(targetType, unwrapped) : unwrapped;
+    }
+
+    // WHY: the JSON codec of a collection type, and N.convert to one, create the container with a no-argument constructor,
+    // which ArrayBlockingQueue lacks. A REPEATED (INT64, STRING, ...) or STRUCT value read into an ArrayBlockingQueue property
+    // therefore failed with "No default constructor found", although rows of that class work (newValueCollection). Such a
+    // queue is decoded as a List of the same element type, with the same codec, and copied into a queue that has room for
+    // every element (at least one for an empty value). As for rows, a null element is rejected by the queue.
+    /**
+     * Decodes plain cell values to {@code targetType} with its JSON codec.
+     *
+     * @throws RuntimeException if a value cannot be converted to the target type, or the container cannot be constructed or populated
+     */
+    @SuppressWarnings("unchecked")
+    private static Object valueOfJson(final Type<?> targetType, final Object plain) throws RuntimeException {
+        if (targetType.javaType() != ArrayBlockingQueue.class) {
+            return targetType.valueOf(N.toJson(plain));
+        }
+
+        final Collection<Object> elements = (Collection<Object>) (targetType.isParameterizedType()
+                ? N.typeOf("java.util.List<" + targetType.parameterTypes().get(0).name() + ">").valueOf(N.toJson(plain))
+                : plain);
+        final ArrayBlockingQueue<Object> queue = new ArrayBlockingQueue<>(Math.max(1, elements.size()));
+        queue.addAll(elements);
+
+        return queue;
     }
 
     // Whether the elements of a REPEATED field must be decoded one by one for elementClass instead of going through the
@@ -1326,22 +1357,7 @@ public class BigQueryExecutor {
 
             res = a;
         } else if (rowType.isCollection()) {
-            final Collection<Object> c = N.newCollection((Class<Collection>) rowClass);
-
-            for (int i = 0; i < fieldCount; i++) {
-                final FieldValue cell = row.get(i);
-                value = cell.getValue();
-
-                if (isRecordCell(cell)) {
-                    c.add(readRow(subFieldsOf(fields.get(i)), (FieldValueList) value, List.class));
-                } else if (isRepeatedCell(cell)) {
-                    c.add(unwrapRepeatedValue(fields.get(i), (List<?>) value));
-                } else {
-                    c.add(value);
-                }
-            }
-
-            res = toRowClass(c, rowClass);
+            res = readCollectionRow(fields, row, rowClass);
         } else if (rowType.isMap()) {
             res = toRowClass(toMap(fields, row, IntFunctions.ofMap((Class<Map>) rowClass)), rowClass);
         } else if (rowType.isBean()) {
@@ -1379,7 +1395,38 @@ public class BigQueryExecutor {
     // IllegalArgumentException instead of being returned as a row of another class. No null check: the row is a container
     // just created by the factory.
     private static Object toRowClass(final Object row, final Class<?> rowClass) {
+        if (rowClass == CopyOnWriteArrayList.class && row instanceof Collection<?> && !(row instanceof CopyOnWriteArrayList<?>)) {
+            return new CopyOnWriteArrayList<>((Collection<?>) row);
+        }
+
         return rowClass.isInstance(row) ? row : N.convert(row, rowClass);
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static Collection<Object> newValueCollection(final Class<?> collectionClass, final int size) {
+        // ArrayBlockingQueue has no no-argument constructor. Copy-on-write lists must be populated
+        // in a temporary buffer and finalized once, otherwise each cell copies the entire prefix.
+        return collectionClass == CopyOnWriteArrayList.class ? new ArrayList<>(size)
+                : collectionClass == ArrayBlockingQueue.class ? new ArrayBlockingQueue<>(Math.max(1, size))
+                        : N.newCollection((Class<Collection>) collectionClass);
+    }
+
+    private static Object readCollectionRow(final FieldList fields, final FieldValueList row, final Class<?> rowClass) {
+        final Collection<Object> values = newValueCollection(rowClass, fields.size());
+
+        for (int i = 0; i < fields.size(); i++) {
+            final FieldValue cell = row.get(i);
+
+            if (isRecordCell(cell)) {
+                values.add(readRow(subFieldsOf(fields.get(i)), (FieldValueList) cell.getValue(), List.class));
+            } else if (isRepeatedCell(cell)) {
+                values.add(unwrapRepeatedValue(fields.get(i), (List<?>) cell.getValue()));
+            } else {
+                values.add(cell.getValue());
+            }
+        }
+
+        return toRowClass(values, rowClass);
     }
 
     // Element of an array row. Object[] rows keep the raw cell values (nested STRUCT -> Object[], REPEATED -> List). A
@@ -1483,7 +1530,6 @@ public class BigQueryExecutor {
         } else if (rowType.isCollection()) {
             mapper = new Function<>() {
                 private FieldList rowFields = fields;
-                private int fieldCount = fields == null ? 0 : fields.size();
 
                 /**
                  * Converts one query row to the requested result type.
@@ -1497,27 +1543,9 @@ public class BigQueryExecutor {
                 public T apply(final FieldValueList row) throws RuntimeException {
                     if (rowFields == null) {
                         rowFields = getSchema(row);
-                        fieldCount = rowFields.size();
                     }
 
-                    @SuppressWarnings("rawtypes")
-                    final Collection<Object> c = N.newCollection((Class<Collection>) rowClass);
-                    Object value = null;
-
-                    for (int i = 0; i < fieldCount; i++) {
-                        final FieldValue cell = row.get(i);
-                        value = cell.getValue();
-
-                        if (isRecordCell(cell)) {
-                            c.add(readRow(subFieldsOf(rowFields.get(i)), (FieldValueList) value, List.class));
-                        } else if (isRepeatedCell(cell)) {
-                            c.add(unwrapRepeatedValue(rowFields.get(i), (List<?>) value));
-                        } else {
-                            c.add(value);
-                        }
-                    }
-
-                    return (T) toRowClass(c, rowClass);
+                    return (T) readCollectionRow(rowFields, row, rowClass);
                 }
             };
         } else if (Map.class.isAssignableFrom(rowClass)) {
@@ -1638,7 +1666,8 @@ public class BigQueryExecutor {
      *       returned as an object array sized to the row width. {@code Object[]} rows keep the raw cell values; a typed
      *       array class (e.g. {@code Long[].class}) converts each cell to its component type.</li>
      *   <li>A {@link Collection} subclass &rarr; each row becomes a collection of values in column
-     *       order.</li>
+     *       order, subject to that collection's ordering, duplicate and null rules. An {@link ArrayBlockingQueue}
+     *       has capacity for the row (at least one for an empty row); a {@link CopyOnWriteArrayList} is populated in bulk.</li>
      *   <li>Any other class, including recognized scalar types such as {@link java.util.Calendar} and {@link ByteBuffer},
      *       &rarr; the result is treated as a single-column scalar; the first column's value is converted to {@code targetClass}.
      *       Rows with more than one column raise {@link IllegalArgumentException} during iteration.</li>

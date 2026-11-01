@@ -97,6 +97,7 @@ import com.landawn.abacus.util.XmlUtil;
  *   </cql>
  * </cqlMapper>
  * }</pre>
+ *
  * <p>The document must not contain a {@code <!DOCTYPE>} declaration: the XML parser disallows DTDs, so such a
  * document is rejected with a {@link ParsingException}.</p>
  *
@@ -760,6 +761,7 @@ public final class CqlMapper {
      *     <cql id="statement2">INSERT INTO table2 (col1, col2) VALUES (?, ?)</cql>
      * </cqlMapper>
      * }</pre>
+     *
      * <p>Text is escaped as XML requires; the serializer may also write a line feed inside a CQL body as the platform
      * line separator and a carriage return as a character reference. Loading the output reads every statement back
      * with the same original CQL.</p>

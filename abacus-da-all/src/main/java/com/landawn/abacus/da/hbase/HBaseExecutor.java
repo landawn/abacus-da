@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 
@@ -1191,9 +1192,11 @@ public final class HBaseExecutor {
      * and the like, a {@code Holder} of {@code null}) when {@link AnyPut#create(Object)} wrote the row, is not assigned and
      * keeps the value a new instance has. An empty qualifier maps a
      * scalar property stored directly in its family; it does not select a property inside a
-     * flattened nested bean. Bean properties declared as {@link HBaseColumn}, {@code Collection<HBaseColumn>}, or
-     * {@code Map<?, HBaseColumn>} are populated cell-by-cell with versioned values (a single {@code HBaseColumn} gets the
-     * newest cell; a map is keyed by each cell's timestamp, as a {@code Long}, whatever key type it declares).</p>
+     * flattened nested bean. A bean property declared as {@link HBaseColumn} receives the newest cell.
+     * Properties declared as {@code Collection<HBaseColumn>} or {@code Map<?, HBaseColumn>} accumulate versioned values
+     * and receive the completed container after the row is read. A map is keyed by each cell's timestamp, as a {@code Long},
+     * whatever key type it declares. Standard {@link CopyOnWriteArrayList} containers are filled in bulk to avoid
+     * copying all previously collected versions for each cell.</p>
      *
      * <p>A cell whose qualifier has no mapping of its own in its family (such as a flattened nested property's) is read into
      * the only property that {@link AnyPut#create(Object, NamingPolicy)} writes that cell for under any naming policy. A cell
@@ -1690,7 +1693,7 @@ public final class HBaseExecutor {
                         }
 
                         columnValueTypeMap.put(qualifier, columnValueType);
-                        columnColl = N.newCollection((Class) columnPropInfo.jsonXmlType.javaType());
+                        columnColl = newVersionedCollection((Class) columnPropInfo.jsonXmlType.javaType());
                         versionedContainers = deferVersionedContainer(versionedContainers, propEntity, columnPropInfo, columnColl);
 
                         if (columnCollectionMap == null) {
@@ -1795,7 +1798,7 @@ public final class HBaseExecutor {
                     }
 
                     columnValueTypeMap.put(qualifier, columnValueType);
-                    columnColl = N.newCollection((Class) familyPropInfo.jsonXmlType.javaType());
+                    columnColl = newVersionedCollection((Class) familyPropInfo.jsonXmlType.javaType());
                     versionedContainers = deferVersionedContainer(versionedContainers, entity, familyPropInfo, columnColl);
 
                     if (columnCollectionMap == null) {
@@ -1863,7 +1866,8 @@ public final class HBaseExecutor {
                 // later container for the same property still replaces an earlier one, as before), and before the nested beans
                 // holding some of them are built or handed to a setter that may copy them below.
                 for (final Tuple3<Object, PropInfo, Object> versionedContainer : versionedContainers) {
-                    versionedContainer._2.setPropValue(versionedContainer._1, versionedContainer._3);
+                    final Object container = versionedContainer._3 instanceof final BufferedVersionedList buffered ? buffered.finish() : versionedContainer._3;
+                    versionedContainer._2.setPropValue(versionedContainer._1, container);
                 }
             }
 
@@ -1988,6 +1992,30 @@ public final class HBaseExecutor {
         result.add(Tuple.of(owner, propInfo, container));
 
         return result;
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static Collection<HBaseColumn<?>> newVersionedCollection(final Class<? extends Collection> collectionClass) {
+        final Collection<HBaseColumn<?>> collection = N.newCollection(collectionClass);
+
+        // Keep the factory's original instance and any seeded contents. Subclasses retain their per-cell add behavior.
+        return collection.getClass() == CopyOnWriteArrayList.class ? new BufferedVersionedList((CopyOnWriteArrayList<HBaseColumn<?>>) collection) : collection;
+    }
+
+    private static final class BufferedVersionedList extends ArrayList<HBaseColumn<?>> {
+        private static final long serialVersionUID = 1L;
+
+        private final CopyOnWriteArrayList<HBaseColumn<?>> target;
+
+        BufferedVersionedList(final CopyOnWriteArrayList<HBaseColumn<?>> target) {
+            this.target = target;
+        }
+
+        CopyOnWriteArrayList<HBaseColumn<?>> finish() {
+            // Per-cell additions to the target copy the entire prefix; append the completed buffer only once.
+            target.addAll(this);
+            return target;
+        }
     }
 
     private static byte[] copyOf(final byte[] bytes, final int offset, final int len) {

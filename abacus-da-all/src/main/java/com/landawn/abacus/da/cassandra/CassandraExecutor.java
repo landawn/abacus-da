@@ -849,6 +849,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * reference types; use {@code Integer.class} instead of {@code int.class} to distinguish NULL from a stored zero.
      * An empty result set produces an empty list for either target type.</p>
      *
+     * <p>Single-value conversion is applied independently to each row, including rows decoded by a custom codec.
+     * An earlier value that already has the requested type does not change how later values or {@code NULL}s are mapped.</p>
+     *
      * <p>For raw-row targets, the list returned by {@link ResultSet#all()} is returned unchanged.
      * Other targets are mapped as pages are consumed, without first collecting the driver rows.
      * If mapping a row fails, that row has been consumed, but later rows are not drained.</p>
@@ -2030,36 +2033,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         } else if (rowType.isBean()) {
             mapper = row -> toEntity(row, rowClass);
         } else if (columnCount == 1) {
-            mapper = new Function<>() {
-                private boolean isAssignable = false;
-                private Class<?> valueClass = null;
-
-                /**
-                 * @throws RuntimeException if the row does not match the target type, a column cannot be read or converted, or a mapped bean
-                 *         cannot be populated
-                 */
-                @SuppressWarnings("null")
-                @Override
-                public T apply(final Row row) throws RuntimeException {
-                    if (isAssignable) {
-                        return (T) row.getObject(0);
-                    }
-
-                    final Object value = row.getObject(0);
-
-                    if (valueClass == null && value != null) {
-                        valueClass = value.getClass();
-                        isAssignable = rowClass.isAssignableFrom(valueClass);
-
-                        if (isAssignable) {
-                            return (T) value;
-                        } else {
-                            return decodeValue(value, rowClass);
-                        }
-                    } else {
-                        return decodeValue(value, rowClass);
-                    }
-                }
+            mapper = row -> {
+                final Object value = row.getObject(0);
+                // Codec results may vary by row. In particular, NULL still needs the target's default after an
+                // assignable Optional-like value; caching the first value's assignability bypassed that conversion.
+                return rowClass.isInstance(value) ? (T) value : decodeValue(value, rowClass);
             };
         } else {
             throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)

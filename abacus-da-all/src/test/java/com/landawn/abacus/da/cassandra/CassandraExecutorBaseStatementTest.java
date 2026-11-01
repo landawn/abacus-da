@@ -449,7 +449,7 @@ public class CassandraExecutorBaseStatementTest extends CassandraExecutorBaseTes
                 () -> assertEquals(List.of("INSERT INTO verify2_map_rows (bucket, name) VALUES (:bucket, :name) [0, x]",
                         "INSERT INTO verify2_map_rows (bucket, name) VALUES (:bucket, :name) [0, x]"), recording.recorded),
                 // An empty one is still rejected, with the builder's message.
-                () -> assertEquals("entity map",
+                () -> assertEquals("entity map must not be empty",
                         assertThrows(IllegalArgumentException.class, () -> snake.exposedPrepareInsert(new Verify2MapEntity())).getMessage()));
     }
 

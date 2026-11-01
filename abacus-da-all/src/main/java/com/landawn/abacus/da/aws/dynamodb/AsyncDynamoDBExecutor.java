@@ -43,11 +43,11 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * Asynchronous wrapper around {@link DynamoDBExecutor} providing non-blocking operations against the
+ * Asynchronous wrapper around {@link DynamoDBExecutor} providing task-based operations against the
  * AWS SDK <b>v1</b> ({@code com.amazonaws.services.dynamodbv2}) DynamoDB client.
  *
  * <p>This class wraps a synchronous {@link DynamoDBExecutor} and submits each call to a backing
- * {@link AsyncExecutor}. Every method returns a {@link ContinuableFuture} whose payload is exactly
+ * {@link AsyncExecutor}. Each operation returns a {@link ContinuableFuture} whose payload is exactly
  * the value the corresponding synchronous method on {@link DynamoDBExecutor} would have returned
  * (for example, {@code Map<String, Object>}, {@code PutItemResult}, or {@code Stream<T>}).</p>
  *
@@ -62,7 +62,8 @@ import com.landawn.abacus.util.stream.Stream;
  *       constructed with (a shared library-default pool when none was given); this wrapper is obtained from
  *       {@link DynamoDBExecutor#async()}.</li>
  *   <li>The submitted task invokes the corresponding blocking call on the underlying
- *       {@link DynamoDBExecutor}; the calling thread is never blocked.</li>
+ *       {@link DynamoDBExecutor}. The default pool performs that work on a worker thread; a custom executor
+ *       that runs submitted tasks inline performs it on the calling thread and can block the call.</li>
  *   <li>Continuations attached via {@link ContinuableFuture#thenRunAsync} and related methods
  *       run on the same {@link AsyncExecutor} unless an explicit executor is supplied.</li>
  *   <li>For methods that return a {@link Stream} ({@code stream}/{@code scan}), only the lazy stream

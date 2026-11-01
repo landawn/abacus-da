@@ -1106,6 +1106,35 @@ public abstract class DynamoDBExecutorBase {
     }
 
     /**
+     * Decodes an item's attribute values into a collection row in the item's iteration order.
+     * Bounded array queues have capacity for the entire row (at least one for an empty row), and
+     * copy-on-write lists are constructed in bulk. Other collection types retain their factory and
+     * element-acceptance rules; immutable factory stand-ins are finalized before they are returned.
+     *
+     * @param <V> the SDK's attribute-value type
+     * @param row the non-null item to decode
+     * @param rowClass the requested collection class
+     * @param valueDecoder converts an attribute to its native Java value
+     * @return a collection of the requested type holding the decoded attribute values
+     * @throws RuntimeException if conversion, construction, or insertion into the collection fails
+     */
+    @SuppressWarnings("rawtypes")
+    protected static <V> Collection<?> readCollectionRow(final Map<String, V> row, final Class<? extends Collection> rowClass,
+            final Function<? super V, ?> valueDecoder) {
+        // A no-argument factory cannot create ArrayBlockingQueue, and adding to a CopyOnWriteArrayList
+        // once per attribute copies every preceding value. Decode once into a suitable construction buffer.
+        final boolean copyOnWrite = rowClass == CopyOnWriteArrayList.class;
+        final Collection<Object> values = copyOnWrite ? new ArrayList<>(row.size())
+                : rowClass == ArrayBlockingQueue.class ? new ArrayBlockingQueue<>(Math.max(1, row.size())) : N.newCollection(rowClass);
+
+        for (final V value : row.values()) {
+            values.add(valueDecoder.apply(value));
+        }
+
+        return copyOnWrite ? new CopyOnWriteArrayList<>(values) : rowClass.isInstance(values) ? values : N.convert(values, rowClass);
+    }
+
+    /**
      * Converts a native map or collection to its declared map, collection, or object-array type while preserving
      * binary leaves. Unconstrained item containers retain their existing raw conversion; exact CopyOnWriteArrayList
      * targets always use bulk construction. Arrays pass their context to each element.

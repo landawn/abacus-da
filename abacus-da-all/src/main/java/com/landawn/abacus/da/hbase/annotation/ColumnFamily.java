@@ -40,6 +40,7 @@ import java.lang.annotation.Target;
  * <h3>Default Behavior (No Annotation)</h3>
  * <p>Without this annotation, field names are mapped directly to column family names
  * in HBase, with an empty column qualifier:</p>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * public static class Account {
@@ -58,6 +59,7 @@ import java.lang.annotation.Target;
  * 
  * <h3>Class-Level Usage</h3>
  * <p>When applied to a class, all fields become columns within the specified column family:</p>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * @ColumnFamily("user_info")
@@ -73,6 +75,7 @@ import java.lang.annotation.Target;
  * <h3>Field-Level Usage</h3>
  * <p>When applied to individual fields, you can specify different column families
  * for different fields within the same class:</p>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * @ColumnFamily("basic_info")

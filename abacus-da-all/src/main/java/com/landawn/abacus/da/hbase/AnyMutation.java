@@ -58,6 +58,7 @@ import com.landawn.abacus.util.N;
  * </ul>
  *
  * <h2>Common usage patterns</h2>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Basic mutation with durability control
@@ -467,7 +468,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Byte-array variant of {@link #get(String, String)}.
+     * Byte-array variant of {@code get(String, String)}.
      *
      * @param family the column-family name as a byte array
      * @param qualifier the column-qualifier name as a byte array
@@ -625,7 +626,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Byte-array variant of {@link #has(String, String)}.
+     * Byte-array variant of {@code has(String, String)}.
      *
      * @param family the column-family name as a byte array
      * @param qualifier the column-qualifier name as a byte array
@@ -639,7 +640,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Byte-array variant of {@link #has(String, String, long)}.
+     * Byte-array variant of {@code has(String, String, long)}.
      *
      * @param family the column-family name as a byte array
      * @param qualifier the column-qualifier name as a byte array
@@ -654,7 +655,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Byte-array variant of {@link #has(String, String, Object)}.
+     * Byte-array variant of {@code has(String, String, Object)}.
      *
      * @param family the column-family name as a byte array
      * @param qualifier the column-qualifier name as a byte array
@@ -670,7 +671,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Byte-array variant of {@link #has(String, String, long, Object)}.
+     * Byte-array variant of {@code has(String, String, long, Object)}.
      *
      * @param family the column-family name as a byte array
      * @param qualifier the column-qualifier name as a byte array

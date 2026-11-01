@@ -393,7 +393,7 @@ public class CosmosContainerExecutor {
      *
      * <p>This method provides full control over the create operation by allowing explicit
      * specification of the partition key and request options such as consistency level,
-     * indexing directives, and conditional creation. This is useful when you need to override
+     * indexing directives, and response-body suppression. This is useful when you need to override
      * automatic partition key detection or when you want fine-grained control over the
      * operation behavior.</p>
      *
@@ -408,8 +408,8 @@ public class CosmosContainerExecutor {
      * CosmosItemRequestOptions options = new CosmosItemRequestOptions();
      * options.setConsistencyLevel(ConsistencyLevel.STRONG);
      *
-     * // Conditional creation - only create if item doesn't exist
-     * options.setIfNoneMatchETag("*");
+     * // createItem already rejects an existing id in the same partition with HTTP 409.
+     * // If-None-Match is ignored for writes; no conditional-create header is needed.
      *
      * // Create the item
      * CosmosItemResponse<Product> response = executor.createItem(
@@ -532,6 +532,10 @@ public class CosmosContainerExecutor {
      * This is useful when you need to override the automatic partition key detection or
      * when you want to specify options like consistency level, an indexing directive, or conditional updates.</p>
      *
+     * <p>An If-Match ETag is checked only when the upsert replaces an existing item. If the item is absent,
+     * the service creates it without checking that ETag. Use
+     * {@link #replaceItem(String, PartitionKey, Object, CosmosItemRequestOptions)} when a concurrent deletion must cause failure.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * PartitionKey partitionKey = new PartitionKey("Electronics");
@@ -544,7 +548,7 @@ public class CosmosContainerExecutor {
      * CosmosItemRequestOptions options = new CosmosItemRequestOptions();
      * options.setConsistencyLevel(ConsistencyLevel.SESSION);
      *
-     * // Conditional upsert - only if the item has not changed since it was read
+     * // Check the ETag when replacing an existing item. If it was deleted, upsert creates it again.
      * options.setIfMatchETag(current.getETag());
      *
      * try {
@@ -910,7 +914,7 @@ public class CosmosContainerExecutor {
      *     null
      * );
      *
-     * System.out.println("All items in partition deleted");
+     * System.out.println("Partition deletion accepted; cleanup continues in the background");
      * System.out.println("Status: " + response.getStatusCode());
      * System.out.println("RU consumed: " + response.getRequestCharge());
      *

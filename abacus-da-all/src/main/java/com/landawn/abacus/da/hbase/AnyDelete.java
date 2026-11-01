@@ -1160,14 +1160,16 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     // server decodes as a whole-row delete. Remove the family entry this call created, if it is still empty, and rethrow the
     // original exception; an entry that existed before the call is never touched (HBase's addFamily may already have cleared its
     // cells, as it does on success; that happens only for a row or family the family-map factory accepted unchecked).
+    // Count entries instead of looking up the family before the call: besides avoiding a duplicate tree lookup, this lets
+    // HBase reject a negative timestamp before a caller-supplied family-map comparator can fail on the key.
     private AnyDelete addDeleteMarker(final byte[] family, final Runnable adder) {
         final NavigableMap<byte[], List<Cell>> familyCellMap = delete.getFamilyCellMap();
-        final boolean familyExisted = familyCellMap.containsKey(family);
+        final int familyCount = familyCellMap.size();
 
         try {
             adder.run();
         } catch (final RuntimeException e) {
-            if (!familyExisted) {
+            if (familyCellMap.size() != familyCount) {
                 final List<Cell> cells = familyCellMap.get(family);
 
                 if (cells != null && cells.isEmpty()) {

@@ -1368,7 +1368,7 @@ public final class MongoCollectionExecutor {
             // Convert each document as the cursor yields it instead of fetching all of them with into(...) first (which held
             // every Document and its value at once). Same per-row logic as toEntity(row, rowType, selectPropNames), hoisted.
             // A conversion failure is thrown only after the cursor is drained, so a later cursor failure still wins, as before.
-            final String propName = selectPropNames.iterator().next();
+            final Function<Document, T> rowMapper = toEntity(rowType, selectPropNames);
             final List<T> result = new ArrayList<>();
             RuntimeException failure = null;
 
@@ -1382,9 +1382,7 @@ public final class MongoCollectionExecutor {
 
                     if (failure == null) {
                         try {
-                            final Object value = row == null ? null : getPropValueByPath(row, propName);
-
-                            result.add(value == null ? null : MongoDBBase.convertBsonValue(value, rowType));
+                            result.add(rowMapper.apply(row));
                         } catch (final RuntimeException e) {
                             failure = e;
                             result.clear();
@@ -2845,6 +2843,9 @@ public final class MongoCollectionExecutor {
      * the field yields a {@code null} element instead of its converted {@code _id}. Result types that can directly
      * hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
      *
+     * <p>The selected scalar field is captured when the stream is created. Reusing or changing the supplied field-name
+     * collection while consuming the stream does not change which field is read from its rows.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get users sorted by creation date
@@ -2879,6 +2880,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This is the most comprehensive streaming method using collection-based projection,
      * providing all query features in a single operation.</p>
+     *
+     * <p>The selected scalar field is captured when the stream is created. Reusing or changing the supplied field-name
+     * collection while consuming the stream does not change which field is read from its rows.</p>
      *
      * <p>When exactly one field is selected into a single-value {@code rowType}, that field's value is extracted
      * directly (a dotted path such as {@code address.city} resolves the nested value), and a document that lacks
@@ -3113,7 +3117,23 @@ public final class MongoCollectionExecutor {
     }
 
     private static <T> Function<Document, T> toEntity(final Class<T> rowType, final Collection<String> selectPropNames) {
-        return doc -> toEntity(doc, rowType, selectPropNames);
+        if (selectPropNames != null && selectPropNames.size() == 1 && isSingleValueType(rowType)) {
+            final String propName = selectPropNames.iterator().next();
+            // Capture the projection once, and reuse its parsed path for every row instead of allocating per row.
+            final List<String> path = propName != null && propName.indexOf('.') >= 0 ? Arrays.asList(propName.split("\\.")) : null;
+
+            return doc -> {
+                if (doc == null) {
+                    return null;
+                }
+
+                final Object value = path == null ? getPropValueByPath(doc, propName) : doc.getEmbedded(path, Object.class);
+
+                return value == null ? null : MongoDBBase.convertBsonValue(value, rowType);
+            };
+        }
+
+        return toEntity(rowType);
     }
 
     /**

@@ -121,8 +121,8 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * which is the default on a host with one or two available processors. For stream and scan,
  * only the lazy stream is delivered there; its page fetches block the thread that consumes it.
  * Continuations attached with
- * {@code thenApply}/{@code thenAccept} therefore run on the completing pool — push CPU-heavy or
- * blocking work onto your own executor with the {@code *Async} variants (e.g.
+ * {@code thenApply}/{@code thenAccept} may run on the completing thread, or immediately on the attaching thread
+ * if the future is already complete. Push CPU-heavy or blocking work onto your own executor with the {@code *Async} variants (e.g.
  * {@code thenApplyAsync(fn, myExecutor)}) to avoid tying up the SDK's response threads or the common pool.</p>
  *
  * <h3>Thread Safety &amp; Performance:</h3>
