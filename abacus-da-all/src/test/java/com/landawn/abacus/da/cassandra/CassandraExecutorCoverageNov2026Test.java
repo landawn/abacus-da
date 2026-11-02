@@ -175,8 +175,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
 
         assertAll(() -> assertEquals("Ada", ((NestedPerson) dataset.getColumn("inner").get(0)).getName()),
                 () -> assertEquals(Optional.of(BYTES_BASE64), dataset.getColumn("blobOpt").get(0)),
-                () -> assertArrayEquals(BYTES, (byte[]) dataset.getColumn("blobBytes").get(0)),
-                () -> assertNull(dataset.getColumn("extra").get(0)));
+                () -> assertArrayEquals(BYTES, (byte[]) dataset.getColumn("blobBytes").get(0)), () -> assertNull(dataset.getColumn("extra").get(0)));
 
         // A Map target keeps nested rows as maps (the isMap arm of 812).
         final ResultSet mapRows = rows(new String[] { "nested", "plain" }, DataTypes.TEXT, new Object[][] { { nested, "x" } });
@@ -217,7 +216,8 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
                         CassandraExecutor.toList(rows("v", DataTypes.INT, new Object[] { null }), ZonedDateTime.class)),
                 () -> assertEquals(Arrays.asList((OffsetDateTime) null),
                         CassandraExecutor.toList(rows("v", DataTypes.INT, new Object[] { null }), OffsetDateTime.class)),
-                () -> assertArrayEquals(BYTES, CassandraExecutor.toList(rows("v", DataTypes.BLOB, new Object[] { ByteBuffer.wrap(BYTES) }), byte[].class).get(0)),
+                () -> assertArrayEquals(BYTES,
+                        CassandraExecutor.toList(rows("v", DataTypes.BLOB, new Object[] { ByteBuffer.wrap(BYTES) }), byte[].class).get(0)),
                 () -> assertEquals(LocalDateTime.ofInstant(Instant.EPOCH, java.time.ZoneId.systemDefault()),
                         CassandraExecutor.toList(rows("v", DataTypes.TIMESTAMP, new Object[] { Instant.EPOCH }), LocalDateTime.class).get(0)),
                 () -> assertEquals(Instant.EPOCH.atZone(java.time.ZoneId.systemDefault()),
@@ -250,7 +250,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         final Runnable restoreDebug = enableDebug(CassandraExecutor.class);
 
         try (Fixture fixture = new Fixture(new String[] { "v", "id" }, DataTypes.BLOB, DataTypes.INT);
-                Fixture intFixture = new Fixture(new String[] { "v" }, DataTypes.INT)) {
+             Fixture intFixture = new Fixture(new String[] { "v" }, DataTypes.INT)) {
             final StringBuilder builder = new StringBuilder(BYTES_BASE64);
             final java.nio.CharBuffer charBuffer = java.nio.CharBuffer.wrap(BYTES_BASE64);
             final Integer number = 1234;
@@ -271,11 +271,10 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
             intFixture.executor.execute(UPDATE_ONE_V, "abc");
 
             assertAll(() -> assertEquals(BYTES_BASE64, boundBufferText(fixture.binds.get(0)[0])),
-                    () -> assertEquals(BYTES_BASE64, boundBufferText(fixture.binds.get(1)[0])),
-                    () -> assertSame(charBuffer, fixture.binds.get(2)[0]), () -> assertSame(number, fixture.binds.get(3)[0]),
-                    () -> assertSame(longs, fixture.binds.get(4)[0]), () -> assertSame(strings, fixture.binds.get(5)[0]),
-                    () -> assertSame(mutableInt, fixture.binds.get(6)[0]), () -> assertSame(recording, fixture.binds.get(7)[0]),
-                    () -> assertEquals("abc", intFixture.binds.get(0)[0]));
+                    () -> assertEquals(BYTES_BASE64, boundBufferText(fixture.binds.get(1)[0])), () -> assertSame(charBuffer, fixture.binds.get(2)[0]),
+                    () -> assertSame(number, fixture.binds.get(3)[0]), () -> assertSame(longs, fixture.binds.get(4)[0]),
+                    () -> assertSame(strings, fixture.binds.get(5)[0]), () -> assertSame(mutableInt, fixture.binds.get(6)[0]),
+                    () -> assertSame(recording, fixture.binds.get(7)[0]), () -> assertEquals("abc", intFixture.binds.get(0)[0]));
         } finally {
             restoreDebug.run();
         }
@@ -301,8 +300,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
             fixture.executor.execute("UPDATE t SET v = ?, id = ?", new example.cassandra.BlobFixtures.EmptyBox(), 1);
             fixture.executor.execute("UPDATE t SET v = ?, id = ?", ByteBuffer.wrap(BYTES), 1);
 
-            assertAll(() -> assertSame(duration, fixture.binds.get(0)[0]),
-                    () -> assertInstanceOf(ByteBuffer.class, fixture.binds.get(1)[0]),
+            assertAll(() -> assertSame(duration, fixture.binds.get(0)[0]), () -> assertInstanceOf(ByteBuffer.class, fixture.binds.get(1)[0]),
                     () -> assertEquals(ByteBuffer.wrap(BYTES), fixture.binds.get(2)[0]));
         }
     }
@@ -353,7 +351,8 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
                 () -> assertEquals(zoned.toOffsetDateTime(), CassandraExecutor.toList(rows("v", DataTypes.TIME, cell), OffsetDateTime.class).get(0)),
                 () -> assertEquals(zoned.toInstant(), CassandraExecutor.toList(rows("v", DataTypes.TIME, cell), Instant.class).get(0)),
                 () -> assertEquals(zoned.toInstant(), ((Date) CassandraExecutor.toList(rows("v", DataTypes.TIME, cell), Date.class).get(0)).toInstant()),
-                () -> assertEquals(zoned.toInstant(), ((Calendar) CassandraExecutor.toList(rows("v", DataTypes.TIME, cell), Calendar.class).get(0)).toInstant()),
+                () -> assertEquals(zoned.toInstant(),
+                        ((Calendar) CassandraExecutor.toList(rows("v", DataTypes.TIME, cell), Calendar.class).get(0)).toInstant()),
                 () -> assertEquals("01:02:03", CassandraExecutor.toList(rows("v", DataTypes.TIME, cell), String.class).get(0)));
     }
 
@@ -366,10 +365,9 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         final LocalTime time = LocalTime.of(1, 2, 3);
         final LocalDate date = LocalDate.of(2020, 1, 2);
         final Instant instant = Instant.parse("2021-06-07T08:09:10Z");
-        final Row row = driverRow(
-                new String[] { "timeAsTime", "timeAsLocal", "timeAsText", "blobAsBytes", "blobAsBuffer", "dateAsInstant", "stampAsDate" },
-                new DataType[] { DataTypes.TIME, DataTypes.TIME, DataTypes.TIME, DataTypes.BLOB, DataTypes.BLOB, DataTypes.DATE, DataTypes.TIMESTAMP },
-                time, time, time, ByteBuffer.wrap(BYTES), ByteBuffer.wrap(BYTES), date, instant);
+        final Row row = driverRow(new String[] { "timeAsTime", "timeAsLocal", "timeAsText", "blobAsBytes", "blobAsBuffer", "dateAsInstant", "stampAsDate" },
+                new DataType[] { DataTypes.TIME, DataTypes.TIME, DataTypes.TIME, DataTypes.BLOB, DataTypes.BLOB, DataTypes.DATE, DataTypes.TIMESTAMP }, time,
+                time, time, ByteBuffer.wrap(BYTES), ByteBuffer.wrap(BYTES), date, instant);
 
         final TemporalRoutingBean bean = CassandraExecutor.toEntity(row, TemporalRoutingBean.class);
 
@@ -391,14 +389,12 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         mapCell.put("b", 2);
 
         final com.datastax.oss.driver.api.core.data.UdtValue udtCell = Mockito.mock(com.datastax.oss.driver.api.core.data.UdtValue.class);
-        final Row row = driverRow(
-                new String[] { "longs", "ints", "raw", "rawBlob", "hosts", "counts", "raw2", "maps", "rawUdts" },
+        final Row row = driverRow(new String[] { "longs", "ints", "raw", "rawBlob", "hosts", "counts", "raw2", "maps", "rawUdts" },
                 new DataType[] { DataTypes.listOf(DataTypes.BIGINT), DataTypes.listOf(DataTypes.INT), DataTypes.listOf(DataTypes.INT), DataTypes.BLOB,
-                        DataTypes.setOf(DataTypes.INT), DataTypes.mapOf(DataTypes.TEXT, DataTypes.BIGINT),
-                        DataTypes.mapOf(DataTypes.TEXT, DataTypes.TEXT), DataTypes.listOf(DataTypes.mapOf(DataTypes.TEXT, DataTypes.BIGINT)),
-                        DataTypes.listOf(DataTypes.TEXT) },
-                Arrays.asList(1L, 2), Arrays.asList(1, null), Arrays.asList(1, 2), ByteBuffer.wrap(BYTES), new LinkedHashSet<>(Arrays.asList(1, 2)),
-                mapCell, new LinkedHashMap<>(Map.of("a", "x")), Arrays.asList(new LinkedHashMap<>(Map.of("a", 1L))), Arrays.asList(udtCell));
+                        DataTypes.setOf(DataTypes.INT), DataTypes.mapOf(DataTypes.TEXT, DataTypes.BIGINT), DataTypes.mapOf(DataTypes.TEXT, DataTypes.TEXT),
+                        DataTypes.listOf(DataTypes.mapOf(DataTypes.TEXT, DataTypes.BIGINT)), DataTypes.listOf(DataTypes.TEXT) },
+                Arrays.asList(1L, 2), Arrays.asList(1, null), Arrays.asList(1, 2), ByteBuffer.wrap(BYTES), new LinkedHashSet<>(Arrays.asList(1, 2)), mapCell,
+                new LinkedHashMap<>(Map.of("a", "x")), Arrays.asList(new LinkedHashMap<>(Map.of("a", 1L))), Arrays.asList(udtCell));
 
         final ContainerBean bean = CassandraExecutor.toEntity(row, ContainerBean.class);
 
@@ -490,7 +486,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         entity.setName("Ada");
 
         try (Fixture insertFixture = new Fixture(new String[] { "id", "name" }, DataTypes.INT, DataTypes.TEXT);
-                Fixture updateFixture = new Fixture(new String[] { "name", "id" }, DataTypes.TEXT, DataTypes.INT)) {
+             Fixture updateFixture = new Fixture(new String[] { "name", "id" }, DataTypes.TEXT, DataTypes.INT)) {
             final ResultSet first = insertFixture.executor.batchInsert(Arrays.asList(entity), null);
             final ResultSet second = insertFixture.executor.batchInsert(TestEntity.class, Arrays.asList(N.asMap("id", 1, "name", "Grace")), null);
             final ResultSet third = updateFixture.executor.batchUpdate(Arrays.asList(entity), Arrays.asList("name"), null);
@@ -531,8 +527,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
             fixture.executor.execute(UPDATE_ONE_V, List.of(5));
             fixture.executor.execute(UPDATE_ONE_V, Arrays.asList((Object) null));
 
-            assertAll(() -> assertNull(fixture.binds.get(0)[0]), () -> assertEquals(5, fixture.binds.get(1)[0]),
-                    () -> assertNull(fixture.binds.get(2)[0]));
+            assertAll(() -> assertNull(fixture.binds.get(0)[0]), () -> assertEquals(5, fixture.binds.get(1)[0]), () -> assertNull(fixture.binds.get(2)[0]));
         }
     }
 
@@ -556,7 +551,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
     @Test
     void mapAndBeanParametersValidateAndResolveTheirNames() {
         try (Fixture namedFixture = new Fixture(new String[] { "v", "id" }, DataTypes.INT, DataTypes.INT);
-                Fixture beanFixture = new Fixture(new String[] { "uname", "id" }, DataTypes.TEXT, DataTypes.INT)) {
+             Fixture beanFixture = new Fixture(new String[] { "uname", "id" }, DataTypes.TEXT, DataTypes.INT)) {
             final IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
                     () -> namedFixture.executor.execute("UPDATE t SET v = :v WHERE id = :id", N.asMap("v", 1)));
 
@@ -575,7 +570,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
     @Test
     void multiParameterLoopKeepsNullsAndAcceptsRegisteredCodecs() {
         try (Fixture fixture = new Fixture(new String[] { "id", "name" }, DataTypes.INT, DataTypes.TEXT);
-                Fixture codecFixture = new ZonedDateTimeCodecFixture(new String[] { "v", "id" }, DataTypes.TIMESTAMP, DataTypes.INT)) {
+             Fixture codecFixture = new ZonedDateTimeCodecFixture(new String[] { "v", "id" }, DataTypes.TIMESTAMP, DataTypes.INT)) {
             fixture.executor.execute(INSERT_ID_NAME, 1, null);
 
             final ZonedDateTime zdt = ZonedDateTime.parse("2021-06-07T08:09:10+02:00");
@@ -630,12 +625,16 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
     @Test
     void statementSettingsAreAppliedToBoundStatements() {
         final StatementSettings traceOnly = StatementSettings.builder().traceQuery(Boolean.TRUE).build();
-        final StatementSettings all = StatementSettings.builder().consistency(ConsistencyLevel.LOCAL_ONE)
-                .serialConsistency(ConsistencyLevel.LOCAL_SERIAL).fetchSize(50).timeout(java.time.Duration.ofSeconds(2))
-                .traceQuery(Boolean.TRUE).build();
+        final StatementSettings all = StatementSettings.builder()
+                .consistency(ConsistencyLevel.LOCAL_ONE)
+                .serialConsistency(ConsistencyLevel.LOCAL_SERIAL)
+                .fetchSize(50)
+                .timeout(java.time.Duration.ofSeconds(2))
+                .traceQuery(Boolean.TRUE)
+                .build();
 
         try (Fixture traceFixture = new SettingsFixture(traceOnly, new String[] { "v" }, DataTypes.TEXT);
-                Fixture allFixture = new SettingsFixture(all, new String[] { "v" }, DataTypes.TEXT)) {
+             Fixture allFixture = new SettingsFixture(all, new String[] { "v" }, DataTypes.TEXT)) {
             assertAll(() -> assertNotNull(traceFixture.executor.execute("SELECT v FROM t WHERE id = ?", "a")),
                     () -> assertNotNull(allFixture.executor.execute("SELECT v FROM t WHERE id = ?", "b")));
         }
@@ -747,7 +746,8 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         assertAll(
                 () -> assertThrows(IllegalArgumentException.class,
                         () -> TestCassandraExecutor.exposedEntityToConditionCollection(SliceNKeylessEntity.class, Arrays.asList(new SliceNKeylessEntity()))),
-                () -> assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(noId))),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(noId))),
                 () -> assertThrows(IllegalArgumentException.class,
                         () -> TestCassandraExecutor.exposedEntityToConditionCollection(NovStringKeyEntity.class, Arrays.asList(new NovStringKeyEntity("")))),
                 () -> assertNotNull(TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(valid))));
@@ -784,8 +784,10 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         assertAll(
                 () -> assertThrows(IllegalArgumentException.class,
                         () -> executor.prepareBatchMapUpdateForTest(SliceNKeylessEntity.class, N.asMap("name", "x"))),
-                () -> assertThrows(IllegalArgumentException.class, () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, N.asMap("id", null, "name", "x"))),
-                () -> assertThrows(IllegalArgumentException.class, () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, N.asMap("id", "", "name", "x"))),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, N.asMap("id", null, "name", "x"))),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, N.asMap("id", "", "name", "x"))),
                 () -> assertNotNull(executor.prepareBatchMapUpdateForTest(TestEntity.class, N.asMap("id", 1, "name", "x"))));
     }
 
@@ -805,8 +807,7 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         }
 
         Fixture(final CodecRegistry registry, final StatementSettings settings, final String[] variableNames, final DataType... variableTypes) {
-            final com.datastax.oss.driver.api.core.context.DriverContext context = Mockito
-                    .mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+            final com.datastax.oss.driver.api.core.context.DriverContext context = Mockito.mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
             Mockito.when(session.getContext()).thenReturn(context);
             Mockito.when(context.getCodecRegistry()).thenReturn(registry);
 
@@ -984,12 +985,11 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         final List<ColumnDefinition> definitions = new ArrayList<>();
 
         for (int i = 0; i < names.length; i++) {
-            definitions.add(new DefaultColumnDefinition(
-                    new ColumnSpec("ks", "t", names[i], i, RawType.PRIMITIVES.get(ProtocolConstants.DataType.VARCHAR)), AttachmentPoint.NONE));
+            definitions.add(new DefaultColumnDefinition(new ColumnSpec("ks", "t", names[i], i, RawType.PRIMITIVES.get(ProtocolConstants.DataType.VARCHAR)),
+                    AttachmentPoint.NONE));
         }
 
-        final List<ByteBuffer> encoded = Arrays.stream(values)
-                .map(value -> TypeCodecs.TEXT.encode(String.valueOf(value), ProtocolVersion.DEFAULT)).toList();
+        final List<ByteBuffer> encoded = Arrays.stream(values).map(value -> TypeCodecs.TEXT.encode(String.valueOf(value), ProtocolVersion.DEFAULT)).toList();
 
         return new DefaultRow(DefaultColumnDefinitions.valueOf(definitions), encoded, AttachmentPoint.NONE);
     }
@@ -998,8 +998,8 @@ class CassandraExecutorCoverageNov2026Test extends CassandraExecutorBaseTestSupp
         final CodecRegistry registry = new DefaultCodecRegistry("cov-nov-2026-udt");
         final List<CqlIdentifier> names = Arrays.stream(fieldNames).map(CqlIdentifier::fromInternal).toList();
 
-        return new DefaultUserDefinedType(CqlIdentifier.fromInternal("ks"), CqlIdentifier.fromInternal("value_holder"), false, names,
-                Arrays.asList(fieldTypes), new AttachmentPoint() {
+        return new DefaultUserDefinedType(CqlIdentifier.fromInternal("ks"), CqlIdentifier.fromInternal("value_holder"), false, names, Arrays.asList(fieldTypes),
+                new AttachmentPoint() {
                     @Override
                     public ProtocolVersion getProtocolVersion() {
                         return ProtocolVersion.V4;

@@ -157,7 +157,8 @@ class HBaseExecutorCoverageNov2026Test {
 
         try {
             final Batch.Call<Service, String> callable = service -> "ok";
-            final Batch.Callback<String> callback = (region, row, value) -> { };
+            final Batch.Callback<String> callback = (region, row, value) -> {
+            };
 
             final Throwable boom = new Throwable("region coprocessor failed");
             doAnswer(invocation -> {
@@ -198,8 +199,7 @@ class HBaseExecutorCoverageNov2026Test {
                 throw boom;
             }).when(table).batchCoprocessorService(eq(method), eq(request), any(byte[].class), any(byte[].class), eq(response));
 
-            final Exception wrapped = assertThrows(Exception.class,
-                    () -> executor.batchCoprocessorService("coproc-tbl", method, request, "s", "e", response));
+            final Exception wrapped = assertThrows(Exception.class, () -> executor.batchCoprocessorService("coproc-tbl", method, request, "s", "e", response));
             assertSame(boom, wrapped.getCause());
 
             final RuntimeException rt = new IllegalStateException("batch call blew up");
@@ -226,7 +226,8 @@ class HBaseExecutorCoverageNov2026Test {
             final Descriptors.MethodDescriptor method = mock(Descriptors.MethodDescriptor.class);
             final StringValue request = StringValue.of("request");
             final StringValue response = StringValue.of("response");
-            final Batch.Callback<StringValue> callback = (region, row, value) -> { };
+            final Batch.Callback<StringValue> callback = (region, row, value) -> {
+            };
 
             final Throwable boom = new Throwable("batch callback coprocessor failed");
             doAnswer(invocation -> {
@@ -329,8 +330,8 @@ class HBaseExecutorCoverageNov2026Test {
 
         try {
             assertSame(table, executor.getTable("logged-table"));
-            assertTrue(records.stream().anyMatch(record -> (record.getMessage() != null && record.getMessage().contains("logged-table"))
-                    || (record.getParameters() != null
+            assertTrue(records.stream()
+                    .anyMatch(record -> (record.getMessage() != null && record.getMessage().contains("logged-table")) || (record.getParameters() != null
                             && Arrays.stream(record.getParameters()).anyMatch(parameter -> String.valueOf(parameter).contains("logged-table")))));
         } finally {
             julLogger.setLevel(null);
@@ -409,8 +410,7 @@ class HBaseExecutorCoverageNov2026Test {
     void toListRejectsScalarResultWithMoreThanOneCell() {
         final Result twoCells = resultOf(cell("r", "cf", "a", "1"), cell("r", "cf", "b", "2"));
 
-        final IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                () -> HBaseExecutor.toList(List.of(twoCells), String.class));
+        final IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toList(List.of(twoCells), String.class));
         assertTrue(thrown.getMessage().contains("more than one cell"));
     }
 
@@ -432,8 +432,7 @@ class HBaseExecutorCoverageNov2026Test {
     void toListRejectsMapTargetType() {
         final Result oneCell = resultOf(cell("r", "cf", "a", "1"));
 
-        final IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                () -> HBaseExecutor.toList(List.of(oneCell), Map.class));
+        final IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toList(List.of(oneCell), Map.class));
         assertTrue(thrown.getMessage().contains("Map type"));
     }
 
@@ -452,8 +451,7 @@ class HBaseExecutorCoverageNov2026Test {
     void toListWrapsIoExceptionRaisedWhileReadingResultCells() {
         final Result bad = resultWhoseCellScannerThrows();
 
-        final UncheckedIOException thrown = assertThrows(UncheckedIOException.class,
-                () -> HBaseExecutor.toList(List.of(bad), String.class));
+        final UncheckedIOException thrown = assertThrows(UncheckedIOException.class, () -> HBaseExecutor.toList(List.of(bad), String.class));
         assertNotNull(thrown.getCause());
         assertEquals("cell scan failed", thrown.getCause().getMessage());
     }
@@ -507,8 +505,7 @@ class HBaseExecutorCoverageNov2026Test {
 
             // The runtime class has no row-key property at all, so getRowKeySetMethod yields null and the
             // mapper's own row-key property name ("id") is used to read the value - which this bean lacks.
-            final IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                    () -> mapper.delete(new PlainNoIdBean()));
+            final IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> mapper.delete(new PlainNoIdBean()));
             assertTrue(thrown.getMessage().contains("id"));
             verify(table, never()).delete(any(Delete.class));
         } finally {
@@ -524,9 +521,7 @@ class HBaseExecutorCoverageNov2026Test {
     void nestedBeanQualifierVariantMatchingAnnotatedColumnIsRoutedToTheOwningBean() {
         // (cfq, primary_name) is kept for the flattened bean because NameHolder's @Column("primary_name")
         // matches it; the @Column-annotated nested bean travels as its single JSON cell.
-        final Result result = resultOf(
-                cell("r", "other", "primaryName", "top"),
-                cell("r", "cfq", "primary_name", "alice"),
+        final Result result = resultOf(cell("r", "other", "primaryName", "top"), cell("r", "cfq", "primary_name", "alice"),
                 cell("r", "cfq", "nb", "{\"deep\":\"d\"}"));
 
         final NestedQualifierByColumnEntity restored = HBaseExecutor.toEntity(result, NestedQualifierByColumnEntity.class);
@@ -568,10 +563,7 @@ class HBaseExecutorCoverageNov2026Test {
     void nestedBeanQualifierVariantWithoutMatchingColumnIsNotRoutedIntoTheBean() {
         // (cfu, primary_name) matches no nested column of DeepHolder (@Column("dz") only), so the
         // variant is dropped instead of being forced into the bean; (cfu, dz) still routes to it.
-        final Result result = resultOf(
-                cell("r", "other2", "primaryName", "top"),
-                cell("r", "cfu", "dz", "dv"),
-                cell("r", "cfu", "primary_name", "pv"));
+        final Result result = resultOf(cell("r", "other2", "primaryName", "top"), cell("r", "cfu", "dz", "dv"), cell("r", "cfu", "primary_name", "pv"));
 
         final NestedQualifierUnknownEntity restored = HBaseExecutor.toEntity(result, NestedQualifierUnknownEntity.class);
 
@@ -596,10 +588,7 @@ class HBaseExecutorCoverageNov2026Test {
         // (cff, foo_bar) is written by both the foo_bar and fooBar properties of FixedFamilyInner under
         // different naming policies: readsBackIntoWriter reports the ambiguity (contested), and the cell
         // keeps the routing of the EMPTY-qualifier fallback resolved through the inner bean's own map.
-        final Result result = resultOf(
-                cell("r", "cff", "plain", "p"),
-                cell("r", "cff", "fx", "fv"),
-                cell("r", "cff", "foo_bar", "fb"));
+        final Result result = resultOf(cell("r", "cff", "plain", "p"), cell("r", "cff", "fx", "fv"), cell("r", "cff", "foo_bar", "fb"));
 
         final FixedFamilyHolder restored = HBaseExecutor.toEntity(result, FixedFamilyHolder.class);
 
@@ -613,10 +602,7 @@ class HBaseExecutorCoverageNov2026Test {
     void contestedNestedBeanCellIsReroutedByTheOwningBeanSearch() {
         // (cfc, q) is written by two flattened beans: the cell is contested and the fallback search
         // hands it to whichever matching bean the family map visits first - exactly one of them wins.
-        final Result result = resultOf(
-                cell("r", "cfc", "sc", "sv"),
-                cell("r", "cfc", "note", "nv"),
-                cell("r", "cfc", "qa", "av"),
+        final Result result = resultOf(cell("r", "cfc", "sc", "sv"), cell("r", "cfc", "note", "nv"), cell("r", "cfc", "qa", "av"),
                 cell("r", "cfc", "q", "shared"));
 
         final ContestedNestedEntity restored = HBaseExecutor.toEntity(result, ContestedNestedEntity.class);
@@ -709,14 +695,9 @@ class HBaseExecutorCoverageNov2026Test {
 
     @Test
     void nestedVersionedContainersRoundTripThroughTheirCells() {
-        final Result result = resultOf(
-                cellAt("r", "cfv", "single", 10L, "sv"),
-                cellAt("r", "cfv", "counters", 5L, "1"),
-                cellAt("r", "cfv", "counters", 6L, "2"),
-                cellAt("r", "cfv", "events", 7L, "9"),
-                cellAt("r", "cfv", "simple", 100L, "a"),
-                cellAt("r", "cfv", "simple", 90L, "b"),
-                cell("r", "cfv", "qn", "lab"));
+        final Result result = resultOf(cellAt("r", "cfv", "single", 10L, "sv"), cellAt("r", "cfv", "counters", 5L, "1"),
+                cellAt("r", "cfv", "counters", 6L, "2"), cellAt("r", "cfv", "events", 7L, "9"), cellAt("r", "cfv", "simple", 100L, "a"),
+                cellAt("r", "cfv", "simple", 90L, "b"), cell("r", "cfv", "qn", "lab"));
 
         final VersionedNestedHolder restored = HBaseExecutor.toEntity(result, VersionedNestedHolder.class);
 
@@ -784,10 +765,7 @@ class HBaseExecutorCoverageNov2026Test {
 
     @Test
     void topLevelVersionedContainersRoundTripThroughTheirCells() {
-        final Result result = resultOf(
-                cell("r", "cft", "name", "nm"),
-                cellAt("r", "cft", "counters", 5L, "1"),
-                cellAt("r", "cft", "counters", 6L, "2"),
+        final Result result = resultOf(cell("r", "cft", "name", "nm"), cellAt("r", "cft", "counters", 5L, "1"), cellAt("r", "cft", "counters", 6L, "2"),
                 cellAt("r", "cft", "events", 7L, "9"));
 
         final VersionedTopEntity restored = HBaseExecutor.toEntity(result, VersionedTopEntity.class);

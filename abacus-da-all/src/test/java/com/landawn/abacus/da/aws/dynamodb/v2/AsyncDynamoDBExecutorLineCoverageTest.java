@@ -73,6 +73,21 @@ class AsyncDynamoDBExecutorLineCoverageTest extends MockitoTestBase {
     }
 
     @Test
+    void queryAndScanPageFailuresWrapANonErrorCause() {
+        final IllegalStateException failure = new IllegalStateException("page failed");
+        when(client.query(any(QueryRequest.class))).thenReturn(CompletableFuture.failedFuture(failure));
+        when(client.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.failedFuture(failure));
+
+        final Stream<?> query = executor.stream(QueryRequest.builder().tableName("Users").build(), Map.class).join();
+        final Stream<?> scan = executor.scan(ScanRequest.builder().tableName("Users").build(), Map.class).join();
+        final Iterator<?> queryPages = com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorLineCoverageTest.pageIterator(query, AsyncDynamoDBExecutor.class);
+        final Iterator<?> scanPages = com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorLineCoverageTest.pageIterator(scan, AsyncDynamoDBExecutor.class);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, queryPages::hasNext));
+        assertSame(failure, assertThrows(IllegalStateException.class, scanPages::hasNext));
+    }
+
+    @Test
     void exhaustedQueryAndScanIteratorsRejectNext() {
         when(client.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(QueryResponse.builder().build()));
         when(client.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(ScanResponse.builder().build()));

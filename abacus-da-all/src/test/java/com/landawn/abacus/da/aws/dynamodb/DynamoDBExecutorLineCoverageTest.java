@@ -56,6 +56,7 @@ import com.amazonaws.services.dynamodbv2.model.ScanResult;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 import com.landawn.abacus.logging.LoggerFactory;
+import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.InternalUtil;
 import com.landawn.abacus.util.stream.Stream;
 
@@ -113,11 +114,11 @@ public class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSuppor
         final Map<String, AttributeValue> item = DynamoDBExecutor.asItem("id", "1");
         final Map<String, AttributeValueUpdate> updates = Map.of("name", new AttributeValueUpdate().withValue(new AttributeValue().withS("Ada")));
 
-        when(mockDynamoDBClient.getItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any())).thenReturn(getResult);
-        when(mockDynamoDBClient.putItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any())).thenReturn(putResult);
-        when(mockDynamoDBClient.updateItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any(),
-                ArgumentMatchers.<Map<String, AttributeValueUpdate>>any())).thenReturn(updateResult);
-        when(mockDynamoDBClient.deleteItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any())).thenReturn(deleteResult);
+        when(mockDynamoDBClient.getItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any())).thenReturn(getResult);
+        when(mockDynamoDBClient.putItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any())).thenReturn(putResult);
+        when(mockDynamoDBClient.updateItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any(),
+                ArgumentMatchers.<Map<String, AttributeValueUpdate>> any())).thenReturn(updateResult);
+        when(mockDynamoDBClient.deleteItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any())).thenReturn(deleteResult);
 
         try {
             assertTrue(LoggerFactory.getLogger(DynamoDBExecutor.class).isDebugEnabled());
@@ -129,11 +130,11 @@ public class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSuppor
             Logger.getLogger(DynamoDBExecutor.class.getName()).setLevel(previous);
         }
 
-        verify(mockDynamoDBClient).getItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any());
-        verify(mockDynamoDBClient).putItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any());
-        verify(mockDynamoDBClient).updateItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any(),
-                ArgumentMatchers.<Map<String, AttributeValueUpdate>>any());
-        verify(mockDynamoDBClient).deleteItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>>any());
+        verify(mockDynamoDBClient).getItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any());
+        verify(mockDynamoDBClient).putItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any());
+        verify(mockDynamoDBClient).updateItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any(),
+                ArgumentMatchers.<Map<String, AttributeValueUpdate>> any());
+        verify(mockDynamoDBClient).deleteItem(eq("Users"), ArgumentMatchers.<Map<String, AttributeValue>> any());
     }
 
     @Test
@@ -204,7 +205,7 @@ public class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSuppor
 
     @Test
     void mapperBatchGetOfAnEmptyResponseReturnsANewList() {
-        when(mockDynamoDBClient.batchGetItem(ArgumentMatchers.<Map<String, KeysAndAttributes>>any(), eq("TOTAL"))).thenReturn(new BatchGetItemResult());
+        when(mockDynamoDBClient.batchGetItem(ArgumentMatchers.<Map<String, KeysAndAttributes>> any(), eq("TOTAL"))).thenReturn(new BatchGetItemResult());
         when(mockDynamoDBClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(new BatchGetItemResult());
         final DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
         final TestEntity key = new TestEntity();
@@ -237,6 +238,66 @@ public class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSuppor
         assertEquals(TABLE_MISMATCH, put.getMessage());
         assertEquals(TABLE_MISMATCH, update.getMessage());
         assertEquals(TABLE_MISMATCH, delete.getMessage());
+    }
+
+    @Test
+    void mapperAcceptsARequestThatNamesItsOwnTable() {
+        final GetItemResult getResult = new GetItemResult().withItem(item("1"));
+        final PutItemResult putResult = new PutItemResult();
+        final UpdateItemResult updateResult = new UpdateItemResult();
+        final DeleteItemResult deleteResult = new DeleteItemResult();
+        when(mockDynamoDBClient.getItem(any(GetItemRequest.class))).thenReturn(getResult);
+        when(mockDynamoDBClient.putItem(any(PutItemRequest.class))).thenReturn(putResult);
+        when(mockDynamoDBClient.updateItem(any(UpdateItemRequest.class))).thenReturn(updateResult);
+        when(mockDynamoDBClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(deleteResult);
+
+        final DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        final Map<String, AttributeValue> key = DynamoDBExecutor.asKey("id", "1");
+
+        final TestEntity got = mapper.getItem(new GetItemRequest().withTableName("TestTable").withKey(key));
+        final PutItemResult put = mapper.putItem(new PutItemRequest().withTableName("TestTable").withItem(key));
+        final UpdateItemResult update = mapper.updateItem(new UpdateItemRequest().withTableName("TestTable").withKey(key));
+        final DeleteItemResult delete = mapper.deleteItem(new DeleteItemRequest().withTableName("TestTable").withKey(key));
+
+        assertEquals("1", got.getId());
+        assertSame(putResult, put);
+        assertSame(updateResult, update);
+        assertSame(deleteResult, delete);
+
+        final ArgumentCaptor<GetItemRequest> gets = ArgumentCaptor.forClass(GetItemRequest.class);
+        final ArgumentCaptor<PutItemRequest> puts = ArgumentCaptor.forClass(PutItemRequest.class);
+        final ArgumentCaptor<UpdateItemRequest> updates = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        final ArgumentCaptor<DeleteItemRequest> deletes = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(mockDynamoDBClient).getItem(gets.capture());
+        verify(mockDynamoDBClient).putItem(puts.capture());
+        verify(mockDynamoDBClient).updateItem(updates.capture());
+        verify(mockDynamoDBClient).deleteItem(deletes.capture());
+        assertEquals("TestTable", gets.getValue().getTableName());
+        assertEquals("TestTable", puts.getValue().getTableName());
+        assertEquals("TestTable", updates.getValue().getTableName());
+        assertEquals("TestTable", deletes.getValue().getTableName());
+    }
+
+    @Test
+    void queryTreatsAMissingItemsMemberAsAnEmptyPage() {
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(new QueryResult());
+
+        final Dataset dataset = executor.query(new QueryRequest().withTableName("TestTable"), Map.class);
+
+        assertEquals(0, dataset.size());
+    }
+
+    @Test
+    void toListRejectsANegativeOffsetAndANegativeCount() {
+        final List<Map<String, AttributeValue>> items = List.of(item("1"));
+
+        final IllegalArgumentException negativeOffset = assertThrows(IllegalArgumentException.class,
+                () -> DynamoDBExecutor.toList(items, -1, 1, TestEntity.class));
+        final IllegalArgumentException negativeCount = assertThrows(IllegalArgumentException.class,
+                () -> DynamoDBExecutor.toList(items, 0, -1, TestEntity.class));
+
+        assertEquals("'offset' and 'count' can't be negative: -1, 1", negativeOffset.getMessage());
+        assertEquals("'offset' and 'count' can't be negative: 0, -1", negativeCount.getMessage());
     }
 
     @Test

@@ -135,8 +135,7 @@ class CqlBuilderCoverageNov2026Test {
     @Test
     void batchInsertRejectsEmptyAndMismatchedMapRowsEagerly() {
         assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(List.of(Map.of())).into("items"));
-        assertThrows(IllegalArgumentException.class,
-                () -> PSC.batchInsert(Arrays.asList(N.asMap("value", 1), N.asMap("other", 2))).into("items"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(Arrays.asList(N.asMap("value", 1), N.asMap("other", 2))).into("items"));
         assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(Collections.singletonList(new Object())).into("items"));
     }
 
@@ -151,14 +150,12 @@ class CqlBuilderCoverageNov2026Test {
     void batchInsertAppliesTtlToEveryRow() {
         final String cql = PSC.batchInsert(Arrays.asList(N.asMap("value", 1), N.asMap("value", 2))).into("items").usingTTL(60).build().query();
 
-        assertEquals("BEGIN BATCH INSERT INTO items (value) VALUES (?) USING TTL 60; "
-                + "INSERT INTO items (value) VALUES (?) USING TTL 60; APPLY BATCH", cql);
+        assertEquals("BEGIN BATCH INSERT INTO items (value) VALUES (?) USING TTL 60; " + "INSERT INTO items (value) VALUES (?) USING TTL 60; APPLY BATCH", cql);
     }
 
     @Test
     void batchInsertAppliesTimestampToEveryRow() {
-        final String cql = PSC.batchInsert(Arrays.asList(N.asMap("value", 1), N.asMap("value", 2))).into("items").usingTimestampMicros(123L)
-                .build().query();
+        final String cql = PSC.batchInsert(Arrays.asList(N.asMap("value", 1), N.asMap("value", 2))).into("items").usingTimestampMicros(123L).build().query();
 
         assertEquals("BEGIN BATCH INSERT INTO items (value) VALUES (?) USING TIMESTAMP 123; "
                 + "INSERT INTO items (value) VALUES (?) USING TIMESTAMP 123; APPLY BATCH", cql);
@@ -166,8 +163,7 @@ class CqlBuilderCoverageNov2026Test {
 
     @Test
     void batchInsertIfNotExistsThenTtlKeepsCqlClauseOrder() {
-        final String cql = PSC.batchInsert(Arrays.asList(N.asMap("value", 1), N.asMap("value", 2))).into("items").ifNotExists().usingTTL(60).build()
-                .query();
+        final String cql = PSC.batchInsert(Arrays.asList(N.asMap("value", 1), N.asMap("value", 2))).into("items").ifNotExists().usingTTL(60).build().query();
 
         assertEquals("BEGIN BATCH INSERT INTO items (value) VALUES (?) IF NOT EXISTS USING TTL 60; "
                 + "INSERT INTO items (value) VALUES (?) IF NOT EXISTS USING TTL 60; APPLY BATCH", cql);
@@ -240,8 +236,7 @@ class CqlBuilderCoverageNov2026Test {
         final Set<String> excluded = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         excluded.add("FIRSTNAME");
 
-        final String cql = PSC.update("items").set(N.asMap("firstName", "a", "lastName", "b"), excluded).where(Filters.eq("key", 1)).build()
-                .query();
+        final String cql = PSC.update("items").set(N.asMap("firstName", "a", "lastName", "b"), excluded).where(Filters.eq("key", 1)).build().query();
 
         assertEquals("UPDATE items SET last_name = ? WHERE key = ?", cql);
     }
@@ -252,8 +247,11 @@ class CqlBuilderCoverageNov2026Test {
         excluded.add("FIRSTNAME");
         excluded.add("LASTNAME");
 
-        final String cql = PSC.update("items").set(N.asMap("firstName", "a", "lastName", "b", "status", 3), excluded)
-                .where(Filters.eq("key", 1)).build().query();
+        final String cql = PSC.update("items")
+                .set(N.asMap("firstName", "a", "lastName", "b", "status", 3), excluded)
+                .where(Filters.eq("key", 1))
+                .build()
+                .query();
 
         assertEquals("UPDATE items SET status = ? WHERE key = ?", cql);
     }
@@ -282,10 +280,8 @@ class CqlBuilderCoverageNov2026Test {
     /** A Number outside the JDK/BigDecimal set is judged by its text: NaN text with a NaN double value inlines NaN. */
     @Test
     void nonFiniteLiteralFromCustomNumberTextIsInlined() {
-        assertEquals("UPDATE items SET score = NaN",
-                SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("NaN", Double.NaN))).build().query());
-        assertEquals("UPDATE items SET score = NaN",
-                SCCB.update("items").set(N.asMap("score", (Object) MutableDouble.of(Double.NaN))).build().query());
+        assertEquals("UPDATE items SET score = NaN", SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("NaN", Double.NaN))).build().query());
+        assertEquals("UPDATE items SET score = NaN", SCCB.update("items").set(N.asMap("score", (Object) MutableDouble.of(Double.NaN))).build().query());
     }
 
     /** JDK integral types skip the text comparison and are left to the parent builder. */
@@ -299,19 +295,15 @@ class CqlBuilderCoverageNov2026Test {
     /** Non-finite text with a finite double value is not inlined; the parent builder rejects it. */
     @Test
     void nonFiniteTextWithFiniteDoubleValueIsRejectedByParent() {
-        assertThrows(IllegalArgumentException.class,
-                () -> SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("NaN", 1.0d))).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("Infinity", 1.0d))).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("-Infinity", -1.0d))).build());
+        assertThrows(IllegalArgumentException.class, () -> SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("NaN", 1.0d))).build());
+        assertThrows(IllegalArgumentException.class, () -> SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("Infinity", 1.0d))).build());
+        assertThrows(IllegalArgumentException.class, () -> SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("-Infinity", -1.0d))).build());
     }
 
     /** A custom Number whose text matches no non-finite constant is handed to the parent builder unchanged. */
     @Test
     void ordinaryCustomNumberTextIsRenderedByParent() {
-        assertEquals("UPDATE items SET score = 2.5",
-                SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("2.5", 2.5d))).build().query());
+        assertEquals("UPDATE items SET score = 2.5", SCCB.update("items").set(N.asMap("score", (Object) new TestNumber("2.5", 2.5d))).build().query());
     }
 
     // ------------------------------------------------------------------
@@ -325,8 +317,7 @@ class CqlBuilderCoverageNov2026Test {
         assertEquals("SELECT value FROM items WHERE value > ?", PSC.select("value").from("items").where(Filters.gt("value", 1)).build().query());
         assertEquals("SELECT value FROM items WHERE value < ?", PSC.select("value").from("items").where(Filters.lt("value", 1)).build().query());
         assertEquals("SELECT value FROM items WHERE value != ?", PSC.select("value").from("items").where(Filters.ne("value", 1)).build().query());
-        assertEquals("SELECT value FROM items WHERE value LIKE ?", PSC.select("value").from("items").where(Filters.like("value", "a%")).build()
-                .query());
+        assertEquals("SELECT value FROM items WHERE value LIKE ?", PSC.select("value").from("items").where(Filters.like("value", "a%")).build().query());
     }
 
     @Test
@@ -353,23 +344,19 @@ class CqlBuilderCoverageNov2026Test {
         assertThrows(IllegalArgumentException.class, () -> base.onlyIf(Filters.or(Filters.eq("value", 1), Filters.eq("value", 2))));
         assertThrows(IllegalArgumentException.class, () -> base.onlyIf(new And(java.util.Collections.emptyList())));
 
-        assertEquals("UPDATE items SET value = ? WHERE key = ? IF value > 1",
-                base.onlyIf(Filters.expr("value > 1")).build().query());
+        assertEquals("UPDATE items SET value = ? WHERE key = ? IF value > 1", base.onlyIf(Filters.expr("value > 1")).build().query());
     }
 
     /** A condition type with no CQL rendering (a GROUP BY clause passed as a predicate) is reported as unsupported. */
     @Test
     void whereRejectsUnrecognizedConditionTypes() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PSC.select("value").from("items").where(Filters.groupBy("value")).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("value").from("items").where(Filters.groupBy("value")).build());
     }
 
     @Test
     void inRelationRequiresAtLeastOneNonNullValue() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PSC.select("value").from("items").where(Filters.in("value", Collections.emptyList())).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> PSC.select("value").from("items").where(Filters.in("value", Arrays.asList(1, null))).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("value").from("items").where(Filters.in("value", Collections.emptyList())).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("value").from("items").where(Filters.in("value", Arrays.asList(1, null))).build());
     }
 
     /** Clause guards enforced by append(Condition): FOR UPDATE, directed GROUP BY and OFFSET-carrying LIMIT forms. */
@@ -392,8 +379,7 @@ class CqlBuilderCoverageNov2026Test {
             }
         };
         assertThrows(IllegalArgumentException.class, () -> PSC.select("value").from("items").append(forUpdate).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> PSC.select("value").from("items").append(Filters.groupBy("category", SortDirection.DESC)).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("value").from("items").append(Filters.groupBy("category", SortDirection.DESC)).build());
         assertThrows(IllegalArgumentException.class,
                 () -> PSC.select("value").from("items").append(new GroupBy(Filters.expr("category DESC , brand"))).build());
         assertThrows(IllegalArgumentException.class,
@@ -404,17 +390,15 @@ class CqlBuilderCoverageNov2026Test {
     /** A staged GROUP BY whose condition is a plain predicate renders verbatim; a plain LIMIT passes unchanged. */
     @Test
     void appendRendersUndirectedGroupByAndPlainLimitVerbatim() {
-        assertEquals("SELECT value FROM items GROUP BY a = ?",
-                PSC.select("value").from("items").append(new GroupBy(Filters.eq("a", 1))).build().query());
+        assertEquals("SELECT value FROM items GROUP BY a = ?", PSC.select("value").from("items").append(new GroupBy(Filters.eq("a", 1))).build().query());
         assertEquals("SELECT value FROM items LIMIT 5", PSC.select("value").from("items").append(new Limit(5)).build().query());
-        assertEquals("SELECT value FROM items LIMIT 2147483648",
-                PSC.select("value").from("items").append(new Limit("2147483648")).build().query());
+        assertEquals("SELECT value FROM items LIMIT 2147483648", PSC.select("value").from("items").append(new Limit("2147483648")).build().query());
     }
 
     @Test
     void namedSqlParameterStyleNumbersInListMarkers() {
-        final CqlBuilder.Dsl dsl = Dsl.forDialect(SqlDialect.builder().namingPolicy(com.landawn.abacus.util.NamingPolicy.SNAKE_CASE)
-                .sqlPolicy(SqlDialect.SqlPolicy.NAMED_SQL).build());
+        final CqlBuilder.Dsl dsl = Dsl.forDialect(
+                SqlDialect.builder().namingPolicy(com.landawn.abacus.util.NamingPolicy.SNAKE_CASE).sqlPolicy(SqlDialect.SqlPolicy.NAMED_SQL).build());
         final CqlBuilder builder = dsl.select("value").from("items").where(Filters.in("value", Arrays.asList(1, 2)));
         final String cql = builder.build().query();
 
@@ -499,8 +483,8 @@ class CqlBuilderCoverageNov2026Test {
     void dslForDialectReusesCachedInstancesAndBuildsUncachedDialects() {
         assertSame(Dsl.PSC, Dsl.forDialect(Dsl.PSC.sqlDialect));
 
-        final Dsl custom = Dsl.forDialect(SqlDialect.builder().namingPolicy(com.landawn.abacus.util.NamingPolicy.SNAKE_CASE)
-                .sqlPolicy(SqlDialect.SqlPolicy.PARAMETERIZED_SQL).build());
+        final Dsl custom = Dsl.forDialect(
+                SqlDialect.builder().namingPolicy(com.landawn.abacus.util.NamingPolicy.SNAKE_CASE).sqlPolicy(SqlDialect.SqlPolicy.PARAMETERIZED_SQL).build());
         assertNotNull(custom);
         assertEquals("SELECT value FROM items", custom.select("value").from("items").build().query());
 

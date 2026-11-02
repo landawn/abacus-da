@@ -15,6 +15,8 @@ import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -23,6 +25,7 @@ import java.time.OffsetTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,7 +54,15 @@ import com.datastax.driver.core.TupleValue;
 import com.datastax.driver.core.UDTValue;
 import com.datastax.driver.core.UserType;
 import com.datastax.driver.mapping.annotations.Table;
+import com.landawn.abacus.annotation.Column;
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.MockitoTestBase;
+import com.landawn.abacus.util.u.OptionalByte;
+import com.landawn.abacus.util.u.OptionalChar;
+import com.landawn.abacus.util.u.OptionalDouble;
+import com.landawn.abacus.util.u.OptionalFloat;
+import com.landawn.abacus.util.u.OptionalInt;
+import com.landawn.abacus.util.u.OptionalShort;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.util.ContinuableFuture;
@@ -235,6 +246,58 @@ class CassandraExecutorLineCoverageTest extends MockitoTestBase {
         }
     }
 
+    @Test
+    void presentPrimitiveOptionalsBindTheirContentOnABlobColumn() {
+        final OptionalChar character = OptionalChar.of('A');
+        final OptionalByte bite = OptionalByte.of((byte) 2);
+        final OptionalShort small = OptionalShort.of((short) 3);
+        final OptionalInt number = OptionalInt.of(4);
+        final OptionalFloat fraction = OptionalFloat.of(1.5f);
+        final OptionalDouble wide = OptionalDouble.of(2.5d);
+
+        try (CassandraTestFixture fixture = new CassandraTestFixture()) {
+            fixture.columns(DataType.blob(), "v");
+
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = 1", List.of(character));
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = 1", List.of(bite));
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = 1", List.of(small));
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = 1", List.of(number));
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = 1", List.of(fraction));
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = 1", List.of(wide));
+            fixture.executor.execute("UPDATE t SET v = ? WHERE id = 1", List.of(OptionalInt.empty()));
+
+            assertEquals(7, fixture.values.size());
+            assertSame(character, fixture.values.get(0)[0]);
+            assertSame(bite, fixture.values.get(1)[0]);
+            assertSame(small, fixture.values.get(2)[0]);
+            assertSame(number, fixture.values.get(3)[0]);
+            assertSame(fraction, fixture.values.get(4)[0]);
+            assertSame(wide, fixture.values.get(5)[0]);
+            assertNull(fixture.values.get(6)[0]);
+        }
+    }
+
+    @Test
+    void offsetTimeReadsADateAndATimestamp() {
+        final long millis = 1_700_000_000_000L;
+        final Date date = new Date(millis);
+        final Timestamp timestamp = new Timestamp(millis + 5);
+
+        final TimeBean fromDate = CassandraExecutor.toEntity(row(DataType.timestamp(), new String[] { "offsetTime" }, date), TimeBean.class);
+        final TimeBean fromTimestamp = CassandraExecutor.toEntity(row(DataType.timestamp(), new String[] { "offsetTime" }, timestamp), TimeBean.class);
+
+        assertEquals(OffsetTime.ofInstant(Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault()), fromDate.getOffsetTime());
+        assertEquals(OffsetTime.ofInstant(timestamp.toInstant(), ZoneId.systemDefault()), fromTimestamp.getOffsetTime());
+    }
+
+    @Test
+    void caseFoldedColumnFillsTheAnnotatedProperty() {
+        final SharpFoldAlias entity = CassandraExecutor.toEntity(row(new String[] { "STRASSE" }, "Ada"), SharpFoldAlias.class);
+
+        assertEquals("Ada", entity.getCode());
+        assertNull(entity.getStraße());
+    }
+
     private static Row row(final String[] names, final Object... values) {
         return row(null, names, values);
     }
@@ -412,6 +475,34 @@ class CassandraExecutorLineCoverageTest extends MockitoTestBase {
 
         public void setOffsetDateTime(final OffsetDateTime offsetDateTime) {
             this.offsetDateTime = offsetDateTime;
+        }
+    }
+
+    /**
+     * {@code straße} occupies the column key, and its JSON tags are a fixed name, so {@code STRASSE} is only in the
+     * column-to-property map.
+     */
+    public static class SharpFoldAlias {
+        @JsonXmlField(name = "fixed")
+        private String straße;
+
+        @Column("straße")
+        private String code;
+
+        public String getStraße() {
+            return straße;
+        }
+
+        public void setStraße(final String straße) {
+            this.straße = straße;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(final String code) {
+            this.code = code;
         }
     }
 }

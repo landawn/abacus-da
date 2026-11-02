@@ -149,9 +149,7 @@ public class CosmosContainerExecutorLineCoverageTest extends MockitoTestBase {
     /** A {@code FROM} whose source is missing, quoted text that only looks like SQL, and a signed subscript are not subquery sources. */
     @Test
     public void testSubqueryFromClauseEdges() throws Exception {
-        assertAll(
-                () -> assertEquals("SELECT * FROM item c WHERE (select * 'a\\'b' 'c''d' FROM t)",
-                        capture(Filters.expr("(select * 'a\\'b' 'c''d' FROM t)"))),
+        assertAll(() -> assertEquals("SELECT * FROM item c WHERE (select * 'a\\'b' 'c''d' FROM t)", capture(Filters.expr("(select * 'a\\'b' 'c''d' FROM t)"))),
                 () -> assertEquals("SELECT * FROM item c WHERE (c[\"select\"] * c[\"from\"] [-1]) > 0 AND NOT c[\"group\"]",
                         capture(Filters.expr("(select * from [-1]) > 0 AND NOT group"))),
                 () -> assertEquals("SELECT * FROM item c WHERE (c[\"select\"] * c[\"from\"] [+2]) > 0 AND NOT c[\"group\"]",

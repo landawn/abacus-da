@@ -23,8 +23,8 @@ class AsyncMongoCollectionExecutorLineCoverageTest extends AsyncMongoCollectionE
         when(mockCollExecutor.mapReduce("function() { emit(this._id, 1); }", "function(key, values) { return 1; }", Document.class)).thenReturn(rows);
 
         @SuppressWarnings("deprecation")
-        final ContinuableFuture<Stream<Document>> future = asyncExecutor.mapReduce("function() { emit(this._id, 1); }",
-                "function(key, values) { return 1; }", Document.class);
+        final ContinuableFuture<Stream<Document>> future = asyncExecutor.mapReduce("function() { emit(this._id, 1); }", "function(key, values) { return 1; }",
+                Document.class);
 
         assertEquals(0L, future.get(1, TimeUnit.SECONDS).count());
     }

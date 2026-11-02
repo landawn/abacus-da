@@ -72,8 +72,7 @@ class CassandraExecutorBaseLineCoverageTest extends MockitoTestBase {
         final SliceNKeylessEntity entity = new SliceNKeylessEntity();
         entity.setName("ada");
 
-        final IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> TestCassandraExecutor.exposedEntityToCondition(entity));
+        final IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToCondition(entity));
 
         assertEquals("No key names defined for entity class: SliceNKeylessEntity", exception.getMessage());
     }
@@ -111,7 +110,8 @@ class CassandraExecutorBaseLineCoverageTest extends MockitoTestBase {
 
         final IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> CassandraExecutorBase.defaultUpdatePropNamesOf(entity));
 
-        assertEquals("Map entity keys must be property names, but found: 7 in Map entity of class: " + ClassUtil.getCanonicalClassName(IntegerKeyedMapEntity.class),
+        assertEquals(
+                "Map entity keys must be property names, but found: 7 in Map entity of class: " + ClassUtil.getCanonicalClassName(IntegerKeyedMapEntity.class),
                 exception.getMessage());
     }
 

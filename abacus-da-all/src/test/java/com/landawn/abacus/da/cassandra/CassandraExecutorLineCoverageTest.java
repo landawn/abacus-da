@@ -41,6 +41,8 @@ import com.datastax.oss.driver.api.core.cql.Statement;
 import com.datastax.oss.driver.api.core.type.DataType;
 import com.datastax.oss.driver.api.core.type.DataTypes;
 import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
+import com.landawn.abacus.annotation.Column;
+import com.landawn.abacus.annotation.JsonXmlField;
 import com.landawn.abacus.da.MockitoTestBase;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
@@ -160,12 +162,12 @@ class CassandraExecutorLineCoverageTest extends MockitoTestBase {
         final CqlIdentifier missing = mock(CqlIdentifier.class);
         when(missing.asInternal()).thenReturn(null);
 
-        try (SessionFixture fixture = new SessionFixture(new CqlIdentifier[] { missing, CqlIdentifier.fromInternal("right") }, DataTypes.TEXT, DataTypes.TEXT)) {
+        try (SessionFixture fixture = new SessionFixture(new CqlIdentifier[] { missing, CqlIdentifier.fromInternal("right") }, DataTypes.TEXT,
+                DataTypes.TEXT)) {
             final String query = "UPDATE line_rows SET left = ?, right = ?";
             final IllegalArgumentException fromMap = assertThrows(IllegalArgumentException.class,
                     () -> fixture.executor.execute(query, Map.of("left", "a", "right", "b")));
-            final IllegalArgumentException fromBean = assertThrows(IllegalArgumentException.class,
-                    () -> fixture.executor.execute(query, new NamedBindBean()));
+            final IllegalArgumentException fromBean = assertThrows(IllegalArgumentException.class, () -> fixture.executor.execute(query, new NamedBindBean()));
 
             assertEquals("Parameter name at index 0 is null", fromMap.getMessage());
             assertEquals("Parameter name at index 0 is null", fromBean.getMessage());
@@ -183,6 +185,14 @@ class CassandraExecutorLineCoverageTest extends MockitoTestBase {
         } finally {
             restore.run();
         }
+    }
+
+    @Test
+    void caseFoldedColumnFillsTheAnnotatedProperty() {
+        final SharpFoldAlias entity = CassandraExecutor.toEntity(row(new String[] { "STRASSE" }, "Ada"), SharpFoldAlias.class);
+
+        assertEquals("Ada", entity.getCode());
+        assertNull(entity.getStraße());
     }
 
     private static Row row(final String[] names, final Object... values) {
@@ -377,6 +387,34 @@ class CassandraExecutorLineCoverageTest extends MockitoTestBase {
 
         public void setRight(final String right) {
             this.right = right;
+        }
+    }
+
+    /**
+     * {@code straße} occupies the column key, and its JSON tags are a fixed name, so {@code STRASSE} is only in the
+     * column-to-property map.
+     */
+    public static class SharpFoldAlias {
+        @JsonXmlField(name = "fixed")
+        private String straße;
+
+        @Column("straße")
+        private String code;
+
+        public String getStraße() {
+            return straße;
+        }
+
+        public void setStraße(final String straße) {
+            this.straße = straße;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(final String code) {
+            this.code = code;
         }
     }
 }

@@ -41,6 +41,17 @@ class DynamoDBExecutorBaseLineCoverageTest extends MockitoTestBase {
     }
 
     @Test
+    void caseFoldedAttributeFillsTheAnnotatedProperty() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("STRASSE", new AttributeValue().withS("Ada"));
+
+        final SharpFoldAlias user = DynamoDBExecutor.toEntity(item, SharpFoldAlias.class);
+
+        assertEquals("Ada", user.getCode());
+        assertNull(user.getStraße());
+    }
+
+    @Test
     void nestedBeanTextUsesTheFormattedJsonReader() {
         final BeanInfo beanInfo = ParserUtil.getBeanInfo(AmountEnvelope.class);
         final PropInfo body = beanInfo.getPropInfo("body");
@@ -127,6 +138,34 @@ class DynamoDBExecutorBaseLineCoverageTest extends MockitoTestBase {
 
         public void setUserName(final String userName) {
             this.userName = userName;
+        }
+    }
+
+    /**
+     * {@code straße} occupies the column key, and its JSON tags are a fixed name, so {@code STRASSE} is only in the
+     * column-to-property map.
+     */
+    public static class SharpFoldAlias {
+        @JsonXmlField(name = "fixed")
+        private String straße;
+
+        @Column("straße")
+        private String code;
+
+        public String getStraße() {
+            return straße;
+        }
+
+        public void setStraße(final String straße) {
+            this.straße = straße;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(final String code) {
+            this.code = code;
         }
     }
 

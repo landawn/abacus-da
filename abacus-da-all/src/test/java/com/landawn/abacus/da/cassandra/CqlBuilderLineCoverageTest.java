@@ -87,8 +87,8 @@ class CqlBuilderLineCoverageTest extends TestBase {
     public void setDelegatesANullOrNonBeanClassToTheParentBuilder() {
         final CqlBuilder update = PSC.update("users");
 
-        final IllegalArgumentException nullClass = assertThrows(IllegalArgumentException.class, () -> update.set((Class<?>) null, Set.<String>of()));
-        final IllegalArgumentException nonBean = assertThrows(IllegalArgumentException.class, () -> update.set(String.class, Set.<String>of()));
+        final IllegalArgumentException nullClass = assertThrows(IllegalArgumentException.class, () -> update.set((Class<?>) null, Set.<String> of()));
+        final IllegalArgumentException nonBean = assertThrows(IllegalArgumentException.class, () -> update.set(String.class, Set.<String> of()));
 
         assertEquals("'entityClass' cannot be null", nullClass.getMessage());
         assertEquals("Not a bean class: java.lang.String - CharSequence implementations are never treated as beans", nonBean.getMessage());
@@ -199,8 +199,7 @@ class CqlBuilderLineCoverageTest extends TestBase {
 
     @Test
     public void selectFromRejectsNestedEntityProperties() {
-        final IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> PSC.selectFrom(ParentWithChild.class, null, true, null));
+        final IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> PSC.selectFrom(ParentWithChild.class, null, true, null));
 
         assertEquals("Cassandra CQL does not support the multi-table FROM clause required by nested entity properties", exception.getMessage());
     }

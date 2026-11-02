@@ -235,7 +235,7 @@ public class HBaseExecutorLineCoverageTest extends MockitoTestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
         when(table.getScanner(any(Scan.class))).thenReturn(scanner);
-        when(scanner.iterator()).thenReturn(List.<Result>of().iterator());
+        when(scanner.iterator()).thenReturn(List.<Result> of().iterator());
         final HBaseExecutor executor = new HBaseExecutor(conn);
 
         try (com.landawn.abacus.util.stream.Stream<Result> rows = executor.scan("users", new Scan())) {
@@ -276,13 +276,13 @@ public class HBaseExecutorLineCoverageTest extends MockitoTestBase {
         final Map<String, Tuple2<String, Boolean>> family = new HashMap<>();
         family.put("", address);
         family.put("street", address);
-        assertTrue(invoke(boolean.class, "isSoleRoutableNestedBeanFallback", new Class<?>[] { BeanInfo.class, Map.class, Tuple2.class }, parent, family,
-                address));
+        assertTrue(
+                invoke(boolean.class, "isSoleRoutableNestedBeanFallback", new Class<?>[] { BeanInfo.class, Map.class, Tuple2.class }, parent, family, address));
 
         final Tuple2<String, Boolean> label = Tuple.of("label", false);
         family.put("", label);
-        assertFalse(invoke(boolean.class, "isSoleRoutableNestedBeanFallback", new Class<?>[] { BeanInfo.class, Map.class, Tuple2.class }, parent, family,
-                label));
+        assertFalse(
+                invoke(boolean.class, "isSoleRoutableNestedBeanFallback", new Class<?>[] { BeanInfo.class, Map.class, Tuple2.class }, parent, family, label));
 
         final PropInfo collision = parent.getPropInfo("nestedCollision");
         assertFalse(invoke(boolean.class, "readsBackIntoWriter", new Class<?>[] { PropInfo.class, String.class, String.class, String.class }, collision, null,

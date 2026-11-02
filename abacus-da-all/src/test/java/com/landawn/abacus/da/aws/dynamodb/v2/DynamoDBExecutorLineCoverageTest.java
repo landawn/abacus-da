@@ -59,6 +59,25 @@ class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSupport {
     void readRowOfANullRowUsesTheTargetDefault() {
         assertNull(DynamoDBExecutor.readRow((Map<String, AttributeValue>) null, null));
         assertEquals(0, DynamoDBExecutor.readRow((Map<String, AttributeValue>) null, int.class));
+        assertNull(DynamoDBExecutor.readRow((GetItemResponse) null, null));
+        assertEquals(0, DynamoDBExecutor.readRow(GetItemResponse.builder().build(), int.class));
+
+        final Map<String, AttributeValue> row = Map.of("id", AttributeValue.builder().s("Ada").build());
+        final Object[] values = DynamoDBExecutor.readRow(row, null);
+
+        assertEquals(1, values.length);
+        assertEquals("Ada", values[0]);
+    }
+
+    @Test
+    void toListRejectsANegativeOffsetAndANegativeCount() {
+        final List<Map<String, AttributeValue>> items = List.of(Map.of("id", AttributeValue.builder().s("Ada").build()));
+
+        final IllegalArgumentException negativeOffset = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(items, -1, 1, String.class));
+        final IllegalArgumentException negativeCount = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(items, 0, -1, String.class));
+
+        assertEquals("'offset' and 'count' can't be negative: -1, 1", negativeOffset.getMessage());
+        assertEquals("'offset' and 'count' can't be negative: 0, -1", negativeCount.getMessage());
     }
 
     @Test
@@ -108,7 +127,7 @@ class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSupport {
         when(mockDynamoDbClient.scan(any(ScanRequest.class))).thenReturn(ScanResponse.builder().build());
 
         try (Stream<?> query = executor.stream(QueryRequest.builder().tableName("Users").build(), Map.class);
-                Stream<?> scan = executor.scan(ScanRequest.builder().tableName("Users").build(), Map.class)) {
+             Stream<?> scan = executor.scan(ScanRequest.builder().tableName("Users").build(), Map.class)) {
             final Iterator<?> queryPages = com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorLineCoverageTest.pageIterator(query, DynamoDBExecutor.class);
             final Iterator<?> scanPages = com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorLineCoverageTest.pageIterator(scan, DynamoDBExecutor.class);
 
