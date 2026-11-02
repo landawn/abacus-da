@@ -17,9 +17,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InaccessibleObjectException;
 import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -259,6 +261,10 @@ public class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSuppor
         return row;
     }
 
+    /**
+     * Finds the page iterator the executor nested in the stream. JDK collections are read through
+     * their public APIs, and private fields of {@code java.base} are left closed.
+     */
     public static Iterator<?> pageIterator(final Object root, final Class<?> enclosing) {
         final ArrayDeque<Object> pending = new ArrayDeque<>();
         final Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -269,41 +275,76 @@ public class DynamoDBExecutorLineCoverageTest extends DynamoDBExecutorTestSuppor
             if (current == null || !seen.add(current)) {
                 continue;
             }
-            if (current instanceof Iterator<?> iterator && enclosing.equals(current.getClass().getEnclosingClass())) {
+            if (current instanceof Iterator<?> iterator && enclosing.equals(iterator.getClass().getEnclosingClass())) {
                 return iterator;
             }
-
-            Class<?> type = current.getClass();
-            while (type != null && type != Object.class) {
-                for (final Field field : type.getDeclaredFields()) {
-                    if (field.getType().isPrimitive() || Modifier.isStatic(field.getModifiers())) {
-                        continue;
-                    }
-                    field.setAccessible(true);
-                    final Object value;
-                    try {
-                        value = field.get(current);
-                    } catch (final IllegalAccessException e) {
-                        throw new IllegalStateException(e);
-                    }
-                    if (value == null || value instanceof String || value instanceof Number || value instanceof Class<?> || value instanceof Enum<?>) {
-                        continue;
-                    }
-                    if (value instanceof Object[] array) {
-                        for (final Object element : array) {
-                            if (element != null) {
-                                pending.add(element);
-                            }
-                        }
-                    } else {
-                        pending.add(value);
-                    }
-                }
-                type = type.getSuperclass();
-            }
+            enqueueReachable(current, pending);
         }
 
         throw new AssertionError("No page iterator enclosed by " + enclosing.getName());
+    }
+
+    private static void enqueueReachable(final Object current, final ArrayDeque<Object> pending) {
+        if (current instanceof Object[] array) {
+            enqueueAll(array, pending);
+            return;
+        }
+        if (current instanceof Map<?, ?> map) {
+            for (final Map.Entry<?, ?> entry : map.entrySet()) {
+                enqueue(entry.getKey(), pending);
+                enqueue(entry.getValue(), pending);
+            }
+            return;
+        }
+        if (current instanceof Collection<?> collection) {
+            enqueueAll(collection.toArray(), pending);
+        }
+        if (isPlatformType(current.getClass())) {
+            return;
+        }
+
+        Class<?> type = current.getClass();
+        while (type != null && type != Object.class && !isPlatformType(type)) {
+            for (final Field field : type.getDeclaredFields()) {
+                if (field.getType().isPrimitive() || Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                final Object value;
+                try {
+                    field.setAccessible(true);
+                    value = field.get(current);
+                } catch (final InaccessibleObjectException ignored) {
+                    continue;
+                } catch (final IllegalAccessException e) {
+                    throw new IllegalStateException(e);
+                }
+                if (value instanceof Object[] array) {
+                    enqueueAll(array, pending);
+                } else {
+                    enqueue(value, pending);
+                }
+            }
+            type = type.getSuperclass();
+        }
+    }
+
+    private static void enqueueAll(final Object[] values, final ArrayDeque<Object> pending) {
+        for (final Object value : values) {
+            enqueue(value, pending);
+        }
+    }
+
+    private static void enqueue(final Object value, final ArrayDeque<Object> pending) {
+        if (value == null || value instanceof String || value instanceof Number || value instanceof Class<?> || value instanceof Enum<?>) {
+            return;
+        }
+        pending.add(value);
+    }
+
+    /** {@code java.base} and the other platform modules do not open their private fields to this test. */
+    private static boolean isPlatformType(final Class<?> type) {
+        final String name = type.getName();
+        return name.startsWith("java.") || name.startsWith("javax.") || name.startsWith("jdk.") || name.startsWith("sun.") || name.startsWith("com.sun.");
     }
 
     public static Level enableDebug(final Class<?> type) {
