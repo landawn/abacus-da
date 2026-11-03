@@ -123,12 +123,14 @@ public abstract class DynamoDBExecutorBase {
      * names. Item and direct bean mapping assign SERIALIZE_ONLY properties that have a write path (a writable field or
      * a setter), skip read-only properties ({@code PropInfo.isReadOnlyProperty}, including getter-only properties of an
      * {@code @AccessFieldByMethod} bean), and resolve dotted paths, converting their values as for the last property of the
-     * path named directly. The dependency's path setter creates a missing intermediate bean through its no-args constructor and
-     * assigns into an existing one in place, so a path through a nested record or another bean without a no-args constructor
-     * fails the item ({@link IllegalArgumentException} when the intermediate value is missing, {@link ClassCastException} when an
-     * earlier attribute already set it), as does a resolvable path into a builder-based target bean, whose intermediate values the
-     * setter reads from the builder ({@link ClassCastException}); such a nested bean is read from
-     * an {@code M} attribute instead. A read-only property is skipped in every context,
+     * path named directly. A missing intermediate bean is created through its no-args constructor and assigned first, and the
+     * value is then written into the instance its owner holds; an existing one is assigned into in place. An intermediate whose
+     * accessors copy it (a getter returning a copy, a setter storing one) is written and then set on its owner again, so the
+     * value is kept. In a builder-based target bean, whose builder has no getters, the first intermediate of a path is the one
+     * created for an earlier dotted attribute of the item (a plain attribute of that property before it is replaced). A path
+     * through a nested record or another bean without a no-args constructor fails the item ({@link IllegalArgumentException}
+     * when the intermediate value is missing, {@link ClassCastException} when an earlier attribute already set it); such a
+     * nested bean is read from an {@code M} attribute instead. A read-only property is skipped in every context,
      * whatever its declared direction: a read-only property can carry an explicit {@code DESERIALIZE_ONLY} only on an
      * {@code @AccessFieldByMethod} field without a setter, and such a property is skipped too, by item and direct mapping and
      * by a JSON-context element of {@code L}, since {@code isReadOnlyProperty} is tested before the direction. Only a bean parsed from the JSON
@@ -166,6 +168,7 @@ public abstract class DynamoDBExecutorBase {
         final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetType.javaType());
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetType.reflectType());
         final Object entity = entityInfo.createBeanResult();
+        final Map<PropInfo, Object> builderIntermediates = newBuilderIntermediates(entityInfo, entity);
         final boolean jsonRead = context == MappingContext.JSON;
         PropInfo propInfo = null;
         String propName = null;
@@ -193,8 +196,12 @@ public abstract class DynamoDBExecutorBase {
                     // setter only applies its raw conversion: an SDK v1 buffer became "" or null, an SDK v2 byte[] for a
                     // ByteBuffer an empty write-mode buffer, and typed containers, wrappers and enum codes skipped the item
                     // rules. Paths it ignores (unresolvable, or ending at a read-only property) still pass the value unchanged.
-                    final PropInfo leafPropInfo = writableLeafOfPath(entityInfo, propName);
-                    entityInfo.setPropValue(entity, propName, leafPropInfo == null ? rawValue : readPropertyValue(leafPropInfo, rawValue, context), true);
+                    final List<PropInfo> chain = entityInfo.getPropInfoChain(propName);
+                    final PropInfo leafPropInfo = writableLeafOfPath(chain);
+                    final Object value = leafPropInfo == null ? rawValue : readPropertyValue(leafPropInfo, rawValue, context);
+                    if (leafPropInfo == null || !setDottedPathValue(entity, chain, value, builderIntermediates)) {
+                        entityInfo.setPropValue(entity, propName, value, true);
+                    }
                 }
 
                 continue;
@@ -286,15 +293,114 @@ public abstract class DynamoDBExecutorBase {
      * Returns the last property of a dotted path, or {@code null} when the dependency's path setter ignores the path: no
      * property chain matches it, or the chain ends at a read-only property.
      */
-    private static PropInfo writableLeafOfPath(final BeanInfo beanInfo, final String path) {
-        final List<PropInfo> chain = beanInfo.getPropInfoChain(path);
-
+    private static PropInfo writableLeafOfPath(final List<PropInfo> chain) {
         if (chain.isEmpty()) {
             return null;
         }
 
         final PropInfo leaf = chain.get(chain.size() - 1);
         return leaf.isReadOnlyProperty ? null : leaf;
+    }
+
+    /**
+     * Writes {@code value} to the last property of the writable dotted path {@code chain} on {@code entity}, creating and
+     * assigning each missing intermediate bean as the dependency's path setter does (no-argument constructor, then the
+     * property's setter). Returns {@code false} without creating anything when an intermediate is a collection: such a path is
+     * left to the path setter, which adds the bean it creates to the collection before assigning the collection.
+     * <p>
+     * The path setter writes the rest of the path into the instance it created, or into whatever the getter returns, so the
+     * value was silently lost when an accessor copies: a setter that stores a copy of its argument (PropInfo calls the setter of
+     * an {@code @AccessFieldByMethod} bean, for example) kept an empty intermediate, and a getter that returns a copy on every
+     * read gave a detached instance to every column after the first one through it. Here an intermediate whose getter returns
+     * the same instance twice is written in place; any other is written and then set on its owner again, innermost first, so
+     * the owner stores it through its setter (a copying setter stores a copy that holds the value). A getter's copy replaces the
+     * stored instance this way, so it must copy every property. A read-only intermediate whose getter copies cannot be set
+     * again, and the value is lost there as before.
+     * <p>
+     * For an immutable bean built through its builder, {@code entity} is the builder, which has none of the bean's getters, so
+     * the first intermediate of each path is the one created for an earlier dotted column of the same row, kept in
+     * {@code builderIntermediates} (see {@link #newBuilderIntermediates(BeanInfo, Object)}) and set on the builder after each
+     * write; a plain column of that property read before the dotted column is replaced by it.
+     *
+     * @return {@code true} if the value was written, {@code false} if the path is left to the path setter
+     * @throws RuntimeException if reading or writing a property, or creating an intermediate bean, fails (as in the path setter)
+     */
+    private static boolean setDottedPathValue(final Object entity, final List<PropInfo> chain, final Object value,
+            final Map<PropInfo, Object> builderIntermediates) {
+        final int last = chain.size() - 1;
+
+        // A collection intermediate leaves the whole path to the path setter before anything is created here: stopping part-way
+        // left beans created here for the path setter to walk again through getters, and a getter that returns a copy then
+        // lost the value the path setter alone used to keep.
+        for (int i = 0; i < last; i++) {
+            if (chain.get(i).type.isCollection()) {
+                return false;
+            }
+        }
+
+        // path[i] holds path[i + 1] through chain.get(i); bit i of setAgain marks an intermediate that is not known to be the
+        // instance its owner stores, which must be set on its owner again once the value is written into it.
+        final Object[] path = new Object[last + 1];
+        long setAgain = 0;
+        path[0] = entity;
+
+        for (int i = 0; i < last; i++) {
+            final PropInfo propInfo = chain.get(i);
+            final Object owner = path[i];
+            Object intermediate;
+
+            if (i == 0 && builderIntermediates != null) {
+                // WHY: the bean's getter invoked on a builder failed the whole row with ClassCastException ("Cannot cast
+                // Bean$Builder to Bean"), as did the path setter.
+                intermediate = builderIntermediates.get(propInfo);
+
+                if (intermediate == null) {
+                    intermediate = N.newInstance(propInfo.clazz);
+                    builderIntermediates.put(propInfo, intermediate);
+                }
+
+                setAgain |= 1L << i;
+            } else {
+                intermediate = propInfo.getPropValue(owner);
+
+                if (intermediate == null) {
+                    final Object created = N.newInstance(propInfo.clazz);
+                    propInfo.setPropValue(owner, created);
+                    intermediate = propInfo.getPropValue(owner);
+
+                    // A stable read (the same instance twice) is the stored instance, a copy when the setter copies; otherwise the
+                    // getter copies (or returns nothing), and the created instance is written and then set again.
+                    if (intermediate != created && (intermediate == null || propInfo.getPropValue(owner) != intermediate)) {
+                        intermediate = created;
+                        setAgain |= 1L << i;
+                    }
+                } else if (propInfo.getPropValue(owner) != intermediate) {
+                    // A copying getter: the copy read first is written and then set again.
+                    setAgain |= 1L << i;
+                }
+            }
+
+            path[i + 1] = intermediate;
+        }
+
+        chain.get(last).setPropValue(path[last], value);
+
+        for (int i = last - 1; setAgain != 0 && i >= 0; i--) {
+            if ((setAgain & (1L << i)) != 0 && !chain.get(i).isReadOnlyProperty) {
+                chain.get(i).setPropValue(path[i], path[i + 1]);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns the map in which {@link #setDottedPathValue(Object, List, Object, Map)} keeps the first intermediates of the
+     * dotted paths of one row when {@code entity}, the result of {@link BeanInfo#createBeanResult()}, is the builder of an
+     * immutable bean, or {@code null} for any other result (a mutable bean, or the constructor arguments of a record).
+     */
+    private static Map<PropInfo, Object> newBuilderIntermediates(final BeanInfo entityInfo, final Object entity) {
+        return entityInfo.isImmutable && !(entity instanceof Object[]) ? new HashMap<>() : null;
     }
 
     /**
@@ -1116,7 +1222,9 @@ public abstract class DynamoDBExecutorBase {
      * @param rowClass the requested collection class
      * @param valueDecoder converts an attribute to its native Java value
      * @return a collection of the requested type holding the decoded attribute values
-     * @throws RuntimeException if conversion, construction, or insertion into the collection fails
+     * @throws IllegalArgumentException if the collection rejects a decoded value (a {@code NULL} attribute for an
+     *         {@code ArrayBlockingQueue}, {@code ArrayDeque} or {@code ConcurrentLinkedQueue} row, for example), naming the attribute
+     * @throws RuntimeException if conversion or construction of the collection fails
      */
     @SuppressWarnings("rawtypes")
     protected static <V> Collection<?> readCollectionRow(final Map<String, V> row, final Class<? extends Collection> rowClass,
@@ -1127,11 +1235,56 @@ public abstract class DynamoDBExecutorBase {
         final Collection<Object> values = copyOnWrite ? new ArrayList<>(row.size())
                 : rowClass == ArrayBlockingQueue.class ? new ArrayBlockingQueue<>(Math.max(1, row.size())) : N.newCollection(rowClass);
 
-        for (final V value : row.values()) {
-            values.add(valueDecoder.apply(value));
+        for (final Map.Entry<String, V> entry : row.entrySet()) {
+            final Object value = valueDecoder.apply(entry.getValue());
+
+            try {
+                values.add(value);
+            } catch (final NullPointerException | ClassCastException e) {
+                // WHY: as in fillMapRow, a bare JDK exception from Collection.add does not say which attribute the requested row
+                // type rejected (a NULL attribute read as an ArrayBlockingQueue, ArrayDeque or ConcurrentLinkedQueue).
+                throw new IllegalArgumentException(
+                        "Attribute (" + entry.getKey() + ", " + value + ") is not accepted by the row collection " + ClassUtil.getCanonicalClassName(rowClass),
+                        e);
+            }
         }
 
         return copyOnWrite ? new CopyOnWriteArrayList<>(values) : rowClass.isInstance(values) ? values : N.convert(values, rowClass);
+    }
+
+    /**
+     * Decodes an item's attribute values into {@code row}, in the item's iteration order, and returns {@code row}. An attribute
+     * that the row map rejects, such as a {@code NULL} attribute for a {@link ConcurrentHashMap} or {@code Hashtable} row, is
+     * reported as an {@link IllegalArgumentException} naming the attribute, as for the maps nested in an item.
+     *
+     * @param <V> the SDK's attribute-value type
+     * @param item the non-null item to decode
+     * @param row the map to fill
+     * @param valueDecoder converts an attribute to its native Java value
+     * @return {@code row}
+     * @throws NullPointerException if {@code row} is {@code null} and {@code item} is not empty
+     * @throws IllegalArgumentException if {@code row} rejects an attribute name or decoded value
+     * @throws RuntimeException if an attribute cannot be decoded
+     */
+    protected static <V> Map<String, Object> fillMapRow(final Map<String, V> item, final Map<String, Object> row, final Function<? super V, ?> valueDecoder) {
+        for (final Map.Entry<String, V> entry : item.entrySet()) {
+            final Object value = valueDecoder.apply(entry.getValue());
+
+            try {
+                row.put(entry.getKey(), value);
+            } catch (final NullPointerException | ClassCastException e) {
+                if (row == null) {
+                    throw e;
+                }
+
+                // A bare JDK exception from Map.put does not say which attribute the requested row type rejected.
+                throw new IllegalArgumentException(
+                        "Attribute (" + entry.getKey() + ", " + value + ") is not accepted by the row map " + ClassUtil.getCanonicalClassName(row.getClass()),
+                        e);
+            }
+        }
+
+        return row;
     }
 
     /**

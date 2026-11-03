@@ -118,8 +118,9 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * {@code list}/{@code query}/{@code stream}/{@code scan} methods instead deliver their result on
  * {@code CompletableFuture}'s default asynchronous executor (see the threading notes on those methods): the
  * common {@code ForkJoinPool}, or a new thread for every task when the common pool's parallelism is below two,
- * which is the default on a host with one or two available processors. For stream and scan,
- * only the lazy stream is delivered there; its page fetches block the thread that consumes it.
+ * which is the default on a host with one or two available processors. A failed page request of {@code list}/{@code query}
+ * is the exception: it fails the returned future on the SDK's response thread, as for the single-item futures. For stream
+ * and scan, only the lazy stream is delivered there; its page fetches block the thread that consumes it.
  * Continuations attached with
  * {@code thenApply}/{@code thenAccept} may run on the completing thread, or immediately on the attaching thread
  * if the future is already complete. Push CPU-heavy or blocking work onto your own executor with the {@code *Async} variants (e.g.
@@ -128,7 +129,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * <h3>Thread Safety &amp; Performance:</h3>
  * <p>This class is fully thread-safe and optimized for high-concurrency scenarios. The underlying
  * {@code DynamoDbAsyncClient} uses non-blocking NIO networking with connection pooling and the SDK's
- * configured retry policy (with exponential backoff by default).</p>
+ * configured retry strategy (with exponential backoff by default).</p>
  *
  * <h3>CompletableFuture Usage Patterns:</h3>
  * <ul>
@@ -198,7 +199,7 @@ public final class AsyncDynamoDBExecutor {
      * Constructs a new {@code AsyncDynamoDBExecutor} wrapping the specified AWS SDK v2 async client.
      *
      * <p>The executor uses the provided client for all DynamoDB operations and inherits its
-     * configuration — region, credentials provider, retry policy, HTTP/connection settings, and
+     * configuration — region, credentials provider, retry strategy, HTTP/connection settings, and
      * the async-execution {@code Executor} attached via
      * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}. Configure the client fully before
      * passing it here.</p>
@@ -210,7 +211,8 @@ public final class AsyncDynamoDBExecutor {
      * <ul>
      * <li>Appropriate AWS credentials provider</li>
      * <li>Correct AWS region</li>
-     * <li>Suitable retry policy and request timeout settings</li>
+     * <li>Suitable retry strategy (for example {@code .overrideConfiguration(o -> o.retryStrategy(r -> r.maxAttempts(4)))})
+     *     and request timeout settings</li>
      * <li>Connection-pool size appropriate for your concurrency profile</li>
      * </ul>
      *
@@ -1456,12 +1458,14 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param tableName the name of the DynamoDB table containing the item to update. Must not be null.
      * @param key the primary key of the item to update, must include all key attributes. Must not be null.
-     * @param attributeUpdates a map of attribute names to AttributeValueUpdate objects specifying the updates. Must not be null.
+     * @param attributeUpdates a map of attribute names to AttributeValueUpdate objects specifying the updates. A {@code null} or
+     *        empty map is not rejected: the request then updates nothing, and DynamoDB creates an item holding only the key
+     *        attributes when none exists
      * @return a CompletableFuture containing the UpdateItemResponse with operation metadata;
      *         completes exceptionally (wrapped in {@link java.util.concurrent.CompletionException})
      *         with a {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException} if
-     *         DynamoDB rejects the request (a null/empty {@code tableName}, a null {@code key}, or
-     *         null {@code attributeUpdates} fails service-side validation)
+     *         DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key}
+     *         fails service-side validation)
      * @see AttributeValueUpdate
      */
     public CompletableFuture<UpdateItemResponse> updateItem(final String tableName, final Map<String, AttributeValue> key,
@@ -1501,13 +1505,14 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param tableName the name of the DynamoDB table. Must not be null.
      * @param key the primary key of the item to update. Must not be null.
-     * @param attributeUpdates map of updates to apply. Must not be null.
+     * @param attributeUpdates map of updates to apply. A {@code null} or empty map is not rejected: the request then updates
+     *        nothing, and DynamoDB creates an item holding only the key attributes when none exists
      * @param returnValues specifies which values to return
      * @return a CompletableFuture containing the UpdateItemResponse with the requested values;
      *         completes exceptionally (wrapped in {@link java.util.concurrent.CompletionException})
      *         with a {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException} if
-     *         DynamoDB rejects the request (a null/empty {@code tableName}, a null {@code key}, or
-     *         null {@code attributeUpdates} fails service-side validation)
+     *         DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key}
+     *         fails service-side validation)
      */
     public CompletableFuture<UpdateItemResponse> updateItem(final String tableName, final Map<String, AttributeValue> key,
             final Map<String, AttributeValueUpdate> attributeUpdates, final String returnValues) {
@@ -2665,7 +2670,8 @@ public final class AsyncDynamoDBExecutor {
      * <p>This method calls {@link DynamoDbAsyncClient#close()} on the wrapped client, which closes
      * HTTP connections, shuts down internal async resources, and releases any other system resources
      * held by the SDK. After calling this method, no further operations should be performed on this
-     * executor — they will fail because the underlying client is closed.</p>
+     * executor — they will fail because the underlying client is closed (with the default Netty HTTP client, the returned
+     * future fails with an {@code SdkClientException} wrapped in a {@code CompletionException}).</p>
      *
      * <p><b>Note on shared clients:</b> if the {@link DynamoDbAsyncClient} passed to the constructor
      * is also used elsewhere, calling {@code close()} here will close it for those callers too.</p>

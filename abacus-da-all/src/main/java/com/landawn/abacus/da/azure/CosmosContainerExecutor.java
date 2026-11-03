@@ -41,8 +41,10 @@ import com.landawn.abacus.da.cs;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.SqlBuilder;
 import com.landawn.abacus.query.condition.Condition;
+import com.landawn.abacus.util.Holder;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
+import com.landawn.abacus.util.ObjIterator;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
 
@@ -165,6 +167,29 @@ import com.landawn.abacus.util.stream.Stream;
  * <p>This class is thread-safe and designed for concurrent use. The underlying {@link CosmosContainer}
  * is thread-safe, and this executor maintains no mutable state that would cause thread safety issues.
  * Mutable SDK request-options objects, however, should not be modified or shared across concurrent calls.</p>
+ *
+ * <p>The SDK writes the partition key of an operation into a non-null request-options object passed with it (for example to
+ * {@code readItem}, {@code get}, {@code replaceItem}, {@code patchItem}, {@code deleteItem(String, PartitionKey, ...)},
+ * {@code deleteAllItemsByPartitionKey}, or the {@code createItem}/{@code upsertItem} overloads that take a partition key), and a
+ * partition key held by the options takes precedence over the one in an item. Reusing such an options object for
+ * {@code createItem(item, options)}, {@code upsertItem(item, options)}, or {@code deleteItem(item, options)} therefore targets the
+ * earlier partition: the write is rejected because the partition keys differ, and the delete removes the item with the same id in
+ * that partition, if there is one. Likewise, {@code readAllItems}/{@code streamAllItems} store their partition key in the
+ * {@link CosmosQueryRequestOptions} passed with them, so reusing that object for a query scopes the query to that partition.
+ * Use a new options object for each call.</p>
+ *
+ * <h3>Streaming and Read-Ahead</h3>
+ * <p>The {@code streamItems} and {@code streamAllItems} methods read the SDK's {@link CosmosPagedIterable} page by page. No page
+ * is requested until the stream is consumed; the stream then requests one page ahead of the consumer, and closing the stream
+ * cancels the remaining reads. The SDK's query pipeline prefetches a little beyond that on its own: about one more page for a
+ * single-partition query or {@code readAllItems}, and pages of several partitions at once for a cross-partition query (bounded
+ * by the options' {@code maxBufferedItemCount} and {@code maxDegreeOfParallelism}). Abacus streams close themselves when a
+ * terminal operation completes, so {@code first()} or {@code limit(n).toList()} reads only the pages it needs plus that small
+ * read-ahead; close a stream that is iterated through {@code iterator()} or abandoned before a terminal operation (for example
+ * with try-with-resources). A Cosmos service failure is raised as a {@link CosmosException} when the stream is consumed.
+ * Iterating a {@link CosmosPagedIterable} returned by {@code queryItems} or {@code readAllItems} item by item instead lets the
+ * SDK read up to 256 pages ahead (it flattens the pages with Reactor's {@code flatMap}); its {@code iterableByPage()} requests
+ * one page at a time, with the same pipeline prefetch.</p>
  *
  * <h3>Lifecycle</h3>
  * <p>This executor does not own or close the client from which the container was obtained. The caller remains
@@ -463,7 +488,9 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the item to create
      * @param item the item to create (must not be null)
-     * @param options additional options for the create operation (can be null for default behavior)
+     * @param options additional options for the create operation (can be null for default behavior). Do not reuse an options
+     *                object passed to an operation with a partition key: the SDK stored that key in it, and the key would be used
+     *                instead of the item's (see the class documentation).
      * @return a CosmosItemResponse containing the created item and metadata
      * @throws IllegalArgumentException if {@code item} is null or the default Cosmos serializer cannot convert it to a JSON document, including
      *         failure of an item property getter
@@ -607,7 +634,9 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the item to upsert
      * @param item the item to create or update (must not be null)
-     * @param options additional options for the upsert operation (can be null for default behavior)
+     * @param options additional options for the upsert operation (can be null for default behavior). Do not reuse an options
+     *                object passed to an operation with a partition key: the SDK stored that key in it, and the key would be used
+     *                instead of the item's (see the class documentation).
      * @return a CosmosItemResponse containing the upserted item and metadata
      * @throws IllegalArgumentException if {@code item} is null or the default Cosmos serializer cannot convert it to a JSON document, including
      *         failure of an item property getter
@@ -813,6 +842,10 @@ public class CosmosContainerExecutor {
      * <p>The item's id and partition key are automatically extracted from the provided
      * object to identify and delete the document. The entire object is not required,
      * only the id and partition key fields need to be populated.</p>
+     *
+     * <p>A partition key held by {@code options} takes precedence over the item's. The SDK stores the partition key of an
+     * operation into the options object passed with it, so an options object reused from, for example, a {@code readItem}
+     * call deletes the item with this id in the partition of that earlier call; use a new options object.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1435,13 +1468,13 @@ public class CosmosContainerExecutor {
      * Streams all items within a partition for functional-style processing.
      *
      * <p>Returns an Abacus {@link Stream} backed by the underlying {@link CosmosPagedIterable}
-     * so items are fetched lazily a page at a time. This is more memory-efficient than loading
-     * the entire partition into a list and supports the usual pipeline operations
-     * (filter, map, collect, etc.). Iteration is on the calling thread; the Cosmos SDK
-     * handles continuation tokens internally as pages are consumed.</p>
+     * and supports the usual pipeline operations (filter, map, collect, etc.). Iteration is on
+     * the calling thread; the Cosmos SDK handles continuation tokens internally.</p>
      *
-     * <p>Applying {@code limit}/{@code takeWhile} early in the pipeline can avoid fetching
-     * later pages, although the SDK can still buffer items ahead of the consumer.</p>
+     * <p>Pages are requested only when the stream is consumed, one page ahead of the consumer (plus the SDK's own small
+     * prefetch), so applying {@code limit}/{@code takeWhile} early in the pipeline avoids fetching later pages;
+     * closing the stream, which a terminal operation does, cancels the remaining reads (see
+     * "Streaming and Read-Ahead" in the class documentation).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1483,7 +1516,7 @@ public class CosmosContainerExecutor {
         N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return Stream.from(cosmosContainer.readAllItems(partitionKey, targetClass).stream());
+        return streamByPage(cosmosContainer.readAllItems(partitionKey, targetClass));
     }
 
     /**
@@ -1529,7 +1562,7 @@ public class CosmosContainerExecutor {
         N.checkArgNotNull(partitionKey, cs.partitionKey);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return Stream.from(cosmosContainer.readAllItems(partitionKey, options, targetClass).stream());
+        return streamByPage(cosmosContainer.readAllItems(partitionKey, options, targetClass));
     }
 
     /**
@@ -1732,8 +1765,9 @@ public class CosmosContainerExecutor {
      * Streams query results for functional processing.
      *
      * <p>Executes a SQL query and returns results as a Stream for functional-style
-     * processing. This is memory-efficient for large result sets and enables
-     * pipeline operations like filtering, mapping, and reduction.</p>
+     * processing, enabling pipeline operations like filtering, mapping, and reduction.
+     * Pages are fetched only as the stream is consumed, a page or a few ahead, so large result sets
+     * are not held in memory (see "Streaming and Read-Ahead" in the class documentation).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1819,7 +1853,7 @@ public class CosmosContainerExecutor {
         N.checkArgNotNull(query, cs.query);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return Stream.from(cosmosContainer.queryItems(query, options, targetClass).stream());
+        return streamByPage(cosmosContainer.queryItems(query, options, targetClass));
     }
 
     /**
@@ -1914,7 +1948,7 @@ public class CosmosContainerExecutor {
         N.checkArgNotNull(querySpec, cs.querySpec);
         N.checkArgNotNull(targetClass, cs.targetClass);
 
-        return Stream.from(cosmosContainer.queryItems(querySpec, options, targetClass).stream());
+        return streamByPage(cosmosContainer.queryItems(querySpec, options, targetClass));
     }
 
     /**
@@ -2218,7 +2252,32 @@ public class CosmosContainerExecutor {
             final Class<T> targetClass) throws IllegalArgumentException, IllegalStateException {
         final SP sp = prepareQuery(targetClass, selectPropNames, whereClause);
 
-        return Stream.from(cosmosContainer.queryItems(toSqlQuerySpec(sp), options, targetClass).stream());
+        return streamByPage(cosmosContainer.queryItems(toSqlQuerySpec(sp), options, targetClass));
+    }
+
+    /**
+     * Streams the items of {@code pagedIterable} page by page. The paged iterable must already be created, so that argument errors
+     * the SDK detects when the query is created are still thrown by the calling method.
+     */
+    private static <T> Stream<T> streamByPage(final CosmosPagedIterable<T> pagedIterable) {
+        // WHY: CosmosPagedIterable.stream() subscribes at once to the SDK's item flux, which flattens the pages with a flatMap that
+        // requests 256 pages, so the SDK read up to 256 pages ahead even for first()/limit(n), also for a stream never consumed, and
+        // closing the stream did not cancel it. streamByPage() requests one page at a time (Reactor's blocking iterator prefetches
+        // one page, and the SDK's paginator one more, or a few per partition for a cross-partition query) and
+        // cancels the subscription when the stream is closed, which the abacus stream does after its terminal operation; deferring
+        // it sends nothing until the stream is consumed. Failures are still thrown on consumption, as before. Not Stream.defer: closing
+        // a deferred stream that was never consumed runs its supplier, which subscribed and requested the first page only to cancel it.
+        final Holder<java.util.stream.Stream<FeedResponse<T>>> pages = new Holder<>();
+
+        return Stream.of(ObjIterator.<FeedResponse<T>> defer(() -> {
+            pages.setValue(pagedIterable.streamByPage());
+
+            return pages.value().iterator();
+        })).onClose(() -> {
+            if (pages.value() != null) {
+                pages.value().close();
+            }
+        }).flatmap(page -> N.nullToEmpty(page.getResults()));
     }
 
     /**
@@ -2689,7 +2748,9 @@ public class CosmosContainerExecutor {
             } else if (ch == ')' && subqueryParenthesisDepth > 0) {
                 subqueryParenthesisDepth--;
                 sb.append(ch);
-            } else if (Character.isJavaIdentifierStart(ch) && ch != '$') {
+            } else if (Character.isJavaIdentifierStart(ch)) {
+                // A name may start with '$' (the common JSON "$type"): Cosmos DB has no '$' token, so an unqualified $type is always a
+                // syntax error, while c.$type is rewritten to the valid c["$type"] by escapeCosmosReservedPropertyNames.
                 final int identifierStart = i;
 
                 while (++i < len && Character.isJavaIdentifierPart(query.charAt(i))) {
@@ -3109,7 +3170,7 @@ public class CosmosContainerExecutor {
             return true;
         }
 
-        if (!Character.isJavaIdentifierStart(ch) || ch == '$') {
+        if (!Character.isJavaIdentifierStart(ch)) {
             return false;
         }
 

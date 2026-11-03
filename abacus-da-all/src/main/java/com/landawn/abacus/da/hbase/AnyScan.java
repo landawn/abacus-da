@@ -1572,7 +1572,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * int caching = scan.getCaching();                    // returns 1000
      * }</pre>
      *
-     * @param caching the number of rows to cache per RPC call
+     * @param caching the number of rows to cache per RPC call; a non-positive value (the default is {@code -1}) uses the
+     *                client's configured default
      * @return this AnyScan instance for method chaining
      * @see #getCaching()
      * @see #setBatch(int)
@@ -1678,7 +1679,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                           .setCaching(100);
      * }</pre>
      *
-     * @param maxResultSize the requested response size in bytes; {@code -1} uses the client's configured default
+     * @param maxResultSize the requested response size in bytes; {@code -1} (or any other non-positive value) uses the
+     *                      client's configured default
      * @return this AnyScan instance for method chaining
      * @see #getMaxResultSize()
      * @see #setBatch(int)
@@ -2030,7 +2032,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Boolean on = scan.isAsyncPrefetch();    // returns Boolean.TRUE
      * }</pre>
      *
-     * @return {@code true} if async prefetch is enabled, {@code false} if disabled, or {@code null} if not set
+     * @return {@code true} if async prefetch is enabled, {@code false} if disabled, or {@code null} if not set (the
+     *         connection's {@code hbase.client.scanner.async.prefetch} setting, {@code false} by default, then applies)
      * @see #setAsyncPrefetch(boolean)
      */
     public Boolean isAsyncPrefetch() {
@@ -2042,7 +2045,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>
      * When enabled, the client will asynchronously fetch the next batch of scan results
      * in the background while you're processing the current batch. This can significantly
-     * improve throughput for large table scans by overlapping computation and I/O.
+     * improve throughput for large table scans by overlapping computation and I/O. HBase's synchronous
+     * client ignores this setting for a {@linkplain #setReversed(boolean) reversed} scan.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>

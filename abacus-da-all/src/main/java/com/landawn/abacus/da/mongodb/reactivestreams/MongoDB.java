@@ -500,7 +500,8 @@ public final class MongoDB extends MongoDBBase {
     /**
      * Converts a BSON {@link Document} into an instance of {@code rowType} using the same mapping
      * rules as the synchronous variant. This {@code protected static} method is a bridge that
-     * delegates to {@link MongoDBBase#readRow(Document, Class)}; it exists so reactive
+     * delegates to {@link MongoDBBase#readRow(Document, Class)} (so a {@link org.bson.BsonDocument} or
+     * {@link org.bson.RawBsonDocument} {@code rowType} receives the row encoded through the framework codec registry); it exists so reactive
      * collaborators in this package can decode rows without referencing the protected helper on
      * the base class directly (this class is {@code final}, so it has no subclasses).
      *
@@ -532,7 +533,12 @@ public final class MongoDB extends MongoDBBase {
      * @param value the decoded field value, possibly null
      * @param targetType the requested Java type
      * @return the converted field value
-     * @throws IllegalArgumentException if {@code targetType} is null or the value cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code targetType} is null or the value cannot be converted to the requested type (also an
+     *         embedded document requested as a BSON value type such as {@link org.bson.types.Binary} or {@link org.bson.types.Code}, or a
+     *         value whose BSON form is not of a requested {@link org.bson.BsonValue} class, such as an {@code Integer} requested as
+     *         {@code BsonString})
+     * @throws org.bson.codecs.configuration.CodecConfigurationException if a value requested as a {@link org.bson.BsonValue} class has no
+     *         usable codec
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
      *         while converting the selected value
      * @see MongoDBBase#convertBsonValue(Object, Class)

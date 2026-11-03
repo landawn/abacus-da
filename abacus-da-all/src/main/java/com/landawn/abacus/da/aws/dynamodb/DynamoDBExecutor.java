@@ -214,15 +214,15 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * <p>This constructor uses default DynamoDBMapperConfig and the shared, library-default async
      * executor (a single static, CPU-sized thread pool shared by all executors constructed without
-     * an explicit {@link AsyncExecutor}). The executor will use AWS SDK v1 with standard retry
-     * policies and connection pooling.</p>
+     * an explicit {@link AsyncExecutor}). Requests are sent through the supplied client as configured: its
+     * retry, timeout, and connection-pool settings are not changed by this executor.</p>
      *
      * <p><b>Default Configuration:</b></p>
      * <ul>
      * <li>Default DynamoDBMapperConfig with standard naming conventions</li>
      * <li>CPU-optimized async thread pool (max(64, CPU_CORES * 8) core threads)</li>
-     * <li>Standard AWS SDK v1 retry and connection policies</li>
-     * <li>Automatic resource management for connections</li>
+     * <li>The supplied client's own retry and connection settings</li>
+     * <li>No automatic release of the client: call {@link #close()} when the executor is no longer needed</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -997,7 +997,8 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *     as an abacus {@code Fraction} ({@code "3/4"}), &rarr; {@code S} holding that text, from which a {@code Fraction}
      *     or {@code Number} property, element or value reads back as that {@code Fraction}. A {@code Fraction} inside a
      *     value written as JSON text (a {@code List<Number>}, {@code Map<String, Number>} or nested bean property) does
-     *     not read back</li>
+     *     not read back. {@code AtomicInteger} and {@code AtomicLong} are not number types to abacus-common, so they are
+     *     written as {@code S} text, as is a number held by an {@code Optional}, {@code Nullable}, or {@link Holder}</li>
      * <li><b>Boolean</b> &rarr; {@code BOOL}</li>
      * <li><b>{@link ByteBuffer}</b>, or a ByteBuffer held by present {@code Optional}, {@code Nullable}, or
      *     {@link Holder} wrappers at any nesting depth &rarr; {@code B} (binary; the buffer is stored as-is, not copied)</li>
@@ -1005,7 +1006,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *     {@link Type} for the object's class (so e.g. {@code java.util.Date},
      *     {@code java.time.LocalDateTime}, and {@code UUID} are written as their canonical strings).
      *     A value that the Type renders as {@code null} text, such as an empty {@code Optional},
-     *     {@code Nullable}, or {@link Holder}, is written as {@code NULL = true}.</li>
+     *     {@code Nullable}, or {@link Holder}, is written as {@code NULL = true}. The SDK's own {@link AttributeValue} is not
+     *     passed through either: it is written as its JSON text (e.g. {@code {"s": "x"}}), so put a ready-made AttributeValue
+     *     into the item map directly.</li>
      * </ul>
      *
      * <p><b>Scope:</b> this helper produces only scalar AttributeValues. It does not build {@code SS},
@@ -1535,8 +1538,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @param item the DynamoDB item to convert
      * @param mapSupplier function to create the Map instance
      * @return a Map with converted Java objects, or null if input is null
-     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}, or an attribute value in {@code item} has no supported
-     *         DynamoDB type
+     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}, an attribute value in {@code item} has no supported
+     *         DynamoDB type, or the map from {@code mapSupplier} rejects an attribute name or decoded value (for example, a
+     *         {@code NULL} attribute for a {@code ConcurrentHashMap})
      * @throws RuntimeException if {@code mapSupplier} throws while creating the result map
      * @throws NullPointerException if {@code mapSupplier} returns null for a non-empty {@code item}
      */
@@ -1548,13 +1552,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             return null; // NOSONAR
         }
 
-        final Map<String, Object> map = mapSupplier.apply(item.size());
-
-        for (final Map.Entry<String, AttributeValue> entry : item.entrySet()) {
-            map.put(entry.getKey(), toValue(entry.getValue()));
-        }
-
-        return map;
+        return fillMapRow(item, mapSupplier.apply(item.size()), DynamoDBExecutor::toValue);
     }
 
     /**
@@ -1611,9 +1609,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *       of the path named directly. The dependency's path setter creates a missing intermediate bean through its no-args
      *       constructor and assigns into an existing one in place, so a path through a nested record (or another bean without a
      *       no-args constructor) fails the item ({@link IllegalArgumentException} for a missing intermediate bean,
-     *       {@link ClassCastException} when an earlier attribute already set it), and a resolvable path into a builder-built
-     *       target fails it with {@link ClassCastException}, because the setter reads the intermediate bean from the builder;
-     *       read such a nested bean from an {@code M} attribute instead;</li>
+     *       {@link ClassCastException} when an earlier attribute already set it); read such a nested bean from an {@code M}
+     *       attribute instead. An intermediate bean whose accessors copy it is set on its owner again after the write, so the
+     *       value is kept; in a builder-built target, the first intermediate of a path is the one created for an earlier dotted
+     *       attribute of the item (a plain attribute of that property before it is replaced);</li>
      *   <li>silently ignores attributes that match neither a property nor a dotted path, and attributes of read-only
      *       properties, which cannot be assigned. In a mutable bean a getter without a setter is a property only in an
      *       {@code @Entity} class or a subclass of one, where {@link #toItem(Object)} writes its value: it is such a read-only
@@ -2981,10 +2980,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
      * @param key the primary key identifying the item to update. Must not be {@code null}.
-     * @param attributeUpdates map of attribute names to update actions. Must not be {@code null}.
+     * @param attributeUpdates map of attribute names to update actions; a {@code null} or empty map is sent as no update, which
+     *        (as DynamoDB's UpdateItem does) succeeds and creates a key-only item when none exists
      * @return an {@link UpdateItemResult} containing operation metadata
-     * @throws AmazonClientException if the request is rejected by the underlying DynamoDB client (for example, when tableName, key, or
-     *         attributeUpdates is null or invalid)
+     * @throws AmazonClientException if the request is rejected by the underlying DynamoDB client (for example, when tableName or key is
+     *         null or invalid, or an update is invalid)
      * @see #updateItem(String, Map, Map, String)
      */
     public UpdateItemResult updateItem(final String tableName, final Map<String, AttributeValue> key, final Map<String, AttributeValueUpdate> attributeUpdates)
@@ -3025,11 +3025,12 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
      * @param key the primary key identifying the item to update. Must not be {@code null}.
-     * @param attributeUpdates map of attribute names to update actions. Must not be {@code null}.
+     * @param attributeUpdates map of attribute names to update actions; a {@code null} or empty map is sent as no update, which
+     *        (as DynamoDB's UpdateItem does) succeeds and creates a key-only item when none exists
      * @param returnValues specifies what to return (see method description)
      * @return an {@link UpdateItemResult} containing operation metadata and optional values
-     * @throws AmazonClientException if the request is rejected by the underlying DynamoDB client (for example, when tableName, key, or
-     *         attributeUpdates is null or invalid)
+     * @throws AmazonClientException if the request is rejected by the underlying DynamoDB client (for example, when tableName or key is
+     *         null or invalid, or an update is invalid)
      * @see com.amazonaws.services.dynamodbv2.model.ReturnValue
      */
     public UpdateItemResult updateItem(final String tableName, final Map<String, AttributeValue> key, final Map<String, AttributeValueUpdate> attributeUpdates,

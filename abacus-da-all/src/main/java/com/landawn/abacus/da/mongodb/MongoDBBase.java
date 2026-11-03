@@ -31,6 +31,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -48,13 +49,16 @@ import org.bson.BasicBSONObject;
 import org.bson.BsonBinary;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
+import org.bson.BsonDocumentWriter;
 import org.bson.BsonInvalidOperationException;
+import org.bson.BsonNumber;
 import org.bson.BsonReader;
 import org.bson.BsonRegularExpression;
 import org.bson.BsonType;
 import org.bson.BsonValue;
 import org.bson.BsonWriter;
 import org.bson.Document;
+import org.bson.RawBsonDocument;
 import org.bson.UuidRepresentation;
 import org.bson.codecs.BsonTypeClassMap;
 import org.bson.codecs.BsonValueCodec;
@@ -91,6 +95,7 @@ import com.landawn.abacus.util.Fn;
 import com.landawn.abacus.util.IOUtil;
 import com.landawn.abacus.util.IntFunctions;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.Numbers;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.BasicDBObject;
@@ -251,15 +256,15 @@ public abstract class MongoDBBase {
     };
     /**
      * Per class: whether it is a bean with a writable property of a {@link #isStringElementArrayType(Class) String-element array
-     * type}, whose JSON text (as earlier versions stored such an array) {@link #normalizeDecodedProperties} must parse (checked
-     * once per document, not per field).
+     * type}, whose JSON text (as earlier versions stored such an array) {@link #normalizeDecodedProperties} must parse, or of type
+     * {@link Number}, whose stored text it must parse as a number (checked once per document, not per field).
      */
-    private static final ClassValue<Boolean> hasStringElementArrayProperty = new ClassValue<>() {
+    private static final ClassValue<Boolean> hasTextParsedProperty = new ClassValue<>() {
         @Override
         protected Boolean computeValue(final Class<?> cls) {
             if (Beans.isBeanClass(cls)) {
                 for (final PropInfo propInfo : ParserUtil.getBeanInfo(cls).propInfoList) {
-                    if (!propInfo.isReadOnlyProperty && isStringElementArrayType(propInfo.clazz)) {
+                    if (!propInfo.isReadOnlyProperty && (isStringElementArrayType(propInfo.clazz) || Number.class.equals(propInfo.clazz))) {
                         return Boolean.TRUE;
                     }
                 }
@@ -900,7 +905,10 @@ public abstract class MongoDBBase {
      *
      * <p>Property values are put into the Document as they are: an array-valued property such as a {@code String[]} stays a
      * Java array, which this class's codec registry (the one the databases and collections of {@link MongoDB} use) stores as
-     * a BSON array of its elements, and a {@code byte[]} as BSON binary (see the class description).</p>
+     * a BSON array of its elements, and a {@code byte[]} as BSON binary (see the class description). A bean's {@code null}
+     * property values are left out, and its String- or ObjectId-typed id property ({@code @Id}, or {@code id}) is written as
+     * {@code _id} when the property has a setter (a record's {@code id} component, which has none, keeps its name). An {@code _id} (of a bean, a Map or name/value pairs) holding a 24-hex-digit {@code String} or a 12-byte
+     * array becomes an {@link ObjectId}, and a {@code null} one is left out.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1050,6 +1058,10 @@ public abstract class MongoDBBase {
      * Maps, or arrays of property name-value pairs. The resulting BasicBSONObject can be used
      * with legacy MongoDB driver APIs.</p>
      *
+     * <p>Unlike {@link #toDocument(Object)}, a bean's nested bean properties are converted to maps as well (beans inside
+     * collections, maps or arrays are not); its {@code null} property values are left out, and its id and {@code _id} are
+     * handled as by {@link #toDocument(Object)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Convert a Map to a BasicBSONObject:
@@ -1159,8 +1171,9 @@ public abstract class MongoDBBase {
      * Maps, or arrays of property name-value pairs. The resulting BasicDBObject can be used
      * with legacy MongoDB driver APIs that require this specific document format.</p>
      *
-     * <p>The method handles ObjectId reset operations to ensure proper MongoDB document structure,
-     * maintaining compatibility with MongoDB's document identification system.</p>
+     * <p>Unlike {@link #toDocument(Object)}, a bean's nested bean properties are converted to maps as well (beans inside
+     * collections, maps or arrays are not); its {@code null} property values are left out, and its id and {@code _id} are
+     * handled as by {@link #toDocument(Object)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1480,7 +1493,11 @@ public abstract class MongoDBBase {
             beanProperties = doc;
         }
 
-        final T entity = Beans.mapToBean(normalizeDecodedProperties(normalizeBinaryProperties(beanProperties, rowType), rowType, propConversions), rowType);
+        // The copy made above is private, so the normalizations convert values in it instead of copying the row again.
+        final boolean owned = beanProperties != doc;
+        final Map<String, Object> binaryNormalized = normalizeBinaryProperties(beanProperties, rowType, owned);
+        final T entity = mapToBean(normalizeDecodedProperties(binaryNormalized, rowType, propConversions, owned || binaryNormalized != beanProperties),
+                rowType);
 
         // An embedded document's own id property wins, including aliases and explicit nulls. Check the map after removing
         // _id so its implicit alias for id cannot suppress the fallback. Outer documents retain their existing _id precedence.
@@ -1497,16 +1514,183 @@ public abstract class MongoDBBase {
     }
 
     /**
-     * Prepares binary bean properties without changing the supplied document or its nested maps.
+     * {@link Beans#mapToBean(Map, Class)}, except for a dotted key ({@code "address.city"}) whose path goes through an intermediate
+     * bean: the dependency's path setter writes the remaining path into the instance it created or its getter returned, so with
+     * an accessor that copies (a setter storing a copy of its argument, as PropInfo calls the setter of an
+     * {@code @AccessFieldByMethod} bean, or a getter returning one) the value was silently lost, and a builder-built bean failed
+     * with {@code ClassCastException}. A map without such a key (the common case) is mapped by the dependency itself; otherwise
+     * its loop is repeated here with each writable path written by {@link #setDottedPathValue(Object, List, Object, Map)}.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T mapToBean(final Map<String, Object> properties, final Class<T> rowType) {
+        final ParserUtil.BeanInfo beanInfo = ParserUtil.getBeanInfo(rowType);
+
+        if (!hasUnmatchedDottedKey(properties, beanInfo)) {
+            return Beans.mapToBean(properties, rowType);
+        }
+
+        final Object result = beanInfo.createBeanResult();
+        final Map<PropInfo, Object> builderIntermediates = newBuilderIntermediates(beanInfo, result);
+
+        for (final Map.Entry<String, Object> entry : properties.entrySet()) {
+            final String propName = entry.getKey();
+            final Object propValue = entry.getValue();
+
+            if (propName == null) {
+                continue;
+            }
+
+            final PropInfo propInfo = beanInfo.getPropInfo(propName);
+
+            if (propInfo == null || propInfo.isReadOnlyProperty) {
+                boolean written = false;
+
+                if (propInfo == null && propName.indexOf('.') > 0) {
+                    final List<PropInfo> chain = beanInfo.getPropInfoChain(propName);
+
+                    if (chain.size() > 1 && !chain.get(chain.size() - 1).isReadOnlyProperty) {
+                        written = setDottedPathValue(result, chain, propValue, builderIntermediates);
+                    }
+                }
+
+                if (!written) {
+                    beanInfo.setPropValue(result, propName, propValue, true);
+                }
+            } else if (propValue != null && propInfo.jsonXmlType.isBean() && Type.of(propValue.getClass()).isMap()) {
+                // normalizeDecodedProperties already builds nested bean maps it can instantiate, so this mirror of the
+                // dependency's nested-map branch (which also keeps the property's type arguments) only sees the others.
+                propInfo.setPropValue(result, Beans.mapToBean((Map<String, Object>) propValue, true, propInfo.clazz));
+            } else {
+                propInfo.setPropValue(result, propValue);
+            }
+        }
+
+        return (T) beanInfo.finishBeanResult(result);
+    }
+
+    private static boolean hasUnmatchedDottedKey(final Map<String, Object> properties, final ParserUtil.BeanInfo beanInfo) {
+        for (final String key : properties.keySet()) {
+            if (key != null && key.indexOf('.') > 0 && beanInfo.getPropInfo(key) == null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Writes {@code value} to the last property of the writable dotted path {@code chain} on {@code entity}, creating and
+     * assigning each missing intermediate bean as the dependency's path setter does (no-argument constructor, then the
+     * property's setter). Returns {@code false} without creating anything when an intermediate is a collection: such a path is
+     * left to the path setter, which adds the bean it creates to the collection before assigning the collection.
+     * <p>
+     * The path setter writes the rest of the path into the instance it created, or into whatever the getter returns, so the
+     * value was silently lost when an accessor copies: a setter that stores a copy of its argument (PropInfo calls the setter of
+     * an {@code @AccessFieldByMethod} bean, for example) kept an empty intermediate, and a getter that returns a copy on every
+     * read gave a detached instance to every key after the first one through it. Here an intermediate whose getter returns the
+     * same instance twice is written in place; any other is written and then set on its owner again, innermost first, so the
+     * owner stores it through its setter (a copying setter stores a copy that holds the value). A getter's copy replaces the
+     * stored instance this way, so it must copy every property. A read-only intermediate whose getter copies cannot be set
+     * again, and the value is lost there as before.
+     * <p>
+     * For an immutable bean built through its builder, {@code entity} is the builder, which has none of the bean's getters, so
+     * the first intermediate of each path is the one created for an earlier dotted key of the same document, kept in
+     * {@code builderIntermediates} (see {@link #newBuilderIntermediates(ParserUtil.BeanInfo, Object)}) and set on the builder
+     * after each write; a plain key of that property read before the dotted key is replaced by it.
+     *
+     * @return {@code true} if the value was written, {@code false} if the path is left to the path setter
+     * @throws RuntimeException if reading or writing a property, or creating an intermediate bean, fails (as in the path setter)
+     */
+    private static boolean setDottedPathValue(final Object entity, final List<PropInfo> chain, final Object value,
+            final Map<PropInfo, Object> builderIntermediates) {
+        final int last = chain.size() - 1;
+
+        // A collection intermediate leaves the whole path to the path setter before anything is created here: stopping part-way
+        // left beans created here for the path setter to walk again through getters, and a getter that returns a copy then
+        // lost the value the path setter alone used to keep.
+        for (int i = 0; i < last; i++) {
+            if (chain.get(i).type.isCollection()) {
+                return false;
+            }
+        }
+
+        // path[i] holds path[i + 1] through chain.get(i); bit i of setAgain marks an intermediate that is not known to be the
+        // instance its owner stores, which must be set on its owner again once the value is written into it.
+        final Object[] path = new Object[last + 1];
+        long setAgain = 0;
+        path[0] = entity;
+
+        for (int i = 0; i < last; i++) {
+            final PropInfo propInfo = chain.get(i);
+            final Object owner = path[i];
+            Object intermediate;
+
+            if (i == 0 && builderIntermediates != null) {
+                // WHY: the bean's getter invoked on a builder failed the whole row with ClassCastException ("Cannot cast
+                // Bean$Builder to Bean"), as did the path setter.
+                intermediate = builderIntermediates.get(propInfo);
+
+                if (intermediate == null) {
+                    intermediate = N.newInstance(propInfo.clazz);
+                    builderIntermediates.put(propInfo, intermediate);
+                }
+
+                setAgain |= 1L << i;
+            } else {
+                intermediate = propInfo.getPropValue(owner);
+
+                if (intermediate == null) {
+                    final Object created = N.newInstance(propInfo.clazz);
+                    propInfo.setPropValue(owner, created);
+                    intermediate = propInfo.getPropValue(owner);
+
+                    // A stable read (the same instance twice) is the stored instance, a copy when the setter copies; otherwise the
+                    // getter copies (or returns nothing), and the created instance is written and then set again.
+                    if (intermediate != created && (intermediate == null || propInfo.getPropValue(owner) != intermediate)) {
+                        intermediate = created;
+                        setAgain |= 1L << i;
+                    }
+                } else if (propInfo.getPropValue(owner) != intermediate) {
+                    // A copying getter: the copy read first is written and then set again.
+                    setAgain |= 1L << i;
+                }
+            }
+
+            path[i + 1] = intermediate;
+        }
+
+        chain.get(last).setPropValue(path[last], value);
+
+        for (int i = last - 1; setAgain != 0 && i >= 0; i--) {
+            if ((setAgain & (1L << i)) != 0 && !chain.get(i).isReadOnlyProperty) {
+                chain.get(i).setPropValue(path[i], path[i + 1]);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns the map in which {@link #setDottedPathValue(Object, List, Object, Map)} keeps the first intermediates of the
+     * dotted paths of one document when {@code entity}, the result of {@code BeanInfo.createBeanResult()}, is the builder of an
+     * immutable bean, or {@code null} for any other result (a mutable bean, or the constructor arguments of a record).
+     */
+    private static Map<PropInfo, Object> newBuilderIntermediates(final ParserUtil.BeanInfo entityInfo, final Object entity) {
+        return entityInfo.isImmutable && !(entity instanceof Object[]) ? new HashMap<>() : null;
+    }
+
+    /**
+     * Prepares binary bean properties without changing the supplied document (unless it is an owned copy) or its nested maps.
      * Other property values retain the normal {@link Beans#mapToBean(Map, Class)} conversion rules.
      *
      * @param properties the source bean properties
      * @param beanType the bean class that defines the target property types
-     * @return the original map if no binary conversion is needed, otherwise a copy with converted values
+     * @param owned whether {@code properties} is a private copy whose values may be replaced in place
+     * @return {@code properties} if no binary conversion is needed or it is owned, otherwise a copy with converted values
      * @throws IllegalArgumentException if the bean metadata or a binary property type cannot be resolved, or a binary container cannot be created
      * @throws RuntimeException if constructing a requested collection or map invokes a failing constructor, or the container rejects a converted value
      */
-    private static Map<String, Object> normalizeBinaryProperties(final Map<String, Object> properties, final Class<?> beanType)
+    private static Map<String, Object> normalizeBinaryProperties(final Map<String, Object> properties, final Class<?> beanType, final boolean owned)
             throws IllegalArgumentException, RuntimeException {
         Map<String, Object> result = properties;
 
@@ -1528,7 +1712,7 @@ public abstract class MongoDBBase {
                 if ((byte[].class.equals(propInfo.clazz) || ByteBuffer.class.equals(propInfo.clazz)) && !(value instanceof Map)) {
                     converted = convertBsonValue(value, propInfo.clazz);
                 } else if (value instanceof Map && Beans.isBeanClass(propInfo.clazz)) {
-                    converted = normalizeBinaryProperties((Map<String, Object>) value, propInfo.clazz);
+                    converted = normalizeBinaryProperties((Map<String, Object>) value, propInfo.clazz, false);
                 } else if (value instanceof final Map<?, ?> values && propInfo.jsonXmlType.isMap()) {
                     final List<Type<?>> mapTypes = propInfo.jsonXmlType.parameterTypes();
 
@@ -1601,11 +1785,15 @@ public abstract class MongoDBBase {
             }
 
             if (converted != value) {
-                if (result == properties) {
-                    result = new LinkedHashMap<>(properties);
-                }
+                if (owned) {
+                    entry.setValue(converted);
+                } else {
+                    if (result == properties) {
+                        result = new LinkedHashMap<>(properties);
+                    }
 
-                result.put(entry.getKey(), converted);
+                    result.put(entry.getKey(), converted);
+                }
             }
         }
 
@@ -1667,22 +1855,25 @@ public abstract class MongoDBBase {
      * the driver's codecs write them), {@link BsonRegularExpression} values of {@link Pattern} properties (as the driver's codec
      * reads them), the JSON text earlier versions of {@link GeneralCodec} stored for a
      * {@code String[]}/{@code Object[]}-like array property, any value of a property whose type comes from a type argument of a generic bean,
-     * and every value of an immutable bean (a record). The supplied map and its nested maps are never modified.
+     * the text a {@link Number} property holding a number without a driver codec is stored as, and every value of an immutable
+     * bean (a record). The supplied map is modified only when {@code owned}; its nested maps are never modified.
      *
      * @param properties the source bean properties
      * @param beanType the bean class that defines the target property types
      * @param propConversions the extra conversions the declared bean type needs (from {@link #propConversions(Type)});
      *        {@code null} when it needs none
-     * @return the original map if nothing needs converting, otherwise a copy with converted values
+     * @param owned whether {@code properties} is a private copy whose values may be replaced in place
+     * @return {@code properties} if nothing needs converting or it is owned, otherwise a copy with converted values
      * @throws IllegalArgumentException if the bean metadata cannot be resolved, or a value cannot be converted to its declared type
      * @throws RuntimeException if a conversion overflows its target numeric range, a registered converter or type handler throws,
      *         or a required collection, map or bean cannot be constructed or populated
      */
     private static Map<String, Object> normalizeDecodedProperties(final Map<String, Object> properties, final Class<?> beanType,
-            final PropConversions propConversions) throws IllegalArgumentException, RuntimeException {
+            final PropConversions propConversions, final boolean owned) throws IllegalArgumentException, RuntimeException {
         Map<String, Object> result = properties;
-        // Text is looked at only for a bean with a String[]/Object[]-like property, so other beans pay no lookup per String field.
-        final boolean parseArrayText = hasStringElementArrayProperty.get(beanType);
+        // Text is looked at only for a bean with a String[]/Object[]-like or Number property, so other beans pay no lookup per
+        // String field.
+        final boolean parseText = hasTextParsedProperty.get(beanType);
 
         for (final Map.Entry<String, Object> entry : properties.entrySet()) {
             final Object value = entry.getValue();
@@ -1692,7 +1883,7 @@ public abstract class MongoDBBase {
             if (value == null || (propConversions == null
                     && !(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date
                             || value instanceof BsonRegularExpression)
-                    && !(value instanceof String && (parseArrayText || (entry.getKey() != null && entry.getKey().indexOf('.') > 0))))) {
+                    && !(value instanceof String && (parseText || (entry.getKey() != null && entry.getKey().indexOf('.') > 0))))) {
                 continue;
             }
 
@@ -1721,9 +1912,9 @@ public abstract class MongoDBBase {
                 // wrapper of a primitive one: the constructor call unboxes it).
                 final Class<?> declaredClass = propInfo.jsonXmlType.javaType();
                 converted = toDeclaredElement(value, declaredClass.isPrimitive() ? N.typeOf(ClassUtil.wrap(declaredClass)) : propInfo.jsonXmlType);
-            } else if (value instanceof String && isStringElementArrayType(propInfo.clazz)) {
+            } else if (value instanceof String && (isStringElementArrayType(propInfo.clazz) || Number.class.equals(propInfo.clazz))) {
                 // Earlier versions of GeneralCodec wrote the array as its JSON text; Beans.mapToBean would wrap that text as the
-                // single element.
+                // single element. A Number property's text (see convertBsonValue) failed Beans.mapToBean, and so the whole row.
                 converted = convertBsonValue(value, propInfo.clazz);
             } else if (!(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date
                     || value instanceof BsonRegularExpression)) {
@@ -1732,17 +1923,21 @@ public abstract class MongoDBBase {
                 // Beans.mapToBean alone does not apply MongoDB's _id mapping to an embedded document. Build nested beans
                 // through the same path as outer documents, retaining generic type arguments and immutable-bean conversions.
                 converted = propInfo.jsonXmlType.isBean() ? toDeclaredElement(value, propInfo.jsonXmlType)
-                        : normalizeDecodedProperties((Map<String, Object>) value, propInfo.clazz, null);
+                        : normalizeDecodedProperties((Map<String, Object>) value, propInfo.clazz, null, false);
             } else {
                 converted = toDeclaredType(value, propInfo.jsonXmlType);
             }
 
             if (converted != value) {
-                if (result == properties) {
-                    result = new LinkedHashMap<>(properties);
-                }
+                if (owned) {
+                    entry.setValue(converted);
+                } else {
+                    if (result == properties) {
+                        result = new LinkedHashMap<>(properties);
+                    }
 
-                result.put(entry.getKey(), converted);
+                    result.put(entry.getKey(), converted);
+                }
             }
         }
 
@@ -1876,8 +2071,9 @@ public abstract class MongoDBBase {
 
         // Class.getModifiers reports every array class as abstract, but an array element (Integer[] of an Integer[][], byte[] of a
         // Map<Integer, byte[]>) must still be converted: leaving one List among converted arrays failed with ArrayStoreException.
+        // Number itself is abstract too, but convertBsonValue parses the text a Number without a driver codec is stored as.
         final boolean instantiable = cls.isEnum() || cls.isArray() || cls == ByteBuffer.class || type.isCollection() || type.isMap()
-                || !Modifier.isAbstract(cls.getModifiers());
+                || !Modifier.isAbstract(cls.getModifiers()) || (cls == Number.class && element instanceof String);
 
         if (element instanceof Map && type.isBean()) {
             return instantiable ? toEntity((Map<String, Object>) element, cls, propConversions(type), true) : element;
@@ -2001,13 +2197,25 @@ public abstract class MongoDBBase {
      * A {@link String} enclosed in {@code [...]} requested as an array type whose element type accepts text ({@code String[]},
      * {@code Object[]}, ...) is parsed as the JSON text earlier versions of {@link GeneralCodec} wrote for an array (leniently:
      * unquoted elements, as in {@code [a, b]}, are read too); when it cannot be parsed as an array it becomes the array's
-     * single element, like any other text.
+     * single element, like any other text. A {@link String} requested as {@link Number} itself is parsed as a number (an
+     * {@code Integer}, {@code Long}, {@code BigInteger}, {@code Double}, ... as its text requires), since this class stores a
+     * {@code Number}-typed value without a driver codec (such as a {@code BigInteger}) as its text. A Java value (not itself a
+     * {@code BsonValue}) requested as a {@link BsonValue} class (a {@code String} as {@code BsonString}, an {@code Integer} as
+     * {@code BsonInt32} or {@code BsonValue}) is encoded as a {@link Document} field holding it is written, and that BSON value is
+     * returned when it is of the requested class; a number requested as another numeric BSON class ({@code BsonInt64},
+     * {@code BsonDouble}, {@code BsonDecimal128}, ...) is converted to it, as a {@code BsonInt32} would be. An embedded document is
+     * read as {@link Binary}, {@link Code} or {@link Symbol} only when it holds non-null values of that class's own properties
+     * (such as {@code {code: "x"}} for {@code Code}).
      *
      * @param <T> the target value type
      * @param value the decoded field value, possibly null
      * @param targetType the requested Java type
      * @return the converted value, using the usual default conversion for other values
-     * @throws IllegalArgumentException if {@code targetType} is null or the value cannot be converted to the requested type
+     * @throws IllegalArgumentException if {@code targetType} is null or the value cannot be converted to the requested type (also an
+     *         embedded document requested as a BSON value type such as {@link Binary} or {@link Code} that does not describe it, or a
+     *         value whose BSON form is not of a requested {@link BsonValue} class, such as an {@code Integer} requested as
+     *         {@code BsonString})
+     * @throws CodecConfigurationException if a value requested as a {@link BsonValue} class has no usable codec
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
      *         while converting the selected value
      */
@@ -2049,6 +2257,46 @@ public abstract class MongoDBBase {
             } catch (final ParsingException e) {
                 // Not an array literal written by this class: read it as the array's single element, as before.
             }
+        } else if (value instanceof final String text && targetType == Number.class) {
+            // GeneralCodec stores a Number without a driver codec (BigInteger, AtomicLong, ...) held by a Number-typed property,
+            // component or element as its text, as earlier versions stored every value of a Number-typed record component.
+            // N.convert cannot create the abstract Number from text ("No public static method or constructor found in
+            // java.lang.Number"), so every such document failed to read; parse the number instead.
+            return (T) Numbers.createNumber(text);
+        } else if (value != null && targetType != null && BsonValue.class.isAssignableFrom(targetType) && !targetType.isInstance(value)
+                && !(value instanceof BsonValue)) {
+            // A Document field holds a decoded Java value (a String, an Integer, ...), never the BsonString/BsonInt32 the driver
+            // read; N.convert parsed it as the JSON of that bean-like class ("Can't parse: a") or returned it unconverted for
+            // BsonValue. Encode it as a Document field holding it is written, which yields the BSON value itself. Not for a
+            // BsonValue of another class (a BsonInt32 of a BsonDocument row requested as BsonInt64): it encodes as itself, so
+            // this would reject what N.convert converts (MongoDB mixes int32 and int64 values of the same field).
+            final BsonDocument holder = new BsonDocument();
+            codecRegistry.get(Document.class).encode(new BsonDocumentWriter(holder), new Document(_ID, value), EncoderContext.builder().build());
+            final BsonValue bsonValue = holder.get(_ID);
+
+            if (targetType.isInstance(bsonValue)) {
+                return (T) bsonValue;
+            } else if (bsonValue instanceof BsonNumber && BsonNumber.class.isAssignableFrom(targetType)) {
+                // WHY: a field of ordinary Document rows mixes Integer and Long values (MongoDB stores int32 and int64 for one
+                // field), so an Integer requested as BsonInt64 must convert as the BsonInt32 of a BsonDocument row does below.
+                return N.convert(bsonValue, targetType);
+            }
+
+            throw new IllegalArgumentException("Cannot convert " + ClassUtil.getCanonicalClassName(value.getClass()) + " value " + value + " to "
+                    + ClassUtil.getCanonicalClassName(targetType) + ": it is stored as a BSON " + bsonValue.getBsonType());
+        } else if (value instanceof final Map<?, ?> map && targetType != null && !targetType.isInstance(value) && isBsonValueClass(targetType)) {
+            // N.convert maps an embedded document onto the bean-like accessors of Binary, Code, ... and failed deep inside
+            // (a NullPointerException for Binary's null data) or built an empty value (Code{code=null} for {x: 1}). A document
+            // holding only non-null values of the class's own properties ({code: "x"} as Code) converted, and still does.
+            if (!isBsonValueBeanDocument(map, targetType)) {
+                throw new IllegalArgumentException("Cannot convert an embedded document to " + ClassUtil.getCanonicalClassName(targetType) + ": " + value);
+            }
+
+            try {
+                return N.convert(value, targetType);
+            } catch (final RuntimeException e) {
+                throw new IllegalArgumentException("Cannot convert an embedded document to " + ClassUtil.getCanonicalClassName(targetType) + ": " + value, e);
+            }
         }
 
         return N.convert(value, targetType);
@@ -2085,7 +2333,9 @@ public abstract class MongoDBBase {
      * implementations and bean rows may be mixed. A map target creates every row's map with one factory: when the first
      * non-null row is a Document, {@link IntFunctions#ofMap(Class)} with the row's size, including registered map
      * creators, as for a Document result; otherwise {@code N.newMap(Class)}, as for other rows. For an immutable map type (such
-     * as {@code ImmutableMap}), whose factory creates a mutable map, each filled map is then converted to that type.</p>
+     * as {@code ImmutableMap}), whose factory creates a mutable map, each filled map is then converted to that type. A
+     * {@link BsonDocument} or {@link RawBsonDocument} target receives each row encoded through this class's codec registry,
+     * as {@link #readRow(Document, Class)} does.</p>
      *
      * <p>When the rows are documents (maps), an object-array or {@link Collection} {@code rowType} is a single-value target like
      * a scalar one: each row's sole non-{@code _id} field (or its {@code _id}) is converted to it, so a projected BSON array
@@ -2133,6 +2383,9 @@ public abstract class MongoDBBase {
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @throws ClassCastException if a map contains non-String field names needed for bean or scalar mapping, its keys are incompatible with
      *         the requested map type (for example, non-comparable {@code TreeMap} keys), or row conversion performs an incompatible cast
+     * @throws CodecConfigurationException if {@code rowType} is {@link BsonDocument}, {@link RawBsonDocument} or a {@link BsonValue}
+     *         class and a value has no usable codec (for example a {@code UUID}, since this class's codec registry specifies no UUID
+     *         representation)
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing or populating a result map or bean, or invoking a bean accessor, fails
      * @see com.mongodb.client.MongoIterable
@@ -2329,7 +2582,8 @@ public abstract class MongoDBBase {
                     // One map factory per result, chosen by the first non-null row: a Document result keeps its size-aware
                     // creators for every row, and other results their supplier, so a mixed result is not built two ways.
                     final Class<Map> mapType = (Class<Map>) (Class<?>) rowType;
-                    mapFactory = !targetType.isMap() ? null : firstNonNull instanceof Document ? IntFunctions.ofMap(mapType) : size -> N.newMap(mapType);
+                    mapFactory = !targetType.isMap() || BsonDocument.class.isAssignableFrom(rowType) ? null
+                            : firstNonNull instanceof Document ? IntFunctions.ofMap(mapType) : size -> N.newMap(mapType);
                     mode = BEAN_OR_MAP;
                 } else if (firstNonNull instanceof Map) {
                     mode = SCALAR_FROM_MAP;
@@ -2393,7 +2647,10 @@ public abstract class MongoDBBase {
         private Object convertBeanOrMapRow(final Object row) {
             // A MongoIterable may contain different Map implementations. Dispatch each row independently;
             // choosing the Document branch from the first row made later maps fail a cast.
-            if (targetType.isMap() && row instanceof final Map<?, ?> map) {
+            if (mapFactory == null && targetType.isMap()) {
+                // A BsonDocument row type holds BsonValues: see toBsonDocumentRow.
+                return toBsonDocumentRow(row instanceof final Map<?, ?> map ? map : Beans.beanToMap(row), rowType);
+            } else if (targetType.isMap() && row instanceof final Map<?, ?> map) {
                 final Map<String, Object> rowMap = mapFactory.apply(map.size());
                 rowMap.putAll((Map<String, Object>) map);
                 return asRowType(rowMap, rowType);
@@ -2477,6 +2734,8 @@ public abstract class MongoDBBase {
      *   <li>{@code null} or an object-array type &rarr; the row values are placed into a new
      *       {@code Object[]} (component type derived from {@code rowType} when supplied).</li>
      *   <li>A {@link Collection} type &rarr; a new collection of that type containing the row's values.</li>
+     *   <li>{@link BsonDocument} or {@link RawBsonDocument} &rarr; the row encoded through this class's codec registry (as when
+     *       it is written); another {@code BsonDocument} subclass is rejected with {@link IllegalArgumentException}.</li>
      *   <li>A {@link Map} type &rarr; a new map of that type populated via {@link #toMap(Document, IntFunction)}. For an immutable
      *       collection or map type (such as {@code ImmutableList} or {@code ImmutableMap}) the filled collection or map is
      *       converted to that type.</li>
@@ -2498,6 +2757,9 @@ public abstract class MongoDBBase {
      *         rowType} cannot be populated from the row, if a scalar target is requested for a row with multiple non-{@code _id} fields, or if a field
      *         value cannot be converted to {@code rowType}
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
+     * @throws CodecConfigurationException if {@code rowType} is {@link BsonDocument}, {@link RawBsonDocument} or a {@link BsonValue}
+     *         class and a value has no usable codec (for example a {@code UUID}, since this class's codec registry specifies no UUID
+     *         representation)
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing the requested collection, map, or bean, adding row values, or invoking a bean accessor fails
      */
@@ -2525,6 +2787,8 @@ public abstract class MongoDBBase {
             c.addAll(row.values());
 
             return (T) asRowType(c, rowType);
+        } else if (BsonDocument.class.isAssignableFrom(rowType)) {
+            return (T) toBsonDocumentRow(row, rowType);
         } else if (targetType.isMap()) {
             return (T) asRowType(toMap(row, IntFunctions.ofMap((Class<Map>) rowType)), rowType);
         } else if (targetType.isBean() && !isBsonValueClass(rowType)) {
@@ -2613,6 +2877,57 @@ public abstract class MongoDBBase {
      */
     private static Object asRowType(final Object container, final Class<?> rowType) {
         return rowType.isInstance(container) ? container : N.convert(container, rowType);
+    }
+
+    /**
+     * Returns {@code row} as a {@link BsonDocument} row type: a {@code BsonDocument} or a {@link RawBsonDocument}, encoded
+     * through {@link #codecRegistry} as a {@link Document} holding the same values is written.
+     *
+     * <p><b>WHY:</b> a {@code BsonDocument} is a {@code Map<String, BsonValue>}, so filling one like any other map row type put
+     * the decoded Java values (an {@code ObjectId}, a {@code String}) into it, which failed with {@code ClassCastException}
+     * ("ObjectId cannot be cast to BsonValue"), and a {@code RawBsonDocument} (immutable, no no-arg constructor) could not be
+     * created at all.</p>
+     *
+     * @throws IllegalArgumentException if {@code rowType} is another {@code BsonDocument} subclass
+     * @throws CodecConfigurationException if a value has no usable codec (for example a {@code UUID}, since this registry
+     *         specifies no UUID representation)
+     */
+    @SuppressWarnings("unchecked")
+    private static Object toBsonDocumentRow(final Map<?, ?> row, final Class<?> rowType) throws IllegalArgumentException, CodecConfigurationException {
+        final Document doc = row instanceof final Document d ? d : new Document((Map<String, Object>) row);
+        final Codec<Document> codec = codecRegistry.get(Document.class);
+
+        if (rowType == BsonDocument.class) {
+            final BsonDocument result = new BsonDocument();
+            codec.encode(new BsonDocumentWriter(result), doc, EncoderContext.builder().build());
+            return result;
+        } else if (rowType == RawBsonDocument.class) {
+            return new RawBsonDocument(doc, codec);
+        }
+
+        throw new IllegalArgumentException("Cannot read a document as " + ClassUtil.getCanonicalClassName(rowType)
+                + ": the supported BsonDocument row types are BsonDocument and RawBsonDocument");
+    }
+
+    /**
+     * Tells whether the embedded document {@code map} can be read as the bean-like BSON class {@code targetType} ({@link Binary},
+     * {@link Code}, {@link Symbol}, ...; never a {@link BsonValue} class): it is not empty, and every entry is a non-null value of
+     * one of that class's properties, such as {@code {code: "x"}} for {@code Code}.
+     */
+    private static boolean isBsonValueBeanDocument(final Map<?, ?> map, final Class<?> targetType) {
+        if (map.isEmpty() || BsonValue.class.isAssignableFrom(targetType)) {
+            return false;
+        }
+
+        final ParserUtil.BeanInfo beanInfo = ParserUtil.getBeanInfo(targetType);
+
+        for (final Map.Entry<?, ?> entry : map.entrySet()) {
+            if (!(entry.getKey() instanceof final String key) || entry.getValue() == null || beanInfo.getPropInfo(key) == null) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -3629,7 +3944,8 @@ public abstract class MongoDBBase {
          * Decodes the next BSON value into an instance of {@link #cls}. Beans are read as a
          * {@link Document} through this codec's {@link DocumentCodec} and then mapped via
          * {@link MongoDBBase#readRow(Document, Class)}. For all other types a BSON string is parsed using
-         * {@code N.valueOf(String, Class)}, and any other BSON value (number, document, array, null, ...) is
+         * {@code N.valueOf(String, Class)} ({@link Number} itself: as a number, see
+         * {@link MongoDBBase#convertBsonValue(Object, Class)}), and any other BSON value (number, document, array, null, ...) is
          * decoded to the plain Java value a {@link Document} field would hold and then converted to the target
          * type (so an {@code Object} target receives that value unchanged).
          *
@@ -3661,7 +3977,8 @@ public abstract class MongoDBBase {
             // Decode any other value the way a Document field value is decoded, then convert it to cls. A string (or a
             // reader not yet positioned on a value) keeps the string-parsing path that mirrors encode.
             if (bsonType == null || bsonType == BsonType.STRING) {
-                return N.valueOf(reader.readString(), cls);
+                // Number itself: the text encode writes for a value without a driver codec (see convertBsonValue).
+                return cls == Number.class ? convertBsonValue(reader.readString(), cls) : N.valueOf(reader.readString(), cls);
             }
 
             final DecoderContext context = DecoderContext.builder().build();

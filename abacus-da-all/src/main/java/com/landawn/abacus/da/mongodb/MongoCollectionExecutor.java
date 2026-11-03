@@ -1324,6 +1324,12 @@ public final class MongoCollectionExecutor {
      * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
      * continue to receive the raw projected document.</p>
      *
+     * <p>An object-array or {@link Collection} {@code rowType} (such as {@code Object[]} or {@code List}) is read as
+     * {@link MongoDBBase#toList(com.mongodb.client.MongoIterable, Class)} reads it: each document's sole non-{@code _id} field is
+     * converted to it (a projected array field reads into a {@code List}), and a document with several non-{@code _id} fields is
+     * rejected. {@code findFirst} and {@code stream} instead return each document's field values positionally for such a type
+     * ({@code {_id: 7, a: 1}} as {@code [7, 1]}).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "email");
@@ -1454,7 +1460,9 @@ public final class MongoCollectionExecutor {
      * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
      * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
      * returned document has the projected field, but its converted {@code _id} when none does. Use
-     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field.</p>
+     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field.
+     * An object-array or {@link Collection} {@code rowType} is read the same way, from the sole non-{@code _id} field
+     * (unlike {@code findFirst} and {@code stream}, which return each document's field values positionally for such a type).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

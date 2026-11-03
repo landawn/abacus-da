@@ -89,9 +89,9 @@ import com.mongodb.client.result.UpdateResult;
  * <p><b>Arguments are not copied:</b> each task captures the caller's arguments by reference and reads
  * them on a worker thread when it runs; entities, maps and update payloads are converted to BSON only then.
  * Do not modify a passed filter, document, entity, map or collection until the returned future completes
- * (the {@code selectPropNames} of a stream-returning method until the delivered stream is consumed, since they
- * are read per element; a {@code watch} pipeline list until the change-stream cursor is opened, since the
- * returned iterable keeps it): the task may or may not see the change. For example, a list cleared after it was passed to
+ * (a {@code watch} pipeline list until the change-stream cursor is opened, since the returned iterable keeps it):
+ * the task may or may not see the change. A stream-returning method has read its {@code selectPropNames} once
+ * the stream is delivered. For example, a list cleared after it was passed to
  * {@link #insertMany(Collection)} makes the future fail with {@link IllegalArgumentException} although the
  * eager check accepted it, and an element added to it may be inserted too.</p>
  *
@@ -1335,6 +1335,11 @@ public final class AsyncMongoCollectionExecutor {
      * yields a {@code null} element instead of its converted {@code _id}. Result types that can directly hold a
      * {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
      *
+     * <p>An object-array or {@link Collection} {@code rowType} (such as {@code Object[]} or {@code List}) is read from
+     * each document's sole non-{@code _id} field (a projected array field reads into a {@code List}), and a document with
+     * several non-{@code _id} fields fails the returned future. {@code findFirst} and {@code stream} instead return each
+     * document's field values positionally for such a type ({@code {_id: 7, a: 1}} as {@code [7, 1]}).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "score", "rank");
@@ -1425,9 +1430,11 @@ public final class AsyncMongoCollectionExecutor {
      * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
      * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
      * returned document has the projected field, but its converted {@code _id} when none does. Use
-     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field. Result
-     * types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw
-     * projected documents.</p>
+     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field. An
+     * object-array or {@link Collection} {@code rowType} is read the same way, from the sole non-{@code _id} field
+     * (unlike {@code findFirst} and {@code stream}, which return each document's field values positionally for such a
+     * type). Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the
+     * raw projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -5110,7 +5117,7 @@ public final class AsyncMongoCollectionExecutor {
      *          });
      *      });
      *
-     * // Count products by category and brand:
+     * // Count products by category, brand and status:
      * List<String> fields = Arrays.asList("category", "brand", "status");
      * async.groupByAndCount(fields)
      *      .thenRunAsync(stream -> stream.forEach(System.out::println));

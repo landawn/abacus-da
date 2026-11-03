@@ -74,6 +74,13 @@ import com.landawn.abacus.util.stream.Stream;
  * mapping failure with an {@link IllegalArgumentException}, reported as described above (the cause of the
  * {@code ExecutionException} thrown by {@code get()}, or thrown by a {@code stream}'s terminal operation).</p>
  *
+ * <p>The {@link Condition}-based {@code get}/{@code gett}, {@code findFirst}, {@code exists}, {@code queryForSingleValue},
+ * {@code queryForSingleNonNull} and {@code queryForXxx} methods append their own {@code LIMIT}, as described under
+ * <i>Row Limits</i> in {@link CassandraExecutorBase}: a condition that already carries one (a {@code Limit}, or a
+ * {@code Criteria} with a limit) fails with {@link IllegalStateException}, thrown at the call site before any future is
+ * created. {@code list}, {@code query}, {@code stream} and {@code count} apply the condition's {@code LIMIT} as given (for
+ * {@code count} it limits the one result row, not the rows counted).</p>
+ *
  * <p>An instance of this class is obtained from the synchronous executor (for example via
  * {@code CassandraExecutor.async()}) and can be converted back to its synchronous counterpart
  * through {@link #sync()}.</p>

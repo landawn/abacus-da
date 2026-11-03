@@ -75,7 +75,10 @@ class DynamoDBCollectionRowTest extends DynamoDBExecutorTestSupport {
     @Test
     void boundedQueuesContinueToRejectNullElements() {
         final Map<String, AttributeValue> item = Map.of("missing", new AttributeValue().withNULL(true));
-        assertThrows(NullPointerException.class, () -> DynamoDBExecutor.toList(List.of(item), ArrayBlockingQueue.class));
+        // The queue's NullPointerException is reported as an IllegalArgumentException naming the attribute (2026-11-02).
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(List.of(item), ArrayBlockingQueue.class));
+        assertTrue(e.getMessage().startsWith("Attribute (missing, null)"), e.getMessage());
+        assertInstanceOf(NullPointerException.class, e.getCause());
     }
 
     @Test

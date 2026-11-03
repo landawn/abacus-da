@@ -49,7 +49,7 @@ public class CosmosContainerExecutorLineCoverageTest extends MockitoTestBase {
     public void setUp() {
         rows = mock(CosmosPagedIterable.class);
         query = ArgumentCaptor.forClass(SqlQuerySpec.class);
-        when(rows.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(rows.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         when(container.queryItems(query.capture(), any(), any())).thenReturn((CosmosPagedIterable) rows);
         executor = new CosmosContainerExecutor(container);
     }

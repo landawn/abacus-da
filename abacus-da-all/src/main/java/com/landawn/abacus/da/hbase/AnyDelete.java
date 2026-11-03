@@ -671,7 +671,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *               while HBase builds the request; a batch delete sends it as an empty family with
      *               the client's default {@code KeyValueCodec})
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     * @throws IllegalArgumentException if this delete's default timestamp is negative (possible only through
+     *         {@link #of(Object, long, NavigableMap)}, or {@link #of(Delete)} of a {@code Delete} built that way), or the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
      *         this call added is removed again first, so the failed call adds no empty family (cells already queued for the family may
      *         already have been discarded, as a successful call would)
      * @see #addFamily(String, long)
@@ -745,7 +746,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *               builds the request; a batch delete sends it as an empty family with the client's
      *               default {@code KeyValueCodec})
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     * @throws IllegalArgumentException if this delete's default timestamp is negative (possible only through
+     *         {@link #of(Object, long, NavigableMap)}, or {@link #of(Delete)} of a {@code Delete} built that way), or the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
      *         this call added is removed again first, so the failed call adds no empty family (cells already queued for the family may
      *         already have been discarded, as a successful call would)
      * @see #addFamily(String)
@@ -888,7 +890,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     * @throws IllegalArgumentException if this delete's default timestamp is negative (possible only through
+     *         {@link #of(Object, long, NavigableMap)}, or {@link #of(Delete)} of a {@code Delete} built that way), or the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
      *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(String, String, long)
      * @see #addColumns(String, String)
@@ -965,7 +968,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *               default {@code KeyValueCodec})
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     * @throws IllegalArgumentException if this delete's default timestamp is negative (possible only through
+     *         {@link #of(Object, long, NavigableMap)}, or {@link #of(Delete)} of a {@code Delete} built that way), or the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
      *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumn(byte[], byte[], long)
      * @see #addColumns(byte[], byte[])
@@ -1036,7 +1040,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     * @throws IllegalArgumentException if this delete's default timestamp is negative (possible only through
+     *         {@link #of(Object, long, NavigableMap)}, or {@link #of(Delete)} of a {@code Delete} built that way), or the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
      *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumns(String, String, long)
      * @see #addColumn(String, String)
@@ -1111,7 +1116,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *               default {@code KeyValueCodec})
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
+     * @throws IllegalArgumentException if this delete's default timestamp is negative (possible only through
+     *         {@link #of(Object, long, NavigableMap)}, or {@link #of(Delete)} of a {@code Delete} built that way), or the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry
      *         this call added is removed again first, so the failed call leaves no empty family behind
      * @see #addColumns(byte[], byte[], long)
      * @see #addColumn(byte[], byte[])

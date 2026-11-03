@@ -26,7 +26,7 @@ class CosmosConditionSyntaxTest {
     void nullPredicatesPreserveQuotedPropertiesAndNestedExpressions(final String input, final String expected) {
         final CosmosContainer container = mock(CosmosContainer.class);
         final CosmosPagedIterable<Item> rows = mock(CosmosPagedIterable.class);
-        when(rows.stream()).thenAnswer(invocation -> Stream.empty());
+        when(rows.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final ArgumentCaptor<SqlQuerySpec> query = ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(container.queryItems(query.capture(), any(), eq(Item.class))).thenReturn(rows);
         final CosmosContainerExecutor executor = new CosmosContainerExecutor(container);

@@ -1237,7 +1237,10 @@ public final class MongoCollectionExecutor {
      * and documents missing that value are not emitted
      * (Reactive Streams does not permit {@code null} elements). A dotted path that traverses a non-null value that
      * is not a {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the
-     * publisher.</p>
+     * publisher. An object-array or {@link Collection} {@code rowType} (such as {@code Object[]} or {@code List}) receives each
+     * document's field values positionally, {@code _id} included ({@code {_id: 7, a: 1}} as {@code [7, 1]}), as the blocking
+     * executor's {@code findFirst} and {@code stream} do; the blocking {@code list} instead converts the sole non-{@code _id}
+     * field.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1317,7 +1320,8 @@ public final class MongoCollectionExecutor {
      * This method is ideal for complex queries requiring fine-grained control over all aspects
      * of the query execution. For a single-value {@code rowType}, each document's sole non-{@code _id}
      * field is converted; a document that has only its {@code _id} (for example because it lacks the
-     * projected field) has its {@code _id} converted instead.</p>
+     * projected field) has its {@code _id} converted instead. An object-array or {@link Collection} {@code rowType}
+     * receives each document's field values positionally, as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4807,7 +4811,7 @@ public final class MongoCollectionExecutor {
      * FindOneAndDeleteOptions options = new FindOneAndDeleteOptions()
      *     .sort(Sorts.descending("created"))
      *     .projection(Projections.exclude("internalData"));
-     * Mono<Order> oldestOrder = executor.findOneAndDelete(filter, options, Order.class);
+     * Mono<Order> newestOrder = executor.findOneAndDelete(filter, options, Order.class);
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or

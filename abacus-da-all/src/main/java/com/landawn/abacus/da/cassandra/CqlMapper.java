@@ -101,6 +101,10 @@ import com.landawn.abacus.util.XmlUtil;
  * <p>The document must not contain a {@code <!DOCTYPE>} declaration: the XML parser disallows DTDs, so such a
  * document is rejected with a {@link ParsingException}.</p>
  *
+ * <p>Only {@code <cql>} elements that are direct children of the root are read; other elements (and a
+ * {@code <cql>} nested deeper) are ignored without an error. A statement is the element's whole text content:
+ * XML comments inside it are dropped, and the text of a nested element is included.</p>
+ *
  * <h3>Parameter Binding</h3>
  * <p>The CQL stored in the mapper may use any of the binding styles supported by {@link ParsedCql}:</p>
  * <ul>
@@ -135,7 +139,7 @@ import com.landawn.abacus.util.XmlUtil;
  * mapper.saveTo(new File("updated-cql-config.xml"));
  * }</pre>
  *
- * <h3>Thread Safety</h3>
+ * <h2>Thread Safety</h2>
  * <p>This class is thread-safe for read operations after initialization. Concurrent modifications
  * (add/remove operations) should be externally synchronized.</p>
  *
@@ -445,7 +449,7 @@ public final class CqlMapper {
      * m.add("findAll", "SELECT * FROM users", null);
      * m.ids();                                       // returns [findUserById, findAll] (insertion order)
      * m.remove("findAll");
-     * m.ids();                                       // returns ["findUserById"] (a fresh snapshot after removal)
+     * m.ids();                                       // returns [findUserById] (a fresh snapshot after removal)
      * m.ids().clear();                              // throws UnsupportedOperationException (read-only set)
      * }</pre>
      *
@@ -764,7 +768,8 @@ public final class CqlMapper {
      *
      * <p>Text is escaped as XML requires; the serializer may also write a line feed inside a CQL body as the platform
      * line separator and a carriage return as a character reference. Loading the output reads every statement back
-     * with the same original CQL.</p>
+     * with the same original CQL. XML cannot hold a {@code null} attribute value: an attribute added with a
+     * {@code null} value is written as an empty value and reads back as {@code ""}.</p>
      *
      * <p>If the parent directory of {@code file} does not yet exist, this method attempts to
      * create it.</p>

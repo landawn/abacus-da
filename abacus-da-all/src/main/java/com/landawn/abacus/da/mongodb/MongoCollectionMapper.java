@@ -721,6 +721,10 @@ public final class MongoCollectionMapper<T> {
      * with a limit of 1. The result is wrapped in an Optional to handle the case where no matching
      * entities exist.</p>
      *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
@@ -759,6 +763,10 @@ public final class MongoCollectionMapper<T> {
      * fields from the first matching document. This is more efficient when you only need specific
      * fields from the entity, reducing network bandwidth and memory usage. The result is automatically
      * converted to the entity type with only the projected fields populated.</p>
+     *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -800,6 +808,10 @@ public final class MongoCollectionMapper<T> {
      * that matches the criteria. The sorting determines which entity is considered "first" when
      * multiple documents match the filter. Only the specified fields are retrieved and populated
      * in the returned entity.</p>
+     *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -849,6 +861,10 @@ public final class MongoCollectionMapper<T> {
      * field) has its {@code _id} converted instead. Use {@link #findFirst(Collection, Bson, Bson)} to get
      * {@link Optional#empty()} in that case.</p>
      *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Article> mapper = mongoDB.collectionMapper(Article.class);
@@ -893,6 +909,10 @@ public final class MongoCollectionMapper<T> {
      * all matching entities at once. For large result sets, consider using streaming operations or pagination
      * to manage memory usage.</p>
      *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
@@ -925,6 +945,10 @@ public final class MongoCollectionMapper<T> {
      * <p>This method performs a find operation with pagination support, returning a subset
      * of matching entities based on the offset and count parameters. This is essential for
      * implementing efficient pagination in applications with large datasets.</p>
+     *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -964,6 +988,10 @@ public final class MongoCollectionMapper<T> {
      * with only the specified fields populated. This reduces network bandwidth and memory usage
      * when you don't need all fields from the entity.</p>
      *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
@@ -1000,6 +1028,10 @@ public final class MongoCollectionMapper<T> {
      * <p>This method combines filtering, field projection, and pagination to retrieve a specific
      * range of matching entities with only the selected fields populated. This is the most
      * memory-efficient way to implement paginated results with large datasets.</p>
+     *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1042,6 +1074,10 @@ public final class MongoCollectionMapper<T> {
      * entities in the specified order with only the selected fields. The sorting ensures predictable
      * result ordering, which is essential for consistent pagination and user interfaces.</p>
      *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Article> mapper = mongoDB.collectionMapper(Article.class);
@@ -1081,6 +1117,10 @@ public final class MongoCollectionMapper<T> {
      * <p>This method provides the most comprehensive querying capability, combining filtering,
      * field projection, sorting, and pagination. It's ideal for implementing advanced search
      * interfaces with efficient data transfer and predictable ordering.</p>
+     *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1132,6 +1172,10 @@ public final class MongoCollectionMapper<T> {
      * {@code int.class}) when another returned document has the projected field, but its converted {@code _id}
      * when none does. Use {@link #list(Collection, Bson, Bson)} to always get {@code null} for a missing field.</p>
      *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
@@ -1179,6 +1223,10 @@ public final class MongoCollectionMapper<T> {
      * {@code int.class}) when another returned document has the projected field, but its converted {@code _id}
      * when none does. Use {@link #list(Collection, Bson, Bson, int, int)} to always get {@code null} for a missing
      * field.</p>
+     *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) is read from each document's sole non-{@code _id}
+     * field, whereas {@code findFirst} and {@code stream} return each document's field values positionally; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2101,6 +2149,10 @@ public final class MongoCollectionMapper<T> {
      * Streaming is memory-efficient for processing large result sets as entities are loaded and
      * converted on-demand. The stream should be closed after use to free database resources.</p>
      * 
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
@@ -2143,6 +2195,10 @@ public final class MongoCollectionMapper<T> {
      * Streaming with pagination is useful for processing specific ranges of large result sets
      * memory-efficiently while maintaining precise control over the data window.</p>
      * 
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
@@ -2184,6 +2240,10 @@ public final class MongoCollectionMapper<T> {
      * the specified fields populated. This reduces memory usage and network bandwidth,
      * making it ideal for processing large datasets where only specific fields are needed.</p>
      * 
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
@@ -2224,6 +2284,10 @@ public final class MongoCollectionMapper<T> {
      * of entities with only selected fields populated. This provides maximum efficiency
      * for processing bounded subsets of large collections with minimal data transfer.</p>
      * 
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
@@ -2271,6 +2335,10 @@ public final class MongoCollectionMapper<T> {
      * selected fields in a specific order. Sorting ensures predictable ordering for
      * consistent processing and is essential when stream processing depends on data sequence.</p>
      * 
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Article> mapper = mongoDB.collectionMapper(Article.class);
@@ -2314,6 +2382,10 @@ public final class MongoCollectionMapper<T> {
      * sorting, and pagination. It's ideal for processing specific windows of large, ordered datasets
      * with minimal memory footprint and optimal network utilization.</p>
      * 
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Transaction> mapper = mongoDB.collectionMapper(Transaction.class);
@@ -2366,6 +2438,10 @@ public final class MongoCollectionMapper<T> {
      * its {@code _id} converted instead. Use {@link #stream(Collection, Bson, Bson)} to get {@code null} for a
      * missing field.</p>
      *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
@@ -2416,6 +2492,10 @@ public final class MongoCollectionMapper<T> {
      * converted; a document that has only its {@code _id} (for example because it lacks the projected field) has
      * its {@code _id} converted instead. Use {@link #stream(Collection, Bson, Bson, int, int)} to get {@code null}
      * for a missing field.</p>
+     *
+     * <p>An object-array or {@link Collection} {@code T} (such as {@code Object[]}) receives each document's field values
+     * positionally ({@code {_id: 7, a: 1}} as {@code [7, 1]}), whereas {@code list} reads the sole non-{@code _id} field; see
+     * {@link MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3867,7 +3947,9 @@ public final class MongoCollectionMapper<T> {
      * This is useful for getting distinct field values for analysis or dropdown populations.</p>
      *
      * <p>For Map, {@link Document} or {@code Object} results, dotted field names produce nested rows, including paths
-     * inside an embedded {@code _id}: {@code distinct("_id.part")} yields {@code {_id: {part: <value>}}} rows.</p>
+     * inside an embedded {@code _id}: {@code distinct("_id.part")} yields {@code {_id: {part: <value>}}} rows. An object-array
+     * or {@link Collection} {@code T} receives the row's one top-level value, so for a dotted field that is the nested
+     * document ({@code [{b: <value>}]} for {@code distinct("a.b")}), as from {@link MongoCollectionExecutor#groupBy(String, Class)}.</p>
      *
      * <p>The values are computed with a {@code $group} aggregation rather than the driver's native
      * {@code distinct} command, so an array-valued field is <i>not</i> unwound: each distinct whole array
@@ -3964,7 +4046,8 @@ public final class MongoCollectionMapper<T> {
      * such as {@code String} gets no {@code $project} stage and receives each value directly, as in
      * {@link #distinct(String)}). For Map, {@link Document} or {@code Object} results, dotted field names produce nested rows,
      * including paths inside an embedded {@code _id} ({@code distinct("_id.part", filter)} yields {@code {_id: {part: <value>}}}
-     * rows), as in {@link #distinct(String)}. This is useful for
+     * rows), and an object-array or {@link Collection} {@code T} receives the row's one top-level value, both as in
+     * {@link #distinct(String)}. This is useful for
      * getting distinct values from a subset of the collection based on specific conditions. As with
      * {@link #distinct(String)}, an array-valued field is not unwound: each distinct whole array is one result.</p>
      *

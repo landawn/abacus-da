@@ -25,6 +25,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +33,7 @@ import java.util.function.BiFunction;
 
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Append;
@@ -1196,7 +1198,8 @@ public final class HBaseExecutor {
      * Properties declared as {@code Collection<HBaseColumn>} or {@code Map<?, HBaseColumn>} accumulate versioned values
      * and receive the completed container after the row is read. A map is keyed by each cell's timestamp, as a {@code Long},
      * whatever key type it declares. Standard {@link CopyOnWriteArrayList} containers are filled in bulk to avoid
-     * copying all previously collected versions for each cell.</p>
+     * copying all previously collected versions for each cell, and an {@link ArrayBlockingQueue} is created with a capacity
+     * of exactly the versions read.</p>
      *
      * <p>A cell whose qualifier has no mapping of its own in its family (such as a flattened nested property's) is read into
      * the only property that {@link AnyPut#create(Object, NamingPolicy)} writes that cell for under any naming policy. A cell
@@ -1402,7 +1405,8 @@ public final class HBaseExecutor {
             Type<?> columnValueType = null;
             Map<String, Tuple2<String, Boolean>> familyTPMap = null;
             Tuple2<String, Boolean> familyTP = null;
-            Set<String> assignedSingleVersionColumns = null;
+            // family -> qualifiers of the columns a single-version property was assigned from (a later, older version is skipped)
+            Map<String, Set<String>> assignedSingleVersionColumns = null;
             Map<String, Map<String, Tuple2<String, Boolean>>> familySoleWriterTPMap = null;
             Map<String, List<Tuple2<String, Boolean>>> familyNestedBeanTPs = null;
             List<Tuple3<PropInfo, BeanInfo, Object>> nestedBeanResults = null;
@@ -1415,6 +1419,7 @@ public final class HBaseExecutor {
             Map<Long, HBaseColumn<?>> columnMap = null;
             Map<String, Map<Long, HBaseColumn<?>>> columnMapMap = null;
             HBaseColumn<?> column = null;
+            Cell prevCell = null;
 
             while (cellScanner.advance()) {
                 final Cell cell = cellScanner.current();
@@ -1424,8 +1429,10 @@ public final class HBaseExecutor {
                     Beans.setPropValue(entity, rowKeySetMethod, rowKey);
                 }
 
-                family = getFamilyString(cell);
+                // The cells of a Result are sorted by family: decode a family once, not once per cell.
+                family = prevCell != null && CellUtil.matchingFamily(prevCell, cell) ? family : getFamilyString(cell);
                 qualifier = getQualifierString(cell);
+                prevCell = cell;
 
                 // .....................................................................................
                 columnMapMap = familyColumnMapMap == null ? null : familyColumnMapMap.get(family);
@@ -1729,10 +1736,10 @@ public final class HBaseExecutor {
                         }
 
                         if (assignedSingleVersionColumns == null) {
-                            assignedSingleVersionColumns = new HashSet<>();
+                            assignedSingleVersionColumns = new HashMap<>();
                         }
 
-                        if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                        if (!assignedSingleVersionColumns.computeIfAbsent(family, k -> new HashSet<>()).add(qualifier)) {
                             continue;
                         }
 
@@ -1741,10 +1748,10 @@ public final class HBaseExecutor {
                         columnPropInfo.setPropValue(propEntity, column);
                     } else {
                         if (assignedSingleVersionColumns == null) {
-                            assignedSingleVersionColumns = new HashSet<>();
+                            assignedSingleVersionColumns = new HashMap<>();
                         }
 
-                        if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                        if (!assignedSingleVersionColumns.computeIfAbsent(family, k -> new HashSet<>()).add(qualifier)) {
                             continue;
                         }
 
@@ -1834,10 +1841,10 @@ public final class HBaseExecutor {
                     }
 
                     if (assignedSingleVersionColumns == null) {
-                        assignedSingleVersionColumns = new HashSet<>();
+                        assignedSingleVersionColumns = new HashMap<>();
                     }
 
-                    if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                    if (!assignedSingleVersionColumns.computeIfAbsent(family, k -> new HashSet<>()).add(qualifier)) {
                         continue;
                     }
 
@@ -1846,10 +1853,10 @@ public final class HBaseExecutor {
                     familyPropInfo.setPropValue(entity, column);
                 } else {
                     if (assignedSingleVersionColumns == null) {
-                        assignedSingleVersionColumns = new HashSet<>();
+                        assignedSingleVersionColumns = new HashMap<>();
                     }
 
-                    if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                    if (!assignedSingleVersionColumns.computeIfAbsent(family, k -> new HashSet<>()).add(qualifier)) {
                         continue;
                     }
 
@@ -1996,6 +2003,12 @@ public final class HBaseExecutor {
 
     @SuppressWarnings("rawtypes")
     private static Collection<HBaseColumn<?>> newVersionedCollection(final Class<? extends Collection> collectionClass) {
+        // WHY: ArrayBlockingQueue has no no-args constructor, so N.newCollection threw for such a property (which AnyPut.create
+        // writes), and its capacity must hold every version of the row: buffer the versions and build the queue once, sized to them.
+        if (collectionClass == ArrayBlockingQueue.class) {
+            return new BufferedVersionedList(null);
+        }
+
         final Collection<HBaseColumn<?>> collection = N.newCollection(collectionClass);
 
         // Keep the factory's original instance and any seeded contents. Subclasses retain their per-cell add behavior.
@@ -2005,13 +2018,18 @@ public final class HBaseExecutor {
     private static final class BufferedVersionedList extends ArrayList<HBaseColumn<?>> {
         private static final long serialVersionUID = 1L;
 
+        // null for an ArrayBlockingQueue property, created by finish()
         private final CopyOnWriteArrayList<HBaseColumn<?>> target;
 
         BufferedVersionedList(final CopyOnWriteArrayList<HBaseColumn<?>> target) {
             this.target = target;
         }
 
-        CopyOnWriteArrayList<HBaseColumn<?>> finish() {
+        Collection<HBaseColumn<?>> finish() {
+            if (target == null) {
+                return new ArrayBlockingQueue<>(Math.max(1, size()), false, this);
+            }
+
             // Per-cell additions to the target copy the entire prefix; append the completed buffer only once.
             target.addAll(this);
             return target;

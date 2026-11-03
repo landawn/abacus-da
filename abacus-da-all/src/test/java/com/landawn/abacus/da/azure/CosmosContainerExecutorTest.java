@@ -135,7 +135,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         // Exercise CAMEL_CASE branch in prepareQuery.
         CosmosContainerExecutor executorWithPolicy = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.CAMEL_CASE);
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executorWithPolicy.streamItems(Arrays.asList("id"), Filters.eq("id", "1"), TestItem.class);
@@ -151,7 +151,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         // Exercise SCREAMING_SNAKE_CASE branch in prepareQuery.
         CosmosContainerExecutor executorWithPolicy = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE);
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executorWithPolicy.streamItems(Arrays.asList("id"), Filters.eq("id", "1"), TestItem.class);
@@ -339,7 +339,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     @Test
     public void testStreamItemsWithSetRangeAndPatternConditionsUseNumberedCosmosParameters() {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -388,7 +388,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
      */
     @Test
     public void testCoalesceNextToRawSubQueryBindingAndRawQuestionMarkMismatch_verifyCN() {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -411,7 +411,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
      */
     @Test
     public void testCoalesceOperatorIsNotCountedAsPlaceholders_sliceT() throws Exception {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -520,7 +520,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     @Test
     public void testIsNullOperandScanHonoursLowercaseKeywordsAndNot() {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -641,7 +641,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     public void testStreamAllItemsWithOptions() {
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockCosmosContainer.readAllItems(partitionKey, queryRequestOptions, TestItem.class)).thenReturn(mockPagedIterable);
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
 
         Stream<TestItem> stream = executor.streamAllItems(partitionKey, queryRequestOptions, TestItem.class);
 
@@ -656,7 +656,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     public void testStreamAllItemsWithoutOptions() {
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockCosmosContainer.readAllItems(partitionKey, TestItem.class)).thenReturn(mockPagedIterable);
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
 
         Stream<TestItem> stream = executor.streamAllItems(partitionKey, TestItem.class);
 
@@ -671,7 +671,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     public void testStreamItemsWithEmptySelectProps() {
         Collection<String> emptySelectProps = Arrays.asList();
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(emptySelectProps, Filters.eq("id", "1"), TestItem.class);
@@ -684,7 +684,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     @Test
     public void testStreamItemsWithNullCondition() {
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems((Collection<String>) null, null, TestItem.class);
@@ -696,7 +696,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     @Test
     public void testStreamItemsWithNullExpressionAsFunctionArgumentUsesCosmosSyntax() {
-        when(mockPagedIterable.stream()).thenReturn(java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -707,7 +707,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     @Test
     public void testStreamItemsWithArithmeticNullExpressionsUsesCosmosSyntax() {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -729,7 +729,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     @Test
     public void testStreamItemsWithConditionAndOptions() {
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), eq(queryRequestOptions), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(Filters.eq("id", "1"), queryRequestOptions, TestItem.class);
@@ -745,7 +745,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         // source/alias. prepareQuery used to emit bare identifiers (e.g. "FROM test_item WHERE
         // id = '1'"), which Cosmos rejects at query enumeration. It must now qualify them via "c".
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -769,7 +769,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     @Test
     public void testStreamItemsWithFunctionExpressionNullConditionUsesCosmosSyntax() {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -788,7 +788,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     public void testStreamItemsWithSelectAndCondition() {
         Collection<String> selectProps = Arrays.asList("id", "name");
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -805,7 +805,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     public void testStreamItemsWithSelectConditionAndOptions() {
         Collection<String> selectProps = Arrays.asList("id", "name");
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), eq(queryRequestOptions), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(selectProps, Filters.eq("id", "1"), queryRequestOptions, TestItem.class);
@@ -820,7 +820,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c");
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockCosmosContainer.queryItems(querySpec, null, TestItem.class)).thenReturn(mockPagedIterable);
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
 
         Stream<TestItem> stream = executor.streamItems(querySpec, TestItem.class);
 
@@ -835,7 +835,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         SqlQuerySpec querySpec = new SqlQuerySpec("SELECT * FROM c");
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockCosmosContainer.queryItems(querySpec, queryRequestOptions, TestItem.class)).thenReturn(mockPagedIterable);
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
 
         Stream<TestItem> stream = executor.streamItems(querySpec, queryRequestOptions, TestItem.class);
 
@@ -850,7 +850,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         String query = "SELECT * FROM c";
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockCosmosContainer.queryItems(query, null, TestItem.class)).thenReturn(mockPagedIterable);
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
 
         Stream<TestItem> stream = executor.streamItems(query, TestItem.class);
 
@@ -865,7 +865,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
         String query = "SELECT * FROM c";
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockCosmosContainer.queryItems(query, queryRequestOptions, TestItem.class)).thenReturn(mockPagedIterable);
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
 
         Stream<TestItem> stream = executor.streamItems(query, queryRequestOptions, TestItem.class);
 
@@ -947,7 +947,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     @Test
     public void testKeywordNamedPropertiesAreStillAliasQualified() {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -1101,7 +1101,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     @Test
     public void testRawExpressionQualifiesFieldsAfterLogicalKeywordsAndPreservesExponent() {
-        when(mockPagedIterable.stream()).thenReturn(java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -1302,7 +1302,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     private <T> String captureQuery_sliceE(final CosmosContainerExecutor cosmosExecutor, final Collection<String> selectPropNames,
             final com.landawn.abacus.query.condition.Condition condition, final Class<T> targetClass) {
         final CosmosPagedIterable<T> rows = mock(CosmosPagedIterable.class);
-        when(rows.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(rows.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(targetClass))).thenReturn(rows);
 
@@ -1704,7 +1704,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     private void testStreamItemsWithConditionAndNamingPolicy(NamingPolicy namingPolicy) {
         CosmosContainerExecutor executorWithPolicy = new CosmosContainerExecutor(mockCosmosContainer, namingPolicy);
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.onePage(items));
         when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executorWithPolicy.streamItems(Filters.eq("id", "1"), TestItem.class);
@@ -1716,7 +1716,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
 
     private List<String> captureConditionQueries(final CosmosContainerExecutor cosmosExecutor,
             final com.landawn.abacus.query.condition.Condition... conditions) {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
@@ -1728,7 +1728,7 @@ public class CosmosContainerExecutorTest extends MockitoTestBase {
     }
 
     private String renderQueryOrFailure_coverageDC(final com.landawn.abacus.query.condition.Condition condition) {
-        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockPagedIterable.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 

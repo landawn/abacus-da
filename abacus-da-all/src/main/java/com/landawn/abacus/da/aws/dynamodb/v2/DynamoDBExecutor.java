@@ -208,7 +208,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * Constructs a new DynamoDBExecutor with the specified AWS SDK v2 DynamoDB client.
      *
      * <p>The executor will use the provided client for all DynamoDB operations, inheriting
-     * its configuration including region, credentials, retry policies, endpoint configuration,
+     * its configuration including region, credentials, retry strategy, endpoint configuration,
      * and HTTP client settings. The client should be properly configured before passing
      * to this constructor.</p>
      *
@@ -216,7 +216,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * <ul>
      * <li>Configure appropriate AWS credentials (IAM roles, profiles, or explicit credentials)</li>
      * <li>Set the correct AWS region for your DynamoDB tables</li>
-     * <li>Configure retry policy and timeout settings for your use case</li>
+     * <li>Configure retry strategy and timeout settings for your use case</li>
      * <li>Optimize HTTP client settings for expected load (connection pool size, timeouts)</li>
      * <li>Enable SDK metrics and logging for monitoring and debugging</li>
      * </ul>
@@ -227,9 +227,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *     .region(Region.US_EAST_1)
      *     .credentialsProvider(DefaultCredentialsProvider.create())
      *     .overrideConfiguration(ClientOverrideConfiguration.builder()
-     *         .retryPolicy(RetryPolicy.builder()
-     *             .numRetries(3)
-     *             .build())
+     *         .retryStrategy(retry -> retry.maxAttempts(4))   // the first attempt plus up to 3 retries
      *         .build())
      *     .build();
      * DynamoDBExecutor executor = new DynamoDBExecutor(client);
@@ -912,7 +910,13 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * <li><b>A byte[] or ByteBuffer held by present {@code Optional}, {@code Nullable}, or {@link Holder} wrappers</b>, at any
      *     nesting depth → B, as for the bare value</li>
      * <li><b>All other types</b> → S (String) using fromS() with string conversion; a value whose registered type renders it
-     *     as {@code null} text, such as an empty {@code Optional}, {@code Nullable}, or {@link Holder}, → NULL=true</li>
+     *     as {@code null} text, such as an empty {@code Optional}, {@code Nullable}, or {@link Holder}, → NULL=true. Other
+     *     types include {@code AtomicInteger} and {@code AtomicLong}, which abacus-common does not type as numbers (written as S
+     *     text such as {@code "5"}), a number held by a present {@code Optional}, {@code Nullable}, or {@link Holder} (also S
+     *     text, {@code Optional.of(5)} as {@code "5"}), and the SDK's own {@link SdkBytes} and {@link AttributeValue}, which are neither binary
+     *     nor passed through: they are written as their {@code toString()} text (for example {@code "SdkBytes(bytes=0x6162)"}),
+     *     so pass {@code sdkBytes.asByteArray()} for a binary value and put a ready-made AttributeValue into the item map
+     *     directly</li>
      * </ul>
      *
      * <p><b>SDK v2 Improvements:</b></p>
@@ -1542,8 +1546,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}
      * @param mapSupplier function to create the target map instance, receiving the expected size
      * @return a Map with converted Java objects, or {@code null} if {@code item} is {@code null}
-     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}, or an attribute value in {@code item} has no supported
-     *         DynamoDB type
+     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}, an attribute value in {@code item} has no supported
+     *         DynamoDB type, or the map from {@code mapSupplier} rejects an attribute name or decoded value (for example, a
+     *         {@code NULL} attribute for a {@code ConcurrentHashMap})
      * @throws RuntimeException if {@code mapSupplier} throws while creating the result map
      * @throws NullPointerException if {@code mapSupplier} returns null for a non-empty {@code item}
      */
@@ -1555,13 +1560,7 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
             return null; // NOSONAR
         }
 
-        final Map<String, Object> map = mapSupplier.apply(item.size());
-
-        for (final Map.Entry<String, AttributeValue> entry : item.entrySet()) {
-            map.put(entry.getKey(), toValue(entry.getValue()));
-        }
-
-        return map;
+        return fillMapRow(item, mapSupplier.apply(item.size()), DynamoDBExecutor::toValue);
     }
 
     /**
@@ -1617,9 +1616,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * named directly. Such a path is assigned through the dependency's path setter, which creates a missing intermediate bean
      * through its no-args constructor and assigns into an existing one in place: a path through a nested record or another
      * bean without a no-args constructor fails the item ({@link IllegalArgumentException} when the intermediate value is
-     * missing, {@link ClassCastException} when an earlier attribute already set it), and a resolvable path into a
-     * builder-based {@code targetClass} fails it with {@link ClassCastException}, because the setter reads the intermediate bean
-     * from the builder; read such a nested bean from an {@code M} attribute instead. Attributes that do not
+     * missing, {@link ClassCastException} when an earlier attribute already set it); read such a nested bean from an {@code M}
+     * attribute instead. An intermediate bean whose accessors copy it is set on its owner again after the write, so the value is
+     * kept; in a builder-based {@code targetClass}, the first intermediate of a path is the one created for an earlier dotted
+     * attribute of the item (a plain attribute of that property before it is replaced). Attributes that do not
      * correspond to any declared property are silently ignored, as are attributes of read-only properties, which cannot be
      * assigned. In a mutable bean a getter without a setter is a property only in an {@code @Entity}-annotated class or a
      * subclass of one, where {@link #toItem(Object)} writes its value: it is such a read-only property when no field of the
@@ -3292,10 +3292,11 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param key the primary key identifying the item to update. Must not be null.
-     * @param attributeUpdates map of attribute names to update actions. Must not be null.
+     * @param attributeUpdates map of attribute names to update actions. A {@code null} or empty map is not rejected: the request
+     *        then updates nothing, and DynamoDB creates an item holding only the key attributes when none exists
      * @return an {@link UpdateItemResponse} containing operation metadata
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName}, a null {@code key}, or null
-     *         {@code attributeUpdates} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
      * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
      *         conditions, or service limits
      * @see #updateItem(String, Map, Map, String)
@@ -3340,11 +3341,12 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param key the primary key identifying the item to update. Must not be null.
-     * @param attributeUpdates map of attribute names to update actions. Must not be null.
+     * @param attributeUpdates map of attribute names to update actions. A {@code null} or empty map is not rejected: the request
+     *        then updates nothing, and DynamoDB creates an item holding only the key attributes when none exists
      * @param returnValues specifies what to return: "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", or "UPDATED_NEW"
      * @return an {@link UpdateItemResponse} containing operation metadata and optional values
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName}, a null {@code key}, or null
-     *         {@code attributeUpdates} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
      * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
      *         conditions, or service limits
      * @see software.amazon.awssdk.services.dynamodb.model.ReturnValue

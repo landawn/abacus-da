@@ -27,6 +27,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.neo4j.ogm.context.MappingContext;
 import org.neo4j.ogm.cypher.Filter;
 import org.neo4j.ogm.cypher.Filters;
 import org.neo4j.ogm.cypher.function.FilterFunction;
@@ -65,8 +66,10 @@ import com.landawn.abacus.util.u.Optional;
  *       executor has pooled sessions reaches only sessions opened later, while the pooled ones keep the
  *       old configuration. Configure the factory before the executor's first operation.</li>
  *   <li><b>Release:</b> Any transaction left open on the session is rolled back, then
- *       {@link Session#clear()} is invoked before the
- *       session is offered back to the queue. If the queue is full the session is silently dropped
+ *       {@link Session#clear()} is invoked and Neo4j-OGM's cache of graph IDs by primary-index value, which
+ *       {@code clear()} keeps, is emptied before the session is offered back to the queue, so that no entity
+ *       state carries over to the next operation (a session whose cache cannot be emptied is not pooled).
+ *       If the queue is full the session is silently dropped
  *       (no {@code close()} call is made; the OGM {@link Session} has no {@code close} operation).
  *       A runtime failure while inspecting, rolling back, or clearing a returned session is logged
  *       and the session is discarded. The session return has try-with-resources semantics: once the
@@ -129,7 +132,7 @@ import com.landawn.abacus.util.u.Optional;
  * {@code Filter.NestedPathSegment} subclass, or a {@code null} element (Neo4j-OGM then throws a
  * {@code NullPointerException}). Every argument is passed as it is (with a warning logged once) if the Neo4j-OGM
  * {@code Filter} and {@code Filter.NestedPathSegment} classes on the classpath do not declare exactly the fields of
- * Neo4j-OGM 5.0.10, or if the filter's private comparison function, which a copy reads reflectively and shares, cannot
+ * Neo4j-OGM 5.0.7 through 5.0.11, or if the filter's private comparison function, which a copy reads reflectively and shares, cannot
  * be accessed. A filter passed as it is keeps the resolution of the first class it is used with, and a {@code Filters}
  * object it belongs to can then send two of its filters under one parameter name, the last value winning.
  * For {@link #count(Class, Iterable)}, an iterable other than a {@link Collection} or {@link Filters} is first
@@ -286,11 +289,14 @@ public final class Neo4jExecutor {
      * Opens a new {@link Session} directly via the underlying {@link SessionFactory}.
      * <p>
      * Sessions returned by this method are <i>not</i> placed into the executor's pool. The OGM
-     * {@link Session} does not expose a {@code close()} method, but the caller should call
-     * {@link Session#clear()} when finished to release the session's mapping context (the
-     * accumulated identity map of loaded entities). Prefer {@link #run(Consumer)} or
-     * {@link #call(Function)}, which acquire a pooled session, clear it on the way back to the
-     * pool, and propagate the result automatically.
+     * {@link Session} does not expose a {@code close()} method; {@link Session#clear()} releases the
+     * session's mapping context (the accumulated identity map of loaded entities) when the session is kept,
+     * except Neo4j-OGM's cache of graph IDs by primary-index value, so prefer short-lived sessions.
+     * Close every transaction begun on the session: a transaction left open stays registered with the
+     * session's transaction manager for the current thread and keeps the session, mapping context included,
+     * reachable for the thread's lifetime. Prefer {@link #run(Consumer)} or
+     * {@link #call(Function)}, which acquire a pooled session, roll back a transaction left open on it,
+     * clear it on the way back to the pool, and propagate the result automatically.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -329,6 +335,13 @@ public final class Neo4jExecutor {
      * Use this for multi-statement work that needs to share a single session (for example, when
      * opening an explicit transaction via {@link Session#beginTransaction()} so that several saves
      * commit atomically). For operations that return a value, use {@link #call(Function)} instead.
+     * <p>
+     * Do all such work through the supplied session: another method of this executor called from inside
+     * {@code action} borrows a different pooled session, so it runs in a transaction of its own, which is not
+     * rolled back with {@code action}'s transaction, does not see its uncommitted changes, and can block on locks
+     * that transaction holds (the transaction is only finished after {@code action} returns). The server sees no lock cycle
+     * (the blocked caller is the holder's own thread), so its deadlock detection does not end the wait: it lasts until a
+     * configured lock-acquisition or transaction timeout ends it, and indefinitely when none is configured (Neo4j's default).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -372,6 +385,8 @@ public final class Neo4jExecutor {
      * itself because it is cleared (see {@link Session#clear()}) and returned to the pool when this
      * method completes. Entity objects may be returned, but they are detached from that cleared
      * session and subsequent persistence work must use another executor operation or session.
+     * Inside {@code action}, use the supplied session rather than this executor's other methods, which borrow a
+     * different session and so run outside its transaction (see {@link #run(Consumer)}).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2150,6 +2165,12 @@ public final class Neo4jExecutor {
      * relationships an entity had when it was loaded by an earlier call: a relationship removed from such an
      * entity (e.g. {@code person.setCompany(null)}) is <i>not</i> deleted by this method. Load, modify and
      * save within one {@link #run(Consumer)}/{@link #call(Function)} session, or delete the relationship with Cypher.
+     * For the same reason, an entity of a class without a native graph-ID field (primary index only) is always
+     * written with a {@code MERGE} on its primary-index value, which sets the node's properties to the entity's (a
+     * property the class does not map is removed). The {@code MERGE} pattern names every label of the entity, so after a
+     * label was added to its {@code @Labels} field the existing node, which lacks that label, does not match: a second node
+     * with the same primary-index value is created (or the save fails on a uniqueness constraint). Load, change the labels and
+     * save within one {@link #run(Consumer)}/{@link #call(Function)} session, where OGM updates the loaded node by its graph ID.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2188,7 +2209,9 @@ public final class Neo4jExecutor {
      * node's scalar properties (no relationships are written); a positive integer recursively
      * saves related entities to that many hops; {@code -1} saves the entire reachable sub-graph.
      * As with {@link #save(Object)}, a relationship removed from an entity loaded by an earlier call is not
-     * deleted, because the session's mapping context does not carry over between calls.
+     * deleted, and an entity of a class without a native graph-ID field is written with a {@code MERGE} on its
+     * primary-index value and all its labels (see {@link #save(Object)} for a label added since the entity was loaded),
+     * because the session's mapping context does not carry over between calls.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2553,7 +2576,7 @@ public final class Neo4jExecutor {
      * subclass: Neo4j-OGM then resolves its filters in place, and two filters of a plain list on the same property share
      * one parameter, the last value wins and the count is silently wrong. All filter objects are passed on without copying (with a
      * warning logged once) if the Neo4j-OGM {@code Filter} and {@code Filter.NestedPathSegment} classes on the classpath
-     * do not declare exactly the fields of Neo4j-OGM 5.0.10, or if the filter's private comparison function, which the
+     * do not declare exactly the fields of Neo4j-OGM 5.0.7 through 5.0.11, or if the filter's private comparison function, which the
      * copy reads reflectively, cannot be accessed (see "Filter Arguments" in the class documentation).
      * An iterable other than a {@link Collection} or {@link Filters} is consumed once into a list before copying:
      * if a filter cannot be copied, that list preserves every original filter, including those already inspected.
@@ -2825,6 +2848,10 @@ public final class Neo4jExecutor {
                 return;
             }
 
+            if (!PrimaryIdCache.clear(session)) {
+                return;
+            }
+
             sessionPool.offer(session); //NOSONAR
         }
     }
@@ -2908,6 +2935,69 @@ public final class Neo4jExecutor {
     }
 
     /**
+     * Empties the primary-index-to-graph-ID cache of a returned {@link Neo4jSession}, which {@link Session#clear()} keeps.
+     */
+    private static final class PrimaryIdCache {
+        // WHY: MappingContext.clear() (Neo4j-OGM 5.0.7-5.0.11) empties every register except primaryIdToNativeId, which maps
+        // an entity's label and primary-index value to its native graph ID. On a pooled, never-discarded session it grows with
+        // every primary-indexed entity loaded or saved, and it outlives the nodes. For a class without a native-ID field
+        // (primary index only) OGM takes the graph ID from it: after such a node was deleted, a save of an entity with the
+        // same primary-index value was compiled as an update of the stale ID (MATCH (n) WHERE ID(n) = ..., so nothing was
+        // written, or a node that reused the ID was overwritten) instead of a MERGE, and a delete deleted by the stale ID
+        // without reloading. OGM has no API to clear it, so it is cleared reflectively; a session whose cache cannot be
+        // cleared is not pooled, so every operation then runs on a fresh session.
+        private static final Field PRIMARY_ID_TO_NATIVE_ID_FIELD = primaryIdToNativeIdField();
+
+        private PrimaryIdCache() {
+        }
+
+        /**
+         * Returns {@code true} if {@code session} may be pooled: its cache was cleared, or it is not a {@link Neo4jSession}.
+         */
+        static boolean clear(final Session session) {
+            if (!(session instanceof final Neo4jSession neo4jSession)) {
+                return true;
+            }
+
+            if (PRIMARY_ID_TO_NATIVE_ID_FIELD == null) {
+                return false;
+            }
+
+            try {
+                ((Map<?, ?>) PRIMARY_ID_TO_NATIVE_ID_FIELD.get(neo4jSession.context())).clear();
+
+                return true;
+            } catch (final IllegalAccessException | RuntimeException e) {
+                if (logger.isWarnEnabled()) {
+                    logger.warn("Failed to clear the primary-index cache of a returned session; discarding the session", e);
+                }
+
+                return false;
+            }
+        }
+
+        private static Field primaryIdToNativeIdField() {
+            try {
+                final Field field = MappingContext.class.getDeclaredField("primaryIdToNativeId");
+
+                if (Map.class.isAssignableFrom(field.getType()) && !Modifier.isStatic(field.getModifiers())) {
+                    field.setAccessible(true);
+
+                    return field;
+                }
+            } catch (final NoSuchFieldException | RuntimeException e) {
+                logger.warn("Cannot access the primary-index cache of a Neo4j-OGM MappingContext; sessions are not pooled", e);
+
+                return null;
+            }
+
+            logger.warn("Neo4j-OGM's MappingContext.primaryIdToNativeId is not an instance Map; sessions are not pooled");
+
+            return null;
+        }
+    }
+
+    /**
      * Copies the filter arguments of {@link #count(Class, Iterable)} and of the {@code Filter}/{@code Filters} overloads of
      * {@code loadAll} before they are handed to Neo4j-OGM.
      */
@@ -2918,11 +3008,11 @@ public final class Neo4jExecutor {
         // filter then keeps the first class's resolution, and a Filters object it belongs to sends two filters under one
         // <property>_<index> parameter (the last value wins: silently wrong results). Only Filters.add assigns the index, so
         // the filters of a plain list all keep index 0 and collide the same way, and new Filters(filters) would re-index -
-        // and so mutate - the caller's filters. Faithful copies are handed to OGM instead. Filter (5.0.10) offers no copy API
+        // and so mutate - the caller's filters. Faithful copies are handed to OGM instead. Filter (5.0.7-5.0.11) offers no copy API
         // and no getter for its comparison function, so the function is read reflectively, and only when Filter and
-        // NestedPathSegment declare exactly the fields of 5.0.10: a copy made under another layout could silently drop state
+        // NestedPathSegment declare exactly the fields of 5.0.7-5.0.11 (unchanged across them): a copy made under another layout could silently drop state
         // that a different OGM version renders. Sharing the function is faithful for every FilterFunction, OGM's or a custom
-        // one: the 5.0.10 interface hands it the rendering filter's parameter namer and value transformer on each call.
+        // one: the 5.0.x interface hands it the rendering filter's parameter namer and value transformer on each call.
         private static final Set<String> FILTER_FIELDS = Set.of("index", "propertyName", "booleanOperator", "negated", "ownerEntityType",
                 "nestedEntityTypeLabel", "nestedPropertyName", "nestedPropertyType", "relationshipType", "relationshipDirection", "propertyConverter",
                 "nestedRelationshipEntity", "function", "nestedPath");
@@ -3070,7 +3160,7 @@ public final class Neo4jExecutor {
         private static Field functionField() {
             try {
                 if (!FILTER_FIELDS.equals(instanceFieldNames(Filter.class)) || !SEGMENT_FIELDS.equals(instanceFieldNames(Filter.NestedPathSegment.class))) {
-                    logger.warn("Neo4j-OGM's Filter or Filter.NestedPathSegment class does not have the fields of Neo4j-OGM 5.0.10;"
+                    logger.warn("Neo4j-OGM's Filter or Filter.NestedPathSegment class does not have the fields of Neo4j-OGM 5.0.7-5.0.11;"
                             + " loadAll and count pass their filter arguments to Neo4j-OGM as they are, which resolves and re-indexes them in"
                             + " place, and filters on the same property in a plain iterable share one Cypher parameter");
 

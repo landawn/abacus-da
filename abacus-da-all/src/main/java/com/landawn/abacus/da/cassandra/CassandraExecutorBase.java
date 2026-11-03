@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -35,6 +36,7 @@ import com.landawn.abacus.da.cs;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
+import com.landawn.abacus.parser.ParserUtil.PropInfo;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
@@ -148,7 +150,8 @@ import com.landawn.abacus.util.stream.Stream;
  * unless a registered codec accepts it. A value of an application class is converted by {@code N.convert}, which applies a
  * converter registered for its class with {@code N.registerConverter}; a conversion that yields no blob content (as one without
  * a converter usually does) leaves the value unchanged as well. An empty {@code Optional}-like value ({@code Optional},
- * {@code Nullable}, {@code Holder}, ...) binds {@code NULL}, and a present one binds its content by these rules. The concrete
+ * {@code Nullable}, {@code Holder}, ...) binds {@code NULL} to a scalar column ({@code blob}, {@code int} or {@code text}, for
+ * example), and a present one binds its content by these rules. The concrete
  * executors' class documentation has the full rules.</p>
  *
  * <h2>Boolean Conversion</h2>
@@ -173,6 +176,20 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><strong>SCREAMING_SNAKE_CASE:</strong> {@code firstName} maps to {@code FIRST_NAME}</li>
  * <li><strong>CAMEL_CASE:</strong> {@code firstName} is kept as {@code firstName}</li>
  * </ul>
+ *
+ * <h2>Row Limits</h2>
+ * <p>The {@link Condition}-based {@code get}/{@code gett} ({@code LIMIT 2}, to detect a duplicate), {@code findFirst},
+ * {@code exists}, {@code queryForSingleValue}, {@code queryForSingleNonNull} and {@code queryForXxx} methods append their own
+ * {@code LIMIT}, so a condition that already carries one (a {@code Limit}, or a {@code Criteria} with a limit) fails with
+ * {@link IllegalStateException} before any CQL runs. {@code list}, {@code query}, {@code stream} and {@code count} apply the
+ * condition's {@code LIMIT} as given; for {@code count} it limits the one result row, not the rows counted.</p>
+ *
+ * <h2>Map Rows</h2>
+ * <p>A row (or UDT) read as a map class that rejects {@code null} values, such as {@code ConcurrentHashMap} or {@code Hashtable},
+ * fails on a {@code NULL} column (or field) with {@link IllegalArgumentException} naming the column and the map class, from
+ * {@code list}, {@code findFirst}, {@code stream} and the other row-mapping methods alike. So does a row (or UDT) read as a
+ * collection class that rejects {@code null} elements, such as {@code ArrayBlockingQueue}, {@code ArrayDeque} or
+ * {@code ConcurrentLinkedQueue}, naming the column (or field) and the collection class.</p>
  *
  * <h2>Usage</h2>
  * <pre>{@code
@@ -479,11 +496,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * // Single key entity
      * Condition singleKeyCondition = idsToCondition(User.class, "user123");
-     * // Result: WHERE user_id = ?
+     * // Result: WHERE user_id = :userId (SNAKE_CASE)
      *
      * // Composite key entity
      * Condition compositeKeyCondition = idsToCondition(UserSession.class, "user123", "session456");
-     * // Result: WHERE user_id = ? AND session_id = ?
+     * // Result: WHERE user_id = :userId AND session_id = :sessionId
      * }</pre>
      *
      * @param targetClass the entity class whose primary-key column names are used
@@ -548,7 +565,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * user.setTenantId("tenant456");
      *
      * Condition cond = entityToCondition(user);
-     * // Result: WHERE user_id = ? AND tenant_id = ?
+     * // Result: WHERE user_id = :userId AND tenant_id = :tenantId (SNAKE_CASE)
      * // with values "user123" and "tenant456"
      * }</pre>
      *
@@ -615,7 +632,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * // Single key entities
      * List<User> users = Arrays.asList(user1, user2, user3);
      * Condition cond = entityToCondition(User.class, users);
-     * // Result: WHERE user_id IN (?, ?, ?)
+     * // Result: WHERE user_id IN (:userId1, :userId2, :userId3) (SNAKE_CASE)
      *
      * // Composite key entities are not supported
      * List<UserSession> sessions = Arrays.asList(session1, session2);
@@ -669,6 +686,159 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         }
 
         return cond;
+    }
+
+    /**
+     * Writes {@code value} to the last property of the writable dotted path {@code chain} (from
+     * {@link BeanInfo#getPropInfoChain(String)}) on {@code entity}, creating and assigning each missing intermediate bean as
+     * {@link BeanInfo#setPropValue(Object, String, Object, boolean)} does (no-argument constructor, then the property's setter).
+     * Returns {@code false} without creating anything when an intermediate is a collection: such a path is left to that path
+     * setter, which adds the bean it creates to the collection before assigning the collection.
+     * <p>
+     * The path setter writes the rest of the path into the instance it created, or into whatever the getter returns, so the
+     * value was silently lost when an accessor copies: a setter that stores a copy of its argument (PropInfo calls the setter of
+     * an {@code @AccessFieldByMethod} bean, for example) kept an empty intermediate ({address.city, address.zip} gave
+     * Address(null, zip)), and a getter that returns a copy on every read gave a detached instance to every column after the
+     * first one through it. Here an intermediate whose getter returns the same instance twice is written in place; any other is
+     * written and then set on its owner again, innermost first, so the owner stores it through its setter (a copying setter
+     * stores a copy that holds the value). A getter's copy replaces the stored instance this way, so it must copy every
+     * property. A read-only intermediate whose getter copies cannot be set again, and the value is lost there as before. Same
+     * rule as the DynamoDB, BigQuery and MongoDB executors.
+     * <p>
+     * For an immutable bean built through its builder, {@code entity} is the builder, which has none of the bean's getters, so
+     * the first intermediate of each path is the one created for an earlier dotted column of the same row, kept in
+     * {@code builderIntermediates} (see {@link #newBuilderIntermediates(BeanInfo, Object)}) and set on the builder after each
+     * write; a plain column of that property read before the dotted column is replaced by it.
+     *
+     * @return {@code true} if the value was written, {@code false} if the path is left to the path setter
+     * @throws RuntimeException if reading or writing a property, or creating an intermediate bean, fails (as in the path setter)
+     */
+    protected static boolean setDottedPathValue(final Object entity, final List<PropInfo> chain, final Object value,
+            final Map<PropInfo, Object> builderIntermediates) throws RuntimeException {
+        final int last = chain.size() - 1;
+
+        // A collection intermediate leaves the whole path to the path setter before anything is created here: stopping part-way
+        // left beans created here for the path setter to walk again through getters, and a getter that returns a copy then
+        // lost the value the path setter alone used to keep.
+        for (int i = 0; i < last; i++) {
+            if (chain.get(i).type.isCollection()) {
+                return false;
+            }
+        }
+
+        // path[i] holds path[i + 1] through chain.get(i); bit i of setAgain marks an intermediate that is not known to be the
+        // instance its owner stores, which must be set on its owner again once the value is written into it.
+        final Object[] path = new Object[last + 1];
+        long setAgain = 0;
+        path[0] = entity;
+
+        for (int i = 0; i < last; i++) {
+            final PropInfo propInfo = chain.get(i);
+            final Object owner = path[i];
+            Object intermediate;
+
+            if (i == 0 && builderIntermediates != null) {
+                // WHY: the bean's getter invoked on a builder failed the whole row with ClassCastException ("Cannot cast
+                // Bean$Builder to Bean"), as did the path setter.
+                intermediate = builderIntermediates.get(propInfo);
+
+                if (intermediate == null) {
+                    intermediate = N.newInstance(propInfo.clazz);
+                    builderIntermediates.put(propInfo, intermediate);
+                }
+
+                setAgain |= 1L << i;
+            } else {
+                intermediate = propInfo.getPropValue(owner);
+
+                if (intermediate == null) {
+                    final Object created = N.newInstance(propInfo.clazz);
+                    propInfo.setPropValue(owner, created);
+                    intermediate = propInfo.getPropValue(owner);
+
+                    // A stable read (the same instance twice) is the stored instance, a copy when the setter copies; otherwise the
+                    // getter copies (or returns nothing), and the created instance is written and then set again.
+                    if (intermediate != created && (intermediate == null || propInfo.getPropValue(owner) != intermediate)) {
+                        intermediate = created;
+                        setAgain |= 1L << i;
+                    }
+                } else if (propInfo.getPropValue(owner) != intermediate) {
+                    // A copying getter: the copy read first is written and then set again.
+                    setAgain |= 1L << i;
+                }
+            }
+
+            path[i + 1] = intermediate;
+        }
+
+        chain.get(last).setPropValue(path[last], value);
+
+        for (int i = last - 1; setAgain != 0 && i >= 0; i--) {
+            if ((setAgain & (1L << i)) != 0 && !chain.get(i).isReadOnlyProperty) {
+                chain.get(i).setPropValue(path[i], path[i + 1]);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns the map in which {@link #setDottedPathValue(Object, List, Object, Map)} keeps the first intermediates of the
+     * dotted paths of one row when {@code entity}, the result of {@link BeanInfo#createBeanResult()}, is the builder of an
+     * immutable bean, or {@code null} for any other result (a mutable bean, or the constructor arguments of a record).
+     */
+    protected static Map<PropInfo, Object> newBuilderIntermediates(final BeanInfo entityInfo, final Object entity) {
+        return entityInfo.isImmutable && !(entity instanceof Object[]) ? new HashMap<>() : null;
+    }
+
+    /**
+     * Returns an empty collection to fill with the {@code columnCount} column values of a row read as the collection class
+     * {@code rowClass} (an immutable class gets a mutable stand-in, which the executor converts once it is filled).
+     * @throws IllegalArgumentException if no collection of {@code rowClass} can be created
+     */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    protected static Collection<Object> newRowCollection(final Class<?> rowClass, final int columnCount) throws IllegalArgumentException {
+        // WHY: N.newCollection needs a no-argument constructor, which ArrayBlockingQueue lacks, so a row read as one failed with
+        // "Not able to create instance" (the DynamoDB row readers size it the same way). Capacity 1 at least: an empty row too.
+        return rowClass == ArrayBlockingQueue.class ? new ArrayBlockingQueue<>(Math.max(1, columnCount)) : N.newCollection((Class<Collection>) rowClass);
+    }
+
+    /**
+     * Adds {@code value}, read from the column (or UDT field, as {@code kind} says) {@code name}, to the row collection {@code c}.
+     * @throws IllegalArgumentException if {@code c} rejects the value (a {@code NULL} value in an {@code ArrayBlockingQueue},
+     *         {@code ArrayDeque} or {@code ConcurrentLinkedQueue}, for example), with the collection's exception as the cause
+     */
+    protected static void addRowValue(final Collection<Object> c, final String kind, final String name, final Object value) throws IllegalArgumentException {
+        try {
+            c.add(value);
+        } catch (final NullPointerException | ClassCastException e) {
+            // WHY: as in putRowValue, a bare JDK exception from Collection.add does not say which column the requested row type
+            // rejected (a NULL column read as an ArrayBlockingQueue, which newRowCollection now creates, gave a bare NPE).
+            throw new IllegalArgumentException(
+                    kind + " (" + name + ", " + value + ") is not accepted by the row collection " + ClassUtil.getCanonicalClassName(c.getClass()), e);
+        }
+    }
+
+    /**
+     * Puts {@code value}, read from the column (or UDT field, as {@code kind} says) {@code name}, into the row map {@code map}.
+     * @throws IllegalArgumentException if {@code map} rejects the entry (a {@code NULL} value in a {@code ConcurrentHashMap} or
+     *         {@code Hashtable}, for example), with the map's exception as the cause
+     * @throws NullPointerException if {@code map} is {@code null}
+     */
+    protected static void putRowValue(final Map<String, Object> map, final String kind, final String name, final Object value)
+            throws IllegalArgumentException, NullPointerException {
+        try {
+            map.put(name, value);
+        } catch (final NullPointerException | ClassCastException e) {
+            if (map == null) {
+                throw e;
+            }
+
+            // A bare JDK exception from Map.put does not say which column the requested row type rejected (as in the DynamoDB
+            // executors' fillMapRow).
+            throw new IllegalArgumentException(
+                    kind + " (" + name + ", " + value + ") is not accepted by the row map " + ClassUtil.getCanonicalClassName(map.getClass()), e);
+        }
     }
 
     /**
@@ -1846,8 +2016,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         executing, or fetching the query fails
      */
     public long count(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
-        // Note: LIMIT must NOT be applied to a COUNT(*) query. In Cassandra, "SELECT count(*) ... LIMIT 1"
-        // caps the aggregated count itself (a table with 10 matching rows would return count = 1).
+        // Note: no LIMIT is appended to the COUNT(*) query: a count is one row, and Cassandra (5.0) applies LIMIT to the
+        // aggregated result rows, not to the rows counted ("SELECT count(*) ... LIMIT 1" over 3 rows returns 3).
         final SP cp = prepareQuery(targetClass, COUNT_SELECT_PROP_NAMES, whereClause, 0);
 
         return queryForSingleValue(long.class, cp.query(), cp.parameters().toArray()).orElse(0L);
@@ -3968,8 +4138,31 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
             throws IllegalArgumentException {
         final Set<String> keyNames = getKeyNameSet(targetClass);
 
+        if (keyNames.isEmpty()) {
+            return;
+        }
+
+        BeanInfo beanInfo = null;
+
         for (final String propName : propNames) {
             if (keyNames.contains(propName)) {
+                throw new IllegalArgumentException("'" + argumentName + "' must not contain primary-key property: " + propName);
+            }
+
+            if (propName == null) {
+                continue;
+            }
+
+            // WHY: the builder resolves a name to its property as BeanInfo.getPropInfo does (any case, snake_case: "ID" or
+            // "account_id" for "accountId"), so an exact-match-only check let a key column into SET or DELETE (UPDATE t SET id = :id
+            // WHERE id = :id_2), which the server rejects only after a round trip, failing a whole batch.
+            if (beanInfo == null) {
+                beanInfo = ParserUtil.getBeanInfo(targetClass);
+            }
+
+            final PropInfo propInfo = beanInfo.getPropInfo(propName);
+
+            if (propInfo != null && keyNames.contains(propInfo.name)) {
                 throw new IllegalArgumentException("'" + argumentName + "' must not contain primary-key property: " + propName);
             }
         }
@@ -4190,6 +4383,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return an SP (Statement/Parameters) pair ready for execution
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, selected properties cannot be mapped, or the condition
      *         uses a relation unsupported by CQL
+     * @throws IllegalStateException if {@code count} is positive and {@code whereClause} already carries a {@code LIMIT}
      */
     protected SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count)
             throws IllegalArgumentException {

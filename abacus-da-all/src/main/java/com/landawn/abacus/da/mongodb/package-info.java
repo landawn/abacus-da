@@ -15,6 +15,8 @@
 /**
  * Provides blocking MongoDB database, collection, and entity-mapping operations using the synchronous Java driver.
  * It also includes {@link com.landawn.abacus.util.ContinuableFuture}-based wrappers that execute blocking operations through an asynchronous
- * executor.
+ * executor. Its {@link com.landawn.abacus.da.mongodb.MongoDBBase} holds the BSON conversion, ID-mapping and codec helpers
+ * that the synchronous {@code MongoDB} shares with the Reactive Streams {@code MongoDB} of the {@code reactivestreams}
+ * subpackage.
  */
 package com.landawn.abacus.da.mongodb;

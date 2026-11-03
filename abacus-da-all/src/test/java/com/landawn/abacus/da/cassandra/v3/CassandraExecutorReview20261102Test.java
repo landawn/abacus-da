@@ -1,0 +1,434 @@
+package com.landawn.abacus.da.cassandra.v3;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+
+import org.junit.jupiter.api.Test;
+
+import com.datastax.driver.core.ColumnDefinitions;
+import com.datastax.driver.core.DataType;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
+import com.datastax.driver.core.Statement;
+import com.landawn.abacus.annotation.AccessFieldByMethod;
+
+/**
+ * Regression tests for the 2026-11-02 review of the driver 3.x {@link CassandraExecutor}.
+ */
+@SuppressWarnings("deprecation")
+public class CassandraExecutorReview20261102Test {
+
+    public static class Address {
+        private String city;
+        private String zip;
+
+        public Address() {
+        }
+
+        public Address(final Address other) {
+            city = other.city;
+            zip = other.zip;
+        }
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+
+        public String getZip() {
+            return zip;
+        }
+
+        public void setZip(final String zip) {
+            this.zip = zip;
+        }
+    }
+
+    /** PropInfo writes an {@code @AccessFieldByMethod} bean through its setters, and this setter stores a copy. */
+    @AccessFieldByMethod
+    public static class CopyingPerson {
+        private String id;
+        private Address address;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(final String id) {
+            this.id = id;
+        }
+
+        public Address getAddress() {
+            return address;
+        }
+
+        public void setAddress(final Address address) {
+            this.address = address == null ? null : new Address(address);
+        }
+    }
+
+    @AccessFieldByMethod
+    public static class CopyingCompany {
+        private CopyingPerson owner;
+
+        public CopyingPerson getOwner() {
+            return owner;
+        }
+
+        public void setOwner(final CopyingPerson owner) {
+            if (owner == null) {
+                this.owner = null;
+            } else {
+                this.owner = new CopyingPerson();
+                this.owner.setId(owner.getId());
+                this.owner.setAddress(owner.getAddress());
+            }
+        }
+    }
+
+    public static class PlainPerson {
+        private Address address;
+
+        public Address getAddress() {
+            return address;
+        }
+
+        public void setAddress(final Address address) {
+            this.address = address;
+        }
+    }
+
+    /** A plain setter, and a getter that returns a defensive copy on every read. */
+    @AccessFieldByMethod
+    public static class CopyingGetterPerson {
+        private Address address;
+
+        public Address getAddress() {
+            return address == null ? null : new Address(address);
+        }
+
+        public void setAddress(final Address address) {
+            this.address = address;
+        }
+
+        Address storedAddress() {
+            return address;
+        }
+    }
+
+    @AccessFieldByMethod
+    public static class CopyingGetterCompany {
+        private CopyingGetterPerson owner;
+
+        public CopyingGetterPerson getOwner() {
+            if (owner == null) {
+                return null;
+            }
+
+            final CopyingGetterPerson copy = new CopyingGetterPerson();
+            copy.setAddress(owner.storedAddress());
+            return copy;
+        }
+
+        public void setOwner(final CopyingGetterPerson owner) {
+            this.owner = owner;
+        }
+
+        CopyingGetterPerson storedOwner() {
+            return owner;
+        }
+    }
+
+    public record RecordPerson(String id, Address address) {
+    }
+
+    /** An immutable bean created through its builder: the row is filled into the builder, which has no getters. */
+    public static final class BuiltPerson {
+        private final String id;
+        private final Address address;
+
+        BuiltPerson(final String id, final Address address) {
+            this.id = id;
+            this.address = address;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public Address getAddress() {
+            return address;
+        }
+
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        public static final class Builder {
+            private String id;
+            private Address address;
+
+            public Builder id(final String id) {
+                this.id = id;
+                return this;
+            }
+
+            public Builder address(final Address address) {
+                this.address = address;
+                return this;
+            }
+
+            public BuiltPerson build() {
+                return new BuiltPerson(id, address);
+            }
+        }
+    }
+
+    @Test
+    public void testDottedPath_BuilderTarget_WritesIntoOneNestedBean() {
+        // Before this fix (and on HEAD): ClassCastException "Cannot cast BuiltPerson$Builder to BuiltPerson", from the bean's
+        // getter invoked on the builder.
+        final BuiltPerson person = CassandraExecutor.toEntity(row(new String[] { "id", "address.city", "address.zip" }, "1", "Paris", "75001"),
+                BuiltPerson.class);
+
+        assertEquals("1", person.getId());
+        assertEquals("Paris", person.getAddress().getCity());
+        assertEquals("75001", person.getAddress().getZip());
+    }
+
+    // The value written while the intermediate bean is created is kept, as by the dependency's path setter. A later column
+    // reaches only the getter's copy: HEAD (and the previous fix) wrote into that detached copy and lost "75001"; the copy is
+    // now set on the owner again after the write.
+    @Test
+    public void testDottedPath_CopyingGetter_KeepsValueOfCreatedBean() {
+        final Row row = row(new String[] { "address.city", "address.zip" }, "Paris", "75001");
+
+        final CopyingGetterPerson person = CassandraExecutor.toEntity(row, CopyingGetterPerson.class);
+
+        assertEquals("Paris", person.storedAddress().getCity());
+        assertEquals("75001", person.storedAddress().getZip());
+    }
+
+    /** Both accessors copy: no instance the path could write into is reachable; only the setter can store the value. */
+    @AccessFieldByMethod
+    public static class CopyingAccessorsPerson {
+        private Address address;
+
+        public Address getAddress() {
+            return address == null ? null : new Address(address);
+        }
+
+        public void setAddress(final Address address) {
+            this.address = address == null ? null : new Address(address);
+        }
+
+        Address storedAddress() {
+            return address;
+        }
+    }
+
+    // HEAD (and the previous fix) wrote into a detached instance and kept an empty intermediate; the written instance is now set
+    // again, and the setter stores a copy holding the value.
+    @Test
+    public void testDottedPath_CopyingAccessors_KeepEveryValue() {
+        final CopyingAccessorsPerson person = CassandraExecutor.toEntity(row(new String[] { "address.city", "address.zip" }, "Paris", "75001"),
+                CopyingAccessorsPerson.class);
+
+        assertEquals("Paris", person.storedAddress().getCity());
+        assertEquals("75001", person.storedAddress().getZip());
+    }
+
+    @Test
+    public void testDottedPath_CopyingGetters_NestedTwoLevels() {
+        final CopyingGetterCompany company = CassandraExecutor.toEntity(row(new String[] { "owner.address.city" }, "Oslo"), CopyingGetterCompany.class);
+
+        assertEquals("Oslo", company.storedOwner().storedAddress().getCity());
+    }
+
+    public static class AddressBook {
+        private List<Address> addresses;
+
+        public List<Address> getAddresses() {
+            return addresses;
+        }
+
+        public void setAddresses(final List<Address> addresses) {
+            this.addresses = addresses;
+        }
+    }
+
+    public static class PlainBookOwner {
+        private AddressBook book;
+
+        public AddressBook getBook() {
+            return book;
+        }
+
+        public void setBook(final AddressBook book) {
+            this.book = book;
+        }
+    }
+
+    /** The getter returns a copy that shares the stored book's address list; the setter stores its argument. */
+    @AccessFieldByMethod
+    public static class CopyingGetterBookOwner {
+        private AddressBook book;
+
+        public AddressBook getBook() {
+            if (book == null) {
+                return null;
+            }
+
+            final AddressBook copy = new AddressBook();
+            copy.setAddresses(book.getAddresses());
+            return copy;
+        }
+
+        public void setBook(final AddressBook book) {
+            this.book = book;
+        }
+    }
+
+    // Guard (passes on HEAD): a path through a collection is left whole to the dependency's path setter, which creates the book
+    // and a list holding one Address that takes the value. Creating the book here first and leaving only the collection to the
+    // path setter made it walk again through the copying getter, so the list went into a detached copy and the value was lost.
+    @Test
+    public void testDottedPath_CollectionIntermediate_LeftWholeToPathSetter() {
+        final PlainBookOwner plain = CassandraExecutor.toEntity(row(new String[] { "book.addresses.city" }, "Paris"), PlainBookOwner.class);
+
+        assertEquals(1, plain.getBook().getAddresses().size());
+        assertEquals("Paris", plain.getBook().getAddresses().get(0).getCity());
+
+        final List<Address> addresses = CassandraExecutor.toEntity(row(new String[] { "book.addresses.city" }, "Paris"), CopyingGetterBookOwner.class)
+                .getBook()
+                .getAddresses();
+
+        assertEquals(1, addresses == null ? 0 : addresses.size());
+        assertEquals("Paris", addresses.get(0).getCity());
+    }
+
+    @Test
+    public void testDottedPath_RecordTarget_WritesIntoNestedBean() {
+        final RecordPerson person = CassandraExecutor.toEntity(row(new String[] { "id", "address.city", "address.zip" }, "1", "Paris", "75001"),
+                RecordPerson.class);
+
+        assertEquals("1", person.id());
+        assertEquals("Paris", person.address().getCity());
+        assertEquals("75001", person.address().getZip());
+    }
+
+    static Row row(final String[] names, final Object... values) {
+        final Row row = mock(Row.class);
+        final ColumnDefinitions columns = mock(ColumnDefinitions.class);
+        when(row.getColumnDefinitions()).thenReturn(columns);
+        when(columns.size()).thenReturn(names.length);
+        for (int i = 0; i < names.length; i++) {
+            when(columns.getName(i)).thenReturn(names[i]);
+            when(columns.getType(i)).thenReturn(values[i] instanceof Number ? DataType.bigint() : DataType.text());
+            when(row.getObject(i)).thenReturn(values[i]);
+        }
+        return row;
+    }
+
+    static ResultSet result(final Row... rows) {
+        final ResultSet result = mock(ResultSet.class);
+        final ColumnDefinitions metadata = rows[0].getColumnDefinitions();
+        when(result.getColumnDefinitions()).thenReturn(metadata);
+        when(result.getAvailableWithoutFetching()).thenReturn(rows.length);
+        when(result.iterator()).thenAnswer(invocation -> Arrays.asList(rows).iterator());
+        when(result.all()).thenReturn(Arrays.asList(rows));
+        when(result.one()).thenReturn(rows[0]);
+        return result;
+    }
+
+    // HEAD: the dependency's path setter assigned the new Address through the copying setter, then wrote "Paris" into its own
+    // detached instance, so the city was lost: Address(null, 75001).
+    @Test
+    public void testDottedPath_CopyingSetter_KeepsFirstValue() {
+        final Row row = row(new String[] { "id", "address.city", "address.zip" }, "1", "Paris", "75001");
+
+        final CopyingPerson person = CassandraExecutor.toEntity(row, CopyingPerson.class);
+
+        assertEquals("1", person.getId());
+        assertEquals("Paris", person.getAddress().getCity());
+        assertEquals("75001", person.getAddress().getZip());
+
+        final CopyingPerson listed = CassandraExecutor.toList(result(row), CopyingPerson.class).get(0);
+        assertEquals("Paris", listed.getAddress().getCity());
+        assertEquals("75001", listed.getAddress().getZip());
+    }
+
+    @Test
+    public void testDottedPath_TwoCopyingLevels_KeepsEveryValue() {
+        final Row row = row(new String[] { "owner.id", "owner.address.city", "owner.address.zip" }, "7", "Lyon", "69001");
+
+        final CopyingCompany company = CassandraExecutor.toEntity(row, CopyingCompany.class);
+
+        assertEquals("7", company.getOwner().getId());
+        assertEquals("Lyon", company.getOwner().getAddress().getCity());
+        assertEquals("69001", company.getOwner().getAddress().getZip());
+    }
+
+    @Test
+    public void testDottedPath_PlainSetter_Unchanged() {
+        final Row row = row(new String[] { "address.city", "address.zip", "address.unknown", "unknown.path" }, "Paris", "75001", "x", "y");
+
+        final PlainPerson person = CassandraExecutor.toEntity(row, PlainPerson.class);
+
+        assertEquals("Paris", person.getAddress().getCity());
+        assertEquals("75001", person.getAddress().getZip());
+    }
+
+    // HEAD: N.newCollection needs a no-args constructor, so a row read as an ArrayBlockingQueue failed with
+    // IllegalArgumentException("Not able to create instance for collection").
+    @Test
+    @SuppressWarnings("rawtypes")
+    public void testArrayBlockingQueueRowClass() {
+        final Row row = row(new String[] { "id", "name" }, 7L, "Ada");
+
+        final List<ArrayBlockingQueue> rows = CassandraExecutor.toList(result(row), ArrayBlockingQueue.class);
+        assertEquals(List.of(7L, "Ada"), new ArrayList<>(rows.get(0)));
+    }
+
+    // A nested row read as an ArrayBlockingQueue component of a typed array row (readNestedRow -> readRow).
+    @Test
+    @SuppressWarnings("rawtypes")
+    public void testArrayBlockingQueueNestedRowComponent() {
+        final Row outer = row(new String[] { "nested" }, row(new String[] { "a", "b" }, "x", "y"));
+        final ArrayBlockingQueue<?>[] array = CassandraExecutor.toList(result(outer), ArrayBlockingQueue[].class).get(0);
+        assertEquals(List.of("x", "y"), new ArrayList<>(array[0]));
+    }
+
+    // findFirst reads the row through readRow, the other row reader.
+    @Test
+    public void testArrayBlockingQueueFindFirst() {
+        final Row row = row(new String[] { "id", "name" }, 7L, "Ada");
+
+        try (CassandraTestFixture fixture = new CassandraTestFixture()) {
+            fixture.columns(DataType.bigint());
+            final ResultSet resultSet = result(row);
+            when(fixture.session.execute(any(Statement.class))).thenReturn(resultSet);
+
+            final ArrayBlockingQueue<?> first = fixture.executor.findFirst(ArrayBlockingQueue.class, "SELECT id, name FROM t").orElseThrow();
+            assertEquals(List.of(7L, "Ada"), new ArrayList<>(first));
+        }
+    }
+
+    @Test
+    public void testDottedPath_UnresolvablePath_DoesNotCreateIntermediate() {
+        final Row row = row(new String[] { "address.unknown" }, "x");
+
+        assertNull(CassandraExecutor.toEntity(row, PlainPerson.class).getAddress());
+    }
+}

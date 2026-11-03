@@ -953,8 +953,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param resultSet the Cassandra ResultSet to convert
      * @param targetClass the per-row target type (see supported types above); must not be {@code null}
      * @return a list of converted rows
-     * @throws IllegalArgumentException if {@code resultSet} or {@code targetClass} is {@code null}, or if {@code targetClass} is a single-value
-     *         type but the result set does not have exactly one column
+     * @throws IllegalArgumentException if {@code resultSet} or {@code targetClass} is {@code null}, if {@code targetClass} is a single-value
+     *         type but the result set does not have exactly one column, or if a map {@code targetClass} rejects a column entry (a {@code NULL}
+     *         column in a {@code ConcurrentHashMap}, for example)
      * @throws RuntimeException if the driver fails to fetch a remaining result page, a column value cannot be converted
      *         to the requested Java type, or a bean property cannot be read or written
      */
@@ -995,7 +996,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     method is static</li>
      * <li><strong>Nested properties:</strong> Dot-notation property paths (e.g., {@code "address.city"})
      *     when no direct property is found; the value is converted for the path's last property as a top-level column
-     *     value is, and a path that does not resolve, or whose last property is read-only, is ignored</li>
+     *     value is, and a path that does not resolve, or whose last property is read-only, is ignored. A missing intermediate
+     *     bean is created through its no-args constructor and assigned first, and the value is then written into the instance its
+     *     owner holds (so a setter that stores a copy of the bean keeps the value; the created one when the getter returns a new
+     *     copy on every read)</li>
      * <li><strong>Null values:</strong> a {@code NULL} column sets the property to the default value of its type:
      *     {@code null} for a wrapper or other reference type, the primitive default for a primitive property (for
      *     example, {@code 0} for an {@code int}), and an empty value for an {@code Optional}-like property</li>
@@ -1080,6 +1084,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(entityClass);
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(entityClass);
         final Object entity = entityInfo.createBeanResult();
+        final Map<PropInfo, Object> builderIntermediates = newBuilderIntermediates(entityInfo, entity);
         PropInfo propInfo = null;
         String propName = null;
         Object propValue = null;
@@ -1099,7 +1104,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
             if (propInfo == null) {
                 if (propName.indexOf(SK._PERIOD) > 0) { //NOSONAR
-                    entityInfo.setPropValue(entity, propName, toNestedPropValue(entityInfo, propName, propValue, columnDefinitions, i), true);
+                    final List<PropInfo> chain = entityInfo.getPropInfoChain(propName);
+                    final Object nestedValue = toNestedPropValue(chain, propValue, columnDefinitions, i);
+                    final PropInfo leaf = chain.isEmpty() ? null : chain.get(chain.size() - 1);
+                    if (leaf == null || isReadOnlyProperty(leaf) || !setDottedPathValue(entity, chain, nestedValue, builderIntermediates)) {
+                        entityInfo.setPropValue(entity, propName, nestedValue, true);
+                    }
                 }
 
                 continue;
@@ -1128,19 +1138,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Converts the value of a dotted (nested-path) column, which {@link BeanInfo#setPropValue(Object, String, Object, boolean)}
      * stores, as a top-level column value is converted ({@link #toPropValue(PropInfo, Object, ColumnDefinitions, int)}), for the
-     * (element) type of the path's last property. A path that does not resolve, or whose last property is read-only, keeps the value
-     * unchanged; the setter then ignores it, as before.
+     * (element) type of the path's last property ({@code chain}, from {@link BeanInfo#getPropInfoChain(String)}). A path that does
+     * not resolve, or whose last property is read-only, keeps the value unchanged; the setter then ignores it, as before.
      * @throws RuntimeException if {@code value} cannot be converted to the last property's class
      */
-    private static Object toNestedPropValue(final BeanInfo entityInfo, final String path, final Object value, final ColumnDefinitions columnDefinitions,
-            final int index) throws RuntimeException {
+    private static Object toNestedPropValue(final List<PropInfo> chain, final Object value, final ColumnDefinitions columnDefinitions, final int index)
+            throws RuntimeException {
         // WHY: BeanInfo.setPropValue(path) stores the value through the last property's PropInfo.setPropValue, whose N.convert
         // conversion is the one the top-level path corrects, so a nested property got none of those conversions: an inet column
         // became "/127.0.0.1", a date into a LocalDateTime threw DateTimeParseException, a time's nanosecond count was read as
         // epoch milliseconds and a BLOB into a byte[] became null. The read-only check is the setter's own (it skips such a
         // property without converting), so a value it ignores is not converted, and cannot fail, here either.
-        final List<PropInfo> chain = entityInfo.getPropInfoChain(path);
-
         if (chain.isEmpty()) {
             return value;
         }
@@ -1211,7 +1219,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row to convert
      * @param supplier factory invoked with the expected column count to create the target map
      * @return a Map containing all column name-value pairs from the row
-     * @throws IllegalArgumentException if {@code row} or {@code supplier} is {@code null}
+     * @throws IllegalArgumentException if {@code row} or {@code supplier} is {@code null}, or the supplied map rejects a column entry
+     *         (a {@code NULL} column in a {@code ConcurrentHashMap} or {@code Hashtable}, for example), with the map's exception as the cause
      * @throws RuntimeException if reading the row metadata, creating a map with {@code supplier}, decoding a column value,
      *         or adding a column entry to the supplied map fails
      * @throws NullPointerException if {@code supplier} returns {@code null} for a nonempty row
@@ -1233,9 +1242,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             propValue = row.getObject(i);
 
             if (propValue instanceof Row) {
-                map.put(propName, toMap((Row) propValue, supplier));
+                putRowValue(map, "Column", propName, toMap((Row) propValue, supplier));
             } else {
-                map.put(propName, propValue);
+                putRowValue(map, "Column", propName, propValue);
             }
         }
 
@@ -2043,7 +2052,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
             res = a;
         } else if (rowType.isCollection()) {
-            final Collection<Object> c = N.newCollection((Class<Collection>) rowClass);
+            final Collection<Object> c = newRowCollection(rowClass, columnCount);
 
             for (int i = 0; i < columnCount; i++) {
                 value = row.getObject(i);
@@ -2051,7 +2060,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 if (value instanceof Row) {
                     c.add(readRow((Row) value, List.class));
                 } else {
-                    c.add(value);
+                    addRowValue(c, "Column", columnDefinitions.getName(i), value);
                 }
             }
 
@@ -2121,7 +2130,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         } else if (rowType.isCollection()) {
             mapper = row -> {
-                final Collection<Object> c = N.newCollection((Class<Collection>) rowClass);
+                final Collection<Object> c = newRowCollection(rowClass, columnCount);
                 Object value = null;
 
                 for (int i = 0; i < columnCount; i++) {
@@ -2130,7 +2139,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     if (value instanceof Row) {
                         c.add(readRow((Row) value, List.class));
                     } else {
-                        c.add(value);
+                        addRowValue(c, "Column", columnDefinitions.getName(i), value);
                     }
                 }
 
@@ -3991,7 +4000,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 }
 
                 /**
-                 * @throws IllegalArgumentException if the UDT value is non-null and the configured Java type is neither a collection, map, nor bean
+                 * @throws IllegalArgumentException if the UDT value is non-null and the configured Java type is neither a collection, map, nor bean,
+                 *         or a map type rejects a field entry (a {@code NULL} field in a {@code ConcurrentHashMap}, for example)
                  * @throws RuntimeException if reading a UDT field, creating the target object, or assigning a bean property fails
                  */
                 @Override
@@ -4004,9 +4014,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                     if (Collection.class.isAssignableFrom(javaClazz)) {
                         final Collection<Object> coll = N.newCollection((Class<Collection<Object>>) javaClazz, size);
+                        int idx = 0;
 
-                        for (int i = 0; i < size; i++) {
-                            coll.add(udtValue.getObject(i));
+                        // Positional, with each field's name for a rejected value (see the map branch below).
+                        for (final UserType.Field field : userType) {
+                            addRowValue(coll, "Field", field.getName(), udtValue.getObject(idx++));
                         }
 
                         // An immutable collection class gets a converted copy of the filled stand-in (see toRowClass).
@@ -4020,7 +4032,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                         int idx = 0;
 
                         for (final UserType.Field field : userType) {
-                            map.put(field.getName(), udtValue.getObject(idx++));
+                            putRowValue(map, "Field", field.getName(), udtValue.getObject(idx++));
                         }
 
                         // An immutable map class gets a converted copy of the filled stand-in (see toRowClass).

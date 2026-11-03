@@ -230,21 +230,22 @@ public class DynamoDBExecutorBaseDeepReview2026RecordTargetTest {
     }
 
     @Test
-    public void dottedPathIntoAnExistingRecordOrABuilderTargetFailsWhileAnUnresolvablePathIsIgnored() {
+    public void dottedPathIntoAnExistingRecordFailsWhileABuilderTargetIsFilledAndAnUnresolvablePathIsIgnored() {
         // An earlier M attribute creates the nested record; the path setter then assigns into that record in place.
         final Map<String, AttributeValue> recordThenPath = new LinkedHashMap<>();
         recordThenPath.put("inner", new AttributeValue().withM(Map.of("x", n("1"), "y", s("a"))));
         recordThenPath.put("inner.x", n("5"));
 
-        // Both failures are the ClassCastException the toEntity Javadoc of both SDKs and of DynamoDBExecutorBase names (r2D).
+        // The ClassCastException the toEntity Javadoc of both SDKs and of DynamoDBExecutorBase names (r2D).
         assertAll(() -> assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toEntity(recordThenPath, BeanWithRecord.class)),
-                // A builder-based target: the setter reads the intermediate "nested" value from the builder, so the failure is a
-                // ClassCastException even though no earlier attribute set it (the SDK v1 Javadoc named IllegalArgumentException
-                // for that case; outside review). Both SDKs.
-                () -> assertThrows(ClassCastException.class, () -> DynamoDBExecutor.toEntity(Map.of("id", s("i"), "nested.x", n("7")), BuiltBean.class)),
-                () -> assertThrows(ClassCastException.class,
-                        () -> com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntity(Map.of("id", v2(s("i")), "nested.x", v2(n("7"))),
-                                BuiltBean.class)),
+                // A builder-based target: the bean's getter was invoked on the builder to read the intermediate "nested" value,
+                // a ClassCastException until 2026-11-02; the intermediate is now created for the item and set on the builder.
+                // Both SDKs.
+                () -> assertEquals(7, DynamoDBExecutor.toEntity(Map.of("id", s("i"), "nested.x", n("7")), BuiltBean.class).getNested().getX()),
+                () -> assertEquals(7,
+                        com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntity(Map.of("id", v2(s("i")), "nested.x", v2(n("7"))), BuiltBean.class)
+                                .getNested()
+                                .getX()),
                 // A dotted name that resolves to no property chain is ignored, as for any other target.
                 () -> {
                     final BuiltBean built = DynamoDBExecutor.toEntity(Map.of("id", s("i"), "missing.x", n("7")), BuiltBean.class);

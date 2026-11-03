@@ -1312,7 +1312,8 @@ public final class AsyncDynamoDBExecutor {
      * @param key the primary key identifying the item to update, must include all key attributes,
      *           must not be {@code null}
      * @param attributeUpdates a map of attribute names to {@link AttributeValueUpdate} objects specifying
-     *                        the update actions, must not be {@code null}
+     *                        the update actions; a {@code null} or empty map is sent as no update, which (as DynamoDB's
+     *                        UpdateItem does) succeeds and creates a key-only item when none exists
      * @return a {@link ContinuableFuture} containing the {@link UpdateItemResult} with operation metadata
      * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
      * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
@@ -1376,7 +1377,8 @@ public final class AsyncDynamoDBExecutor {
      * @param tableName the name of the DynamoDB table containing the item to update, must not be {@code null}
      * @param key the primary key identifying the item to update, must include all key attributes, must not be {@code null}
      * @param attributeUpdates a map of attribute names to {@link AttributeValueUpdate} objects specifying
-     *                        the update actions (PUT, ADD, DELETE), must not be {@code null}
+     *                        the update actions (PUT, ADD, DELETE); a {@code null} or empty map is sent as no update, which
+     *                        (as DynamoDB's UpdateItem does) succeeds and creates a key-only item when none exists
      * @param returnValues specifies what values to return: "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", or "UPDATED_NEW";
      *                     may be {@code null} (treated as "NONE")
      * @return a {@link ContinuableFuture} containing the {@link UpdateItemResult} with operation metadata

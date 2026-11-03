@@ -137,10 +137,13 @@ import com.landawn.abacus.util.stream.Stream;
  * {@link QueryParameterValue} by {@link #buildQueryParameterValue(Object...)} (e.g. {@code String},
  * {@code Boolean}, integer/floating-point primitives and their boxed equivalents,
  * {@link BigDecimal}, {@code java.util.Date}/{@code java.sql.*}, {@code com.google.cloud.Date},
- * {@code com.google.cloud.Timestamp}, {@code byte[]}, and {@link java.nio.ByteBuffer} (its remaining bytes)
- * are mapped to their native BigQuery types; arrays, collections, maps, and beans are serialised to JSON; any other scalar &mdash;
+ * {@code com.google.cloud.Timestamp}, {@code java.util.Calendar} (as a {@code TIMESTAMP}), {@code byte[]}, and
+ * {@link java.nio.ByteBuffer} (its remaining bytes) are mapped to their native BigQuery types; arrays, collections, maps,
+ * and beans are serialised to a {@code JSON} parameter, which BigQuery does not coerce to an {@code ARRAY} or {@code STRUCT}
+ * (bind {@code QueryParameterValue.array(...)}/{@code struct(...)} for such a column); any other scalar &mdash;
  * including {@code java.time} types such as {@code LocalDate}/{@code LocalDateTime}/{@code Instant},
- * enums, and {@code UUID} &mdash; is bound as a {@code STRING} parameter, so use
+ * enums, {@code UUID}, {@code BigInteger}, and value wrappers such as {@code Optional} (the text of their content; an empty
+ * one binds a {@code STRING} {@code NULL}) &mdash; is bound as a {@code STRING} parameter, so use
  * {@code java.sql.Date}/{@code java.sql.Timestamp} to bind native DATE/TIMESTAMP values).
  * {@code java.sql.Time} binds as a native {@code TIME}, preserving milliseconds and using ASCII digits
  * independently of the JVM's formatting locale. A {@link BigDecimal} binds as {@code BIGNUMERIC}, which BigQuery does not
@@ -467,7 +470,8 @@ public class BigQueryExecutor {
      * ({@code @Column}, etc.). Columns whose names contain a period are written via
      * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
      * no top-level property matches; a nested bean the path has to create needs a no-argument constructor (a nested record
-     * fails the read with {@link IllegalArgumentException}; read it from a {@code STRUCT} column instead). Nested {@code STRUCT}
+     * fails the read with {@link IllegalArgumentException}; read it from a {@code STRUCT} column instead), and is assigned before
+     * the value is written into the instance its owner then holds, so a setter that copies the bean keeps it. Nested {@code STRUCT}
      * values are converted recursively, with the sub-schema of
      * their field in {@code fields}, into the property's declared type (including the element types of a {@code Map} or
      * {@code Collection} property such as {@code Map<String, Long>}, and the type arguments of a generic bean property such as
@@ -545,6 +549,7 @@ public class BigQueryExecutor {
     private static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final BeanInfo entityInfo) throws RuntimeException {
         final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(entityInfo.clazz);
         final Object entity = entityInfo.createBeanResult();
+        final Map<PropInfo, Object> builderIntermediates = newBuilderIntermediates(entityInfo, entity);
 
         PropInfo propInfo = null;
         String propName = null;
@@ -557,7 +562,7 @@ public class BigQueryExecutor {
             propName = fields.get(i).getName();
             propValue = cell.getValue();
 
-            boolean nestedProperty = false;
+            List<PropInfo> propInfoChain = null;
             propInfo = entityInfo.getPropInfo(propName);
 
             if (propInfo == null && (fieldName = column2FieldNameMap.get(propName)) != null) {
@@ -567,11 +572,11 @@ public class BigQueryExecutor {
 
             if (propInfo == null) {
                 if (propName.indexOf(SK._PERIOD) > 0) { //NOSONAR
-                    final List<PropInfo> propInfoChain = entityInfo.getPropInfoChain(propName);
+                    final List<PropInfo> chain = entityInfo.getPropInfoChain(propName);
 
-                    if (!propInfoChain.isEmpty()) {
-                        propInfo = propInfoChain.get(propInfoChain.size() - 1);
-                        nestedProperty = true;
+                    if (!chain.isEmpty()) {
+                        propInfo = chain.get(chain.size() - 1);
+                        propInfoChain = chain;
                     }
                 }
 
@@ -601,8 +606,11 @@ public class BigQueryExecutor {
                 value = decodePropertyValue(fields.get(i), cell, propInfo);
             }
 
-            if (nestedProperty) {
-                entityInfo.setPropValue(entity, propName, value, true);
+            if (propInfoChain != null) {
+                if (!setDottedPathValue(entity, propInfoChain, value, builderIntermediates)) {
+                    entityInfo.setPropValue(entity, propName, value, true);
+                }
+
                 continue;
             }
 
@@ -627,6 +635,107 @@ public class BigQueryExecutor {
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    /**
+     * Writes {@code value} to the last property of the writable dotted path {@code chain} on {@code entity}, creating and
+     * assigning each missing intermediate bean as the dependency's path setter does (no-argument constructor, then the
+     * property's setter). Returns {@code false} without creating anything when an intermediate is a collection: such a path is
+     * left to the path setter, which adds the bean it creates to the collection before assigning the collection.
+     * <p>
+     * The path setter writes the rest of the path into the instance it created, or into whatever the getter returns, so the
+     * value was silently lost when an accessor copies: a setter that stores a copy of its argument (PropInfo calls the setter of
+     * an {@code @AccessFieldByMethod} bean, for example) kept an empty intermediate, and a getter that returns a copy on every
+     * read gave a detached instance to every column after the first one through it. Here an intermediate whose getter returns
+     * the same instance twice is written in place; any other is written and then set on its owner again, innermost first, so
+     * the owner stores it through its setter (a copying setter stores a copy that holds the value). A getter's copy replaces the
+     * stored instance this way, so it must copy every property. A read-only intermediate whose getter copies cannot be set
+     * again, and the value is lost there as before.
+     * <p>
+     * For an immutable bean built through its builder, {@code entity} is the builder, which has none of the bean's getters, so
+     * the first intermediate of each path is the one created for an earlier dotted column of the same row, kept in
+     * {@code builderIntermediates} (see {@link #newBuilderIntermediates(BeanInfo, Object)}) and set on the builder after each
+     * write; a plain column of that property read before the dotted column is replaced by it.
+     *
+     * @return {@code true} if the value was written, {@code false} if the path is left to the path setter
+     * @throws RuntimeException if reading or writing a property, or creating an intermediate bean, fails (as in the path setter)
+     */
+    private static boolean setDottedPathValue(final Object entity, final List<PropInfo> chain, final Object value,
+            final Map<PropInfo, Object> builderIntermediates) {
+        final int last = chain.size() - 1;
+
+        // A collection intermediate leaves the whole path to the path setter before anything is created here: stopping part-way
+        // left beans created here for the path setter to walk again through getters, and a getter that returns a copy then
+        // lost the value the path setter alone used to keep.
+        for (int i = 0; i < last; i++) {
+            if (chain.get(i).type.isCollection()) {
+                return false;
+            }
+        }
+
+        // path[i] holds path[i + 1] through chain.get(i); bit i of setAgain marks an intermediate that is not known to be the
+        // instance its owner stores, which must be set on its owner again once the value is written into it.
+        final Object[] path = new Object[last + 1];
+        long setAgain = 0;
+        path[0] = entity;
+
+        for (int i = 0; i < last; i++) {
+            final PropInfo propInfo = chain.get(i);
+            final Object owner = path[i];
+            Object intermediate;
+
+            if (i == 0 && builderIntermediates != null) {
+                // WHY: the bean's getter invoked on a builder failed the whole row with ClassCastException ("Cannot cast
+                // Bean$Builder to Bean"), as did the path setter.
+                intermediate = builderIntermediates.get(propInfo);
+
+                if (intermediate == null) {
+                    intermediate = N.newInstance(propInfo.clazz);
+                    builderIntermediates.put(propInfo, intermediate);
+                }
+
+                setAgain |= 1L << i;
+            } else {
+                intermediate = propInfo.getPropValue(owner);
+
+                if (intermediate == null) {
+                    final Object created = N.newInstance(propInfo.clazz);
+                    propInfo.setPropValue(owner, created);
+                    intermediate = propInfo.getPropValue(owner);
+
+                    // A stable read (the same instance twice) is the stored instance, a copy when the setter copies; otherwise the
+                    // getter copies (or returns nothing), and the created instance is written and then set again.
+                    if (intermediate != created && (intermediate == null || propInfo.getPropValue(owner) != intermediate)) {
+                        intermediate = created;
+                        setAgain |= 1L << i;
+                    }
+                } else if (propInfo.getPropValue(owner) != intermediate) {
+                    // A copying getter: the copy read first is written and then set again.
+                    setAgain |= 1L << i;
+                }
+            }
+
+            path[i + 1] = intermediate;
+        }
+
+        chain.get(last).setPropValue(path[last], value);
+
+        for (int i = last - 1; setAgain != 0 && i >= 0; i--) {
+            if ((setAgain & (1L << i)) != 0 && !chain.get(i).isReadOnlyProperty) {
+                chain.get(i).setPropValue(path[i], path[i + 1]);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns the map in which {@link #setDottedPathValue(Object, List, Object, Map)} keeps the first intermediates of the
+     * dotted paths of one row when {@code entity}, the result of {@link BeanInfo#createBeanResult()}, is the builder of an
+     * immutable bean, or {@code null} for any other result (a mutable bean, or the constructor arguments of a record).
+     */
+    private static Map<PropInfo, Object> newBuilderIntermediates(final BeanInfo entityInfo, final Object entity) {
+        return entityInfo.isImmutable && !(entity instanceof Object[]) ? new HashMap<>() : null;
     }
 
     // Reads a STRUCT cell for a bean property (toEntity and the bean-class Dataset of extractData). A FieldValueList IS a
@@ -1915,7 +2024,7 @@ public class BigQueryExecutor {
      * customer.setName("John Doe");
      * customer.setEmail("john@example.com");
      *
-     * TableResult result = executor.insert(customer);   // returns a TableResult; result.getTotalRows() is the affected-row count
+     * TableResult result = executor.insert(customer);   // returns a TableResult; result.getNumDmlAffectedRows() is the affected-row count
      *
      * // Edge: a null entity is rejected before any query is built
      * executor.insert((Object) null);                   // throws IllegalArgumentException
@@ -2010,7 +2119,7 @@ public class BigQueryExecutor {
      * customerData.put("email", "jane@example.com");
      * customerData.put("createdDate", java.sql.Date.valueOf(LocalDate.now()));   // java.sql.Date binds as a native DATE parameter
      *
-     * TableResult result = executor.insert(Customer.class, customerData);   // returns a TableResult; getTotalRows() is the affected-row count
+     * TableResult result = executor.insert(Customer.class, customerData);   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name resolution)
@@ -2077,7 +2186,7 @@ public class BigQueryExecutor {
      *     "SELECT * FROM customers WHERE customer_id = ?", "CUST123").get(0);
      * customer.setEmail("newemail@example.com");
      *
-     * TableResult result = executor.update(customer);   // returns a TableResult; getTotalRows() is the affected-row count
+     * TableResult result = executor.update(customer);   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      *
      * // Edge: a null entity is rejected before any query is built
      * executor.update((Object) null);                   // throws IllegalArgumentException
@@ -2090,7 +2199,8 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null or is neither a bean nor an {@code @Entity}-annotated {@code Map} subclass, if no
      *         primary key fields are found for the entity class, if a primary-key property of the entity has a null or empty value, or if every
-     *         non-key property of the entity is null (nothing to update)
+     *         non-key property of the entity is null or not updatable (e.g. {@code @ReadOnly}, {@code @NonUpdatable}, transient, or a
+     *         sub-entity), leaving nothing to update
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #update(Object, Set)
@@ -2134,7 +2244,7 @@ public class BigQueryExecutor {
      * item.setPrice(new BigDecimal("99.99"));
      *
      * Set<String> keyFields = N.asSet("orderId", "itemId");
-     * TableResult result = executor.update(item, keyFields);   // returns a TableResult; getTotalRows() is the affected-row count
+     * TableResult result = executor.update(item, keyFields);   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      *
      * // Edge: an empty (or null) key set is rejected
      * executor.update(item, N.<String> asSet());               // throws IllegalArgumentException
@@ -2148,7 +2258,8 @@ public class BigQueryExecutor {
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null or is neither a bean nor an {@code @Entity}-annotated {@code Map} subclass, if
      *         primaryKeyNames is null or empty, if a named primary-key property of the entity has a null or empty value, or if every non-key
-     *         property of the entity is null (nothing to update)
+     *         property of the entity is null or not updatable (e.g. {@code @ReadOnly}, {@code @NonUpdatable}, transient, or a sub-entity),
+     *         leaving nothing to update
      * @throws RuntimeException if an entity property accessor or parameter converter fails, BigQuery rejects the statement or query job, or the
      *         calling thread is interrupted while waiting for the job
      * @see #update(Class, Map, Condition)
@@ -2256,7 +2367,7 @@ public class BigQueryExecutor {
      *     Filters.lt("lastAccessDate", java.sql.Date.valueOf(LocalDate.now().minusYears(1)))
      * );
      *
-     * TableResult result = executor.update(Customer.class, updates, condition);   // returns a TableResult; getTotalRows() is the affected-row count
+     * TableResult result = executor.update(Customer.class, updates, condition);   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      *
      * // Edge: empty (or null) props are rejected
      * executor.update(Customer.class, new HashMap<>(), condition);                // throws IllegalArgumentException
@@ -2327,7 +2438,7 @@ public class BigQueryExecutor {
      * Customer customer = new Customer();
      * customer.setCustomerId("CUST123");
      *
-     * TableResult result = executor.delete(customer);   // returns a TableResult; getTotalRows() is the affected-row count
+     * TableResult result = executor.delete(customer);   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      *
      * // Or delete by loading first
      * Customer existing = executor.list(Customer.class,
@@ -2367,7 +2478,7 @@ public class BigQueryExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Delete by single primary key
-     * TableResult result = executor.delete(Customer.class, "CUST123");   // returns a TableResult; getTotalRows() is the affected-row count
+     * TableResult result = executor.delete(Customer.class, "CUST123");   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      *
      * // Delete by composite key (values in key-field order)
      * TableResult result2 = executor.delete(OrderItem.class, "ORD123", "ITEM456");   // returns a TableResult
@@ -2407,7 +2518,7 @@ public class BigQueryExecutor {
      * <pre>{@code
      * // Delete with simple condition
      * Condition condition = Filters.eq("status", "inactive");
-     * TableResult result = executor.delete(Customer.class, condition);   // returns a TableResult; getTotalRows() is the affected-row count
+     * TableResult result = executor.delete(Customer.class, condition);   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      *
      * // Delete with complex condition
      * Condition complexCondition = Filters.and(
@@ -3527,10 +3638,10 @@ public class BigQueryExecutor {
      *     "SELECT * FROM customers WHERE status = ? AND created_date > ?",
      *     "active", java.sql.Date.valueOf(LocalDate.now().minusMonths(6)));   // returns a TableResult holding the selected rows
      *
-     * // DML (returned TableResult exposes the affected-row count via getTotalRows())
+     * // DML (returned TableResult exposes the affected-row count via getNumDmlAffectedRows())
      * TableResult updated = executor.execute(
      *     "UPDATE customers SET status = ? WHERE last_order_date < ?",
-     *     "inactive", java.sql.Date.valueOf(LocalDate.now().minusYears(1)));   // returns a TableResult; getTotalRows() is the affected-row count
+     *     "inactive", java.sql.Date.valueOf(LocalDate.now().minusYears(1)));   // returns a TableResult; getNumDmlAffectedRows() is the affected-row count
      *
      * // DDL (no parameters; returned TableResult has no schema)
      * executor.execute("CREATE TABLE IF NOT EXISTS test_table (id STRING, name STRING)");   // returns a TableResult
@@ -3540,7 +3651,9 @@ public class BigQueryExecutor {
      * @param parameters values bound to the placeholders, in order; may be omitted entirely if the
      *                   statement has no parameters
      * @return the {@link TableResult} returned by BigQuery; for SELECT statements this contains the
-     *         rows, for DML the affected-row count via {@link TableResult#getTotalRows()}, for DDL
+     *         rows, for DML the affected-row count via {@link TableResult#getNumDmlAffectedRows()} (not
+     *         {@link TableResult#getTotalRows()}, which the client sets to that count only when the statement completes
+     *         within the initial {@code jobs.query} call and otherwise to the result's row count, {@code 0}), for DDL
      *         a result with no schema
      * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
      *         typed {@code QueryParameterValue})
@@ -3744,11 +3857,14 @@ public class BigQueryExecutor {
      *       {@code java.util.Date}, {@code java.sql.Date}/{@code Time}/{@code Timestamp},
      *       {@code com.google.cloud.Date}, {@code com.google.cloud.Timestamp}, and {@code byte[]}
      *       are mapped to their canonical BigQuery types ({@link BigDecimal} to {@code BIGNUMERIC}, see <i>Parameter Binding</i>
-     *       in the class documentation); a {@link ByteBuffer} binds its remaining bytes as
+     *       in the class documentation); a {@link java.util.Calendar} binds as a {@code TIMESTAMP}, like {@code java.util.Date};
+     *       a {@link ByteBuffer} binds its remaining bytes as
      *       {@code BYTES} without changing its position. {@code java.sql.Time} preserves milliseconds in its
      *       native {@code TIME} parameter, using ASCII digits regardless of the JVM's formatting locale.</li>
      *   <li>Arrays, collections, maps, and beans are serialised to JSON via
-     *       {@link QueryParameterValue#json(String)}.</li>
+     *       {@link QueryParameterValue#json(String)}. BigQuery does not coerce a {@code JSON} parameter to an {@code ARRAY} or
+     *       {@code STRUCT}; for such a column bind {@code QueryParameterValue.array(...)} or {@code QueryParameterValue.struct(...)}
+     *       instead.</li>
      *   <li>Any other scalar (e.g. {@code java.time} types such as {@code LocalDate}, enums,
      *       {@code UUID}) is bound as a {@code STRING} parameter from its string form.</li>
      * </ol>
@@ -3789,6 +3905,12 @@ public class BigQueryExecutor {
                 final byte[] bytes = new byte[buffer.remaining()];
                 buffer.duplicate().get(bytes);
                 queryParameterValues.add(QueryParameterValue.bytes(bytes));
+            } else if (param instanceof final java.util.Calendar calendar) {
+                // A TIMESTAMP cell is read into a Calendar property, but a Calendar (GregorianCalendar etc. are no
+                // queryParameterMap keys) fell through to the STRING fallback, whose text ends in a bracketed zone id
+                // ("...-08:00[America/Los_Angeles]") that BigQuery cannot coerce to TIMESTAMP: writing such a property
+                // back (insert/update) or comparing with it failed. Bind it as java.util.Date is bound.
+                queryParameterValues.add(QueryParameterValue.timestamp(TimeUnit.MILLISECONDS.toMicros(calendar.getTimeInMillis())));
             } else {
                 queryParameterValues.add(queryParameterMap.getOrDefault(param.getClass(), defaultQueryParameterCreator).apply(param));
             }

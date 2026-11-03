@@ -3681,7 +3681,9 @@ public final class MongoCollectionMapper<T> {
      * instead, use {@link MongoCollectionExecutor#distinct(String, Class)} with an explicit value class.</p>
      *
      * <p>For Map, {@link Document} or {@code Object} results, dotted field names produce nested rows, including paths
-     * inside an embedded {@code _id}: {@code distinct("_id.part")} yields {@code {_id: {part: <value>}}} rows.</p>
+     * inside an embedded {@code _id}: {@code distinct("_id.part")} yields {@code {_id: {part: <value>}}} rows. An object-array
+     * or {@link Collection} {@code T} receives the row's one top-level value, so for a dotted field that is the nested
+     * document ({@code [{b: <value>}]} for {@code distinct("a.b")}), as from {@link MongoCollectionExecutor#groupBy(String, Class)}.</p>
      *
      * <p>Because the values come from a {@code $group} stage rather than the driver's native {@code distinct}
      * command, an array-valued field is <i>not</i> unwound: each distinct whole array is one result (the native
@@ -3795,7 +3797,8 @@ public final class MongoCollectionMapper<T> {
      * {@code T} such as {@code String} receives each value directly and skips the {@code null} value, as in
      * {@link #distinct(String)}). For Map, {@link Document} or {@code Object} results, dotted field names produce nested
      * rows, including paths inside an embedded {@code _id} ({@code distinct("_id.part", filter)} yields
-     * {@code {_id: {part: <value>}}} rows), as in {@link #distinct(String)}. As with {@link #distinct(String)}, an
+     * {@code {_id: {part: <value>}}} rows), and an object-array or {@link Collection} {@code T} receives the row's one top-level
+     * value, both as in {@link #distinct(String)}. As with {@link #distinct(String)}, an
      * array-valued field is not unwound: each
      * distinct whole array is one result. To obtain raw scalar values instead, use
      * {@link MongoCollectionExecutor#distinct(String, Bson, Class)} with an explicit value class.</p>

@@ -48,8 +48,9 @@ import com.landawn.abacus.util.stream.Stream;
  * <p>All methods in this class are asynchronous counterparts to the synchronous methods in {@link HBaseExecutor}.
  * Each method submits a task that invokes the corresponding synchronous method on the {@link AsyncExecutor}
  * supplied at construction time (or, when none is supplied, on {@link HBaseExecutor#DEFAULT_ASYNC_EXECUTOR},
- * a thread pool sized to {@code max(64, CPU_CORES * 8)} core threads and {@code max(128, CPU_CORES * 16)}
- * maximum threads, with a 180-second keep-alive). Every method in this class uses that same executor,
+ * a shared pool of {@code max(64, CPU_CORES * 8)} core threads; its larger maximum size never takes effect
+ * because {@link AsyncExecutor} queues further tasks in an unbounded queue, so at most that many operations
+ * run at once and later submissions wait). Every method in this class uses that same executor,
  * so the threading model is uniform across operations.</p>
  *
  * <p><b>Ordering guarantees:</b> tasks are submitted to the executor in the order calls are made,
@@ -114,7 +115,7 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
- * <li><strong>Thread Pool Sizing</strong>: Default pool size scales with CPU cores (8-16x)</li>
+ * <li><strong>Thread Pool Sizing</strong>: The default pool runs at most {@code max(64, CPU_CORES * 8)} operations at once; further submissions queue</li>
  * <li><strong>Connection Sharing</strong>: Shares the underlying HBase {@code Connection} with the wrapped {@link HBaseExecutor}</li>
  * <li><strong>Resource Management</strong>: Scan streams open and own an HBase {@code ResultScanner} when consumed; close them after use</li>
  * <li><strong>Error Handling</strong>: Exceptions thrown by the underlying call are propagated through the returned {@code ContinuableFuture}</li>

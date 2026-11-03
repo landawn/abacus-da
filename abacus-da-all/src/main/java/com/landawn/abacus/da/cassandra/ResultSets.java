@@ -113,7 +113,7 @@ final class ResultSets {
     }
 
     // A named static wrapper avoids the synthetic capture of the initial page in an anonymous class.
-    // Driver 4.19.3 consumes the encoded rows, but the captured page still retains its emptied queue's backing storage
+    // Driver 4.19 (through 4.19.4) consumes the encoded rows, but the captured page still retains its emptied queue's backing storage
     // and iterator state after advancing to later pages.
     private static final class PagedResultSet implements ResultSet {
         private AsyncResultSet currentResultSet;

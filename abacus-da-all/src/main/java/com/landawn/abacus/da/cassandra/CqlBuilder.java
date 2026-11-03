@@ -35,6 +35,7 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
+import java.util.EnumMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -306,6 +307,18 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             "into", "is", "keyspace", "limit", "materialized", "modify", "norecursive", "not", "of", "on", "or", "order", "primary", "rename", "revoke",
             "schema", "select", "set", "table", "to", "token", "truncate", "unlogged", "update", "use", "using", "view", "where", "with");
 
+    /**
+     * Per naming policy, whether an entity class's full select-property list renders a reserved-keyword column (see
+     * {@code hasReservedKeywordSelectColumn()}). Populated in the static initializer and never structurally changed afterwards.
+     */
+    private static final Map<NamingPolicy, Map<Class<?>, Boolean>> RESERVED_KEYWORD_SELECT_COLUMN_POOL = new EnumMap<>(NamingPolicy.class);
+
+    static {
+        for (final NamingPolicy namingPolicy : NamingPolicy.values()) {
+            RESERVED_KEYWORD_SELECT_COLUMN_POOL.put(namingPolicy, new ConcurrentHashMap<>());
+        }
+    }
+
     /** Length of the {@code " AS "} separator the parent builder renders before a SELECT alias. */
     private static final int SPACE_AS_SPACE_LENGTH = 4;
 
@@ -493,8 +506,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     /**
      * Validates the structural preconditions of an {@code into(...)} call before its table argument is checked.
      * For a non-batch INSERT this mirrors the parent builder's own (private) {@code into(...)} state checks, which
-     * the parent performs only after validating the table name; the parent repeats them harmlessly when
-     * {@link #into(String)} delegates.
+     * would otherwise run only after this class has validated the table name (so a closed or non-INSERT builder still
+     * reports {@code IllegalStateException} first); the parent repeats them harmlessly when {@link #into(String)} delegates.
      *
      * @return {@code true} if this builder holds batch-INSERT rows (staged by {@code batchInsert(...)})
      * @throws IllegalStateException if this builder is closed, the operation is not INSERT, no columns or values have
@@ -1701,7 +1714,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     /**
      * Finalizes the CQL statement, releases the builder's internal resources and returns the CQL text together with
      * its parameters. A requested {@link #allowFiltering() ALLOW FILTERING} clause is appended here, after every
-     * other clause, because CQL requires it to be the last clause of a SELECT statement.
+     * other clause, because CQL requires it to be the last clause of a SELECT statement. If the statement ends with a
+     * qualified JOIN that still lacks its {@code on(...)}/{@code using(...)} condition, the parent builder rejects it
+     * without closing this builder, which is then left unchanged.
      *
      * @return the built CQL and its parameters
      * @throws IllegalStateException if this builder is closed, or the statement is incomplete (for example an UPDATE
@@ -1711,11 +1726,25 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     public SP build() throws IllegalStateException {
         assertNotClosed();
 
-        if (_allowFilteringSpecified) {
-            _sb.append(_SPACE_ALLOW_FILTERING);
+        if (!_allowFilteringSpecified) {
+            return super.build();
         }
 
-        return super.build();
+        final int lengthBeforeAllowFiltering = _sb.length();
+        _sb.append(_SPACE_ALLOW_FILTERING);
+
+        try {
+            return super.build();
+        } catch (final RuntimeException | Error e) {
+            // WHY: the parent rejects an incomplete qualified JOIN before it releases the builder, leaving it open for a retry
+            // (on(...) then build()); the clause appended above stayed mid-statement and was appended once more by that retry:
+            // "SELECT a FROM t JOIN u ALLOW FILTERING ON t.id = u.id ALLOW FILTERING". A released builder has no buffer left.
+            if (_sb != null) {
+                _sb.setLength(lengthBeforeAllowFiltering);
+            }
+
+            throw e;
+        }
     }
 
     /**
@@ -1905,11 +1934,31 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // cached select-property list; for an entity with a reserved-keyword column, an equal copy makes the parent render
         // each column through the hook instead (same text for every other column; the shared cache is left untouched).
         if (_entityInfo != null && _propOrColumnNames != null && _propOrColumnNames == QueryUtil.selectPropNames(_entityClass, false, null)
-                && hasReservedKeywordColumn(_propOrColumnNames)) {
+                && hasReservedKeywordSelectColumn()) {
             _propOrColumnNames = new ArrayList<>(_propOrColumnNames);
         }
 
         return super.from(tableReference);
+    }
+
+    /**
+     * {@link #hasReservedKeywordColumn(Collection)} of the current entity's full select-property list, memoized per naming
+     * policy and entity class: the answer depends only on that list and the class's column mapping, both fixed per class and
+     * policy, while scanning every column again cost about as much as the rest of a {@code selectFrom(entityClass)} query.
+     */
+    private boolean hasReservedKeywordSelectColumn() {
+        final Map<Class<?>, Boolean> cache = _namingPolicy == null ? null : RESERVED_KEYWORD_SELECT_COLUMN_POOL.get(_namingPolicy);
+        Boolean result = cache == null ? null : cache.get(_entityClass);
+
+        if (result == null) {
+            result = hasReservedKeywordColumn(_propOrColumnNames);
+
+            if (cache != null) {
+                cache.put(_entityClass, result);
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -3035,18 +3084,21 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             return false;
         }
 
+        // Checked before anything is allocated: most column names (first_name, user_id2) hold a '_' or a digit.
+        for (int i = start; i < end; i++) {
+            final char ch = text.charAt(i);
+
+            if (!(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z')) {
+                return false; // a digit or '_': no keyword contains one
+            }
+        }
+
         final char[] lowerCase = new char[len];
 
         for (int i = 0; i < len; i++) {
             final char ch = text.charAt(start + i);
 
-            if (ch >= 'A' && ch <= 'Z') {
-                lowerCase[i] = (char) (ch + ('a' - 'A'));
-            } else if (ch >= 'a' && ch <= 'z') {
-                lowerCase[i] = ch;
-            } else {
-                return false; // a digit or '_': no keyword contains one
-            }
+            lowerCase[i] = ch <= 'Z' ? (char) (ch + ('a' - 'A')) : ch;
         }
 
         return RESERVED_CQL_KEYWORDS.contains(new String(lowerCase));

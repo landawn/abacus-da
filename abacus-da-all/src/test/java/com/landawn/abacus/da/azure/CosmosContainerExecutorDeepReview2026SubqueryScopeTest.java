@@ -8,7 +8,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
-import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +35,7 @@ class CosmosContainerExecutorDeepReview2026SubqueryScopeTest {
         container = mock(CosmosContainer.class);
         rows = mock(CosmosPagedIterable.class);
         query = ArgumentCaptor.forClass(SqlQuerySpec.class);
-        when(rows.stream()).thenAnswer(invocation -> Stream.empty());
+        when(rows.streamByPage()).thenAnswer(CosmosPagedTestSupport.noPages());
         when(container.queryItems(query.capture(), any(), eq(Item.class))).thenReturn(rows);
     }
 
