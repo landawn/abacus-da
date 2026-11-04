@@ -77,10 +77,24 @@ import reactor.core.publisher.Mono;
  *       {@code Class<T>} parameter is needed. {@link #collectionExecutor()} is a synchronous accessor.</li>
  *   <li><strong>Automatic conversion:</strong> The framework's MongoDB mapping helpers convert the
  *       outer entity to and from a {@link Document}; a {@link String}- or {@link ObjectId}-typed ID
- *       property annotated with {@code @Id} (or named {@code id}) is mapped to MongoDB's {@code _id}. An
+ *       property annotated with {@code @Id} (or named {@code id}) is mapped to MongoDB's {@code _id}. The type is the one
+ *       the entity class gives the property: an ID declared by a generic superclass ({@code class Base<K> { @Id K id; }})
+ *       is mapped for {@code Entity extends Base<String>} or {@code Base<ObjectId>}, whether or not the subclass overrides
+ *       the accessors (earlier versions tested the erased {@code Object} type and stored such an ID as an ordinary
+ *       {@code id} field next to a generated {@code _id}). Such a stored document still reads back with its own stored
+ *       {@code id} (a non-null {@code id} field next to {@code _id} marks it), but the id-keyed methods and {@code _id}
+ *       filters do not match it by that id, so a replace or update by that id matches nothing: migrate such documents by
+ *       storing the {@code id} value as their {@code _id}. New inserts store no {@code id} field, so filters on the
+ *       {@code id} field stop matching them (filter on {@code _id}, as the id-keyed methods do). Not mapped for
+ *       {@code Base<Long>}. An
  *       ID property of any other type (e.g. {@code long}) is stored as an ordinary field under its own
- *       name, and MongoDB assigns a separate {@code _id}. The collection codec registry handles BSON
- *       values stored inside the document.</li>
+ *       name, and MongoDB assigns a separate {@code _id}. So is a non-null {@code id} component of a record entity, which has
+ *       no setter to receive {@code _id}: the record reads back with that component taken from its own field, but the
+ *       id-keyed methods (such as {@link #get(String)}) and {@code _id} filters do not match it. A record inserted with a
+ *       {@code null} id stores no such field; when that component is {@code String}- or {@code ObjectId}-typed it reads back
+ *       with the generated {@code _id} in it (as a hex string for a {@code String} component), while one of any other type
+ *       (such as {@code Long}) reads back {@code null}. The collection codec
+ *       registry handles BSON values stored inside the document.</li>
  *   <li><strong>BSON field names:</strong> names in filters and sorts, and {@code propName}/{@code fieldName}
  *       arguments, are BSON field names, so the mapped id property is addressed as {@code _id}: no {@code id} field
  *       is stored, so {@code Filters.eq("id", value)} matches nothing and {@code queryForString("id", filter)}
@@ -102,6 +116,11 @@ import reactor.core.publisher.Mono;
  *       is skipped by a {@code Flux} and makes a {@code Mono} complete empty; the blocking
  *       {@link com.landawn.abacus.da.mongodb.MongoCollectionMapper} can return {@code null} list elements or a
  *       present-but-null value in those cases.</li>
+ *   <li><strong>Object-array and {@link Collection} entity types:</strong> such a {@code T} (for example {@code Object[]})
+ *       receives the field values of each returned document positionally, {@code _id} included when present
+ *       ({@code {_id: 7, a: 1}} as {@code [7, 1]}), from every method that emits {@code T}, also when one field is selected; the blocking
+ *       {@link com.landawn.abacus.da.mongodb.MongoCollectionMapper#list(Bson)} instead converts the sole non-{@code _id}
+ *       field (see {@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor#list(Collection, Bson, Bson, int, int, Class)}).</li>
  *   <li><strong>Error propagation:</strong> Database errors are signalled via
  *       {@code Subscriber.onError}; argument validation and write-value conversion can fail
  *       synchronously while the publisher is being built.</li>
@@ -121,7 +140,8 @@ import reactor.core.publisher.Mono;
  *   <li>Have a default (no-argument) constructor for instantiation</li>
  *   <li>Use proper getter/setter methods for property access</li>
  *   <li>Mark ID fields with the {@code @Id} annotation or use the {@code "id"} property name, typed as
- *       {@link String} or {@link ObjectId} so they map to {@code _id}</li>
+ *       {@link String} or {@link ObjectId} (in the entity class, which may bind a generic superclass's type
+ *       variable to one of them) so they map to {@code _id}</li>
  *   <li>Use MongoDB-compatible data types for serialization</li>
  *   <li>Be thread-safe if used across stream boundaries</li>
  * </ul>
@@ -1789,7 +1809,11 @@ public final class MongoCollectionMapper<T> {
      * convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.). Delegates to
      * {@link MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)}. A dotted {@code propName} such as
      * {@code "address.city"} reads the nested value; a dotted path that traverses a non-null value that is not a
-     * {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the publisher.</p>
+     * {@link Document} (such as an array) fails with a {@link ClassCastException} signalled through the publisher. An
+     * embedded document requested as a bean class is read as the embedded document of a bean property is read (the elements
+     * of a {@code List<Long>} property become {@code Long}s, a {@code LocalDate} property is read in UTC, a {@code String} or
+     * {@code ObjectId} id property takes the document's own {@code id} field, if any, over its {@code _id}), and an array of
+     * embedded documents requested as a bean array likewise element by element.</p>
      *
      * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
      * document matches the filter, or when a matching document's named field is absent or BSON null (or
@@ -1827,7 +1851,8 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher, for example an {@link IllegalArgumentException} when the
+     * selected value cannot be converted to {@code valueType}, or the failure of constructing or populating a result bean.</p>
      *
      * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
      * this failure is signalled by the publisher after subscription.</p>

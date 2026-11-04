@@ -164,7 +164,8 @@ import com.mongodb.client.result.UpdateResult;
  * {@code findOneAndXxx}), plus the abacus-style bulk helpers {@code bulkInsert}/{@code bulkWrite}.</p>
  *
  * <p><b>Field names:</b> filters, sorts, projections, {@code selectPropNames} and {@code propName} name stored document fields,
- * not bean properties. An entity's {@code String} or {@link ObjectId} id property is stored as {@code _id} (a 24-hex-digit
+ * not bean properties. An entity's {@code String} or {@link ObjectId} id property (typed so by the entity class, which may
+ * bind the type variable of an id declared by a generic superclass) is stored as {@code _id} (a 24-hex-digit
  * {@code String} as an {@link ObjectId}; see {@link MongoDBBase#toDocument(Object)}), so it is queried as {@code "_id"}:
  * {@code Filters.eq("id", ...)} matches nothing, and {@code queryForSingleValue("id", ...)} reads {@code null} from a matched document.</p>
  *
@@ -1135,7 +1136,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method performs a find operation and returns all matching documents as a List of the specified type.
      * Each document is automatically converted to the target type. This provides type safety and eliminates
-     * manual conversion code.</p>
+     * manual conversion code. An object-array or {@link Collection} {@code rowType} is read from each document's sole
+     * non-{@code _id} field (a document with several is rejected), as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1148,7 +1151,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a List containing all matching converted objects (empty list if none found)
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple non-{@code
-     *         _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     *         _id} fields for a scalar, object-array or {@link Collection} result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1166,7 +1169,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method performs a find operation with pagination support, returning a specific range of
      * matching documents converted to the specified type. This is useful for implementing paginated
-     * results and managing memory usage with large datasets.</p>
+     * results and managing memory usage with large datasets. An object-array or {@link Collection} {@code rowType} is
+     * read from each document's sole non-{@code _id} field (a document with several is rejected), as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1183,7 +1188,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a List containing the specified range of matching converted objects
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
-     *         rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection
+     *         rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar, object-array or {@link Collection} result type, inconsistent scalar projection
      *         fields, or a value that cannot be converted to the requested type
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -1202,7 +1207,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method performs a find operation with field projection, returning all matching documents
      * converted to the specified type. Only the selected properties are retrieved from the database,
-     * reducing network bandwidth and memory usage while providing type safety.</p>
+     * reducing network bandwidth and memory usage while providing type safety. A single field selected into a scalar
+     * type and an object-array or {@link Collection} {@code rowType} are read as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1216,7 +1223,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a list of all matching documents converted to the specified type
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         non-{@code _id} fields for a scalar, object-array or {@link Collection} result type, inconsistent scalar projection fields, or a value that cannot be
      *         converted to the requested type, or if {@code selectPropNames} contains a null name (the driver rejects it while encoding
      *         the query, whatever {@code rowType} is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
@@ -1238,7 +1245,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method combines field projection, filtering, and pagination to efficiently retrieve
      * a specific subset of matching documents. This is essential for implementing paginated UIs
-     * while minimizing data transfer through projection.</p>
+     * while minimizing data transfer through projection. A single field selected into a scalar type and an object-array
+     * or {@link Collection} {@code rowType} are read as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1254,8 +1262,8 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a paginated list of matching documents converted to the specified type
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or
-     *         if {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type,
-     *         inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or if
+     *         if {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar, object-array or
+     *         {@link Collection} result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or if
      *         {@code selectPropNames} contains a null name and {@code count} is positive (the driver rejects it while encoding the query,
      *         whatever {@code rowType} is; a {@code count} of 0 sends no projection)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
@@ -1277,7 +1285,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method combines filtering, field projection, and sorting to retrieve all matching
      * documents in a predictable order with only the selected fields. The sorting ensures consistent
-     * result ordering, which is important for UI display and pagination consistency.</p>
+     * result ordering, which is important for UI display and pagination consistency. A single field selected into a
+     * scalar type and an object-array or {@link Collection} {@code rowType} are read as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1293,7 +1303,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a sorted list of all matching documents converted to the specified type
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple
-     *         non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         non-{@code _id} fields for a scalar, object-array or {@link Collection} result type, inconsistent scalar projection fields, or a value that cannot be
      *         converted to the requested type, or if {@code selectPropNames} contains a null name (the driver rejects it while encoding
      *         the query, whatever {@code rowType} is)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
@@ -1327,8 +1337,9 @@ public final class MongoCollectionExecutor {
      * <p>An object-array or {@link Collection} {@code rowType} (such as {@code Object[]} or {@code List}) is read as
      * {@link MongoDBBase#toList(com.mongodb.client.MongoIterable, Class)} reads it: each document's sole non-{@code _id} field is
      * converted to it (a projected array field reads into a {@code List}), and a document with several non-{@code _id} fields is
-     * rejected. {@code findFirst} and {@code stream} instead return each document's field values positionally for such a type
-     * ({@code {_id: 7, a: 1}} as {@code [7, 1]}).</p>
+     * rejected. Unlike for a single field selected into a scalar type, a document that has only its {@code _id} yields {@code null}
+     * when another returned document has a non-{@code _id} field, but its converted {@code _id} when none does. {@code findFirst} and {@code stream}
+     * instead return each document's field values positionally for such a type ({@code {_id: 7, a: 1}} as {@code [7, 1]}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1346,8 +1357,8 @@ public final class MongoCollectionExecutor {
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or
-     *         if {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type,
-     *         inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or if
+     *         if {@code rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar, object-array or
+     *         {@link Collection} result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type, or if
      *         {@code selectPropNames} contains a null name and {@code count} is positive (the driver rejects it while encoding the query,
      *         whatever {@code rowType} is; a {@code count} of 0 sends no projection)
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
@@ -1419,7 +1430,12 @@ public final class MongoCollectionExecutor {
      * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
      * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
      * returned document has the projected field, but its converted {@code _id} when none does. Use
-     * {@link #list(Collection, Bson, Bson, Class)} to always get {@code null} for a missing field.</p>
+     * {@link #list(Collection, Bson, Bson, Class)} to always get {@code null} for a missing field of a single-value
+     * {@code rowType}. An object-array or {@link Collection} {@code rowType} is read the same way, from the sole
+     * non-{@code _id} field (unlike {@code findFirst} and {@code stream}, which return each document's field values
+     * positionally for such a type), but that advice does not apply to it: every {@code list} overload, the
+     * {@link Collection}-selection ones included, yields an {@code _id}-only document's converted {@code _id} for such a
+     * type when no returned document has a non-{@code _id} field.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1435,7 +1451,7 @@ public final class MongoCollectionExecutor {
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of all matching documents converted to the specified type, may be empty but never null
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null, or if a returned document has multiple non-{@code
-     *         _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     *         _id} fields for a scalar, object-array or {@link Collection} result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
@@ -1460,9 +1476,12 @@ public final class MongoCollectionExecutor {
      * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
      * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
      * returned document has the projected field, but its converted {@code _id} when none does. Use
-     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field.
-     * An object-array or {@link Collection} {@code rowType} is read the same way, from the sole non-{@code _id} field
-     * (unlike {@code findFirst} and {@code stream}, which return each document's field values positionally for such a type).</p>
+     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field of a single-value
+     * {@code rowType}. An object-array or {@link Collection} {@code rowType} is read the same way, from the sole
+     * non-{@code _id} field (unlike {@code findFirst} and {@code stream}, which return each document's field values
+     * positionally for such a type), but that advice does not apply to it: every {@code list} overload, the
+     * {@link Collection}-selection ones included, yields an {@code _id}-only document's converted {@code _id} for such a
+     * type when no returned document has a non-{@code _id} field.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1486,7 +1505,7 @@ public final class MongoCollectionExecutor {
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
      * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if {@code
-     *         rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection
+     *         rowType} is null, or if a returned document has multiple non-{@code _id} fields for a scalar, object-array or {@link Collection} result type, inconsistent scalar projection
      *         fields, or a value that cannot be converted to the requested type
      * @throws CodecConfigurationException if a request value or requested result type has no usable BSON codec
      * @throws IllegalStateException if the {@code MongoClient} that owns the underlying collection has been closed
@@ -1973,7 +1992,10 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored. This is the foundational method used by the primitive {@code queryForXxx}
      * convenience methods. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve
-     * to the nested value.</p>
+     * to the nested value. An embedded document requested as a bean class is read as the embedded document of a bean property
+     * is read (the elements of a {@code List<Long>} property become {@code Long}s, a {@code LocalDate} property is read in UTC,
+     * a {@code String} or {@code ObjectId} id property takes the document's own {@code id} field, if any, over its {@code _id}),
+     * and an array of embedded documents requested as a bean array likewise element by element.</p>
      *
      * <p><b>Empty vs. present semantics:</b> this method returns {@code Nullable.empty()} when no nonempty document is found.
      * For a matched document, the {@code Nullable} holds the converted field value. A missing or BSON {@code null} field
@@ -2002,7 +2024,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
-     *         while converting the selected value
+     *         while converting the selected value, or constructing or populating a result bean fails
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Nullable
      */
@@ -2043,7 +2065,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve
-     * to the nested value.</p>
+     * to the nested value. An embedded document requested as a bean class is read as the embedded document of a bean property
+     * is read, as by {@link #queryForSingleValue(String, Bson, Class)}.</p>
      *
      * <p><b>Empty vs. present semantics:</b> this method returns {@code Optional.empty()} when no nonempty document is found.
      * For a matched document, its selected field is converted before {@link Optional#of(Object)} wraps the result.
@@ -2076,7 +2099,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
-     *         while converting the selected value
+     *         while converting the selected value, or constructing or populating a result bean fails
      * @throws NullPointerException if a nonempty document is matched and conversion of its selected field to {@code valueType}
      *         yields {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(String, Bson, Class)

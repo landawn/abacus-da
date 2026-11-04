@@ -1141,7 +1141,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking find operation that returns all documents matching the
      * filter criteria, with each document automatically converted to the target type. The operation
-     * is executed on the thread pool and results are delivered through the returned ContinuableFuture.</p>
+     * is executed on the thread pool and results are delivered through the returned ContinuableFuture.
+     * An object-array or {@link Collection} {@code rowType} is read from each document's sole non-{@code _id} field (a
+     * document with several fails the returned future), as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1176,7 +1178,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking paginated find operation, retrieving a subset of matching
      * documents starting from the specified offset and limited to the specified count. Each document
-     * is converted to the target type. This is useful for implementing pagination in applications.</p>
+     * is converted to the target type. This is useful for implementing pagination in applications.
+     * An object-array or {@link Collection} {@code rowType} is read from each document's sole non-{@code _id} field (a
+     * document with several fails the returned future), as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1212,7 +1216,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking find operation with field projection, retrieving only the
      * specified fields for all matching documents. Each document is converted to the target type.
-     * This reduces network traffic and improves performance for documents with many fields.</p>
+     * This reduces network traffic and improves performance for documents with many fields. A single field selected
+     * into a scalar type and an object-array or {@link Collection} {@code rowType} are read as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1250,7 +1256,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method combines pagination and field projection in a non-blocking operation.
      * Only the specified fields are retrieved for documents within the offset/count range,
-     * and each document is converted to the target type.</p>
+     * and each document is converted to the target type. A single field selected into a scalar type and an
+     * object-array or {@link Collection} {@code rowType} are read as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1290,7 +1298,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking find operation with field projection and sorting.
      * Documents are sorted according to the specified criteria before being returned, with only
-     * the specified fields included in each document.</p>
+     * the specified fields included in each document. A single field selected into a scalar type and an
+     * object-array or {@link Collection} {@code rowType} are read as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1337,8 +1347,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>An object-array or {@link Collection} {@code rowType} (such as {@code Object[]} or {@code List}) is read from
      * each document's sole non-{@code _id} field (a projected array field reads into a {@code List}), and a document with
-     * several non-{@code _id} fields fails the returned future. {@code findFirst} and {@code stream} instead return each
-     * document's field values positionally for such a type ({@code {_id: 7, a: 1}} as {@code [7, 1]}).</p>
+     * several non-{@code _id} fields fails the returned future. Unlike for a single field selected into a scalar type, a
+     * document that has only its {@code _id} yields {@code null} when another returned document has a non-{@code _id} field, but its converted
+     * {@code _id} when none does. {@code findFirst} and {@code stream} instead return each document's field values
+     * positionally for such a type ({@code {_id: 7, a: 1}} as {@code [7, 1]}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1385,9 +1397,14 @@ public final class AsyncMongoCollectionExecutor {
      * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
      * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
      * returned document has the projected field, but its converted {@code _id} when none does. Use
-     * {@link #list(Collection, Bson, Bson, Class)} to always get {@code null} for a missing field. Result types that
-     * can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw projected
-     * documents.</p>
+     * {@link #list(Collection, Bson, Bson, Class)} to always get {@code null} for a missing field of a single-value
+     * {@code rowType}. An object-array or {@link Collection} {@code rowType} is read the same way, from the sole
+     * non-{@code _id} field (unlike {@code findFirst} and {@code stream}, which return each document's field values
+     * positionally for such a type), but that advice does not apply to it: every {@code list} overload, the
+     * {@link Collection}-selection ones included, yields an {@code _id}-only document's converted {@code _id} for such a
+     * type when no returned document has a non-{@code _id} field.
+     * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the raw
+     * projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1430,11 +1447,13 @@ public final class AsyncMongoCollectionExecutor {
      * that has only its {@code _id} (for example because it lacks the projected field) yields {@code null} (the
      * primitive default, such as {@code 0}, for a primitive class token such as {@code int.class}) when another
      * returned document has the projected field, but its converted {@code _id} when none does. Use
-     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field. An
-     * object-array or {@link Collection} {@code rowType} is read the same way, from the sole non-{@code _id} field
-     * (unlike {@code findFirst} and {@code stream}, which return each document's field values positionally for such a
-     * type). Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson}) receive the
-     * raw projected documents.</p>
+     * {@link #list(Collection, Bson, Bson, int, int, Class)} to always get {@code null} for a missing field of a
+     * single-value {@code rowType}. An object-array or {@link Collection} {@code rowType} is read the same way, from the
+     * sole non-{@code _id} field (unlike {@code findFirst} and {@code stream}, which return each document's field values
+     * positionally for such a type), but that advice does not apply to it: every {@code list} overload, the
+     * {@link Collection}-selection ones included, yields an {@code _id}-only document's converted {@code _id} for such a
+     * type when no returned document has a non-{@code _id} field. Result types that can directly hold a {@link Document}
+     * (such as {@code Object} or {@link Bson}) receive the raw projected documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2014,7 +2033,11 @@ public final class AsyncMongoCollectionExecutor {
      * specified type.
      *
      * <p>Only the named property of the first matched document is read; any remaining documents or
-     * fields are ignored. The value is converted to {@code valueType} via
+     * fields are ignored. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve to the nested
+     * value. An embedded document requested as a bean class is read as the embedded document of a bean property is read
+     * (the elements of a {@code List<Long>} property become {@code Long}s, a {@code LocalDate} property is read in UTC, a
+     * {@code String} or {@code ObjectId} id property takes the document's own {@code id} field, if any, over its {@code _id}),
+     * and an array of embedded documents requested as a bean array likewise element by element. Any other value is converted to {@code valueType} via
      * binary-aware scalar conversion: binary payloads can be read as byte arrays or readable {@link java.nio.ByteBuffer} values;
      * a BSON date requested as {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC;
      * text enclosed in {@code [...]} requested as an array type whose elements accept text (such as {@code String[]} or
@@ -2036,7 +2059,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * <p>The returned future completes exceptionally if the delegated {@code queryForSingleValue} operation fails while converting documents or
-     * executing the MongoDB command.</p>
+     * executing the MongoDB command. This includes an {@link IllegalArgumentException} when the selected value cannot be converted to
+     * {@code valueType}, a {@link ClassCastException} when a dotted property path traverses a non-null value that is not a Document, and
+     * the failure of constructing or populating a result bean.</p>
      *
      * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
      * this failure is reported by exceptional completion of the returned future.</p>
@@ -2070,7 +2095,9 @@ public final class AsyncMongoCollectionExecutor {
      * specified type and wrapped in an {@link Optional} that is guaranteed non-null when present.
      *
      * <p>Only the named property of the first matched document is read; any remaining documents or
-     * fields are ignored.</p>
+     * fields are ignored. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve to the nested
+     * value, and the value is converted as by {@link #queryForSingleValue(String, Bson, Class)} (an embedded document
+     * requested as a bean class is read as the embedded document of a bean property is read).</p>
      *
      * <p><b>Empty vs. present semantics:</b> the future completes with {@code Optional.empty()} when no nonempty document is found.
      * For a matched document, its selected field is converted before {@link Optional#of(Object)} wraps the result.
@@ -2089,7 +2116,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>The returned future completes exceptionally if the delegated {@code queryForSingleNonNull} operation fails while converting documents
      * or executing the MongoDB command. This includes a {@link NullPointerException} when conversion of the selected field of a matched, nonempty document
-     * yields {@code null}.</p>
+     * yields {@code null}, and the failures listed for {@link #queryForSingleValue(String, Bson, Class)}.</p>
      *
      * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
      * this failure is reported by exceptional completion of the returned future.</p>

@@ -59,6 +59,8 @@ class BigQueryExecutorLineCoverageTest extends MockitoTestBase {
     @BeforeEach
     void setUp() {
         executor = new BigQueryExecutor(bigQuery);
+        // A SELECT result has no DML count; a Mockito mock would answer 0L, making it a DML result.
+        when(tableResult.getNumDmlAffectedRows()).thenReturn(null);
     }
 
     @Test

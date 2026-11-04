@@ -130,7 +130,8 @@ class CosmosContainerExecutorReview20261102Test {
      * requests 256 pages, so 256 pages were read when the stream was created and closing the stream did not cancel the reads.
      * Now no page is read before consumption, {@code limit(3)} over two-item pages reads the two pages it needs plus one page
      * ahead, and the close done by the terminal operation cancels the subscription. The page source here is purely demand-driven,
-     * so this measures the executor's own read-ahead; the real SDK's paginator prefetches about one page more on its own.
+     * so this measures the executor's own read-ahead; the real SDK's query pipeline reads much further ahead on its own (more than
+     * 256 pages for a query, measured against a fake gateway with azure-cosmos 4.83; see the class documentation of the executor).
      */
     @Test
     void streamsReadNoPageBeforeConsumptionAndOnlyTheNeededPagesForLimit() {
@@ -167,7 +168,7 @@ class CosmosContainerExecutorReview20261102Test {
         assertEquals(1000, fetchedPages.get());
     }
 
-    /** A stream abandoned after iterator() reads at most one page ahead and stops when it is closed. */
+    /** Over this demand-driven source, a stream abandoned after iterator() reads one page ahead and stops when it is closed. */
     @Test
     void closingAnIteratedStreamCancelsTheRemainingReads() {
         final PartitionKey key = new PartitionKey("p");

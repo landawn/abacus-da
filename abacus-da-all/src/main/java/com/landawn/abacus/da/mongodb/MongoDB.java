@@ -45,7 +45,9 @@ import com.mongodb.client.MongoDatabase;
  *
  * <p><strong>Important:</strong> Define a {@code String}- or {@code ObjectId}-typed "id" property (or one annotated with
  * {@code @Id}) in Java entities to map to MongoDB's "_id" field; an id property of any other type (such as {@code long}) is
- * stored as an ordinary field under its own name, and MongoDB assigns a separate "_id".</p>
+ * stored as an ordinary field under its own name, and MongoDB assigns a separate "_id". The type is the one the entity class
+ * gives the property, so an id declared by a generic superclass ({@code class Base<K> { @Id K id; }}) maps to "_id" for
+ * {@code Entity extends Base<String>}.</p>
  *
  * @see com.landawn.abacus.da.mongodb.reactivestreams.MongoDB
  * @see com.mongodb.client.model.Filters

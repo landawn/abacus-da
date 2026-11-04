@@ -112,7 +112,8 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  *
  * <p><strong>Important:</strong> Define a {@code String}- or {@code ObjectId}-typed "id" property (or one
  * annotated with {@code @Id}) in Java entities to map to MongoDB's "_id" field; an id property of any
- * other type is stored as an ordinary field.</p>
+ * other type is stored as an ordinary field. The type is the one the entity class gives the property, so an id declared by a
+ * generic superclass ({@code class Base<K> { @Id K id; }}) maps to "_id" for {@code Entity extends Base<String>}.</p>
  *
  * @see com.landawn.abacus.da.mongodb.MongoDB
  * @see MongoDBBase
@@ -501,7 +502,9 @@ public final class MongoDB extends MongoDBBase {
      * Converts a BSON {@link Document} into an instance of {@code rowType} using the same mapping
      * rules as the synchronous variant. This {@code protected static} method is a bridge that
      * delegates to {@link MongoDBBase#readRow(Document, Class)} (so a {@link org.bson.BsonDocument} or
-     * {@link org.bson.RawBsonDocument} {@code rowType} receives the row encoded through the framework codec registry); it exists so reactive
+     * {@link org.bson.RawBsonDocument} {@code rowType} receives the row encoded through the framework codec registry, and a
+     * {@link org.bson.BsonArray} or {@link org.bson.RawBsonArray} {@code rowType} the row's values encoded the same way; another
+     * {@code BsonArray} or {@code BsonDocument} subclass is rejected); it exists so reactive
      * collaborators in this package can decode rows without referencing the protected helper on
      * the base class directly (this class is {@code final}, so it has no subclasses).
      *
@@ -512,9 +515,15 @@ public final class MongoDB extends MongoDBBase {
      * @param rowType the target Java class to map the document to, or {@code null} to produce an {@code Object[]}
      * @return an instance of {@code rowType} populated from {@code row}
      * @throws IllegalArgumentException if {@code rowType} is a {@link java.util.Collection} or {@link java.util.Map} type that cannot be
-     *         instantiated, if a bean {@code rowType} cannot be populated from the row, if a scalar {@code rowType} is requested for a row with multiple
-     *         non-{@code _id} fields, or if a field value cannot be converted to {@code rowType}
+     *         instantiated or that rejects a field value (a {@code null} value in an {@code ArrayDeque} or {@code ConcurrentHashMap}, or values
+     *         a {@code TreeSet} cannot compare, for example), if a bean {@code rowType} cannot be populated from the row, if a scalar {@code rowType} is requested for a row with multiple
+     *         non-{@code _id} fields, if {@code rowType} is a {@code BsonArray} or {@code BsonDocument} subclass other than
+     *         {@link org.bson.RawBsonArray} and {@link org.bson.RawBsonDocument}, or if a field value cannot be converted to {@code rowType}
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
+     * @throws org.bson.codecs.configuration.CodecConfigurationException if {@code rowType} is {@link org.bson.BsonDocument},
+     *         {@link org.bson.RawBsonDocument}, {@link org.bson.BsonArray}, {@link org.bson.RawBsonArray} or a {@link org.bson.BsonValue}
+     *         class and a value has no usable codec (for example a
+     *         {@code UUID}, since the framework codec registry specifies no UUID representation)
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing the requested collection, map, or bean, adding row values, or invoking a bean accessor fails
      * @see MongoDBBase#readRow(Document, Class)
@@ -524,23 +533,26 @@ public final class MongoDB extends MongoDBBase {
     }
 
     /**
-     * Converts a decoded scalar for reactive result mapping, including readable binary buffers. This bridge delegates
-     * to {@link MongoDBBase#convertBsonValue(Object, Class)}, so a {@link java.util.Date} requested as
-     * {@link java.time.LocalDate}, {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC, as the
-     * driver's codecs write those types.
+     * Converts a decoded field value for reactive result mapping. This bridge delegates to
+     * {@link MongoDBBase#convertBsonValue(Object, Class)}, so binary data becomes readable {@code byte[]} or
+     * {@code ByteBuffer} values, a {@link java.util.Date} requested as {@link java.time.LocalDate},
+     * {@link java.time.LocalDateTime} or {@link java.time.LocalTime} is read in UTC, as the driver's codecs write those types,
+     * a decoded Java value requested as a {@link org.bson.BsonValue} class is encoded into it, an embedded document requested
+     * as a bean class (a record too) is read as an embedded bean document is, and a collection or array requested as an
+     * object-array type has each element converted to its component type by the same rules.
      *
      * @param <T> the requested value type
      * @param value the decoded field value, possibly null
      * @param targetType the requested Java type
      * @return the converted field value
      * @throws IllegalArgumentException if {@code targetType} is null or the value cannot be converted to the requested type (also an
-     *         embedded document requested as a BSON value type such as {@link org.bson.types.Binary} or {@link org.bson.types.Code}, or a
-     *         value whose BSON form is not of a requested {@link org.bson.BsonValue} class, such as an {@code Integer} requested as
-     *         {@code BsonString})
+     *         embedded document requested as a BSON value type such as {@link org.bson.types.Binary} or {@link org.bson.types.Code} that does
+     *         not describe it, or a value whose BSON form is not of a requested {@link org.bson.BsonValue} class, such as an {@code Integer}
+     *         requested as {@code BsonString})
      * @throws org.bson.codecs.configuration.CodecConfigurationException if a value requested as a {@link org.bson.BsonValue} class has no
      *         usable codec
-     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
-     *         while converting the selected value
+     * @throws RuntimeException if numeric conversion overflows the target range ({@link ArithmeticException}), or a registered
+     *         converter or type handler, or a bean constructor or setter, throws while converting the selected value
      * @see MongoDBBase#convertBsonValue(Object, Class)
      */
     protected static <T> T convertBsonValue(final Object value, final Class<T> targetType) throws IllegalArgumentException, RuntimeException {

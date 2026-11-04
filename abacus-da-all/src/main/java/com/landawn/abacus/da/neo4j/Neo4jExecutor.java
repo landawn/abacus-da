@@ -68,7 +68,9 @@ import com.landawn.abacus.util.u.Optional;
  *   <li><b>Release:</b> Any transaction left open on the session is rolled back, then
  *       {@link Session#clear()} is invoked and Neo4j-OGM's cache of graph IDs by primary-index value, which
  *       {@code clear()} keeps, is emptied before the session is offered back to the queue, so that no entity
- *       state carries over to the next operation (a session whose cache cannot be emptied is not pooled).
+ *       state carries over to the next operation (a session whose cache cannot be emptied is not pooled). An
+ *       operation therefore knows nothing of the state an entity was loaded with by an earlier operation; see
+ *       {@link #save(Object)} for what a save of such an entity writes.
  *       If the queue is full the session is silently dropped
  *       (no {@code close()} call is made; the OGM {@link Session} has no {@code close} operation).
  *       A runtime failure while inspecting, rolling back, or clearing a returned session is logged
@@ -339,7 +341,8 @@ public final class Neo4jExecutor {
      * Do all such work through the supplied session: another method of this executor called from inside
      * {@code action} borrows a different pooled session, so it runs in a transaction of its own, which is not
      * rolled back with {@code action}'s transaction, does not see its uncommitted changes, and can block on locks
-     * that transaction holds (the transaction is only finished after {@code action} returns). The server sees no lock cycle
+     * that transaction holds (it can only be finished later on the same thread, so it cannot release them while the call
+     * waits). The server sees no lock cycle
      * (the blocked caller is the holder's own thread), so its deadlock detection does not end the wait: it lasts until a
      * configured lock-acquisition or transaction timeout ends it, and indefinitely when none is configured (Neo4j's default).
      *
@@ -586,8 +589,8 @@ public final class Neo4jExecutor {
      * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
      * Collection<Person> oldestFirst = executor.loadAll(Person.class, ids, byAgeDesc);
      *
-     * // An empty SortOrder simply returns the matches in id order
-     * Collection<Person> unordered = executor.loadAll(Person.class, ids, new SortOrder());
+     * // An empty SortOrder returns the matches in the iteration order of ids
+     * Collection<Person> inIdsOrder = executor.loadAll(Person.class, ids, new SortOrder());
      *
      * // No matching ids -> empty collection
      * Collection<Person> none = executor.loadAll(Person.class, Collections.emptyList(), byName); // returns empty collection
@@ -2165,9 +2168,11 @@ public final class Neo4jExecutor {
      * relationships an entity had when it was loaded by an earlier call: a relationship removed from such an
      * entity (e.g. {@code person.setCompany(null)}) is <i>not</i> deleted by this method. Load, modify and
      * save within one {@link #run(Consumer)}/{@link #call(Function)} session, or delete the relationship with Cypher.
+     * Nor does OGM know the labels such an entity was loaded with: a label removed from its {@code @Labels} field since
+     * then stays on the node.
      * For the same reason, an entity of a class without a native graph-ID field (primary index only) is always
      * written with a {@code MERGE} on its primary-index value, which sets the node's properties to the entity's (a
-     * property the class does not map is removed). The {@code MERGE} pattern names every label of the entity, so after a
+     * property the class does not map, or maps as read-only, is removed). The {@code MERGE} pattern names every label of the entity, so after a
      * label was added to its {@code @Labels} field the existing node, which lacks that label, does not match: a second node
      * with the same primary-index value is created (or the save fails on a uniqueness constraint). Load, change the labels and
      * save within one {@link #run(Consumer)}/{@link #call(Function)} session, where OGM updates the loaded node by its graph ID.
@@ -2208,8 +2213,8 @@ public final class Neo4jExecutor {
      * Delegates to {@link Session#save(Object, int)}. {@code depth == 0} saves only the
      * node's scalar properties (no relationships are written); a positive integer recursively
      * saves related entities to that many hops; {@code -1} saves the entire reachable sub-graph.
-     * As with {@link #save(Object)}, a relationship removed from an entity loaded by an earlier call is not
-     * deleted, and an entity of a class without a native graph-ID field is written with a {@code MERGE} on its
+     * As with {@link #save(Object)}, a relationship or {@code @Labels} label removed from an entity loaded by an earlier
+     * call is not deleted, and an entity of a class without a native graph-ID field is written with a {@code MERGE} on its
      * primary-index value and all its labels (see {@link #save(Object)} for a label added since the entity was loaded),
      * because the session's mapping context does not carry over between calls.
      *
@@ -2250,15 +2255,19 @@ public final class Neo4jExecutor {
      * relationships.
      * <p>
      * Delegates to {@link Session#delete(Object)}. The entity must carry a populated graph ID
-     * (i.e. it has previously been loaded or saved); otherwise OGM has nothing to delete. For an
-     * entity class without a native graph-ID field (primary index only), the cleared pooled session
-     * cannot resolve the graph ID, so OGM first reloads each entity by its primary-index value (and logs
-     * a warning) before deleting it. The delete is irreversible.
+     * (i.e. it has previously been loaded or saved) or a primary-index value; otherwise OGM has nothing to delete.
+     * When the cleared pooled session cannot resolve the graph ID &mdash; for every entity of a class without a native
+     * graph-ID field (primary index only), and for an entity whose native graph-ID field is {@code null} but whose class
+     * also has a primary index &mdash; OGM first reloads the entity by its primary-index value (and logs a warning) before
+     * deleting it. The delete is irreversible.
      * <p>
      * The deletes of an array or {@code Iterable} are not atomic: Neo4j-OGM deletes each entity in a transaction of
      * its own, so when one of them fails, the entities before it stay deleted and those after it are not attempted.
      * To delete several entities all-or-nothing, call {@link Session#delete(Object)} inside an explicit transaction
-     * through {@link #run(Consumer)}.
+     * through {@link #run(Consumer)}. Deleting an entity of a class without a native graph-ID field and then saving a new
+     * entity with the same primary-index value works across executor calls, but not inside one such session: Neo4j-OGM
+     * keeps the deleted node's graph ID for that value, so the session sends the save as an update of the deleted node,
+     * which writes nothing (or, if Neo4j has meanwhile reused that graph ID for another node, overwrites that node).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2945,7 +2954,9 @@ public final class Neo4jExecutor {
         // same primary-index value was compiled as an update of the stale ID (MATCH (n) WHERE ID(n) = ..., so nothing was
         // written, or a node that reused the ID was overwritten) instead of a MERGE, and a delete deleted by the stale ID
         // without reloading. OGM has no API to clear it, so it is cleared reflectively; a session whose cache cannot be
-        // cleared is not pooled, so every operation then runs on a fresh session.
+        // cleared is not pooled, so every operation then runs on a fresh session. Either way a later call behaves like a
+        // fresh OGM session: a save of such an entity is a MERGE on its primary-index value and all its labels (documented
+        // on save(Object), including the duplicate node after a label was added since the load).
         private static final Field PRIMARY_ID_TO_NATIVE_ID_FIELD = primaryIdToNativeIdField();
 
         private PrimaryIdCache() {

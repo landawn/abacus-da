@@ -171,6 +171,9 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * <li><strong>Collections / Maps</strong>: {@code Collection<HBaseColumn>} and
  *     {@code Map<Long, HBaseColumn>} properties are expanded into one cell per element, each at
  *     its own version, enabling multi-version storage.</li>
+ * <li><strong>Generic nested beans</strong>: a nested bean's properties are typed with the type arguments its property
+ *     declares (when they are all concrete, as {@link HBaseExecutor#toEntity(org.apache.hadoop.hbase.client.Result, Class)}
+ *     reads them), so the {@code T value} of a {@code Box<HBaseColumn<String>>} property is a versioned column too.</li>
  * <li><strong>Null values</strong>: Properties whose value is {@code null}, or an empty value wrapper (an empty {@code Optional}
  *     or primitive {@code OptionalXxx}, a {@code Nullable} that is empty or holds {@code null}, a {@code Holder} holding {@code null}),
  *     are skipped, so no cell is written for them; an empty cell would read back as a present empty string for a {@code String}
@@ -1256,7 +1259,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
                 final Map<String, Tuple3<String, String, Boolean>> propEntityFamilyColumnNameMap = HBaseExecutor.getClassFamilyColumnNameMap(propInfo.clazz,
                         namingPolicy);
                 final Class<?> propEntityClass = propInfo.jsonXmlType.javaType();
-                final BeanInfo propBeanInfo = ParserUtil.getBeanInfo(propEntityClass);
+                // WHY the property's parameterized BeanInfo (the one toEntity reads the cells back with): for a generic nested bean
+                // (a Box<T> property declared as Box<HBaseColumn<String>>, or Box<List<HBaseColumn<String>>>) the class's BeanInfo
+                // types T as Object, so the HBaseColumn value(s) bound to T were written as ONE text cell ("5:v", a JSON list or
+                // map) at the latest timestamp instead of one cell per version at its own timestamp. Other type arguments write
+                // the same bytes either way (a value is written by its runtime type).
+                final BeanInfo propBeanInfo = HBaseExecutor.getNestedBeanInfo(propInfo, propEntityClass);
                 final Object propEntity = propValue;
                 Tuple3<String, String, Boolean> propEntityTP = null;
 
@@ -1404,8 +1412,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *              and stored as an empty value; a value with no string form, such as an empty
      *              {@code Optional}, is stored like {@code null})
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family
-     *         entry this call added is removed again first, so the failed call leaves no empty family behind
+     * @throws IllegalArgumentException if this put's default timestamp is negative (possible only when it wraps or copies a native
+     *         {@code Put} built with {@code Put(byte[], long, NavigableMap)}, which does not validate it), or the encoded column family
+     *         exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry this call added is removed again first, so the
+     *         failed call leaves no empty family behind
      * @throws RuntimeException if converting {@code value} to bytes invokes a failing string conversion
      * @see #addColumn(String, String, long, Object)
      * @see #addColumn(byte[], byte[], byte[])
@@ -1505,8 +1515,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *                  empty qualifier
      * @param value the value as a byte array; may be {@code null}
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size; a family
-     *         entry this call added is removed again first, so the failed call leaves no empty family behind
+     * @throws IllegalArgumentException if this put's default timestamp is negative (possible only when it wraps or copies a native
+     *         {@code Put} built with {@code Put(byte[], long, NavigableMap)}, which does not validate it), or the encoded column family
+     *         exceeds 127 bytes or the cell exceeds HBase's maximum size; a family entry this call added is removed again first, so the
+     *         failed call leaves no empty family behind
      * @see #addColumn(String, String, Object)
      * @see #addColumn(byte[], byte[], long, byte[])
      */

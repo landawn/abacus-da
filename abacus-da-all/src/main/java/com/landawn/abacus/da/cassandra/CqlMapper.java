@@ -211,7 +211,7 @@ public final class CqlMapper {
      * @param filePath single file path or multiple file paths separated by ',' or ';'
      * @return a new CqlMapper populated with the loaded CQL definitions
      * @throws IllegalArgumentException if {@code filePath} is null/empty, resolves to no paths after splitting,
-     *         if duplicate CQL ids are found, if a {@code <cql>} element is missing its {@code id} attribute,
+     *         if duplicate CQL ids are found, if a {@code <cql>} element's {@code id} attribute is missing or empty,
      *         or if a CQL statement in a file cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws RuntimeException if a file is not found, the XML parser cannot be created, or the required
      *         {@code <cqlMapper>} root element is missing
@@ -258,7 +258,7 @@ public final class CqlMapper {
      * @param files one or more XML files to load (must be non-empty and contain no null element)
      * @return a new CqlMapper populated with the loaded CQL definitions
      * @throws IllegalArgumentException if {@code files} is null or empty, if any element is null,
-     *         if duplicate CQL ids are found, if a {@code <cql>} element is missing its {@code id} attribute,
+     *         if duplicate CQL ids are found, if a {@code <cql>} element's {@code id} attribute is missing or empty,
      *         or if a CQL statement in a file cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws RuntimeException if the XML parser cannot be created, or the required {@code <cqlMapper>} root element
      *         is missing
@@ -297,7 +297,7 @@ public final class CqlMapper {
      * @param is the input stream to read the XML CQL definitions from (must not be null)
      * @return a new CqlMapper populated with the loaded CQL definitions
      * @throws IllegalArgumentException if {@code is} is null, if duplicate CQL ids are found,
-     *         if a {@code <cql>} element is missing its {@code id} attribute, or if a CQL
+     *         if a {@code <cql>} element's {@code id} attribute is missing or empty, or if a CQL
      *         statement cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws RuntimeException if the XML parser cannot be created, or the required {@code <cqlMapper>} root element
      *         is missing
@@ -341,7 +341,8 @@ public final class CqlMapper {
      * @throws UncheckedIOException if an I/O error occurs reading the file
      * @throws RuntimeException if the XML parser cannot be created, or the XML root element is not {@code cqlMapper}
      * @throws ParsingException if the XML content is malformed
-     * @throws IllegalArgumentException if a CQL entry has a missing or duplicate id, or an invalid parameter marker
+     * @throws IllegalArgumentException if a {@code <cql>} element's {@code id} attribute is missing or empty, if a duplicate
+     *         id is encountered, or if a CQL statement cannot be parsed (see {@link ParsedCql#parse(String)})
      */
     private void loadFile(final File file) throws UncheckedIOException, RuntimeException, ParsingException, IllegalArgumentException {
         if (logger.isInfoEnabled()) {
@@ -365,7 +366,7 @@ public final class CqlMapper {
      *         is missing
      * @throws UncheckedIOException if an I/O error occurs while reading the stream
      * @throws ParsingException if the XML content is malformed
-     * @throws IllegalArgumentException if a {@code <cql>} element is missing its {@code id} attribute, if a duplicate
+     * @throws IllegalArgumentException if a {@code <cql>} element's {@code id} attribute is missing or empty, if a duplicate
      *         id is encountered, or if a CQL statement cannot be parsed (see {@link ParsedCql#parse(String)})
      */
     private void loadStream(final InputStream is, final String sourceLabel)
@@ -388,7 +389,7 @@ public final class CqlMapper {
                 final String id = attrMap.remove(ID);
 
                 if (N.isEmpty(id)) {
-                    throw new IllegalArgumentException("Missing required 'id' attribute for CQL element in: " + sourceLabel);
+                    throw new IllegalArgumentException("Missing or empty required 'id' attribute for CQL element in: " + sourceLabel);
                 }
 
                 add(id, XmlUtil.getTextContent(cqlElement), attrMap);

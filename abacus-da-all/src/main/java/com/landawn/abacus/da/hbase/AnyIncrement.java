@@ -45,6 +45,16 @@ import com.landawn.abacus.util.N;
  *   <li>Fluent API: every setter returns {@code this}</li>
  * </ul>
  *
+ * <p><strong>Value encoding:</strong> each amount is queued as an 8-byte big-endian long ({@code Bytes.toBytes(long)}), the
+ * only cell form HBase can increment: the region server rejects the increment when a queued amount or the column's existing
+ * value is not exactly eight bytes. {@link AnyPut}, {@link AnyAppend} and entity mapping write a number as its decimal text
+ * instead ({@code AnyPut.addColumn("stats", "visits", 5)} stores the one-byte text {@code "5"}), so a column written that way
+ * cannot be incremented. Entity mapping also reads a numeric property as text (the cell decoded as UTF-8): a counter cell
+ * read into a {@code long} or {@code Long} property normally fails with {@link NumberFormatException}, but eight bytes that
+ * happen to be ASCII digits may be read as a wrong number (the counter {@code 0x3132333435363738L} reads as
+ * {@code 12345678}); read it into a {@code byte[]} property, or take it from the {@code Result}, and decode it with
+ * {@code Bytes.toLong}.</p>
+ *
  * <h2>Usage Examples</h2>
  * <pre>{@code
  * AnyIncrement increment = AnyIncrement.of("user123")
@@ -431,6 +441,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * <p>The cell's row key must match this increment's row key; HBase's {@link Increment#add(Cell)}
      * throws an {@link IOException} otherwise.</p>
      *
+     * <p>The cell's value is the amount and must be an 8-byte long ({@code Bytes.toBytes(long)}). A value of another length
+     * is queued as-is, but {@link #getFamilyMapOfLongs()} and {@link #toString()} then throw
+     * {@link IllegalArgumentException}, and the region server rejects the increment.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyIncrement increment = AnyIncrement.of("row1");
@@ -485,7 +499,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * }</pre>
      *
      * @param family the column-family name as a byte array; must not be {@code null}
-     * @param qualifier the column-qualifier name as a byte array
+     * @param qualifier the column-qualifier name as a byte array; may be {@code null} to denote an empty qualifier
      * @param amount the long delta to apply to the existing cell value (negative for decrement)
      * @return this AnyIncrement instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code family} is {@code null}, or the encoded family exceeds 127 bytes or the cell exceeds HBase's
@@ -528,7 +542,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param family the column-family name; converted to bytes via
      *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param qualifier the column-qualifier name; converted to bytes via
-     *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}; may be {@code null} to denote an empty qualifier
      * @param amount the long delta to apply to the existing cell value (negative for decrement)
      * @return this AnyIncrement instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code family} is {@code null}, or the encoded family exceeds 127 bytes or the cell exceeds HBase's

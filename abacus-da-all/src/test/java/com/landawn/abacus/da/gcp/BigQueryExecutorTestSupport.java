@@ -38,6 +38,10 @@ abstract class BigQueryExecutorTestSupport extends MockitoTestBase {
     @BeforeEach
     public void setUp() {
         executor = new BigQueryExecutor(mockBigQuery);
+        // A Mockito mock answers 0L (not null) for the unstubbed Long getNumDmlAffectedRows(), which would make every mocked
+        // result a DML result (BigQueryExecutor then ignores getTotalRows()). A SELECT result has no DML count; DML-shaped
+        // tests stub it explicitly.
+        when(mockTableResult.getNumDmlAffectedRows()).thenReturn(null);
     }
 
     // ---------------------------------------------------------------------------------------------

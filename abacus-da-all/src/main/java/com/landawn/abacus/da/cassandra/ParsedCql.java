@@ -321,6 +321,8 @@ public final class ParsedCql {
                     final int prevCurlyDepth = literalState[0];
                     // Innermost open container is '[' or '(' (not a '{' literal), so a ':' here cannot be a field separator.
                     final boolean prevInsideNonLiteralContainer = openContainers.length() > 0 && openContainers.charAt(openContainers.length() - 1) != '{';
+                    // The token starts inside an unterminated dollar quote: nothing in it is a marker.
+                    final boolean startsInDollarQuote = literalState[1] != 0;
                     final boolean dollarQuotedToken = updateLiteralState(literalState, openContainers, word, bracketMask);
                     // A '{' opened by this very token counts, so a self-contained single-field literal such as
                     // "{street::street}" (balanced braces => prevCurlyDepth and the post-token depth are both 0)
@@ -332,16 +334,32 @@ public final class ParsedCql {
                     // Inside braces, a ':name' token right after an arithmetic operator is a marker (see the native-marker
                     // branch below), and it may be a map KEY ("{-:k: 1}"), with SqlParser gluing the separator to it.
                     final boolean nativeMarkerAfterOperatorInBraces = prevCurlyDepth > 0 && tokens.followsArithmeticOperator();
-                    // WHY: such a key may also carry its glued value marker ("{-:k::v}"). The embedded branch would keep
-                    // ":k" as a field name, leaving that marker in the CQL uncounted, so the native-marker branch takes it.
-                    final boolean nativeKeyWithEmbeddedValue = nativeMarkerAfterOperatorInBraces && embeddedMarkerIndex > 0 && !dollarQuotedToken
-                            && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER;
+                    // Where a ':name' token is a marker rather than literal syntax (see the native-marker branch below).
+                    final boolean nativeMarkerPosition = prevCurlyDepth == 0 || prevInsideNonLiteralContainer || tokens.followsLiteralValueSeparator()
+                            || tokens.followsArithmeticOperator();
+                    // WHY: a ':name' token is skipped when it holds dollar-quoted text, but a marker ending a nested literal map
+                    // key ("{{f: :x}:$$v$$}", masked ":x}:$$0$$}") or a map-key marker after an operator ("{-:k:$$v$$}") can
+                    // have a complete dollar-quoted VALUE glued after its name, which left ":x" / ":k" in the CQL uncounted.
+                    // As for "#{k}:$$v$$" (the MyBatis branch below), such a token is scanned when it does not start inside a dollar quote and its
+                    // first "$$" lies after the marker name's end; a name that itself runs into "$$" is still never a marker.
+                    final boolean nativeMarkerToken = !word.isEmpty() && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER
+                            && (!dollarQuotedToken || (!startsInDollarQuote && isDollarQuoteAfterNativeMarkerName(word, nativeMarkerAfterOperatorInBraces)));
+                    // WHY: such a key may also carry its glued value marker ("{-:k::v}"), and so may a marker that ends a nested
+                    // literal used as a map key ("{{f: :x}::v}", where the name ends at the '}'). The embedded branch would keep
+                    // ":k" / ":x" as literal text, leaving that marker in the CQL uncounted, so the native-marker branch takes it.
+                    final boolean nativeKeyWithEmbeddedValue = embeddedMarkerIndex > 0 && nativeMarkerToken && nativeMarkerPosition
+                            && (nativeMarkerAfterOperatorInBraces || word.lastIndexOf('}', embeddedMarkerIndex) > 0);
+                    // Set when "field::name" markers left in the token are to be rewritten (see the loop after the branches).
+                    boolean rewriteEmbeddedMarkers = false;
 
                     if (!dollarQuotedToken && word.equals(SK.QUESTION_MARK)) {
                         countOfParameter++;
 
                         type |= 1;
-                    } else if (!dollarQuotedToken && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)) {
+                    } else if (!startsInDollarQuote && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)
+                            && (!dollarQuotedToken || isDollarQuoteAfterFirstMarker(word))) {
+                        // WHY: a map key glued to a dollar-quoted value ("{#{k}:$$v$$}", masked "#{k}:$$0$$") makes the whole token
+                        // dollar quoted although the marker itself precedes the constant; skipping the token left "#{k}" in the CQL.
                         // Consume each marker and token once. Offsets avoid repeatedly copying the tail of
                         // adjacent markers; a builder is needed only when one marker spans several tokens.
                         int markerStart = 0;
@@ -406,23 +424,9 @@ public final class ParsedCql {
                         }
                     } else if (embeddedMarkerIndex >= 0 && !nativeKeyWithEmbeddedValue) {
                         // Without whitespace, a UDT field separator and its named marker are tokenized together,
-                        // for example "{street::street". Preserve the first ':' and replace only the marker.
-                        final int markerIndex = embeddedMarkerIndex;
-                        final int parameterNameEnd = namedParameterNameEnd(word, markerIndex + 2);
-                        final String namedParameter = word.substring(markerIndex + 2, parameterNameEnd);
-
-                        if (Strings.isEmpty(namedParameter)) {
-                            throw new IllegalArgumentException("Invalid named parameter in literal token: " + word);
-                        }
-
-                        if (localNamedParameters == null) {
-                            localNamedParameters = new HashMap<>();
-                        }
-
-                        localNamedParameters.put(countOfParameter++, namedParameter);
-                        word = word.substring(0, markerIndex + 1) + SK.QUESTION_MARK + word.substring(parameterNameEnd);
-                        type |= 2;
-                    } else if (!dollarQuotedToken && word.length() >= 1 && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER) {
+                        // for example "{street::street". Preserve the first ':' and replace only the marker (loop below).
+                        rewriteEmbeddedMarkers = true;
+                    } else if (nativeMarkerToken) {
                         // Inside a map/UDT literal, a ':' token is normally a key/value or field/value separator.
                         // A separate ':name' token immediately following that separator is nevertheless a genuine
                         // value bind marker (valid for UDT fields). Use prevCurlyDepth so a token such as ":2}" that
@@ -432,8 +436,7 @@ public final class ParsedCql {
                         // WHY: nor right after an arithmetic operator ("{f: 1 + :x}", "{'a': -:x}", the second marker of
                         // "{f: :x - :y}"): an operator needs a right operand, so the ':' token there is a marker, never a
                         // separator. Cassandra's grammar accepts a bind marker as that operand.
-                        if (prevCurlyDepth == 0 || prevInsideNonLiteralContainer || tokens.followsLiteralValueSeparator()
-                                || tokens.followsArithmeticOperator()) {
+                        if (nativeMarkerPosition) {
                             if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
                             } else {
@@ -458,24 +461,41 @@ public final class ParsedCql {
 
                                 type |= 2;
 
-                                if (nativeKeyWithEmbeddedValue) {
-                                    // The rest of the glued pair ("?::v}") holds the value marker after the separator.
-                                    final int valueMarkerIndex = indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth);
-
-                                    if (valueMarkerIndex >= 0) {
-                                        final int valueNameEnd = namedParameterNameEnd(word, valueMarkerIndex + 2);
-                                        final String valueName = word.substring(valueMarkerIndex + 2, valueNameEnd);
-
-                                        if (Strings.isEmpty(valueName)) {
-                                            throw new IllegalArgumentException("Invalid named parameter in literal token: " + word);
-                                        }
-
-                                        localNamedParameters.put(countOfParameter++, valueName);
-                                        word = word.substring(0, valueMarkerIndex + 1) + SK.QUESTION_MARK + word.substring(valueNameEnd);
-                                    }
-                                }
+                                // WHY: the rest of the token may hold a glued value marker after the separator: of a marker key
+                                // ("{-:k::v}" -> "?::v}"), or, past the nested literal at whose '}' the name ends, of the
+                                // enclosing map whose key that literal is ("{{f: :x}::v}" -> "?}::v}").
+                                // WHY: not when the token ends inside a dollar quote it opened after the marker name
+                                // ("{{f: :x}:$$a::b ..."): the "::b" there is quoted text, which the loop below cannot tell
+                                // apart and made a marker. As for the embedded and MyBatis-tail scans, such a token's tail is
+                                // left as written; a complete dollar-quoted value is masked and keeps state[1] at 0.
+                                rewriteEmbeddedMarkers = word.length() > 1 && literalState[1] == 0;
                             }
                         }
+                    }
+
+                    // Rewrites each unspaced "field::name" marker in the token at brace depth > 0, left to right; a nested
+                    // literal glued to an enclosing map's separator can carry more than one ("{{f::x}::v}").
+                    while (rewriteEmbeddedMarkers) {
+                        final int markerIndex = indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth);
+
+                        if (markerIndex < 0) {
+                            break;
+                        }
+
+                        final int parameterNameEnd = namedParameterNameEnd(word, markerIndex + 2);
+                        final String namedParameter = word.substring(markerIndex + 2, parameterNameEnd);
+
+                        if (Strings.isEmpty(namedParameter)) {
+                            throw new IllegalArgumentException("Invalid named parameter in literal token: " + word);
+                        }
+
+                        if (localNamedParameters == null) {
+                            localNamedParameters = new HashMap<>();
+                        }
+
+                        localNamedParameters.put(countOfParameter++, namedParameter);
+                        word = word.substring(0, markerIndex + 1) + SK.QUESTION_MARK + word.substring(parameterNameEnd);
+                        type |= 2;
                     }
 
                     if (Integer.bitCount(type) > 1) {
@@ -559,6 +579,28 @@ public final class ParsedCql {
     }
 
     /**
+     * Returns {@code true} if the first {@code $$} of a token that starts with a MyBatis marker follows that marker's closing
+     * brace, so the dollar-quoted text is glued after the marker rather than inside it.
+     */
+    private static boolean isDollarQuoteAfterFirstMarker(final String word) {
+        final int closeIndex = word.indexOf('}', LEFT_OF_IBATIS_NAMED_PARAMETER.length());
+
+        return closeIndex > 0 && word.indexOf("$$") > closeIndex;
+    }
+
+    /**
+     * Returns {@code true} if the first {@code $$} of a token that starts with a native {@code :name} marker lies at or after
+     * the end of that marker's name (as the native-marker branch computes it: {@link #literalNamedParameterNameEnd(String)}
+     * for a possible map key after an arithmetic operator inside braces, otherwise {@link #namedParameterNameEnd(String, int)}),
+     * so the dollar-quoted text is glued after the marker rather than part of its name.
+     */
+    private static boolean isDollarQuoteAfterNativeMarkerName(final String word, final boolean mayBeMapKey) {
+        final int nameEnd = mayBeMapKey ? literalNamedParameterNameEnd(word) : namedParameterNameEnd(word, 1);
+
+        return nameEnd > 1 && word.indexOf("$$") >= nameEnd;
+    }
+
+    /**
      * Finds the first ':' in an unspaced literal field/value separator plus named marker
      * ({@code field::name}).
      *
@@ -567,7 +609,8 @@ public final class ParsedCql {
      * the whole token — is what lets a self-contained literal such as {@code "{street::street}"}, whose
      * braces balance inside one token, be recognized just like the multi-token <code>"&#123;street::street"</code>
      * form. Braces inside quoted literals are not counted, so a string such as <code>"'a&#123;b'"</code> cannot
-     * raise the depth.</p>
+     * raise the depth. A {@code ::} followed by a dollar-quoted constant ({@code f::$$v$$}), or by an unquoted name that runs
+     * into one ({@code f::v$$w$$}), carries no marker.</p>
      *
      * @param word the token to scan
      * @param startDepth the map/UDT literal brace depth in effect before this token
@@ -598,12 +641,33 @@ public final class ParsedCql {
                 if (depth > 0) {
                     depth--;
                 }
-            } else if (depth > 0 && ch == ':' && word.charAt(i + 1) == ':' && i + 2 < word.length() && word.charAt(i + 2) != '}') {
+            } else if (depth > 0 && ch == ':' && word.charAt(i + 1) == ':' && i + 2 < word.length() && word.charAt(i + 2) != '}'
+                    && !word.startsWith("$$", i + 2) && !isUnquotedNameRunningIntoDollarQuote(word, i + 2)) {
+                // WHY: "::" followed by a dollar-quoted constant ("{f::$$v$$}", masked "{f::$$0$$}") registered a marker named
+                // after the masked placeholder ("$$0$$"). A name never starts with a dollar quote: leave it literal, as ":x$$v$$".
+                // WHY: nor may an unquoted name run into one ("{f::v$$a$$}", masked "{f::v$$0$$}"): the marker was named
+                // "v$$0$$" and the constant dropped from the CQL. As the top-level ":x$$v$$", such a "::name" stays literal
+                // text (also as a glued value of a native or MyBatis key, so "#{k}::v$$a$$" is not a mixed-style native marker).
                 return i;
             }
         }
 
         return -1;
+    }
+
+    /**
+     * Returns {@code true} if the unquoted marker name starting at {@code nameStart} (ending as
+     * {@link #namedParameterNameEnd(String, int)} ends it) contains a {@code $$}, the start of a dollar-quoted constant (a
+     * complete one is masked as {@code $$n$$}). A quoted name ({@code "a$$b"}) is an identifier and ends at its closing quote.
+     */
+    private static boolean isUnquotedNameRunningIntoDollarQuote(final String word, final int nameStart) {
+        if (word.charAt(nameStart) == '"') {
+            return false;
+        }
+
+        final int dollarIndex = word.indexOf("$$", nameStart);
+
+        return dollarIndex >= 0 && dollarIndex < namedParameterNameEnd(word, nameStart);
     }
 
     /** Reads split token spans without copying the token list or shifting its unconsumed suffix. */
@@ -726,8 +790,21 @@ public final class ParsedCql {
         return -1;
     }
 
-    /** Excludes braces that SqlParser may leave attached to a named marker at the end of a UDT token. */
+    /**
+     * Returns the end of the marker name that starts at {@code parameterNameStart} in {@code word}. SqlParser leaves the
+     * braces that close enclosing literals attached to a marker (<code>:street&#125;</code> in
+     * <code>&#123;street: :street&#125;</code>), and, when such a literal is itself a map key, the glued separator and value
+     * after them (<code>:x&#125;:1&#125;</code> in <code>&#123;&#123;f: :x&#125;:1&#125;</code>). An unquoted name therefore
+     * ends at its first closing brace; a quoted name ends its token, so only trailing braces are excluded from it.
+     */
     private static int namedParameterNameEnd(final String word, final int parameterNameStart) {
+        if (parameterNameStart < word.length() && word.charAt(parameterNameStart) != '"') {
+            // WHY: a name cannot contain '}'. Stripping only trailing braces made ":x}:1}" the marker "x}:1" and dropped "}:1".
+            final int braceIndex = word.indexOf('}', parameterNameStart);
+
+            return braceIndex < 0 ? word.length() : braceIndex;
+        }
+
         int end = word.length();
 
         while (end > parameterNameStart && word.charAt(end - 1) == '}') {
@@ -740,8 +817,8 @@ public final class ParsedCql {
     /**
      * Returns the end of the name of a {@code :name} token that follows an arithmetic operator inside braces, where it
      * may be a map key. An unquoted name ends before a glued map key/value separator ({@code k} in {@code :k:2}, and
-     * in <code>:k&#125;:</code> for a key that closes a nested literal); without one, only trailing braces are excluded,
-     * as in {@link #namedParameterNameEnd(String, int)}. A quoted name
+     * in <code>:k&#125;:</code> for a key that closes a nested literal); without one, the name ends as in
+     * {@link #namedParameterNameEnd(String, int)}. A quoted name
      * ({@code :"k"}) needs no check (SqlParser ends the token at its closing quote), and a {@code ':'} directly after
      * the prefix ({@code ::x}) stays part of the name, as outside braces.
      */

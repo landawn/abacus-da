@@ -64,7 +64,9 @@ class BigQueryCollectionConstructionTest {
         final CopyOnWriteArrayList<?> values = BigQueryExecutor.toList(result(row), CopyOnWriteArrayList.class).get(0);
 
         assertEquals(Arrays.asList("alpha", null, "alpha"), values);
-        assertThrows(NullPointerException.class, () -> BigQueryExecutor.toList(result(row), ArrayBlockingQueue.class));
+        // The queue still rejects the NULL cell; since 2026-11-03 as an IllegalArgumentException naming the column (cause: the queue's NPE).
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toList(result(row), ArrayBlockingQueue.class));
+        assertInstanceOf(NullPointerException.class, e.getCause());
     }
 
     @Test
@@ -167,7 +169,12 @@ class BigQueryCollectionConstructionTest {
     void queuePropertiesRejectNullRepeatedElements() {
         final FieldList fields = repeatedFields(StandardSQLTypeName.INT64);
 
-        assertThrows(NullPointerException.class, () -> BigQueryExecutor.toEntity(fields, repeatedRow(fields, cell("1"), cell(null)), LongQueueRecord.class));
+        // Review 2026-11-03: the queue's bare NullPointerException is now an IllegalArgumentException naming the field.
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> BigQueryExecutor.toEntity(fields, repeatedRow(fields, cell("1"), cell(null)), LongQueueRecord.class));
+
+        assertInstanceOf(NullPointerException.class, e.getCause());
+        assertTrue(e.getMessage().startsWith("Field (values, null)"), e.getMessage());
     }
 
     @Test
@@ -229,6 +236,7 @@ class BigQueryCollectionConstructionTest {
         final TableResult result = mock(TableResult.class);
         when(result.getSchema()).thenReturn(Schema.of(BigQueryExecutor.getSchema(row)));
         when(result.getTotalRows()).thenReturn(1L);
+        when(result.getNumDmlAffectedRows()).thenReturn(null); // a SELECT result (Mockito would answer 0L)
         when(result.iterateAll()).thenReturn(List.of(row));
         return result;
     }

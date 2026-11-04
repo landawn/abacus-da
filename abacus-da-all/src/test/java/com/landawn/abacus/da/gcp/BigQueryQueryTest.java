@@ -764,6 +764,7 @@ public class BigQueryQueryTest extends BigQueryExecutorTestSupport {
         final TableResult structResult = org.mockito.Mockito.mock(TableResult.class);
         when(structResult.getSchema()).thenReturn(Schema.of(structFields));
         when(structResult.getTotalRows()).thenReturn(1L);
+        when(structResult.getNumDmlAffectedRows()).thenReturn(null); // a SELECT result (Mockito would answer 0L)
         when(structResult.getValues()).thenReturn(Arrays.asList(structRow));
 
         final Map<String, Object> expectedMap = new java.util.HashMap<>();

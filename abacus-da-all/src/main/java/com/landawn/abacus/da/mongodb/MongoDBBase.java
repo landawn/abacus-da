@@ -39,6 +39,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
@@ -46,6 +47,7 @@ import java.util.regex.Pattern;
 
 import org.bson.BSONObject;
 import org.bson.BasicBSONObject;
+import org.bson.BsonArray;
 import org.bson.BsonBinary;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
@@ -58,6 +60,7 @@ import org.bson.BsonType;
 import org.bson.BsonValue;
 import org.bson.BsonWriter;
 import org.bson.Document;
+import org.bson.RawBsonArray;
 import org.bson.RawBsonDocument;
 import org.bson.UuidRepresentation;
 import org.bson.codecs.BsonTypeClassMap;
@@ -265,6 +268,25 @@ public abstract class MongoDBBase {
             if (Beans.isBeanClass(cls)) {
                 for (final PropInfo propInfo : ParserUtil.getBeanInfo(cls).propInfoList) {
                     if (!propInfo.isReadOnlyProperty && (isStringElementArrayType(propInfo.clazz) || Number.class.equals(propInfo.clazz))) {
+                        return Boolean.TRUE;
+                    }
+                }
+            }
+
+            return Boolean.FALSE;
+        }
+    };
+    /**
+     * Per class: whether it is a bean with a writable property of a {@link BsonValue} class ({@code BsonInt64},
+     * {@code BsonString}, {@code BsonDocument}, ...), whose decoded Java value of any type {@link #normalizeDecodedProperties}
+     * must encode back into that class (checked once per document, not per field).
+     */
+    private static final ClassValue<Boolean> hasBsonValueProperty = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(final Class<?> cls) {
+            if (Beans.isBeanClass(cls)) {
+                for (final PropInfo propInfo : ParserUtil.getBeanInfo(cls).propInfoList) {
+                    if (!propInfo.isReadOnlyProperty && BsonValue.class.isAssignableFrom(propInfo.clazz)) {
                         return Boolean.TRUE;
                     }
                 }
@@ -529,7 +551,9 @@ public abstract class MongoDBBase {
      *
      * <p>This method allows explicit mapping of a Java property to MongoDB's "_id" field when
      * the default conventions ("id" property or @Id annotation) are not suitable. The specified
-     * property must have both getter and setter methods and accept either String or ObjectId types.</p>
+     * property must have both getter and setter methods and accept either String or ObjectId types (for a property declared
+     * by a generic superclass, the type {@code documentClass} binds; the same rule finds an {@code @Id} or {@code id}
+     * property without registration).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -569,7 +593,9 @@ public abstract class MongoDBBase {
         }
 
         final Method setMethod = Beans.getPropSetter(documentClass, idPropertyName);
-        final Class<?> parameterType = setMethod.getParameterTypes()[0];
+        // WHY: the setter of a property declared by a generic superclass (class Base<K> { K id; }) takes the erased Object, so a
+        // String id of Entity extends Base<String> was rejected; its bean property has the type the subclass binds.
+        final Class<?> parameterType = idPropertyType(documentClass, setMethod, idPropertyName);
 
         if (!(String.class.isAssignableFrom(parameterType) || ObjectId.class.isAssignableFrom(parameterType))) {
             throw new IllegalArgumentException(
@@ -907,7 +933,10 @@ public abstract class MongoDBBase {
      * Java array, which this class's codec registry (the one the databases and collections of {@link MongoDB} use) stores as
      * a BSON array of its elements, and a {@code byte[]} as BSON binary (see the class description). A bean's {@code null}
      * property values are left out, and its String- or ObjectId-typed id property ({@code @Id}, or {@code id}) is written as
-     * {@code _id} when the property has a setter (a record's {@code id} component, which has none, keeps its name). An {@code _id} (of a bean, a Map or name/value pairs) holding a 24-hex-digit {@code String} or a 12-byte
+     * {@code _id} when the property has a setter (a record's {@code id} component, which has none, keeps its name). The
+     * property's type is the one the bean's class gives it, so an id declared by a generic superclass
+     * ({@code class Base<K> { @Id K id; }}) is written as {@code _id} for {@code Entity extends Base<String>} or
+     * {@code Base<ObjectId>}, and as an ordinary {@code id} field for {@code Base<Long>}. An {@code _id} (of a bean, a Map or name/value pairs) holding a 24-hex-digit {@code String} or a 12-byte
      * array becomes an {@link ObjectId}, and a {@code null} one is left out.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1372,6 +1401,11 @@ public abstract class MongoDBBase {
      * between them as needed. The conversion never mutates the source document, including while
      * the bean is being populated, so a document can safely be shared with concurrent readers.</p>
      *
+     * <p>An outer document's {@code _id} takes precedence over a field stored under the id property's own name, with one
+     * exception kept for documents written by earlier versions: those stored a String or ObjectId id declared by a generic
+     * superclass ({@code class Base<K> { K id; }}) as an ordinary field next to a generated {@code _id}, so when such an id
+     * property's own field holds a non-null value, that value is kept (this version writes such an id as {@code _id} only).</p>
+     *
      * <p>BSON {@link Binary} values and byte arrays are converted to readable {@link ByteBuffer} properties when requested.
      * Binary values can also populate byte-array properties; converting an existing buffer to a byte array copies only its
      * remaining bytes without advancing it. The same rules apply to nested bean maps, dotted bean-property paths,
@@ -1389,6 +1423,16 @@ public abstract class MongoDBBase {
      * that cannot be parsed as an array (such as {@code [a]b]}), becomes the array's single element. Other array types
      * convert their text as before.</p>
      *
+     * <p>A dotted key ({@code "address.city"}) that names no property itself is written into the nested property it names,
+     * its value converted as for that property named directly. A missing intermediate bean is created through its no-args
+     * constructor and assigned first; an intermediate whose accessors copy it (a getter returning a copy, a setter storing
+     * one) is written and then set on its owner again, so the value is kept. In a builder-based target bean the first
+     * intermediate of a path is the one created for an earlier dotted key of the document (a plain key of that property
+     * before it is replaced). A path through a collection property ({@code "addresses.city"} for a {@code List<Address>}) is
+     * left whole to the dependency's path setter, which writes into the first element of the collection, or into a new bean it
+     * adds when the collection is missing or empty; in a builder-based target bean it reads the first property of the path
+     * from the builder and fails with {@link ClassCastException}.</p>
+     *
      * <p>The elements of typed collection, array and map properties are converted to their declared types (for example
      * embedded documents into the beans of a {@code List<Address>} property, or {@code Integer} values into a
      * {@code List<Long>}); an element that cannot be converted fails the conversion, as a property value of that type would.
@@ -1398,7 +1442,10 @@ public abstract class MongoDBBase {
      * whether it is an element, a property or {@code rowType} itself. BSON dates read into {@link LocalDate},
      * {@link LocalDateTime} or {@link LocalTime} properties are interpreted in UTC, matching how the driver's codecs write
      * those types, and a BSON regular expression read into a {@link Pattern} property is compiled with its options as flags,
-     * as the driver's codec writes a {@code Pattern}. Embedded bean and record documents, including typed container elements,
+     * as the driver's codec writes a {@code Pattern}. A property, element or record component of a {@link BsonValue} class (such
+     * as {@code BsonInt64}, {@code BsonString}, {@code BsonValue} or {@code BsonDocument}, which the driver stores as the plain
+     * BSON value it holds) receives the stored value encoded into that class, as by {@link #convertBsonValue(Object, Class)}
+     * (an int32 read into a {@code BsonInt64} property becomes a {@code BsonInt64}). Embedded bean and record documents, including typed container elements,
      * support the same String/ObjectId identifier mapping as the outer document, but an embedded document's own id field (including an alias or explicit null)
      * takes precedence over {@code _id}. When that mapping does not apply, embedded documents retain {@code _id}
      * for ordinary bean-property mapping, including numeric and UUID identifiers. Source maps are not modified.</p>
@@ -1437,6 +1484,8 @@ public abstract class MongoDBBase {
      * @throws RuntimeException if a property conversion overflows its target numeric range, a registered converter or type handler throws,
      *         a bean constructor or property setter cannot be accessed or throws while populating the result, or a requested collection or
      *         map property cannot be constructed or populated (for example an element-typed container that rejects a {@code null} element)
+     * @throws CodecConfigurationException if a value read into a property, element or record component of a {@link BsonValue} class
+     *         has no usable codec (for example a {@code UUID}, since this class's codec registry specifies no UUID representation)
      * @see Document
      * @see #_ID
      * @see com.landawn.abacus.annotation.Id
@@ -1468,9 +1517,10 @@ public abstract class MongoDBBase {
     private static <T> T toEntity(final Map<String, Object> doc, final Class<T> rowType, final PropConversions propConversions, final boolean embedded)
             throws IllegalArgumentException, RuntimeException {
         final Method idSetMethod = getObjectIdSetMethod(rowType);
-        final Class<?> parameterType = idSetMethod == null ? null : idSetMethod.getParameterTypes()[0];
         final PropInfo idPropInfo = idSetMethod != null ? ParserUtil.getBeanInfo(rowType).getPropInfo(Beans.getPropNameByMethod(idSetMethod))
                 : propConversions == null ? null : propConversions.idPropInfo();
+        // The erased Object parameter of a generic superclass's setter accepted an ObjectId for a String-bound id (see idSetterType).
+        final Class<?> parameterType = idSetMethod == null ? null : idSetterType(idSetMethod, idPropInfo);
         final Object objectId = doc.get(_ID);
         final Map<String, Object> beanProperties;
 
@@ -1500,17 +1550,82 @@ public abstract class MongoDBBase {
                 rowType);
 
         // An embedded document's own id property wins, including aliases and explicit nulls. Check the map after removing
-        // _id so its implicit alias for id cannot suppress the fallback. Outer documents retain their existing _id precedence.
-        if (objectId != null && parameterType != null && entity != null
+        // _id so its implicit alias for id cannot suppress the fallback. Outer documents retain their existing _id precedence,
+        // except for a legacy document of a generic-superclass id, whose stored id is set instead (see legacyGenericId).
+        final Object legacyId = embedded || objectId == null || idSetMethod == null ? null : legacyGenericId(beanProperties, rowType, idSetMethod, idPropInfo);
+        final Object idValue = legacyId != null ? legacyId : objectId;
+
+        if (idValue != null && parameterType != null && entity != null
                 && (!embedded || idPropInfo == null || !containsProperty(beanProperties, rowType, idPropInfo))) {
-            if (parameterType.isAssignableFrom(objectId.getClass()) || !parameterType.isAssignableFrom(String.class)) {
-                Beans.setPropValue(entity, idSetMethod, objectId);
+            if (parameterType.isAssignableFrom(idValue.getClass()) || !parameterType.isAssignableFrom(String.class)) {
+                // WHY: the erased Object parameter of a generic superclass's id setter (see idSetterType) accepts any value,
+                // so Beans.setPropValue never converts it, and a String or Integer _id was stored in an ObjectId-bound id
+                // (ClassCastException only where the id was read). Convert it to the bound type, as Beans.setPropValue converts it
+                // for the setter of a non-generic ObjectId id (a hex String into its ObjectId, other values rejected).
+                Beans.setPropValue(entity, idSetMethod,
+                        parameterType.isInstance(idValue) || parameterType == idSetMethod.getParameterTypes()[0] ? idValue : N.convert(idValue, parameterType));
             } else {
-                Beans.setPropValue(entity, idSetMethod, objectId.toString());
+                Beans.setPropValue(entity, idSetMethod, idValue.toString());
             }
         }
 
         return entity;
+    }
+
+    /**
+     * Returns the id an earlier version stored in an outer document for an id declared by a generic superclass
+     * ({@code class Base<K> { K id; }}), or {@code null}: that version tested the setter's erased {@code Object} parameter, did
+     * not map the id, and stored it as an ordinary field under its own name next to a generated {@code _id}. This version writes
+     * such an id as {@code _id} only, so a document that also stores a non-null value under the id property's own name (or an
+     * alias) was written by that earlier version, and the stored value, not the generated {@code _id}, is the entity's identity.
+     */
+    private static Object legacyGenericId(final Map<String, Object> beanProperties, final Class<?> rowType, final Method idSetMethod,
+            final PropInfo idPropInfo) {
+        // WHY: overwriting the stored id with the generated _id silently changed the identity of every entity read from such a
+        // document after an upgrade (and a replace then dropped the stored id field for good).
+        if (idPropInfo == null || !(idSetMethod.isBridge() || idSetMethod.getGenericParameterTypes()[0] instanceof TypeVariable)) {
+            return null;
+        }
+
+        // The stored value is set through the id setter, as _id is: bean mapping writes the generic superclass's field (PropInfo),
+        // which an overriding setter of the subclass may not use, and does not convert a value for the erased type.
+        final ParserUtil.BeanInfo beanInfo = ParserUtil.getBeanInfo(rowType);
+        Object storedId = null;
+
+        for (final Map.Entry<String, Object> entry : beanProperties.entrySet()) {
+            if (entry.getKey() != null && beanInfo.getPropInfo(entry.getKey()) == idPropInfo) {
+                // the later key wins, as bean mapping assigns it
+                storedId = entry.getValue();
+            }
+        }
+
+        return storedId;
+    }
+
+    /**
+     * Returns the type of the id property that {@code setMethod} writes: the setter's parameter type, or the narrower type of the
+     * bean property {@code propInfo} when the parameter is an erased type variable of a generic superclass ({@code String} for the
+     * {@code K id} of {@code class Base<K>} in {@code Entity extends Base<String>}, whose setter takes {@code Object}).
+     */
+    private static Class<?> idSetterType(final Method setMethod, final PropInfo propInfo) {
+        final Class<?> parameterType = setMethod.getParameterTypes()[0];
+
+        return propInfo != null && propInfo.clazz != parameterType && parameterType.isAssignableFrom(propInfo.clazz) ? propInfo.clazz : parameterType;
+    }
+
+    /**
+     * Returns the type of the property {@code propName} of {@code beanClass} that {@code setMethod} writes, as
+     * {@link #idSetterType(Method, PropInfo)} resolves it: only a setter whose parameter is a type variable, or a compiler bridge
+     * method, needs the class's bean property (whose type is the one {@code beanClass} binds), so a plain setter costs no BeanInfo
+     * lookup. A genuinely {@code Object}-typed setter that is no bridge keeps its {@code Object} type.
+     */
+    private static Class<?> idPropertyType(final Class<?> beanClass, final Method setMethod, final String propName) {
+        // WHY: when Entity extends Base<String> overrides setId(String), the setter found for "id" is the compiler's bridge
+        // setId(Object), whose generic parameter type is the class Object rather than the type variable, so the id was neither
+        // mapped (written as an ordinary "id" field, _id not read back) nor accepted by registerIdProperty.
+        return setMethod.isBridge() || setMethod.getGenericParameterTypes()[0] instanceof TypeVariable
+                ? idSetterType(setMethod, ParserUtil.getBeanInfo(beanClass).getPropInfo(propName))
+                : setMethod.getParameterTypes()[0];
     }
 
     /**
@@ -1855,8 +1970,13 @@ public abstract class MongoDBBase {
      * the driver's codecs write them), {@link BsonRegularExpression} values of {@link Pattern} properties (as the driver's codec
      * reads them), the JSON text earlier versions of {@link GeneralCodec} stored for a
      * {@code String[]}/{@code Object[]}-like array property, any value of a property whose type comes from a type argument of a generic bean,
-     * the text a {@link Number} property holding a number without a driver codec is stored as, and every value of an immutable
-     * bean (a record). The supplied map is modified only when {@code owned}; its nested maps are never modified.
+     * the text a {@link Number} property holding a number without a driver codec is stored as, any decoded value (a
+     * {@code Long}, a {@code String}, a {@code Document}, ...) of a writable property of a {@link BsonValue} class, which is
+     * converted into that class as {@link #convertBsonValue(Object, Class)} converts it (an embedded document of a bean-like
+     * class such as {@code BsonInt64} keeps the bean mapping), and every value of an immutable bean (a record). The value of
+     * every dotted key ({@code "child.count"}), of any type, is inspected against the nested property it names, since the
+     * flags of {@code beanType} do not describe a nested bean's properties. The supplied map is modified only when
+     * {@code owned}; its nested maps are never modified.
      *
      * @param properties the source bean properties
      * @param beanType the bean class that defines the target property types
@@ -1874,16 +1994,18 @@ public abstract class MongoDBBase {
         // Text is looked at only for a bean with a String[]/Object[]-like or Number property, so other beans pay no lookup per
         // String field.
         final boolean parseText = hasTextParsedProperty.get(beanType);
+        // A BsonValue-typed property must see a decoded value of any type (a Long, a String, ...), not only text.
+        final boolean convertBsonValues = hasBsonValueProperty.get(beanType);
 
         for (final Map.Entry<String, Object> entry : properties.entrySet()) {
             final Object value = entry.getValue();
 
-            // A dotted key ("child.tags") names a property of a nested bean, which the flag of beanType does not cover: without
+            // A dotted key ("child.tags") names a property of a nested bean, which the flags of beanType do not cover: without
             // this, such a key's array text was parsed only when beanType itself happened to have a String[]-like property.
             if (value == null || (propConversions == null
-                    && !(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date
-                            || value instanceof BsonRegularExpression)
-                    && !(value instanceof String && (parseText || (entry.getKey() != null && entry.getKey().indexOf('.') > 0))))) {
+                    && !convertBsonValues && !(entry.getKey() != null && entry.getKey().indexOf('.') > 0) && !(value instanceof Map
+                            || value instanceof Collection || value instanceof Object[] || value instanceof Date || value instanceof BsonRegularExpression)
+                    && !(value instanceof String && parseText))) {
                 continue;
             }
 
@@ -1916,6 +2038,13 @@ public abstract class MongoDBBase {
                 // Earlier versions of GeneralCodec wrote the array as its JSON text; Beans.mapToBean would wrap that text as the
                 // single element. A Number property's text (see convertBsonValue) failed Beans.mapToBean, and so the whole row.
                 converted = convertBsonValue(value, propInfo.clazz);
+            } else if (BsonValue.class.isAssignableFrom(propInfo.clazz) && !(value instanceof Map && propInfo.jsonXmlType.isBean())) {
+                // WHY: a Document holds the decoded Java value (a Long, a String, a Document, ...), never the BsonInt64, BsonString or
+                // BsonDocument such a property declares, and Beans.mapToBean parsed it as that class's JSON ("Can't parse: 5") or put
+                // Java values into a BsonDocument: an entity written with such a property could never be read back. Encode the value
+                // into its class, as toDeclaredElement does for an element or record component of that class (which also keeps
+                // reading an embedded document into a bean-like class such as BsonInt64 as a bean, below).
+                converted = propInfo.clazz.isInstance(value) ? value : convertBsonValue(value, propInfo.clazz);
             } else if (!(value instanceof Map || value instanceof Collection || value instanceof Object[] || value instanceof Date
                     || value instanceof BsonRegularExpression)) {
                 continue;
@@ -2071,9 +2200,11 @@ public abstract class MongoDBBase {
 
         // Class.getModifiers reports every array class as abstract, but an array element (Integer[] of an Integer[][], byte[] of a
         // Map<Integer, byte[]>) must still be converted: leaving one List among converted arrays failed with ArrayStoreException.
-        // Number itself is abstract too, but convertBsonValue parses the text a Number without a driver codec is stored as.
+        // Number itself is abstract too, but convertBsonValue parses the text a Number without a driver codec is stored as. So are
+        // BsonValue and BsonNumber, which convertBsonValue encodes a value into: left as-is, the Integer of a List<BsonValue>
+        // element stayed an Integer (ClassCastException where it was read) and a BsonValue record component failed the row.
         final boolean instantiable = cls.isEnum() || cls.isArray() || cls == ByteBuffer.class || type.isCollection() || type.isMap()
-                || !Modifier.isAbstract(cls.getModifiers()) || (cls == Number.class && element instanceof String);
+                || !Modifier.isAbstract(cls.getModifiers()) || (cls == Number.class && element instanceof String) || BsonValue.class.isAssignableFrom(cls);
 
         if (element instanceof Map && type.isBean()) {
             return instantiable ? toEntity((Map<String, Object>) element, cls, propConversions(type), true) : element;
@@ -2203,9 +2334,17 @@ public abstract class MongoDBBase {
      * {@code BsonValue}) requested as a {@link BsonValue} class (a {@code String} as {@code BsonString}, an {@code Integer} as
      * {@code BsonInt32} or {@code BsonValue}) is encoded as a {@link Document} field holding it is written, and that BSON value is
      * returned when it is of the requested class; a number requested as another numeric BSON class ({@code BsonInt64},
-     * {@code BsonDouble}, {@code BsonDecimal128}, ...) is converted to it, as a {@code BsonInt32} would be. An embedded document is
+     * {@code BsonDouble}, {@code BsonDecimal128}, ...) is converted to it, as a {@code BsonInt32} would be, by the rules of the
+     * corresponding Java number type: a fraction is dropped ({@code 5.5} or a {@code Decimal128} 5.5 as {@code BsonInt64} is
+     * {@code 5}, as for a {@code Long} property) and a value outside the target's range fails with {@link ArithmeticException}
+     * ({@code Long.MAX_VALUE} as {@code BsonInt32}, as for an {@code Integer} property). An embedded
+     * document requested as {@link RawBsonDocument}, or a list or array requested as {@link RawBsonArray} (a {@link BsonDocument}
+     * or {@link BsonArray} value too), is returned as one holding its encoded bytes. An embedded document is
      * read as {@link Binary}, {@link Code} or {@link Symbol} only when it holds non-null values of that class's own properties
-     * (such as {@code {code: "x"}} for {@code Code}).
+     * (such as {@code {code: "x"}} for {@code Code}). An embedded document requested as a bean class (a record too) is read as
+     * {@link #toEntity(Document, Class)} reads an embedded document of a bean property (typed container elements, UTC dates,
+     * binary data, identifier mapping), and a collection or array requested as an object-array type (such as {@code Address[]}
+     * or {@code LocalDate[]}) has each element converted to its component type by the rules above.
      *
      * @param <T> the target value type
      * @param value the decoded field value, possibly null
@@ -2216,8 +2355,8 @@ public abstract class MongoDBBase {
      *         value whose BSON form is not of a requested {@link BsonValue} class, such as an {@code Integer} requested as
      *         {@code BsonString})
      * @throws CodecConfigurationException if a value requested as a {@link BsonValue} class has no usable codec
-     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
-     *         while converting the selected value
+     * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler, or a
+     *         bean constructor or setter, throws while converting the selected value
      */
     protected static <T> T convertBsonValue(final Object value, final Class<T> targetType) throws IllegalArgumentException, RuntimeException {
         if (value instanceof final Binary binary && (targetType == byte[].class || targetType == ByteBuffer.class)) {
@@ -2263,6 +2402,15 @@ public abstract class MongoDBBase {
             // N.convert cannot create the abstract Number from text ("No public static method or constructor found in
             // java.lang.Number"), so every such document failed to read; parse the number instead.
             return (T) Numbers.createNumber(text);
+        } else if ((value instanceof BsonDocument && targetType == RawBsonDocument.class || value instanceof BsonArray && targetType == RawBsonArray.class)
+                && !targetType.isInstance(value)) {
+            // WHY: N.convert tried to create the immutable RawBsonDocument/RawBsonArray (no no-arg constructor) and failed with
+            // "Not able to create instance", so a BsonDocument or BsonArray held by a Document (or a BsonDocument row) could not
+            // be read as its raw form. Encode it as readRow encodes such a row.
+            final RawBsonDocument raw = new RawBsonDocument(value instanceof final BsonDocument document ? document : new BsonDocument(_ID, (BsonArray) value),
+                    codecRegistry.get(BsonDocument.class));
+
+            return (T) (value instanceof BsonDocument ? raw : raw.get(_ID));
         } else if (value != null && targetType != null && BsonValue.class.isAssignableFrom(targetType) && !targetType.isInstance(value)
                 && !(value instanceof BsonValue)) {
             // A Document field holds a decoded Java value (a String, an Integer, ...), never the BsonString/BsonInt32 the driver
@@ -2276,6 +2424,14 @@ public abstract class MongoDBBase {
 
             if (targetType.isInstance(bsonValue)) {
                 return (T) bsonValue;
+            } else if (bsonValue instanceof final BsonDocument document && targetType == RawBsonDocument.class) {
+                // A document encodes as a BsonDocument; a RawBsonDocument (as readRow returns for that row type) holds its bytes.
+                return (T) new RawBsonDocument(document, codecRegistry.get(BsonDocument.class));
+            } else if (bsonValue instanceof BsonArray && targetType == RawBsonArray.class) {
+                // WHY: a list or array encodes as a BsonArray, so a RawBsonArray property, toList element or single result failed
+                // with "it is stored as a BSON ARRAY" although readRow returns RawBsonArray rows. Built as toBsonArrayRow builds
+                // one: a RawBsonDocument reads an array field as a RawBsonArray over its own bytes.
+                return (T) new RawBsonDocument(holder, codecRegistry.get(BsonDocument.class)).get(_ID);
             } else if (bsonValue instanceof BsonNumber && BsonNumber.class.isAssignableFrom(targetType)) {
                 // WHY: a field of ordinary Document rows mixes Integer and Long values (MongoDB stores int32 and int64 for one
                 // field), so an Integer requested as BsonInt64 must convert as the BsonInt32 of a BsonDocument row does below.
@@ -2297,6 +2453,37 @@ public abstract class MongoDBBase {
             } catch (final RuntimeException e) {
                 throw new IllegalArgumentException("Cannot convert an embedded document to " + ClassUtil.getCanonicalClassName(targetType) + ": " + value, e);
             }
+        } else if (value instanceof Map && targetType != null && !targetType.isInstance(value) && !Modifier.isAbstract(targetType.getModifiers())
+                && N.typeOf(targetType).isBean()) {
+            // WHY: N.convert maps an embedded document onto a bean with Beans.mapToBean, without the rules every other read of a
+            // document as a bean applies (toEntity): a List<Long> property kept the stored Integers, a LocalDate was read in the
+            // JVM's zone instead of UTC, a byte[] property holding BSON binary failed, and a record's components were not
+            // converted. Read it as the embedded document of a bean property is read. (Many BSON value classes, such as Binary,
+            // Code or BsonInt64, do report a bean Type; they never reach this branch only because the BsonValue and
+            // isBsonValueClass branches above catch them first. Map types report no bean Type and keep N.convert below.)
+            return toEntity((Map<String, Object>) value, targetType, propConversions(N.typeOf(targetType)), true);
+        } else if ((value instanceof Collection || value instanceof Object[]) && targetType != null && targetType.isArray()
+                && !targetType.getComponentType().isPrimitive() && !targetType.isInstance(value)) {
+            // The elements of an array requested as a whole (a projected array field read as Inner[] or LocalDate[], a record
+            // component of such a type) are converted as those of an array property are: each embedded document into a bean as
+            // above, a date in UTC, ... N.convert converted each element with the plain rules described for the bean above.
+            final Object converted = toDeclaredType(value, N.typeOf(targetType));
+
+            if (converted instanceof final Object[] array && converted != value && targetType.isInstance(converted)) {
+                // A null element keeps the component type's default, as N.convert gave it (Optional.empty for an
+                // Optional[] or Nullable[], null otherwise); the element-wise conversion leaves it null.
+                final Object defaultElement = N.defaultValueOf(targetType.getComponentType());
+
+                if (defaultElement != null) {
+                    for (int i = 0; i < array.length; i++) {
+                        if (array[i] == null) {
+                            array[i] = defaultElement;
+                        }
+                    }
+                }
+            }
+
+            return targetType.isInstance(converted) ? (T) converted : N.convert(converted, targetType);
         }
 
         return N.convert(value, targetType);
@@ -2378,7 +2565,8 @@ public abstract class MongoDBBase {
      *         {@link LocalTime} are read in UTC, as the driver's codecs write those types.
      * @throws IllegalArgumentException if {@code findIterable} or {@code rowType} is null, or a result document has multiple non-{@code _id} fields
      *         for a scalar target, inconsistent scalar projection fields, or cannot be converted to {@code rowType} (for example a bean,
-     *         collection or array result requested as a scalar type)
+     *         collection or array result requested as a scalar type, or a map result with a {@code null} field value requested as a map
+     *         type that rejects it, such as {@code ConcurrentHashMap})
      * @throws IllegalStateException if the {@code MongoClient} that created {@code findIterable} has been closed
      * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @throws ClassCastException if a map contains non-String field names needed for bean or scalar mapping, its keys are incompatible with
@@ -2651,8 +2839,10 @@ public abstract class MongoDBBase {
                 // A BsonDocument row type holds BsonValues: see toBsonDocumentRow.
                 return toBsonDocumentRow(row instanceof final Map<?, ?> map ? map : Beans.beanToMap(row), rowType);
             } else if (targetType.isMap() && row instanceof final Map<?, ?> map) {
-                final Map<String, Object> rowMap = mapFactory.apply(map.size());
-                rowMap.putAll((Map<String, Object>) map);
+                final Map<Object, Object> rowMap = (Map<Object, Object>) (Map<?, ?>) mapFactory.apply(map.size());
+
+                putRowValues(rowMap, map);
+
                 return asRowType(rowMap, rowType);
             } else if (targetType.isMap()) {
                 return asRowType(Beans.beanToMap(row, mapFactory), rowType);
@@ -2733,10 +2923,15 @@ public abstract class MongoDBBase {
      * <ul>
      *   <li>{@code null} or an object-array type &rarr; the row values are placed into a new
      *       {@code Object[]} (component type derived from {@code rowType} when supplied).</li>
-     *   <li>A {@link Collection} type &rarr; a new collection of that type containing the row's values.</li>
+     *   <li>{@link BsonArray} or {@link RawBsonArray} &rarr; the row's values encoded through this class's codec registry (as when
+     *       they are written); another {@code BsonArray} subclass is rejected with {@link IllegalArgumentException}.</li>
+     *   <li>Another {@link Collection} type &rarr; a new collection of that type containing the row's values (an
+     *       {@code ArrayBlockingQueue} with the row's size, at least 1, as its capacity).</li>
      *   <li>{@link BsonDocument} or {@link RawBsonDocument} &rarr; the row encoded through this class's codec registry (as when
      *       it is written); another {@code BsonDocument} subclass is rejected with {@link IllegalArgumentException}.</li>
-     *   <li>A {@link Map} type &rarr; a new map of that type populated via {@link #toMap(Document, IntFunction)}. For an immutable
+     *   <li>A {@link Map} type &rarr; a new map of that type holding the row's fields, created as by {@link #toMap(Document, IntFunction)}
+     *       with {@code IntFunctions.ofMap(rowType)} (but a {@code null} field value the map rejects is reported with
+     *       {@link IllegalArgumentException}, see below). For an immutable
      *       collection or map type (such as {@code ImmutableList} or {@code ImmutableMap}) the filled collection or map is
      *       converted to that type.</li>
      *   <li>A bean class &rarr; delegated to {@link #toEntity(Document, Class)}; not a BSON value type with bean-like accessors
@@ -2753,12 +2948,15 @@ public abstract class MongoDBBase {
      *            (or {@code null} when {@code rowType} is {@code null})
      * @param rowType the target type, or {@code null} to produce an {@code Object[]}
      * @return the converted value
-     * @throws IllegalArgumentException if {@code rowType} is a {@link Collection} or {@link Map} type that cannot be instantiated, if a bean {@code
-     *         rowType} cannot be populated from the row, if a scalar target is requested for a row with multiple non-{@code _id} fields, or if a field
-     *         value cannot be converted to {@code rowType}
+     * @throws IllegalArgumentException if {@code rowType} is a {@link Collection} or {@link Map} type that cannot be instantiated or that
+     *         rejects a field value (a {@code null} value in an {@code ArrayDeque} or {@code ConcurrentHashMap}, or values a {@code TreeSet}
+     *         cannot compare, for example), if a bean {@code
+     *         rowType} cannot be populated from the row, if a scalar target is requested for a row with multiple non-{@code _id} fields, if
+     *         {@code rowType} is a {@code BsonArray} or {@code BsonDocument} subclass other than {@link RawBsonArray} and
+     *         {@link RawBsonDocument}, or if a field value cannot be converted to {@code rowType}
      * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
-     * @throws CodecConfigurationException if {@code rowType} is {@link BsonDocument}, {@link RawBsonDocument} or a {@link BsonValue}
-     *         class and a value has no usable codec (for example a {@code UUID}, since this class's codec registry specifies no UUID
+     * @throws CodecConfigurationException if {@code rowType} is {@link BsonDocument}, {@link RawBsonDocument}, {@link BsonArray},
+     *         {@link RawBsonArray} or a {@link BsonValue} class and a value has no usable codec (for example a {@code UUID}, since this class's codec registry specifies no UUID
      *         representation)
      * @throws RuntimeException if converting a row value overflows its target numeric range, a registered converter or type handler throws,
      *         or constructing the requested collection, map, or bean, adding row values, or invoking a bean accessor fails
@@ -2781,16 +2979,27 @@ public abstract class MongoDBBase {
             }
 
             return (T) a;
+        } else if (BsonArray.class.isAssignableFrom(rowType)) {
+            return (T) toBsonArrayRow(row, rowType);
         } else if (targetType.isCollection()) {
-            final Collection<Object> c = N.newCollection((Class<Collection>) rowType);
+            // WHY: N.newCollection needs a no-argument constructor, which ArrayBlockingQueue lacks, so a document read as one always
+            // failed with "Not able to create instance"; it is sized to the row, as the Cassandra and DynamoDB row readers do.
+            final Collection<Object> c = rowType == ArrayBlockingQueue.class ? new ArrayBlockingQueue<>(Math.max(1, columnCount))
+                    : N.newCollection((Class<Collection>) rowType);
 
-            c.addAll(row.values());
+            for (final Map.Entry<String, Object> entry : row.entrySet()) {
+                addRowValue(c, entry.getKey(), entry.getValue());
+            }
 
             return (T) asRowType(c, rowType);
         } else if (BsonDocument.class.isAssignableFrom(rowType)) {
             return (T) toBsonDocumentRow(row, rowType);
         } else if (targetType.isMap()) {
-            return (T) asRowType(toMap(row, IntFunctions.ofMap((Class<Map>) rowType)), rowType);
+            final Map<Object, Object> map = (Map<Object, Object>) IntFunctions.ofMap((Class<Map>) rowType).apply(columnCount);
+
+            putRowValues(map, row);
+
+            return (T) asRowType(map, rowType);
         } else if (targetType.isBean() && !isBsonValueClass(rowType)) {
             // Not for Binary, Code, ... (Beans.isBeanClass is true for them): mapped as a bean of the row's fields, a Code came
             // back as Code{code=null} and a Binary failed with a NullPointerException, instead of the field's own value.
@@ -2799,6 +3008,61 @@ public abstract class MongoDBBase {
             final String propName = N.defaultIfNull(singleValuePropName(row, rowType), _ID);
 
             return convertBsonValue(row.get(propName), rowType);
+        }
+    }
+
+    /**
+     * Adds the value of the field {@code name} to the row collection {@code c}.
+     *
+     * @throws IllegalArgumentException if {@code c} rejects the value (a {@code null} value in an {@code ArrayDeque},
+     *         {@code ArrayBlockingQueue} or {@code ConcurrentLinkedQueue} row, or values that a {@code TreeSet} row cannot compare, for
+     *         example), naming the field, with the collection's exception as the cause
+     */
+    private static void addRowValue(final Collection<Object> c, final String name, final Object value) throws IllegalArgumentException {
+        try {
+            c.add(value);
+        } catch (final NullPointerException | ClassCastException e) {
+            // WHY: a bare NullPointerException or ClassCastException does not say which field the requested row type rejected (as
+            // in the Cassandra, DynamoDB and BigQuery row readers).
+            throw new IllegalArgumentException(
+                    "Field (" + name + ", " + value + ") is not accepted by the row collection " + ClassUtil.getCanonicalClassName(c.getClass()), e);
+        }
+    }
+
+    /**
+     * Puts the value of the field {@code name} into the row map {@code map}.
+     *
+     * @throws IllegalArgumentException if {@code map} rejects a {@code null} key or value (a {@code ConcurrentHashMap} or
+     *         {@code Hashtable} row, for example), naming the field, with the map's exception as the cause
+     */
+    private static void putRowValue(final Map<Object, Object> map, final Object name, final Object value) throws IllegalArgumentException {
+        try {
+            map.put(name, value);
+        } catch (final NullPointerException e) {
+            // WHY: as in addRowValue; a ClassCastException (a TreeMap row with incompatible keys) keeps its documented type.
+            throw new IllegalArgumentException(
+                    "Field (" + name + ", " + value + ") is not accepted by the row map " + ClassUtil.getCanonicalClassName(map.getClass()), e);
+        }
+    }
+
+    /**
+     * Copies the fields of {@code row} into the new row map {@code map} with {@link Map#putAll(Map)}.
+     *
+     * @throws IllegalArgumentException if {@code map} rejects a {@code null} key or value (see
+     *         {@link #putRowValue(Map, Object, Object)}), naming the field, with the map's exception as the cause
+     */
+    private static void putRowValues(final Map<Object, Object> map, final Map<?, ?> row) throws IllegalArgumentException {
+        try {
+            // WHY putAll, not a put per field: the requested map type keeps its own copy semantics, as before (BasicDBObject turns
+            // each key into its String form, a HashMap subclass's putAll does not go through its put).
+            map.putAll(row);
+        } catch (final NullPointerException e) {
+            // Only on this failure path: refill field by field, which names the field the map rejects.
+            for (final Map.Entry<?, ?> entry : row.entrySet()) {
+                putRowValue(map, entry.getKey(), entry.getValue());
+            }
+
+            throw e;
         }
     }
 
@@ -2907,6 +3171,36 @@ public abstract class MongoDBBase {
 
         throw new IllegalArgumentException("Cannot read a document as " + ClassUtil.getCanonicalClassName(rowType)
                 + ": the supported BsonDocument row types are BsonDocument and RawBsonDocument");
+    }
+
+    /**
+     * Returns the values of {@code row}, in order, as a {@link BsonArray} row type: a {@code BsonArray} or a {@link RawBsonArray},
+     * encoded through {@link #codecRegistry} as a {@link Document} field holding a list of the same values is written (as
+     * {@link #toBsonDocumentRow(Map, Class)} encodes a document row).
+     *
+     * <p><b>WHY:</b> a {@code BsonArray} is a {@code List<BsonValue>}, so filling one like any other collection row type put the
+     * decoded Java values into it, which failed with a bare {@code ClassCastException} ("Integer cannot be cast to BsonValue"),
+     * and a {@code RawBsonArray} (immutable, no no-arg constructor) could not be created at all.</p>
+     *
+     * @throws IllegalArgumentException if {@code rowType} is another {@code BsonArray} subclass
+     * @throws CodecConfigurationException if a value has no usable codec (for example a {@code UUID}, since this registry
+     *         specifies no UUID representation)
+     */
+    private static Object toBsonArrayRow(final Document row, final Class<?> rowType) throws IllegalArgumentException, CodecConfigurationException {
+        final Document holder = new Document(_ID, new ArrayList<>(row.values()));
+        final Codec<Document> codec = codecRegistry.get(Document.class);
+
+        if (rowType == BsonArray.class) {
+            final BsonDocument result = new BsonDocument();
+            codec.encode(new BsonDocumentWriter(result), holder, EncoderContext.builder().build());
+            return result.get(_ID);
+        } else if (rowType == RawBsonArray.class) {
+            // A RawBsonDocument reads an array field as a RawBsonArray over its own bytes.
+            return new RawBsonDocument(holder, codec).get(_ID);
+        }
+
+        throw new IllegalArgumentException(
+                "Cannot read a document as " + ClassUtil.getCanonicalClassName(rowType) + ": the supported BsonArray row types are BsonArray and RawBsonArray");
     }
 
     /**
@@ -3618,9 +3912,13 @@ public abstract class MongoDBBase {
             Method idPropSetMethod = null;
             Class<?> parameterType = null;
 
+            // WHY: the setter of an id declared by a generic superclass (class Base<K> { @Id K id; } with Entity extends
+            // Base<String>) takes the erased Object, so testing its parameter type left such an id unmapped: it was written as
+            // an ordinary "id" field next to a server-generated ObjectId _id, and the _id was never read back into it. The
+            // property's type as the entity class binds it (idPropertyType) decides, as registerIdProperty already did.
             for (final String fieldName : idFieldNames) {
                 idPropSetMethod = Beans.getPropSetter(rowType, fieldName);
-                parameterType = idPropSetMethod == null ? null : idPropSetMethod.getParameterTypes()[0];
+                parameterType = idPropSetMethod == null ? null : idPropertyType(rowType, idPropSetMethod, fieldName);
 
                 if (parameterType != null && (String.class.isAssignableFrom(parameterType) || ObjectId.class.isAssignableFrom(parameterType))) {
                     idSetMethod = idPropSetMethod;
@@ -3631,7 +3929,7 @@ public abstract class MongoDBBase {
 
             if (idSetMethod == null) {
                 idPropSetMethod = Beans.getPropSetter(rowType, ID);
-                parameterType = idPropSetMethod == null ? null : idPropSetMethod.getParameterTypes()[0];
+                parameterType = idPropSetMethod == null ? null : idPropertyType(rowType, idPropSetMethod, ID);
 
                 if (parameterType != null && (String.class.isAssignableFrom(parameterType) || ObjectId.class.isAssignableFrom(parameterType))) {
                     idSetMethod = idPropSetMethod;

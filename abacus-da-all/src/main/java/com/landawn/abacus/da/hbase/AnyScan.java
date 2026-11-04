@@ -613,7 +613,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>
      * This method provides the same functionality as {@link #addFamily(String)} but
      * accepts a pre-converted byte array. Use this when you already have the family
-     * name as bytes to avoid conversion overhead.
+     * name as bytes to avoid conversion overhead. Per HBase semantics, this call overrides any
+     * previous {@link #addColumn(byte[], byte[])} entries for the same family.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -802,7 +803,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * This method allows for precise column selection, scanning only the specified
      * column from the HBase table. This is more efficient than scanning entire families
      * when you only need specific columns. Multiple calls to this method will add
-     * additional columns to the scan.
+     * additional columns to the scan. Per HBase semantics, this call overrides a previous
+     * {@link #addFamily(String)} for the same family: the family is then limited to the
+     * qualifiers added.
      * </p>
      * 
      * <p><b>Usage Examples:</b></p>
@@ -835,7 +838,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>
      * This method provides the same functionality as {@link #addColumn(String, String)}
      * but accepts pre-converted byte arrays. Use this when you already have the family
-     * and qualifier names as bytes to avoid conversion overhead.
+     * and qualifier names as bytes to avoid conversion overhead. Per HBase semantics, this call
+     * overrides a previous {@link #addFamily(byte[])} for the same family.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1544,13 +1548,14 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyScan scan = AnyScan.create();
-     * int def = scan.getCaching();   // returns -1 (server/connection default is used)
+     * int def = scan.getCaching();   // returns -1 (the client's configured default is used)
      *
      * scan.setCaching(1000);
      * int caching = scan.getCaching(); // returns 1000
      * }</pre>
      *
-     * @return the current caching size (number of rows)
+     * @return the current caching size (number of rows); a non-positive value (the default is {@code -1}) means the
+     *         client's configured default is used
      * @see #setCaching(int)
      * @see #getBatch()
      */
@@ -1650,7 +1655,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * long size = scan.getMaxResultSize();  // returns 1048576
      * }</pre>
      *
-     * @return the configured response size in bytes, or {@code -1} to use the client's configured default
+     * @return the configured response size in bytes; a non-positive value (the default is {@code -1}) means the client's
+     *         configured default is used
      * @see #setMaxResultSize(long)
      */
     public long getMaxResultSize() {

@@ -48,7 +48,9 @@ class BigQueryResultBoundaryTest extends BigQueryExecutorTestSupport {
     @ParameterizedTest
     @ValueSource(longs = { 0, 3 })
     void nonNullSingleValueIsEmptyForNoRowsOrDmlCounts(final long reportedRows) throws Exception {
+        // 0: a SELECT with no rows (no DML count); 3: a DML result, whose getTotalRows() is the affected-row count.
         when(mockTableResult.getTotalRows()).thenReturn(reportedRows);
+        when(mockTableResult.getNumDmlAffectedRows()).thenReturn(reportedRows == 0 ? null : reportedRows);
         when(mockTableResult.getValues()).thenReturn(List.of());
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
         assertFalse(executor.queryForSingleNonNull(Long.class, "SELECT value FROM items").isPresent());

@@ -257,6 +257,7 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
         final TableResult tsResult = mock(TableResult.class);
         when(tsResult.getSchema()).thenReturn(Schema.of(tsFields));
         when(tsResult.getTotalRows()).thenReturn(1L);
+        when(tsResult.getNumDmlAffectedRows()).thenReturn(null); // a SELECT result (Mockito would answer 0L)
         when(tsResult.getValues()).thenReturn(Arrays.asList(tsRow));
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(tsResult);
 
@@ -1325,6 +1326,7 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
         final TableResult result = mock(TableResult.class);
         when(result.getSchema()).thenReturn(Schema.of(fields));
         when(result.getTotalRows()).thenReturn(1L);
+        when(result.getNumDmlAffectedRows()).thenReturn(null); // a SELECT result (Mockito would answer 0L)
         when(result.iterateAll()).thenReturn(List.of(row));
 
         final Dataset dataset = BigQueryExecutor.extractData(result, SliceLDeserializeOnlySub.class);
@@ -1703,6 +1705,7 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
                             final TableResult tableResult = mock(TableResult.class);
                             when(tableResult.getSchema()).thenReturn(Schema.of(fields));
                             when(tableResult.getTotalRows()).thenReturn(1L);
+                            when(tableResult.getNumDmlAffectedRows()).thenReturn(null); // a SELECT result (Mockito would answer 0L)
                             when(tableResult.iterateAll()).thenReturn(rows);
 
                             assertEquals(Arrays.asList(SLICEL_JAN_2), BigQueryExecutor.extractData(tableResult, SliceLGoogleDateBean.class).getColumn("day"),
@@ -2139,6 +2142,7 @@ public class BigQueryMappingTest extends BigQueryExecutorTestSupport {
 
         final TableResult twoColumns = mock(TableResult.class);
         when(twoColumns.getTotalRows()).thenReturn(1L);
+        when(twoColumns.getNumDmlAffectedRows()).thenReturn(null); // a SELECT result (Mockito would answer 0L)
         when(twoColumns.getSchema()).thenReturn(Schema.of(fields));
         when(twoColumns.iterateAll()).thenReturn(List.of(row));
 

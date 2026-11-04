@@ -15,7 +15,10 @@
 package com.landawn.abacus.da.hbase;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1086,7 +1089,7 @@ public final class HBaseExecutor {
 
             final BeanInfo entityInfo = type.isBean() ? ParserUtil.getBeanInfo(targetType) : null;
             final Method rowKeySetMethod = type.isBean() ? getRowKeySetMethod(targetType) : null;
-            final Type<?> rowKeyType = rowKeySetMethod == null ? null : N.typeOf(rowKeySetMethod.getParameterTypes()[0]);
+            final Type<?> rowKeyType = getRowKeyType(entityInfo, rowKeySetMethod);
             final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = type.isBean() ? getFamilyColumnFieldNameMap(targetType)._1 : null;
 
             final List<T> resultList = new ArrayList<>();
@@ -1144,7 +1147,7 @@ public final class HBaseExecutor {
 
         final BeanInfo entityInfo = type.isBean() ? ParserUtil.getBeanInfo(targetType) : null;
         final Method rowKeySetMethod = type.isBean() ? getRowKeySetMethod(targetType) : null;
-        final Type<?> rowKeyType = rowKeySetMethod == null ? null : N.typeOf(rowKeySetMethod.getParameterTypes()[0]);
+        final Type<?> rowKeyType = getRowKeyType(entityInfo, rowKeySetMethod);
         final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = type.isBean() ? getFamilyColumnFieldNameMap(targetType)._1 : null;
 
         final List<T> resultList = new ArrayList<>(results.size());
@@ -1178,18 +1181,29 @@ public final class HBaseExecutor {
      * {@code @JsonXmlField(direction = SERIALIZE_ONLY)} property that has a setter is still written on read (as in
      * DynamoDB item mapping), and a read-only property is still skipped when its field declares
      * {@code DESERIALIZE_ONLY}. The one exception is a read-only mutable nested bean that is flattened into its own column
-     * family (the family is the nested bean property, the qualifiers are its properties) and held by a field: its
-     * cells are written into the instance that field already holds, which needs no setter; when that field holds
-     * {@code null} the whole family is skipped and the rest of the row is still read (a read-only immutable nested bean
-     * cannot be filled in place, so its family is always skipped). Otherwise a flattened mutable nested bean that the
-     * property of a mutable entity already holds is filled in place, and any other flattened nested bean is created for
-     * the row and assigned to its property once, after the last cell of the row, so a setter or builder method that
-     * copies its argument receives it complete. Such a nested bean may be immutable (a record, or a bean built through
-     * its constructor or builder): it is built from its cells, and a nested property without a cell gets its default
-     * value or, only when the owning entity is mutable, the value it has in the instance the property already holds (the
-     * nested value that the builder or constructor of an immutable entity starts with is not consulted). A read-only
-     * nested bean mapped as a single {@code @Column} cell is skipped like any other read-only property. A cell whose column maps to the
-     * row-key property is ignored too: that property always receives the key of the row. A property without a cell, such
+     * family (the family is the nested bean property, the qualifiers are its properties) and held by a field. A field-backed
+     * property is read-only only under {@code @AccessFieldByMethod} (on the field or the class) and without a setter. The
+     * cells are written into the instance its field holds, which needs no setter, whatever its getter returns (a getter that
+     * returns a copy, or builds a new view on each call, would hand out an instance the property cannot be assigned); when
+     * the field holds {@code null} the whole family is skipped and the rest of the row is still read (a read-only immutable
+     * nested bean cannot be filled in place, so its family is always skipped). Where the field cannot be made accessible (a
+     * class of a module that does not open its package), its getter is read instead, and the cells are lost if that returns
+     * a copy. Without {@code @AccessFieldByMethod} a field-backed property is not read-only: it is read through its field, whatever
+     * its getter returns, so the instance the field holds is filled in place. Otherwise, too, a flattened mutable nested bean
+     * that the property of a mutable entity already holds is filled in place (the instance the property returns at the row's
+     * first cell of that bean: its field's, or its getter's when it has no field or is under {@code @AccessFieldByMethod}; if
+     * the property returns another instance after the last cell, as such a getter that copies or builds a new view on each
+     * call does, the filled one is assigned to it through its setter), and any other flattened nested bean is created for
+     * the row and assigned to its property once, after the last cell of the row, so a setter or builder method that copies
+     * its argument receives it complete. Such a nested bean may be immutable (a record, or a bean built through its
+     * constructor or builder): it is built from its cells, and a nested property without a cell gets its default value or,
+     * only when the owning entity is mutable, the value it has in the instance the property already holds (the nested
+     * value that the builder or constructor of an immutable entity starts with is not consulted). A generic nested bean is read with the type arguments its property declares (the {@code R right} of a
+     * {@code Pair<String, Integer>} property is read as an {@code Integer}); one declared with a wildcard or an unresolved
+     * type variable is read as its class declares it. A read-only nested bean mapped as a single {@code @Column} cell is
+     * skipped like any other read-only property. A cell whose column maps to the row-key property is ignored too: that
+     * property always receives the key of the row, decoded as the property's type (for one declared with a type variable
+     * of a generic superclass, as the type {@code targetType} binds it to). A property without a cell, such
      * as one that was {@code null} or an empty value wrapper (empty {@code Optional}/{@code Nullable}/{@code OptionalInt}
      * and the like, a {@code Holder} of {@code null}) when {@link AnyPut#create(Object)} wrote the row, is not assigned and
      * keeps the value a new instance has. An empty qualifier maps a
@@ -1330,7 +1344,7 @@ public final class HBaseExecutor {
         if (type.isBean()) {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetType);
             final Method rowKeySetMethod = getRowKeySetMethod(targetType);
-            final Type<?> rowKeyType = rowKeySetMethod == null ? null : N.typeOf(rowKeySetMethod.getParameterTypes()[0]);
+            final Type<?> rowKeyType = getRowKeyType(entityInfo, rowKeySetMethod);
             final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = getFamilyColumnFieldNameMap(targetType)._1;
 
             return toValue(type, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result);
@@ -1411,6 +1425,10 @@ public final class HBaseExecutor {
             Map<String, List<Tuple2<String, Boolean>>> familyNestedBeanTPs = null;
             List<Tuple3<PropInfo, BeanInfo, Object>> nestedBeanResults = null;
             List<Tuple3<Object, PropInfo, Object>> versionedContainers = null;
+            // family -> qualifier -> the whole type of a nested versioned property that earlier versions wrote as one text cell
+            // (see legacyVersionedType)
+            Map<String, Map<String, Type<?>>> familyLegacyTypeMap = null;
+            Type<?> legacyType = null;
             boolean isContestedCell = false;
 
             Map<String, Type<?>> columnValueTypeMap = null;
@@ -1444,8 +1462,7 @@ public final class HBaseExecutor {
                         final Map<String, Type<?>> familyTypeMap = familyColumnValueTypeMap.get(family);
                         if (familyTypeMap != null) {
                             columnValueType = familyTypeMap.get(qualifier);
-                            column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp()); //NOSONAR
-                            columnMap.put(column.version(), column);
+                            putVersions(decodeVersionedCell(cell, columnValueType, findLegacyType(familyLegacyTypeMap, family, qualifier)), columnMap);
 
                             continue;
                         }
@@ -1462,8 +1479,7 @@ public final class HBaseExecutor {
                         final Map<String, Type<?>> familyTypeMap = familyColumnValueTypeMap.get(family);
                         if (familyTypeMap != null) {
                             columnValueType = familyTypeMap.get(qualifier);
-                            column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
-                            columnColl.add(column);
+                            addVersions(decodeVersionedCell(cell, columnValueType, findLegacyType(familyLegacyTypeMap, family, qualifier)), columnColl);
 
                             continue;
                         }
@@ -1577,8 +1593,10 @@ public final class HBaseExecutor {
                 familyPropInfo = entityInfo.getPropInfo(fieldName);
 
                 // ignore the unknown field/property, and a read-only one (see isReadOnlyProperty), except a field-backed
-                // read-only nested bean: its cells are written into the instance its field already holds (handled below),
-                // which never needs the setter, as before abacus-common 8.2 made such a property read-only.
+                // read-only nested bean: its cells are written into the instance its field holds (getHeldNestedBean), which
+                // never needs the setter, as before abacus-common 8.2 made such a property read-only. A field-backed property
+                // is read-only only under @AccessFieldByMethod without a setter. Without the annotation the property is not
+                // read-only; it is read through its field and filled in place as well.
                 if (familyPropInfo == null
                         || (isReadOnlyProperty(familyPropInfo) && !(familyPropInfo.field != null && familyPropInfo.jsonXmlType.isBean() && !familyTP._2))) {
                     continue;
@@ -1598,7 +1616,7 @@ public final class HBaseExecutor {
 
                     final Class<?> propEntityClass = familyPropInfo.jsonXmlType.javaType();
                     final Map<String, String> propEntityColumnFieldNameMap = getFamilyColumnFieldNameMap(propEntityClass)._2;
-                    final BeanInfo propBeanInfo = ParserUtil.getBeanInfo(propEntityClass);
+                    final BeanInfo propBeanInfo = getNestedBeanInfo(familyPropInfo, propEntityClass);
                     columnPropInfo = propBeanInfo.getPropInfo(propEntityColumnFieldNameMap.getOrDefault(qualifier, qualifier));
 
                     // ignore the unknown property, and a read-only one.
@@ -1618,7 +1636,21 @@ public final class HBaseExecutor {
                     Object propEntity = findNestedBeanResult(nestedBeanResults, familyPropInfo);
 
                     if (propEntity == null && !entityInfo.isImmutable && !propBeanInfo.isImmutable) {
-                        propEntity = familyPropInfo.getPropValue(entity);
+                        propEntity = getHeldNestedBean(familyPropInfo, entity);
+
+                        if (propEntity != null) {
+                            // WHY: the held instance is recorded too (with no BeanInfo: there is nothing to finish), so the later
+                            // cells of the property fill this same instance. A getter (read when there is no field, or under
+                            // @AccessFieldByMethod) that returns a copy, or builds a new view on each call (a nested property
+                            // computed from other fields), handed every cell a new instance that was then dropped: every cell
+                            // of the property was lost, also for a row AnyPut.create wrote. It is assigned back after the last
+                            // cell only when the property no longer returns it (see below).
+                            if (nestedBeanResults == null) {
+                                nestedBeanResults = new ArrayList<>(4);
+                            }
+
+                            nestedBeanResults.add(Tuple.of(familyPropInfo, null, propEntity));
+                        }
                     }
 
                     if (propEntity == null) {
@@ -1682,8 +1714,9 @@ public final class HBaseExecutor {
 
                         columnMapMap.put(qualifier, columnMap);
 
-                        column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
-                        columnMap.put(column.version(), column);
+                        legacyType = legacyVersionedType(propBeanInfo, propEntityClass, columnPropInfo);
+                        familyLegacyTypeMap = putLegacyType(familyLegacyTypeMap, family, qualifier, legacyType);
+                        putVersions(decodeVersionedCell(cell, columnValueType, legacyType), columnMap);
                     } else if (columnPropInfo.jsonXmlType.isCollection()
                             && columnPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
                         columnValueType = columnPropInfo.jsonXmlType.parameterTypes().get(0).elementType();
@@ -1714,8 +1747,9 @@ public final class HBaseExecutor {
 
                         columnCollectionMap.put(qualifier, columnColl);
 
-                        column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
-                        columnColl.add(column);
+                        legacyType = legacyVersionedType(propBeanInfo, propEntityClass, columnPropInfo);
+                        familyLegacyTypeMap = putLegacyType(familyLegacyTypeMap, family, qualifier, legacyType);
+                        addVersions(decodeVersionedCell(cell, columnValueType, legacyType), columnColl);
                     } else if (columnPropInfo.jsonXmlType.javaType().equals(HBaseColumn.class)) {
                         if (familyColumnValueTypeMap == null) {
                             familyColumnValueTypeMap = new HashMap<>();
@@ -1743,7 +1777,8 @@ public final class HBaseExecutor {
                             continue;
                         }
 
-                        column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
+                        column = (HBaseColumn<?>) decodeVersionedCell(cell, columnValueType,
+                                legacyVersionedType(propBeanInfo, propEntityClass, columnPropInfo));
 
                         columnPropInfo.setPropValue(propEntity, column);
                     } else {
@@ -1884,7 +1919,17 @@ public final class HBaseExecutor {
                 for (int i = 0, size = nestedBeanResults.size(); i < size; i++) {
                     final Tuple3<PropInfo, BeanInfo, Object> nestedBeanResult = nestedBeanResults.get(i);
 
-                    nestedBeanResult._1.setPropValue(entity, nestedBeanResult._2.finishBeanResult(nestedBeanResult._3));
+                    if (nestedBeanResult._2 == null) {
+                        // An instance the property already held, filled in place: when the property still returns it (its field,
+                        // or a plain getter where the getter is read: no field, or @AccessFieldByMethod), nothing is assigned, as
+                        // before; a getter that returns another instance (a copy or a new view) gets the filled one through the
+                        // setter, unless the property is read-only.
+                        if (!isReadOnlyProperty(nestedBeanResult._1) && nestedBeanResult._1.getPropValue(entity) != nestedBeanResult._3) {
+                            nestedBeanResult._1.setPropValue(entity, nestedBeanResult._3);
+                        }
+                    } else {
+                        nestedBeanResult._1.setPropValue(entity, nestedBeanResult._2.finishBeanResult(nestedBeanResult._3));
+                    }
                 }
             }
 
@@ -1939,6 +1984,24 @@ public final class HBaseExecutor {
         return results.filter(result -> !result.isEmpty()).map(createRowMapper(targetType));
     }
 
+    // The type the row key of entityInfo's rows is decoded as, or null without a row-key property.
+    // WHY not simply the setter's parameter type: for a row-key property declared with a type variable of a generic superclass
+    // (Entity extends Base<Long>, Base<K> declaring "K id") that is the erasure (Object), so the row key was stored as a String
+    // into a property the entity binds to Long (heap pollution: ClassCastException where it is read). The property's type,
+    // resolved against the entity class, is used where it narrows the parameter type, as PropInfo.setPropValue does for the
+    // entity's other generic properties; any other row key is decoded as before.
+    private static Type<?> getRowKeyType(final BeanInfo entityInfo, final Method rowKeySetMethod) {
+        if (rowKeySetMethod == null) {
+            return null;
+        }
+
+        final Class<?> parameterType = rowKeySetMethod.getParameterTypes()[0];
+        final PropInfo rowKeyPropInfo = entityInfo.getPropInfo(Beans.getPropNameByMethod(rowKeySetMethod));
+
+        return rowKeyPropInfo != null && rowKeyPropInfo.clazz != parameterType && parameterType.isAssignableFrom(rowKeyPropInfo.clazz) ? rowKeyPropInfo.type
+                : N.typeOf(parameterType);
+    }
+
     // ByteBuffer is special-cased to mirror the write side (toValueBytes stores a ByteBuffer's raw remaining
     // bytes): reading it back through Type.valueOf(String) would base64-decode the UTF-8 string of those raw
     // bytes and silently corrupt the value.
@@ -1962,6 +2025,125 @@ public final class HBaseExecutor {
         }
     }
 
+    // The whole type of the versioned property columnPropInfo of a nested bean read with the parameterized BeanInfo propBeanInfo
+    // (see getNestedBeanInfo) when the class's BeanInfo types it as no versioned type (a type variable: the T value of Box<T> for
+    // a Box<Map<Long, HBaseColumn<Integer>>> property), or null. Earlier versions wrote nested beans with the class's BeanInfo, so
+    // they stored such a property's HBaseColumn value(s) as ONE text cell ("5:7", or a JSON list or map of them) at the put's
+    // timestamp, which the parameterized BeanInfo then decoded as a single value of the column's value type (NumberFormatException).
+    private static Type<?> legacyVersionedType(final BeanInfo propBeanInfo, final Class<?> propEntityClass, final PropInfo columnPropInfo) {
+        final BeanInfo classBeanInfo = ParserUtil.getBeanInfo(propEntityClass);
+
+        if (propBeanInfo == classBeanInfo) {
+            return null;
+        }
+
+        final PropInfo classPropInfo = classBeanInfo.getPropInfo(columnPropInfo.name);
+
+        return classPropInfo == null || isVersionedType(classPropInfo.jsonXmlType) ? null : columnPropInfo.jsonXmlType;
+    }
+
+    private static boolean isVersionedType(final Type<?> type) {
+        return type.javaType().equals(HBaseColumn.class) || (type.isMap() && type.parameterTypes().get(1).javaType().equals(HBaseColumn.class))
+                || (type.isCollection() && type.parameterTypes().get(0).javaType().equals(HBaseColumn.class));
+    }
+
+    private static Map<String, Map<String, Type<?>>> putLegacyType(Map<String, Map<String, Type<?>>> familyLegacyTypeMap, final String family,
+            final String qualifier, final Type<?> legacyType) {
+        if (legacyType != null) {
+            if (familyLegacyTypeMap == null) {
+                familyLegacyTypeMap = new HashMap<>();
+            }
+
+            familyLegacyTypeMap.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, legacyType);
+        }
+
+        return familyLegacyTypeMap;
+    }
+
+    private static Type<?> findLegacyType(final Map<String, Map<String, Type<?>>> familyLegacyTypeMap, final String family, final String qualifier) {
+        if (familyLegacyTypeMap == null) {
+            return null;
+        }
+
+        final Map<String, Type<?>> legacyTypeMap = familyLegacyTypeMap.get(family);
+
+        return legacyTypeMap == null ? null : legacyTypeMap.get(qualifier);
+    }
+
+    // Decodes a cell of a versioned property: an HBaseColumn of the cell's value at the cell's timestamp. A cell whose text is no
+    // value of valueType is, when legacyType is given (see legacyVersionedType), decoded as the text cell an earlier version wrote:
+    // the HBaseColumn, or the Collection of them, that its text holds, each at its own version. A text that is no such value
+    // either fails with the original exception. A value type that accepts any text (String, Object) reads such a cell as its text.
+    private static Object decodeVersionedCell(final Cell cell, final Type<?> valueType, final Type<?> legacyType) {
+        try {
+            return HBaseColumn.valueOf(getCellValue(cell, valueType), cell.getTimestamp());
+        } catch (final RuntimeException e) {
+            if (legacyType == null) {
+                throw e;
+            }
+
+            final Object legacy;
+
+            try {
+                legacy = legacyType.valueOf(getValueString(cell));
+            } catch (final RuntimeException legacyError) {
+                e.addSuppressed(legacyError);
+                throw e;
+            }
+
+            if (legacy == null) {
+                throw e;
+            }
+
+            return legacy instanceof final Map<?, ?> map ? map.values() : legacy;
+        }
+    }
+
+    private static void putVersions(final Object decoded, final Map<Long, HBaseColumn<?>> columnMap) {
+        if (decoded instanceof final HBaseColumn<?> column) {
+            columnMap.put(column.version(), column);
+        } else {
+            for (final Object element : (Collection<?>) decoded) {
+                if (element != null) {
+                    columnMap.put(((HBaseColumn<?>) element).version(), (HBaseColumn<?>) element);
+                }
+            }
+        }
+    }
+
+    private static void addVersions(final Object decoded, final Collection<HBaseColumn<?>> columnColl) {
+        if (decoded instanceof final HBaseColumn<?> column) {
+            columnColl.add(column);
+        } else {
+            for (final Object element : (Collection<?>) decoded) {
+                if (element != null) {
+                    columnColl.add((HBaseColumn<?>) element);
+                }
+            }
+        }
+    }
+
+    // The nested bean the property propInfo of entity holds, to be filled in place. A read-only field-backed property (a field
+    // without a setter under @AccessFieldByMethod, the only field-backed property that is read-only) is read through its field.
+    // WHY: its getter may return a copy (or build a new view on each call), which the read-only property cannot be assigned
+    // back, so every cell of the nested bean was lost, also for a row AnyPut.create wrote. Its getter is read only when the field
+    // cannot be made accessible.
+    private static Object getHeldNestedBean(final PropInfo propInfo, final Object entity) {
+        final Field field = propInfo.field;
+
+        if (isReadOnlyProperty(propInfo) && field != null && !Modifier.isStatic(field.getModifiers())) {
+            try {
+                if (field.canAccess(entity) || field.trySetAccessible()) {
+                    return field.get(entity);
+                }
+            } catch (final IllegalAccessException | SecurityException e) {
+                // read through the getter below
+            }
+        }
+
+        return propInfo.getPropValue(entity);
+    }
+
     // A getter-only (computed) property, e.g. on an @Entity class or, since abacus-common 8.1.0, inherited from an
     // @Entity superclass, is in propInfoList, so AnyPut.create writes its value as a cell; but PropInfo.setPropValue
     // throws UnsupportedOperationException for it. Its cells are skipped on read, as the JSON parser does. Use the
@@ -1974,9 +2156,42 @@ public final class HBaseExecutor {
         return propInfo.isReadOnlyProperty;
     }
 
-    // The nested bean (or immutable nested bean's intermediate result) that toValue created for propInfo in the current row, or
-    // null. A row has few nested beans, so a list scanned by PropInfo identity (one instance per property of the entity's
-    // BeanInfo, whatever name variant reached it) is cheaper per row and per cell than a map.
+    // The BeanInfo that the cells of the flattened nested bean propInfo (of class propEntityClass) are read with.
+    // WHY the property's parameterized type, not just its class: for a generic nested bean (a Pair<String, Integer>, or a
+    // Holder<T> whose T the entity binds) the class's BeanInfo types each type-variable property as its erasure, so a cell
+    // was stored as a String into a property bound to Integer (heap pollution: ClassCastException where it is read), and a
+    // bound such as N extends Number failed. The parameterized BeanInfo resolves them, as the JSON parser reads such a bean.
+    // Only a fully concrete type is used: a wildcard or unresolved type variable keeps the class's BeanInfo, as before.
+    // AnyPut.create writes nested beans with the same BeanInfo, so both sides type a generic nested bean alike.
+    static BeanInfo getNestedBeanInfo(final PropInfo propInfo, final Class<?> propEntityClass) {
+        final java.lang.reflect.Type reflectType = propInfo.jsonXmlType.reflectType();
+
+        return reflectType instanceof ParameterizedType && isConcreteType(reflectType) ? ParserUtil.getBeanInfo(reflectType)
+                : ParserUtil.getBeanInfo(propEntityClass);
+    }
+
+    // Whether type is a class, or a parameterized type whose type arguments are all concrete (no wildcard, type variable or
+    // generic array type at any depth).
+    private static boolean isConcreteType(final java.lang.reflect.Type type) {
+        if (type instanceof Class) {
+            return true;
+        } else if (type instanceof final ParameterizedType parameterizedType) {
+            for (final java.lang.reflect.Type typeArgument : parameterizedType.getActualTypeArguments()) {
+                if (!isConcreteType(typeArgument)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // The nested bean (or immutable nested bean's intermediate result) that toValue created for propInfo in the current row, or the
+    // instance the property already held that toValue fills in place, or null. A row has few nested beans, so a list scanned by
+    // PropInfo identity (one instance per property of the entity's BeanInfo, whatever name variant reached it) is cheaper per row
+    // and per cell than a map.
     private static Object findNestedBeanResult(final List<Tuple3<PropInfo, BeanInfo, Object>> nestedBeanResults, final PropInfo propInfo) {
         if (nestedBeanResults != null) {
             for (int i = 0, size = nestedBeanResults.size(); i < size; i++) {
@@ -3715,7 +3930,8 @@ public final class HBaseExecutor {
     /**
      * Increments one or more column values within a single row using an AnyIncrement operation.
      *
-     * <p>This is a convenience wrapper around {@link #increment(String, Increment)}.</p>
+     * <p>This is a convenience wrapper around {@link #increment(String, Increment)}. The cells must hold 8-byte long counters,
+     * not the decimal text {@code put} writes for a number (see {@link #increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3749,7 +3965,10 @@ public final class HBaseExecutor {
      * Increments (or decrements) one or more column values within a single row.
      *
      * <p>This operation atomically increments numeric cell values. If the cell doesn't exist,
-     * it's treated as zero before incrementing. Negative amounts can be used for decrementing.</p>
+     * it's treated as zero before incrementing. Negative amounts can be used for decrementing.
+     * A counter cell holds an 8-byte long ({@code Bytes.toBytes(long)}), not the decimal text that {@code put}
+     * and entity mapping write for numbers, so a column written that way cannot be incremented, and a counter
+     * is read with {@code Bytes.toLong}, not into a numeric entity property (see {@link AnyIncrement}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3791,7 +4010,8 @@ public final class HBaseExecutor {
      * any of the types accepted by that helper); {@code family} and {@code qualifier} are
      * encoded via {@link #toFamilyQualifierBytes(String)}. If the cell does not
      * exist it is treated as zero before incrementing. {@code amount} may be negative to
-     * decrement.</p>
+     * decrement. The cell must hold an 8-byte long counter, not the decimal text {@code put} writes
+     * for a number (see {@link #increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3824,7 +4044,8 @@ public final class HBaseExecutor {
      * {@link Durability} guarantee.
      *
      * <p>{@code rowKey}, {@code family}, and {@code qualifier} are converted to bytes as
-     * documented on {@link #incrementColumnValue(String, Object, String, String, long)}.</p>
+     * documented on {@link #incrementColumnValue(String, Object, String, String, long)}. The cell must hold an 8-byte long
+     * counter, not the decimal text {@code put} writes for a number (see {@link #increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3858,7 +4079,8 @@ public final class HBaseExecutor {
      * Byte-array variant of {@link #incrementColumnValue(String, Object, String, String, long)}.
      *
      * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged;
-     * {@code rowKey} is still converted via {@link #toRowKeyBytes(Object)}.</p>
+     * {@code rowKey} is still converted via {@link #toRowKeyBytes(Object)}. The cell must hold an 8-byte long counter, not
+     * the decimal text {@code put} writes for a number (see {@link #increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3899,7 +4121,8 @@ public final class HBaseExecutor {
      * {@link #incrementColumnValue(String, Object, String, String, long, Durability)}.
      *
      * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged;
-     * {@code rowKey} is still converted via {@link #toRowKeyBytes(Object)}.</p>
+     * {@code rowKey} is still converted via {@link #toRowKeyBytes(Object)}. The cell must hold an 8-byte long counter, not
+     * the decimal text {@code put} writes for a number (see {@link #increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -5229,6 +5452,9 @@ public final class HBaseExecutor {
          * Increments one or more column values within a single row on this mapper's table
          * using an AnyIncrement operation.
          *
+         * <p>The cells must hold 8-byte long counters, not the decimal text {@code put} and entity mapping write for a number
+         * (see {@link HBaseExecutor#increment(String, Increment)}).</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Result result = mapper.increment(
@@ -5253,7 +5479,8 @@ public final class HBaseExecutor {
          *
          * <p>Delegates to
          * {@link HBaseExecutor#incrementColumnValue(String, Object, String, String, long)}
-         * with the mapper's bound table name.</p>
+         * with the mapper's bound table name. The cell must hold an 8-byte long counter, not the decimal text {@code put}
+         * and entity mapping write for a number (see {@link HBaseExecutor#increment(String, Increment)}).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -5280,6 +5507,9 @@ public final class HBaseExecutor {
         /**
          * Atomically increments a single column's numeric value on this mapper's table with the
          * specified {@link Durability} guarantee.
+         *
+         * <p>The cell must hold an 8-byte long counter, not the decimal text {@code put} and entity mapping write for a number
+         * (see {@link HBaseExecutor#increment(String, Increment)}).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -5310,6 +5540,9 @@ public final class HBaseExecutor {
          * Byte-array variant of {@link #incrementColumnValue(Object, String, String, long)} on
          * this mapper's table.
          *
+         * <p>The cell must hold an 8-byte long counter, not the decimal text {@code put} and entity mapping write for a number
+         * (see {@link HBaseExecutor#increment(String, Increment)}).</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * long newValue = mapper.incrementColumnValue(
@@ -5336,6 +5569,9 @@ public final class HBaseExecutor {
         /**
          * Byte-array variant of {@link #incrementColumnValue(Object, String, String, long, Durability)}
          * on this mapper's table.
+         *
+         * <p>The cell must hold an 8-byte long counter, not the decimal text {@code put} and entity mapping write for a number
+         * (see {@link HBaseExecutor#increment(String, Increment)}).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

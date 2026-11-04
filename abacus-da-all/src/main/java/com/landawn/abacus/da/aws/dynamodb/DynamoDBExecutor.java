@@ -1005,6 +1005,9 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      * <li><b>Everything else</b> &rarr; {@code S} (string), produced by the registered
      *     {@link Type} for the object's class (so e.g. {@code java.util.Date},
      *     {@code java.time.LocalDateTime}, and {@code UUID} are written as their canonical strings).
+     *     A {@code java.util.Date} is written in whole seconds (for example {@code "2023-11-14T22:13:20Z"}), so its
+     *     milliseconds are lost; {@code java.sql.Timestamp}, {@code Calendar}, {@code Instant} and the other
+     *     {@code java.time} types keep them.
      *     A value that the Type renders as {@code null} text, such as an empty {@code Optional},
      *     {@code Nullable}, or {@link Holder}, is written as {@code NULL = true}. The SDK's own {@link AttributeValue} is not
      *     passed through either: it is written as its JSON text (e.g. {@code {"s": "x"}}), so put a ready-made AttributeValue
@@ -1612,7 +1615,10 @@ public final class DynamoDBExecutor extends DynamoDBExecutorBase {
      *       {@link ClassCastException} when an earlier attribute already set it); read such a nested bean from an {@code M}
      *       attribute instead. An intermediate bean whose accessors copy it is set on its owner again after the write, so the
      *       value is kept; in a builder-built target, the first intermediate of a path is the one created for an earlier dotted
-     *       attribute of the item (a plain attribute of that property before it is replaced);</li>
+     *       attribute of the item (a plain attribute of that property before it is replaced). A path through a collection
+     *       property is left whole to the dependency's path setter, which writes into the first element of the collection, or
+     *       into a new bean it adds when the collection is missing or empty; in a builder-built target it reads the first
+     *       property of the path from the builder and fails the item with {@link ClassCastException};</li>
      *   <li>silently ignores attributes that match neither a property nor a dotted path, and attributes of read-only
      *       properties, which cannot be assigned. In a mutable bean a getter without a setter is a property only in an
      *       {@code @Entity} class or a subclass of one, where {@link #toItem(Object)} writes its value: it is such a read-only

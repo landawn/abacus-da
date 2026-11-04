@@ -410,6 +410,7 @@ public class BigQueryStructuredMappingTest extends BigQueryExecutorTestSupport {
         final TableResult result = mock(TableResult.class);
         when(result.getSchema()).thenReturn(Schema.of(fields));
         when(result.getTotalRows()).thenReturn(1L);
+        when(result.getNumDmlAffectedRows()).thenReturn(null); // a SELECT result (Mockito would answer 0L)
         when(result.getValues()).thenReturn(Arrays.asList(row));
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(result);
 

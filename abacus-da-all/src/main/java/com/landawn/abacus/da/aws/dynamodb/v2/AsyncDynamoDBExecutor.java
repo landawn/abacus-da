@@ -961,7 +961,9 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type of objects to return
      * @param requestItems map of table names to keys and attributes to retrieve. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
-     * @return a CompletableFuture containing a map of table names to lists of retrieved items
+     * @return a CompletableFuture containing a map of table names to lists of retrieved items; an item that cannot be converted
+     *         to {@code targetClass} fails the future with the conversion exception wrapped in
+     *         {@link java.util.concurrent.CompletionException}
      * @throws IllegalArgumentException if {@code targetClass} is null
      */
     public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final Class<T> targetClass)
@@ -1005,7 +1007,9 @@ public final class AsyncDynamoDBExecutor {
      * @param requestItems map of table names to keys and attributes to retrieve. Must not be null.
      * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES", forwarded to the service (not returned here)
      * @param targetClass the class to convert results to. Must not be null.
-     * @return a CompletableFuture containing a map of table names to lists of retrieved items
+     * @return a CompletableFuture containing a map of table names to lists of retrieved items; an item that cannot be converted
+     *         to {@code targetClass} fails the future with the conversion exception wrapped in
+     *         {@link java.util.concurrent.CompletionException}
      * @throws IllegalArgumentException if {@code targetClass} is null
      */
     public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity,
@@ -1059,7 +1063,9 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type of objects to return
      * @param batchGetItemRequest the complete BatchGetItemRequest. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
-     * @return a CompletableFuture containing a map of table names to lists of retrieved items
+     * @return a CompletableFuture containing a map of table names to lists of retrieved items; an item that cannot be converted
+     *         to {@code targetClass} fails the future with the conversion exception wrapped in
+     *         {@link java.util.concurrent.CompletionException}
      * @throws IllegalArgumentException if batchGetItemRequest or targetClass is null
      */
     public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass)
@@ -1773,7 +1779,10 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing the matching items materialized under the pagination
-     *         behavior above, represented as Maps
+     *         behavior above, represented as Maps; an empty list when the query matches nothing (or the client completes with
+     *         no response at all). A null response ends the result there, as for {@link #list(QueryRequest, Class)}. A failed page
+     *         request, or a failure converting an item to a Map, fails the future with that exception wrapped in
+     *         {@link java.util.concurrent.CompletionException}; neither is thrown by this call
      * @throws IllegalArgumentException if queryRequest is null
      * @see #list(QueryRequest, Class)
      * @see #stream(QueryRequest)
@@ -1834,7 +1843,10 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture containing the matching items materialized under the pagination
      *         behavior above as typed objects; an empty list when the query matches nothing (or the client completes with no
      *         response at all). A null response ends the result there: for the first page the list is empty, for a later page
-     *         the list holds the rows of the pages before it and no further page is requested
+     *         the list holds the rows of the pages before it and no further page is requested. A failed page request, or an item
+     *         that cannot be converted to {@code targetClass} (for example a multi-attribute item for a single-value type), fails
+     *         the future with that exception wrapped in {@link java.util.concurrent.CompletionException}; neither is thrown by
+     *         this call
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> CompletableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) throws IllegalArgumentException {
@@ -1964,7 +1976,9 @@ public final class AsyncDynamoDBExecutor {
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @return a CompletableFuture containing a Dataset with results materialized under the same
      *         pagination behavior as {@link #list(QueryRequest)}; empty when the query matches nothing, and also when no returned
-     *         item has any attribute, because a Dataset without columns has no rows
+     *         item has any attribute, because a Dataset without columns has no rows. A failed page request, or a failure
+     *         converting an item to a Map, fails the future with that exception wrapped in
+     *         {@link java.util.concurrent.CompletionException}; neither is thrown by this call
      * @throws IllegalArgumentException if queryRequest is null
      * @see #query(QueryRequest, Class)
      */
@@ -2023,7 +2037,8 @@ public final class AsyncDynamoDBExecutor {
      * @return a CompletableFuture that completes with a {@link Dataset} containing the query results. When the query matches
      *         nothing the Dataset is empty and has no columns, for a bean class too (its properties become the columns only of a
      *         non-empty result); for a {@link Map} type it is empty also when no returned item has any attribute, because a
-     *         Dataset without columns has no rows
+     *         Dataset without columns has no rows. A failed page request, or an item that cannot be converted to a bean
+     *         {@code targetClass}, fails the future with that exception wrapped in {@link java.util.concurrent.CompletionException}
      * @throws IllegalArgumentException if queryRequest or targetClass is null, or targetClass is neither a {@link Map} type nor a
      *         bean class (thrown by this call, before any request is sent, even if the query would match nothing)
      */
@@ -2671,7 +2686,8 @@ public final class AsyncDynamoDBExecutor {
      * HTTP connections, shuts down internal async resources, and releases any other system resources
      * held by the SDK. After calling this method, no further operations should be performed on this
      * executor — they will fail because the underlying client is closed (with the default Netty HTTP client, the returned
-     * future fails with an {@code SdkClientException} wrapped in a {@code CompletionException}).</p>
+     * future fails with an {@code SdkClientException} wrapped in a {@code CompletionException}; the {@code stream} and
+     * {@code scan} futures still complete normally, and consuming their stream throws the {@code SdkClientException}).</p>
      *
      * <p><b>Note on shared clients:</b> if the {@link DynamoDbAsyncClient} passed to the constructor
      * is also used elsewhere, calling {@code close()} here will close it for those callers too.</p>
@@ -3076,7 +3092,8 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param batchGetItemRequest the complete BatchGetItemRequest. Must not be null.
          * @return a CompletableFuture containing the list of retrieved entities from this mapper's table, never {@code null}; items
-         *         of keys DynamoDB leaves unprocessed are not included (see {@link #batchGetItem(Collection)})
+         *         of keys DynamoDB leaves unprocessed are not included (see {@link #batchGetItem(Collection)}); result-mapping
+         *         failures complete the future exceptionally
          * @throws IllegalArgumentException if {@code batchGetItemRequest} is null or the request specifies a different table name
          */
         public CompletableFuture<List<T>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) throws IllegalArgumentException {
@@ -3554,7 +3571,8 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param queryRequest the QueryRequest specifying query parameters. Must not be null.
          * @return a CompletableFuture containing entities materialized according to the pagination
-         *         behavior above
+         *         behavior above; a failed page request, or an item that cannot be converted to the entity class, fails the future
+         *         with that exception wrapped in {@link java.util.concurrent.CompletionException}; neither is thrown by this call
          * @throws IllegalArgumentException if {@code queryRequest} is null or the request specifies a different table name
          */
         public CompletableFuture<List<T>> list(final QueryRequest queryRequest) throws IllegalArgumentException {
@@ -3592,7 +3610,9 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param queryRequest the QueryRequest specifying query parameters. Must not be null.
          * @return a CompletableFuture containing a Dataset of matching entities, whose columns are the entity properties, except that a
-         *         query matching nothing gives an empty Dataset without any columns
+         *         query matching nothing gives an empty Dataset without any columns; a failed page request, or an item that cannot be
+         *         converted to the entity class, fails the future with that exception wrapped in
+         *         {@link java.util.concurrent.CompletionException}; neither is thrown by this call
          * @throws IllegalArgumentException if {@code queryRequest} is null or the request specifies a different table name
          */
         public CompletableFuture<Dataset> query(final QueryRequest queryRequest) throws IllegalArgumentException {

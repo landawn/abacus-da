@@ -1077,7 +1077,10 @@ public final class MongoCollectionExecutor {
      *
      * <p>Returns a cold {@link Flux} of all documents that match the filter; each subscription opens
      * a new server-side cursor and converts every emitted document to {@code T} via the framework's
-     * Document mapping helpers ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}).</p>
+     * Document mapping helpers ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}). An object-array or
+     * {@link Collection} {@code rowType} receives each document's field values positionally, {@code _id} included (unlike the
+     * blocking {@code list}, which converts the sole non-{@code _id} field), as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1104,7 +1107,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Returns a paginated reactive stream of documents that match the filter,
      * starting from the specified offset and limited to the count. Useful for
-     * implementing pagination in reactive applications.</p>
+     * implementing pagination in reactive applications. An object-array or {@link Collection} {@code rowType} receives each
+     * document's field values positionally, {@code _id} included (unlike the blocking {@code list}, which converts the sole
+     * non-{@code _id} field), as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1135,8 +1140,9 @@ public final class MongoCollectionExecutor {
      * <p>Returns a reactive stream of documents matching the filter with only
      * the specified fields included, then converts each to the target type.
      * Projection reduces network traffic and memory usage. A single-value {@code rowType} with exactly one
-     * selected field receives that field's values, as described by
-     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
+     * selected field receives that field's values, and an object-array or {@link Collection} {@code rowType} each document's
+     * field values positionally, {@code _id} included (unlike the blocking {@code list}, which converts the sole
+     * non-{@code _id} field), as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1166,7 +1172,9 @@ public final class MongoCollectionExecutor {
      * <p>Combines field projection with pagination to return a limited set of documents
      * with only specified fields, starting from an offset. Each document is converted
      * to the target type. A single-value {@code rowType} with exactly one selected field receives that field's
-     * values, as described by {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
+     * values, and an object-array or {@link Collection} {@code rowType} each document's field values positionally,
+     * {@code _id} included (unlike the blocking {@code list}, which converts the sole non-{@code _id} field), as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1199,7 +1207,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Returns a sorted reactive stream of documents matching the filter with
      * only specified fields included. Each document is converted to the target type. A single-value
-     * {@code rowType} with exactly one selected field receives that field's values, as described by
+     * {@code rowType} with exactly one selected field receives that field's values, and an object-array or
+     * {@link Collection} {@code rowType} each document's field values positionally, {@code _id} included (unlike the blocking
+     * {@code list}, which converts the sole non-{@code _id} field), as described by
      * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1290,7 +1300,10 @@ public final class MongoCollectionExecutor {
      * <p>Uses a Bson projection object for complex field specifications,
      * combined with filtering and sorting. All results are converted to the target type. For a single-value
      * {@code rowType}, each document's sole non-{@code _id} field is converted; a document that has only its
-     * {@code _id} (for example because it lacks the projected field) has its {@code _id} converted instead.</p>
+     * {@code _id} (for example because it lacks the projected field) has its {@code _id} converted instead. An
+     * object-array or {@link Collection} {@code rowType} receives each document's field values positionally, {@code _id}
+     * included (unlike the blocking {@code list}, which converts the sole non-{@code _id} field), as described by
+     * {@link #list(Collection, Bson, Bson, int, int, Class)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1924,7 +1937,11 @@ public final class MongoCollectionExecutor {
      * text enclosed in {@code [...]} requested as an array type whose elements accept text (such as {@code String[]} or
      * {@code Object[]}) is parsed as the JSON array text earlier versions stored for an array ({@code "[a, b]"} becomes
      * {@code {"a", "b"}} and {@code "[]"} an empty array; text that does not parse becomes the single element);
-     * other values use {@link com.landawn.abacus.util.N#convert(Object, Class)}.
+     * an embedded document requested as a bean class is read as the embedded document of a bean property is read (the
+     * elements of a {@code List<Long>} property become {@code Long}s, a {@code LocalDate} property is read in UTC, a
+     * {@code String} or {@code ObjectId} id property takes the document's own {@code id} field, if any, over its {@code _id}),
+     * and an array of embedded documents requested as a bean array likewise element by element; other values use
+     * {@link com.landawn.abacus.util.N#convert(Object, Class)}.
      * This is the underlying method delegated to by the
      * primitive-wrapper convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.).
      * A dotted {@code propName} such as {@code "address.city"} reads the nested value; a dotted path that traverses a
@@ -1964,7 +1981,8 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
-     * result conversion failures are also signalled through the publisher.</p>
+     * result conversion failures are also signalled through the publisher, for example an {@link IllegalArgumentException} when the
+     * selected value cannot be converted to {@code valueType}, or the failure of constructing or populating a result bean.</p>
      *
      * <p>Numeric conversion that exceeds the requested target range fails with {@link ArithmeticException};
      * this failure is signalled by the publisher after subscription.</p>
@@ -1998,7 +2016,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if a selected value cannot be converted to {@code targetType}
      * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
-     *         while converting the selected value
+     *         while converting the selected value, or constructing or populating a result bean fails
      */
     private static <V> Mono<V> convert(final Document doc, final String propName, final Class<V> targetType)
             throws IllegalArgumentException, ClassCastException, RuntimeException {

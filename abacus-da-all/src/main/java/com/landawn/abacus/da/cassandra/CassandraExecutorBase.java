@@ -185,11 +185,12 @@ import com.landawn.abacus.util.stream.Stream;
  * condition's {@code LIMIT} as given; for {@code count} it limits the one result row, not the rows counted.</p>
  *
  * <h2>Map Rows</h2>
- * <p>A row (or UDT) read as a map class that rejects {@code null} values, such as {@code ConcurrentHashMap} or {@code Hashtable},
- * fails on a {@code NULL} column (or field) with {@link IllegalArgumentException} naming the column and the map class, from
+ * <p>A row (or UDT) read as a map class that rejects {@code null} values, such as {@code ConcurrentHashMap},
+ * {@code ConcurrentSkipListMap} or {@code Hashtable}, fails on a {@code NULL} column (or field) with {@link IllegalArgumentException} naming the column and the map class, from
  * {@code list}, {@code findFirst}, {@code stream} and the other row-mapping methods alike. So does a row (or UDT) read as a
  * collection class that rejects {@code null} elements, such as {@code ArrayBlockingQueue}, {@code ArrayDeque} or
- * {@code ConcurrentLinkedQueue}, naming the column (or field) and the collection class.</p>
+ * {@code ConcurrentLinkedQueue}, naming the column (or field) and the collection class, and a row read as a sorted collection
+ * class ({@code TreeSet}, for example) whose values cannot be compared with each other.</p>
  *
  * <h2>Usage</h2>
  * <pre>{@code
@@ -313,6 +314,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     protected static final Map<Class<?>, Tuple2<ImmutableList<String>, ImmutableSet<String>>> entityKeyNamesMap = new ConcurrentHashMap<>();
 
+    /** Process-wide cache of bean class to the property name of each of its getters (see {@code ownPropNameOf}). */
+    private static final Map<Class<?>, Map<Method, String>> getterPropNamesPool = new ConcurrentHashMap<>();
+
     /**
      * The optional registry of named CQL fragments consulted first when a query string is resolved,
      * or {@code null} when named-CQL lookup is disabled for this executor. Set once at construction.
@@ -391,7 +395,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param entityClass the entity class
-     * @param keyNames collection of property names that comprise the primary key
+     * @param keyNames collection of property names that comprise the primary key: a name resolved by the property's getter, or for a
+     *         property backed only by a public field, by the entity's bean properties; a name the bean properties resolve to a
+     *         field-only property (for example {@code isActive}) is that property even when a getter-backed one answers it only
+     *         through a get/set/is/has-prefixed spelling (a getter {@code getActive()}), or, for a name naming it exactly (such as
+     *         {@code ID}), only by ignoring case; a getter-backed property is not resolved through an {@code @JsonXmlField} name or
+     *         alias
      * @throws IllegalArgumentException if {@code entityClass} is {@code null}, or {@code keyNames} is null or empty,
      *         contains a {@code null} name, or contains a name that cannot be resolved to a readable property of
      *         {@code entityClass} (including when {@code entityClass} is not a bean class)
@@ -404,19 +413,147 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         N.checkArgument(N.notEmpty(keyNames), "'keyNames' can't be null or empty");
 
         final Set<String> keyNameSet = N.newLinkedHashSet(keyNames.size());
+        BeanInfo beanInfo = null;
 
         for (final String keyName : keyNames) {
             final Method getter = Beans.getPropGetter(entityClass, keyName);
 
-            if (getter == null) {
+            if (getter != null) {
+                // WHY: the getter lookup also accepts a get/set/is/has-prefixed spelling, so the getter-backed property "active"
+                // took the key name "isActive" of a field-only property isActive (and "children" took "hasChildren"). A field-only
+                // property that the BeanInfo resolves the name to is preferred over a getter found only through such an alias.
+                final PropInfo fieldOnlyPropInfo = fieldOnlyPropInfoShadowedByGetterAlias(entityClass, keyName, getter);
+                keyNameSet.add(fieldOnlyPropInfo != null ? fieldOnlyPropInfo.name : Beans.getPropNameByMethod(getter));
+                continue;
+            }
+
+            // WHY: a key property backed only by a public field has no getter, so it was rejected here although @Id, insert/update
+            // and entityToCondition read it through the BeanInfo. Fall back to the BeanInfo property of that name, but only to one
+            // without a getter of its own (withoutOwnGetter): a getter-backed property reached only through a BeanInfo alias (an
+            // @JsonXmlField name or alias, say) keeps the getter lookup's name rules, as the v3/v4 named-parameter binding does.
+            if (beanInfo == null) {
+                beanInfo = ParserUtil.getBeanInfo(entityClass);
+            }
+
+            final PropInfo propInfo = withoutOwnGetter(entityClass, beanInfo.getPropInfo(keyName));
+
+            if (propInfo == null) {
                 throw new IllegalArgumentException(
                         "No readable property found for key name: " + keyName + " in class: " + ClassUtil.getCanonicalClassName(entityClass));
             }
 
-            keyNameSet.add(Beans.getPropNameByMethod(getter));
+            keyNameSet.add(propInfo.name);
         }
 
         entityKeyNamesMap.put(entityClass, Tuple.of(ImmutableList.copyOf(keyNameSet), ImmutableSet.wrap(keyNameSet)));
+    }
+
+    /**
+     * Returns the property without a getter that {@code name} names in {@code beanClass} when {@code getter} (the result of
+     * {@code Beans.getPropGetter(beanClass, name)}) was found only through an alias, otherwise {@code null}.
+     *
+     * <p>{@code Beans.getPropGetter} sees only getter-backed properties and also accepts a spelling with a get/set/is/has prefix
+     * (or underscores) added, so the getter-backed property {@code active} answers the name {@code isActive} even when the bean
+     * has a field-only property {@code isActive} (and {@code children} answers {@code haschildren}, the lower-cased column of a
+     * field-only {@code hasChildren}). The bean's {@code BeanInfo.getPropInfo} ranks every property by how closely it matches
+     * and so resolves such a name to the field-only property. When the getter's own property name (the name
+     * {@code Beans.getPropGetters(beanClass)} holds it under, which for {@code getURL()} of a {@code private Integer URL} is
+     * {@code URL}, not the {@code url} derived from the method name) is not exactly {@code name} and the BeanInfo resolves
+     * {@code name} to a property without its own getter (see {@link #withoutOwnGetter(Class, PropInfo)}), that property is
+     * returned; a getter whose property {@code name} names exactly, or a name the BeanInfo resolves to a getter-backed property,
+     * keeps the getter.</p>
+     *
+     * <p>A getter found only by ignoring case (the getter-backed {@code id} for the name {@code ID}, or {@code URL} for the name
+     * {@code url}) gives way only to a field-only property of exactly that name (a {@code public String ID} beside
+     * {@code getId()}, a {@code public String url} beside {@code getURL()}); any other spelling that differs from both only by case
+     * keeps the getter, since case alone cannot tell them apart (Cassandra also lower-cases unquoted names, so a column {@code id}
+     * names the getter-backed {@code id}).</p>
+     *
+     * @param beanClass the bean class
+     * @param name the property or column name being resolved
+     * @param getter the getter {@code Beans.getPropGetter(beanClass, name)} found; may be {@code null}
+     * @return the field-only property to use instead of {@code getter}, or {@code null} to keep {@code getter}
+     */
+    protected static PropInfo fieldOnlyPropInfoShadowedByGetterAlias(final Class<?> beanClass, final String name, final Method getter) {
+        if (getter == null) {
+            return null;
+        }
+
+        // WHY: the name derived from the method (Beans.getPropNameByMethod) is not the getter's property name for an acronym getter:
+        // getURL() of a private Integer URL derives "url", so beside a field-only public String url the name "url" counted as the
+        // getter's own and the column/marker url was typed and bound by getURL(), while toEntity writes the field-only url (the
+        // exact-name field-only property this method is meant to prefer). Compare against the getter's own property name.
+        final String getterPropName = ownPropNameOf(beanClass, getter);
+
+        if (getterPropName.equals(name)) {
+            return null;
+        }
+
+        final PropInfo propInfo = withoutOwnGetter(beanClass, ParserUtil.getBeanInfo(beanClass).getPropInfo(name));
+
+        // WHY: a case-insensitive getter match used to win outright, so ":ID" bound getId() although the bean's exact property ID is
+        // a field-only one. Only an exact-case field-only name may override such a match.
+        return propInfo != null && (!getterPropName.equalsIgnoreCase(name) || propInfo.name.equals(name)) ? propInfo : null;
+    }
+
+    /**
+     * Returns the name of the property {@code getter} is the getter of: the name {@code Beans.getPropGetters(beanClass)} holds it
+     * under, or the name derived from the method if it holds it under none.
+     *
+     * @param beanClass the bean class
+     * @param getter a getter of {@code beanClass}
+     * @return the getter's property name
+     */
+    private static String ownPropNameOf(final Class<?> beanClass, final Method getter) {
+        // WHY: scanning Beans.getPropGetters(beanClass) for the getter on every call made each bean bind marker (and each typed column)
+        // pay O(getters) per value, about 4x the cached getPropNameByMethod lookup it replaced on a 40-getter bean. Look the getter
+        // up in a reverse map built once per class instead.
+        final String propName = getterPropNamesPool.computeIfAbsent(beanClass, CassandraExecutorBase::getterPropNames).get(getter);
+
+        return propName != null ? propName : Beans.getPropNameByMethod(getter);
+    }
+
+    /**
+     * Returns the property name of each getter of {@code beanClass}: the name {@code Beans.getPropGetters(beanClass)} holds it
+     * under (the first one, in that map's order, should it hold a getter under several).
+     *
+     * @param beanClass the bean class
+     * @return a map from each getter to its property name
+     */
+    private static Map<Method, String> getterPropNames(final Class<?> beanClass) {
+        final Map<String, Method> getters = Beans.getPropGetters(beanClass);
+        final Map<Method, String> propNames = new HashMap<>(N.isEmpty(getters) ? 0 : getters.size() * 2);
+
+        if (getters != null) {
+            for (final Map.Entry<String, Method> entry : getters.entrySet()) {
+                // The first name in iteration order, as a scan of the getters would find it.
+                propNames.putIfAbsent(entry.getValue(), entry.getKey());
+            }
+        }
+
+        return propNames;
+    }
+
+    /**
+     * Returns {@code propInfo} if it is a property without a getter of its own (backed only by a public field), otherwise
+     * {@code null}.
+     *
+     * <p>A property has a getter of its own when {@code Beans.getPropGetters(beanClass)} holds a getter under that property's
+     * name. abacus-common resolves the accessors of a field-only property through the same prefix-tolerant getter lookup, so the
+     * field-only {@code isActive} beside a getter-backed {@code active} gets {@code getActive()} as its {@code getMethod} (and
+     * {@code setActive} as its {@code setMethod}) while {@code PropInfo.getPropValue}/{@code setPropValue} still read and write the
+     * {@code isActive} field; such a property counts as field-only here. Comparing the {@code getMethod}'s derived name instead
+     * would misjudge a getter-backed property named after a field that differs from it only by case ({@code private String URL}
+     * with {@code getURL()} is the property {@code URL}, while the getter's derived name is {@code url}).</p>
+     *
+     * @param beanClass the bean class {@code propInfo} belongs to
+     * @param propInfo the property, may be {@code null}
+     * @return {@code propInfo} when it has no getter of its own, otherwise {@code null}
+     */
+    protected static PropInfo withoutOwnGetter(final Class<?> beanClass, final PropInfo propInfo) {
+        // WHY: the derived-name comparison (getPropNameByMethod(getMethod).equals(name)) took URL/getURL(), ID/getID() and
+        // Name/getName() for field-only, so an @JsonXmlField name/alias of such a property bound its raw field past the getter.
+        return propInfo != null && (propInfo.getMethod == null || Beans.getPropGetters(beanClass).get(propInfo.name) == null) ? propInfo : null;
     }
 
     /**
@@ -710,8 +847,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * {@code builderIntermediates} (see {@link #newBuilderIntermediates(BeanInfo, Object)}) and set on the builder after each
      * write; a plain column of that property read before the dotted column is replaced by it.
      *
+     * @param entity the bean (or {@link BeanInfo#createBeanResult()} result) the path starts at
+     * @param chain the properties of the path, at least two, the last one writable
+     * @param value the value for the last property, already converted to its type
+     * @param builderIntermediates the per-row map from {@link #newBuilderIntermediates(BeanInfo, Object)}, or {@code null}
      * @return {@code true} if the value was written, {@code false} if the path is left to the path setter
-     * @throws RuntimeException if reading or writing a property, or creating an intermediate bean, fails (as in the path setter)
+     * @throws RuntimeException if reading or writing a property, or creating an intermediate bean, fails (as in the path setter;
+     *         an {@link IllegalArgumentException} for a {@code null} intermediate of a class without a no-argument constructor,
+     *         such as a record)
      */
     protected static boolean setDottedPathValue(final Object entity, final List<PropInfo> chain, final Object value,
             final Map<PropInfo, Object> builderIntermediates) throws RuntimeException {
@@ -786,6 +929,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Returns the map in which {@link #setDottedPathValue(Object, List, Object, Map)} keeps the first intermediates of the
      * dotted paths of one row when {@code entity}, the result of {@link BeanInfo#createBeanResult()}, is the builder of an
      * immutable bean, or {@code null} for any other result (a mutable bean, or the constructor arguments of a record).
+     *
+     * @param entityInfo the bean info of the row's entity class
+     * @param entity the result of {@code entityInfo.createBeanResult()} for the row
+     * @return a new empty map for a builder, otherwise {@code null}
      */
     protected static Map<PropInfo, Object> newBuilderIntermediates(final BeanInfo entityInfo, final Object entity) {
         return entityInfo.isImmutable && !(entity instanceof Object[]) ? new HashMap<>() : null;
@@ -794,6 +941,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Returns an empty collection to fill with the {@code columnCount} column values of a row read as the collection class
      * {@code rowClass} (an immutable class gets a mutable stand-in, which the executor converts once it is filled).
+     *
+     * @param rowClass the requested row class, a {@link Collection} class
+     * @param columnCount the number of column values the row has
+     * @return a new empty collection: an {@code ArrayBlockingQueue} of capacity {@code max(1, columnCount)} for that class,
+     *         otherwise what {@code N.newCollection(rowClass)} creates
      * @throws IllegalArgumentException if no collection of {@code rowClass} can be created
      */
     @SuppressWarnings({ "rawtypes", "unchecked" })
@@ -805,13 +957,26 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Adds {@code value}, read from the column (or UDT field, as {@code kind} says) {@code name}, to the row collection {@code c}.
+     *
+     * @param c the row collection being filled
+     * @param kind {@code "Column"} or {@code "Field"}, for the exception message
+     * @param name the column (or field) name, for the exception message
+     * @param value the value read
      * @throws IllegalArgumentException if {@code c} rejects the value (a {@code NULL} value in an {@code ArrayBlockingQueue},
-     *         {@code ArrayDeque} or {@code ConcurrentLinkedQueue}, for example), with the collection's exception as the cause
+     *         {@code ArrayDeque} or {@code ConcurrentLinkedQueue}, or a value a {@code TreeSet} cannot compare with its elements, for
+     *         example), with the collection's exception as the cause
+     * @throws NullPointerException if {@code c} is {@code null}
      */
-    protected static void addRowValue(final Collection<Object> c, final String kind, final String name, final Object value) throws IllegalArgumentException {
+    protected static void addRowValue(final Collection<Object> c, final String kind, final String name, final Object value)
+            throws IllegalArgumentException, NullPointerException {
         try {
             c.add(value);
         } catch (final NullPointerException | ClassCastException e) {
+            if (c == null) {
+                // As in putRowValue: the NPE of the missing collection itself, not one from building the message below.
+                throw e;
+            }
+
             // WHY: as in putRowValue, a bare JDK exception from Collection.add does not say which column the requested row type
             // rejected (a NULL column read as an ArrayBlockingQueue, which newRowCollection now creates, gave a bare NPE).
             throw new IllegalArgumentException(
@@ -821,6 +986,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Puts {@code value}, read from the column (or UDT field, as {@code kind} says) {@code name}, into the row map {@code map}.
+     *
+     * @param map the row map being filled
+     * @param kind {@code "Column"} or {@code "Field"}, for the exception message
+     * @param name the column (or field) name, the entry's key
+     * @param value the value read
      * @throws IllegalArgumentException if {@code map} rejects the entry (a {@code NULL} value in a {@code ConcurrentHashMap} or
      *         {@code Hashtable}, for example), with the map's exception as the cause
      * @throws NullPointerException if {@code map} is {@code null}
@@ -946,6 +1116,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #gett(Class, Condition)
      */
     public <T> Optional<T> get(final Class<T> targetClass, final Condition whereClause)
@@ -981,6 +1153,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #gett(Class, Collection, Condition)
      */
     public <T> Optional<T> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
@@ -1086,6 +1260,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      */
     public <T> T gett(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException, DuplicateResultException {
         return gett(targetClass, null, whereClause);
@@ -1119,6 +1295,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one entity is found
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (the shipped executors append their
+     *         own; see <i>Row Limits</i> in the class documentation)
      */
     public abstract <T> T gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
             throws IllegalArgumentException, RuntimeException, DuplicateResultException;
@@ -1980,6 +2158,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
      *         executing, or fetching the query fails
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      */
     public boolean exists(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -2054,6 +2234,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #findFirst(Class, Collection, Condition)
      * @see #findFirst(Class, String, Object...)
      */
@@ -2094,6 +2276,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #findFirst(Class, Condition)
      * @see #findFirst(Class, String, Object...)
      */
@@ -2260,6 +2444,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code false}; see <i>Boolean Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForBoolean(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2298,6 +2484,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForChar(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2336,6 +2524,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForByte(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2374,6 +2564,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForShort(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2412,6 +2604,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForInt(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2450,6 +2644,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForLong(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2488,6 +2684,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForFloat(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2526,6 +2724,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForDouble(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2563,6 +2763,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForString(String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2600,6 +2802,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForDate(Class, Class, String, Condition)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2641,6 +2845,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForDate(Class, String, Condition)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
@@ -2685,6 +2891,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForSingleNonNull(Class, Class, String, Condition)
      * @see #queryForSingleValue(Class, String, Object...)
      */
@@ -2740,6 +2948,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if a row is returned but the converted column value is
      *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in the class
+     *         documentation)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
@@ -3041,7 +3251,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalInt count = executor.queryForInt(
-     *     "SELECT count(*) FROM users WHERE status = ?", "active"); // returns present OptionalInt with the count (0 when NULL); empty when no row matches
+     *     "SELECT count(*) FROM users WHERE status = ?", "active"); // returns present OptionalInt with the count (an aggregate without GROUP BY always returns one row)
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -3077,7 +3287,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalLong total = executor.queryForLong(
-     *     "SELECT sum(amount) FROM sales WHERE year = ?", year); // returns present OptionalLong (0L when NULL); empty when no row matches
+     *     "SELECT sum(amount) FROM sales WHERE year = ?", year); // returns present OptionalLong with the sum, 0L when no row matches (an aggregate without GROUP BY always returns one row)
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -3149,7 +3359,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalDouble avgSalary = executor.queryForDouble(
-     *     "SELECT avg(salary) FROM employees WHERE dept = ?", "Engineering"); // returns present OptionalDouble (0.0d when NULL); empty when no row matches
+     *     "SELECT avg(salary) FROM employees WHERE dept = ?", "Engineering"); // returns present OptionalDouble with the average, 0.0d when no row matches (an aggregate without GROUP BY always returns one row)
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -3307,7 +3517,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     String.class, "SELECT name FROM users WHERE id = ?", userId); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      *
      * Nullable<Instant> maxTimestamp = executor.queryForSingleValue(
-     *     Instant.class, "SELECT max(created_at) FROM events WHERE date = ?", today); // returns present Nullable (may hold null when no events); empty when no row matches
+     *     Instant.class, "SELECT max(created_at) FROM events WHERE date = ?", today); // returns present Nullable, holding null when no event matches (an aggregate without GROUP BY always returns one row)
      * }</pre>
      *
      * @param <V> the type of the single result value to be returned

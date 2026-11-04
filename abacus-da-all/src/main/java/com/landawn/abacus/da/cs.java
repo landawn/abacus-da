@@ -277,7 +277,7 @@ public final class cs { // NOSONAR
     public static final String deleteToCopy = "deleteToCopy";
 
     /**
-     * Parameter name for a MongoDB document.
+     * Parameter name for a document: a MongoDB document or a parsed XML document.
      */
     public static final String doc = "doc";
 

@@ -446,8 +446,9 @@ public class BigQueryExecutor {
      * @param fieldValueList the row to convert
      * @param targetClass the bean class to instantiate: a class with getter/setter properties, or an immutable bean such as a record
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null}, the schema and row widths differ, or
-     *         {@code targetClass} is null or not a recognised bean class
+     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null}, the schema and row widths differ,
+     *         {@code targetClass} is null or not a recognised bean class, or the container of a collection or map property rejects a
+     *         decoded element (see {@link #toEntity(FieldList, FieldValueList, Class)})
      * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      * @see #toEntity(FieldList, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
@@ -471,14 +472,29 @@ public class BigQueryExecutor {
      * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
      * no top-level property matches; a nested bean the path has to create needs a no-argument constructor (a nested record
      * fails the read with {@link IllegalArgumentException}; read it from a {@code STRUCT} column instead), and is assigned before
-     * the value is written into the instance its owner then holds, so a setter that copies the bean keeps it. Nested {@code STRUCT}
+     * the value is written into the instance its owner then holds, so a setter that copies the bean keeps it. A path through a
+     * collection property (e.g. {@code addresses.city} for a {@code List<Address> addresses}) is left whole to the dependency's
+     * path setter, which writes into the first element of the collection, or into a new bean it adds when the collection is
+     * missing or empty; in a builder-based target bean it reads the first property of the path from the builder and fails the
+     * row with {@link ClassCastException}. Nested {@code STRUCT}
      * values are converted recursively, with the sub-schema of
      * their field in {@code fields}, into the property's declared type (including the element types of a {@code Map} or
      * {@code Collection} property such as {@code Map<String, Long>}, and the type arguments of a generic bean property such as
      * {@code Box<Long>}); an {@code Object} or {@code Serializable} property (the non-{@code Iterable} types a
      * {@link FieldValueList} is an instance of) receives a {@code STRUCT} value as the raw {@code FieldValueList}, while a
      * property declared as {@code Iterable} is not supported for a {@code STRUCT} value.
-     * {@code REPEATED} values are converted to the property's collection or array type. {@code BYTES}, {@code TIMESTAMP}, {@code TIME} and {@code DATE} cells are decoded for binary,
+     * {@code REPEATED} values are converted to the property's collection or array type. When the property's own collection or
+     * map rejects an element, the read fails with {@link IllegalArgumentException} naming the field (for a {@code STRUCT}, the
+     * sub-field), with the container's exception as the cause, as a row of that container class does. This applies to an
+     * {@link ArrayBlockingQueue} property; to a collection or map property built by its JSON codec ({@code ArrayDeque<Long>},
+     * {@code TreeSet<Long>}, {@code ConcurrentHashMap<String, Long>} and so on) that rejects an element decodable to its
+     * element type, such as a {@code NULL} field of a {@code STRUCT}, or an element it cannot compare (a {@code STRUCT} element
+     * of a {@code REPEATED} column read into a {@code TreeSet<Map<String, Long>>}); and to any collection property filled with
+     * decoded {@code REPEATED} elements ({@code BYTES}, {@code TIMESTAMP}, {@code TIME}, {@code DATE} or bean {@code STRUCT}
+     * elements) that rejects one, such as a bean a {@code TreeSet} cannot compare. Otherwise (a rejection inside a nested
+     * container, such as a {@code NULL} in a {@code ConcurrentHashMap<String, ConcurrentHashMap<String, Long>>} property's inner
+     * map, or a value that cannot be decoded to the element type) the codec's exception propagates as is.
+     * {@code BYTES}, {@code TIMESTAMP}, {@code TIME} and {@code DATE} cells are decoded for binary,
      * date/time, {@code java.sql.Time} and {@code com.google.cloud.Date} properties as described under <i>Result Value Conversion</i> in
      * the class documentation.
      * A property declared with a type variable that {@code targetClass} binds (e.g. {@code T value} inherited by
@@ -515,8 +531,9 @@ public class BigQueryExecutor {
      * @param fieldValueList the row to convert; must not be {@code null}
      * @param targetClass the bean class to instantiate: a class with getter/setter properties, or an immutable bean such as a record
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is null, the field and row-value counts differ, or
-     *         {@code targetClass} is null or not a recognised bean class
+     * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is null, the field and row-value counts differ,
+     *         {@code targetClass} is null or not a recognised bean class, or the container of a collection or map property rejects a
+     *         decoded element (see above)
      * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      * @see #toEntity(Schema, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
@@ -775,7 +792,9 @@ public class BigQueryExecutor {
             final Object plain = !propType.isMap() ? readRow(subFields, struct, List.class)
                     : subFields == null ? readRow(struct, Map.class) : toMap(subFields, struct, IntFunctions.ofMap());
 
-            return valueOfJson(propType, plain);
+            // A container property that rejects a field (a NULL one in an ArrayBlockingQueue, ArrayDeque, TreeSet or
+            // ConcurrentHashMap, an uncomparable one in a TreeSet) names that sub-field, as a STRUCT read into a row map does.
+            return valueOfJson(propType, plain, i -> subFields != null && i < subFields.size() ? subFields.get(i).getName() : field.getName());
         }
 
         if (propType.isBean() && propType.isParameterizedType()) {
@@ -916,7 +935,12 @@ public class BigQueryExecutor {
      * {@code STRUCT} elements of a bean element type (a parameterized one, such as {@code GenericValue<Long>}, with its type
      * arguments) are mapped like a {@code STRUCT} property.
      * Other parameterized values use the property's JSON codec so their elements are converted as well. An
-     * {@link ArrayBlockingQueue} property, raw or parameterized, is sized for all elements (at least one).
+     * {@link ArrayBlockingQueue} property, raw or parameterized, is sized for all elements (at least one). An element the
+     * property's collection rejects (a {@code null} one in an {@code ArrayBlockingQueue}, {@code ArrayDeque} or {@code TreeSet},
+     * or one a {@code TreeSet} cannot compare) fails with {@link IllegalArgumentException} naming the field, with the
+     * collection's exception as the cause; this covers every collection built for decoded elements, and every collection built
+     * by the codec (or for an {@code ArrayBlockingQueue}) for codec-converted ones (see valueOfJson); a raw collection type
+     * counts as parameterized, with {@code Object} elements.
      *
      * @param field the schema field describing the repeated elements
      * @param values the repeated values, normally wrapped in {@link FieldValue}
@@ -941,7 +965,9 @@ public class BigQueryExecutor {
                 final Object decoded = element instanceof FieldValue ? decodeRepeatedElement(field, (FieldValue) element, elementClass, elementType) : element;
 
                 if (array == null) {
-                    collection.add(decoded);
+                    // An element the property's collection rejects (null in an ArrayBlockingQueue, ArrayDeque or TreeSet,
+                    // an uncomparable one in a TreeSet) names the field, as in valueOfJson and for rows (addRowValue).
+                    addPropertyElement(collection, field.getName(), decoded); // field is non-null: isDecodedElementClass
                 } else {
                     array[index++] = decoded;
                 }
@@ -957,7 +983,9 @@ public class BigQueryExecutor {
         // stored as is in a List<List<Object>> / List<Object[]>, whose elements must be Lists / arrays.
         final boolean recordsAsValueLists = elementClass != null && (Collection.class.isAssignableFrom(elementClass) || elementClass.isArray());
         final Object unwrapped = unwrapRepeatedValue(field, values, recordsAsValueLists);
-        return targetType.isParameterizedType() || targetType.javaType() == ArrayBlockingQueue.class ? valueOfJson(targetType, unwrapped) : unwrapped;
+        return targetType.isParameterizedType() || targetType.javaType() == ArrayBlockingQueue.class
+                ? valueOfJson(targetType, unwrapped, i -> field == null ? String.valueOf(i) : field.getName())
+                : unwrapped;
     }
 
     // WHY: the JSON codec of a collection type, and N.convert to one, create the container with a no-argument constructor,
@@ -965,24 +993,128 @@ public class BigQueryExecutor {
     // therefore failed with "No default constructor found", although rows of that class work (newValueCollection). Such a
     // queue is decoded as a List of the same element type, with the same codec, and copied into a queue that has room for
     // every element (at least one for an empty value). As for rows, a null element is rejected by the queue.
+    // WHY: that rejection was the bare NullPointerException of queue.addAll (a STRUCT with a NULL field read into an
+    // ArrayBlockingQueue property), while a row of that class names the rejected column (addRowValue). The queue is now filled
+    // element by element and a rejected element fails with IllegalArgumentException naming its field (the STRUCT sub-field,
+    // or the REPEATED field), with the queue's exception as the cause.
+    // WHY: any other parameterized container the codec builds failed the same way, with the container's bare exception
+    // (a STRUCT with a NULL field read into an ArrayDeque<Long>, TreeSet<Long>, ConcurrentLinkedQueue<Long> or
+    // ConcurrentHashMap<String, Long> property; a REPEATED STRUCT read into a TreeSet<Map<String, Long>> or a raw TreeSet),
+    // while a STRUCT read into a raw container class names the field (readRow: addRowValue, putRowValue). Such a failure is now
+    // named as well (see nameRejectedElement).
     /**
      * Decodes plain cell values to {@code targetType} with its JSON codec.
      *
+     * @param elementFieldName the name of the field the element at an index came from, used to name an element a
+     *        collection target rejects (a map target names the entry's key, the STRUCT sub-field)
+     * @throws IllegalArgumentException if the container of {@code targetType} rejects an element (a {@code null} one in an
+     *         {@code ArrayBlockingQueue}, {@code ArrayDeque}, {@code TreeSet} or {@code ConcurrentLinkedQueue}, a {@code null} value in a
+     *         {@code ConcurrentHashMap}, or one a {@code TreeSet} cannot compare), naming that element's field, with the
+     *         container's exception as the cause (see addPropertyElement and nameRejectedElement). A rejection inside a nested
+     *         container, or a codec failure with no element the container itself rejects, propagates the codec's exception as is
+     *         (with the failed diagnosis, if any, suppressed)
      * @throws RuntimeException if a value cannot be converted to the target type, or the container cannot be constructed or populated
      */
     @SuppressWarnings("unchecked")
-    private static Object valueOfJson(final Type<?> targetType, final Object plain) throws RuntimeException {
+    private static Object valueOfJson(final Type<?> targetType, final Object plain, final IntFunction<String> elementFieldName)
+            throws IllegalArgumentException, RuntimeException {
         if (targetType.javaType() != ArrayBlockingQueue.class) {
-            return targetType.valueOf(N.toJson(plain));
+            final String json = N.toJson(plain);
+
+            try {
+                return targetType.valueOf(json);
+            } catch (final NullPointerException | ClassCastException e) {
+                throw nameRejectedElement(targetType, json, elementFieldName, e);
+            }
         }
 
         final Collection<Object> elements = (Collection<Object>) (targetType.isParameterizedType()
                 ? N.typeOf("java.util.List<" + targetType.parameterTypes().get(0).name() + ">").valueOf(N.toJson(plain))
                 : plain);
         final ArrayBlockingQueue<Object> queue = new ArrayBlockingQueue<>(Math.max(1, elements.size()));
-        queue.addAll(elements);
+        int index = 0;
+
+        for (final Object element : elements) {
+            addPropertyElement(queue, elementFieldName.apply(index++), element);
+        }
 
         return queue;
+    }
+
+    /**
+     * Adds an element read from the field {@code fieldName} to the collection of a property.
+     *
+     * @throws IllegalArgumentException if {@code c} rejects the element (a {@code null} one in an {@code ArrayBlockingQueue},
+     *         {@code ArrayDeque}, {@code ConcurrentLinkedQueue} or {@code TreeSet}, or one a {@code TreeSet} cannot compare, such as
+     *         a bean that is not {@code Comparable}), with the collection's exception as the cause
+     */
+    private static void addPropertyElement(final Collection<Object> c, final String fieldName, final Object element) throws IllegalArgumentException {
+        try {
+            c.add(element);
+        } catch (final NullPointerException | ClassCastException e) {
+            // WHY: as in addRowValue (which catches the same two), a bare JDK exception from Collection.add does not say which
+            // field the property's collection rejected (a REPEATED STRUCT read into a TreeSet<Bean> property failed with a bare
+            // ClassCastException).
+            throw new IllegalArgumentException(
+                    "Field (" + fieldName + ", " + element + ") is not accepted by the property collection " + ClassUtil.getCanonicalClassName(c.getClass()),
+                    e);
+        }
+    }
+
+    /**
+     * Names the element that made the JSON codec of the container type {@code targetType} fail with {@code e}: the elements of
+     * {@code json} are decoded to their declared types into a {@code List} (or a {@code LinkedHashMap}), which accepts any
+     * element, and added one by one to a new container of the property's class until one is rejected.
+     *
+     * @return an {@link IllegalArgumentException} naming the rejected element's field (a map entry's key), with {@code e} as the
+     *         cause, in the form of addPropertyElement; or {@code e} itself if {@code targetType} is not a parameterized collection
+     *         or map type or no element is rejected (the codec failed for another reason)
+     */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static RuntimeException nameRejectedElement(final Type<?> targetType, final String json, final IntFunction<String> elementFieldName,
+            final RuntimeException e) {
+        if (!targetType.isParameterizedType() || !(targetType.isCollection() || targetType.isMap())) {
+            return e;
+        }
+
+        final List<Type<?>> parameterTypes = targetType.parameterTypes();
+
+        try {
+            if (targetType.isMap()) {
+                final Map<Object, Object> entries = (Map<Object, Object>) N
+                        .typeOf("java.util.LinkedHashMap<" + parameterTypes.get(0).name() + ", " + parameterTypes.get(1).name() + ">")
+                        .valueOf(json);
+                final Map<Object, Object> map = IntFunctions.ofMap((Class<Map>) targetType.javaType()).apply(entries.size());
+
+                for (final Map.Entry<Object, Object> entry : entries.entrySet()) {
+                    try {
+                        map.put(entry.getKey(), entry.getValue());
+                    } catch (final NullPointerException | ClassCastException rejected) {
+                        return new IllegalArgumentException("Field (" + entry.getKey() + ", " + entry.getValue() + ") is not accepted by the property map "
+                                + ClassUtil.getCanonicalClassName(map.getClass()), e);
+                    }
+                }
+            } else {
+                final Collection<Object> elements = (Collection<Object>) N.typeOf("java.util.List<" + parameterTypes.get(0).name() + ">").valueOf(json);
+                final Collection<Object> c = newValueCollection(targetType.javaType(), elements.size());
+                int index = 0;
+
+                for (final Object element : elements) {
+                    try {
+                        c.add(element);
+                    } catch (final NullPointerException | ClassCastException rejected) {
+                        return new IllegalArgumentException("Field (" + elementFieldName.apply(index) + ", " + element
+                                + ") is not accepted by the property collection " + ClassUtil.getCanonicalClassName(c.getClass()), e);
+                    }
+
+                    index++;
+                }
+            }
+        } catch (final RuntimeException diagnosisFailure) {
+            e.addSuppressed(diagnosisFailure);
+        }
+
+        return e;
     }
 
     // Whether the elements of a REPEATED field must be decoded one by one for elementClass instead of going through the
@@ -1167,7 +1299,8 @@ public class BigQueryExecutor {
      * @param targetClass the bean class to instantiate: a class with getter/setter properties, or an immutable bean such as a record
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
      * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, if the schema cannot be retrieved from
-     *         {@code fieldValueList}, or if {@code targetClass} is null or not a recognised bean class
+     *         {@code fieldValueList}, if {@code targetClass} is null or not a recognised bean class, or if the container of a
+     *         collection or map property rejects a decoded element (see {@link #toEntity(FieldList, FieldValueList, Class)})
      * @throws RuntimeException if a field value cannot be decoded or converted, or a target bean or container cannot be constructed or populated
      * @see #toEntity(FieldList, FieldValueList, Class)
      */
@@ -1278,7 +1411,9 @@ public class BigQueryExecutor {
      * @param mapSupplier creates the outer {@link Map} instance given the expected size; must not be
      *                    {@code null}
      * @return the map produced by {@code mapSupplier}, populated with one entry per field
-     * @throws IllegalArgumentException if any argument is {@code null}, or if the number of fields differs from the number of row values
+     * @throws IllegalArgumentException if any argument is {@code null}, if the number of fields differs from the number of row values, or
+     *         if a map from {@code mapSupplier} rejects a field value (a {@code NULL} value in a {@code ConcurrentHashMap} or
+     *         {@code Hashtable}, for example), with the map's exception as the cause
      * @throws RuntimeException if {@code mapSupplier} throws while creating a result map
      * @throws NullPointerException if {@code mapSupplier} returns {@code null} and a row value must be inserted into that map
      * @see IntFunctions#ofMap()
@@ -1294,10 +1429,50 @@ public class BigQueryExecutor {
         final Map<String, Object> map = mapSupplier.apply(fieldValueList.size());
 
         for (int i = 0, size = fieldValueList.size(); i < size; i++) {
-            map.put(fields.get(i).getName(), toMapValue(fields.get(i), fieldValueList.get(i), mapSupplier));
+            putRowValue(map, fields.get(i).getName(), toMapValue(fields.get(i), fieldValueList.get(i), mapSupplier));
         }
 
         return map;
+    }
+
+    /**
+     * Puts the value of the field {@code name} into the row (or {@code STRUCT}) map {@code map}.
+     *
+     * @throws IllegalArgumentException if {@code map} rejects the entry (a {@code NULL} value in a {@code ConcurrentHashMap} or
+     *         {@code Hashtable}, for example), with the map's exception as the cause
+     * @throws NullPointerException if {@code map} is {@code null}
+     */
+    private static void putRowValue(final Map<String, Object> map, final String name, final Object value)
+            throws IllegalArgumentException, NullPointerException {
+        try {
+            map.put(name, value);
+        } catch (final NullPointerException | ClassCastException e) {
+            if (map == null) {
+                throw e;
+            }
+
+            // WHY: a bare JDK exception from Map.put (a NULL cell read into a ConcurrentHashMap row gave an NPE without a
+            // message) does not say which field the requested map type rejected; the Cassandra and DynamoDB executors name
+            // the column the same way.
+            throw new IllegalArgumentException(
+                    "Field (" + name + ", " + value + ") is not accepted by the map " + ClassUtil.getCanonicalClassName(map.getClass()), e);
+        }
+    }
+
+    /**
+     * Adds the value of the field {@code name} to the row collection {@code c}.
+     *
+     * @throws IllegalArgumentException if {@code c} rejects the value (a {@code NULL} value in an {@code ArrayBlockingQueue},
+     *         {@code ArrayDeque} or {@code TreeSet}, for example), with the collection's exception as the cause
+     */
+    private static void addRowValue(final Collection<Object> c, final String name, final Object value) throws IllegalArgumentException {
+        try {
+            c.add(value);
+        } catch (final NullPointerException | ClassCastException e) {
+            // WHY: as in putRowValue, a bare JDK exception from Collection.add does not say which field the row type rejected.
+            throw new IllegalArgumentException(
+                    "Field (" + name + ", " + value + ") is not accepted by the row collection " + ClassUtil.getCanonicalClassName(c.getClass()), e);
+        }
     }
 
     /**
@@ -1408,8 +1583,9 @@ public class BigQueryExecutor {
      * @param fieldValueList the row data from BigQuery containing both schema and values
      * @param mapSupplier a function that creates Map instances given the expected size
      * @return a Map of the mapSupplier's type containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if {@code fieldValueList} or {@code mapSupplier} is {@code null}, or if the schema cannot be extracted
-     *         from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code fieldValueList} or {@code mapSupplier} is {@code null}, if the schema cannot be extracted
+     *         from {@code fieldValueList}, or if a map from {@code mapSupplier} rejects a field value (a {@code NULL} value in a
+     *         {@code ConcurrentHashMap} or {@code Hashtable}, for example), with the map's exception as the cause
      * @throws RuntimeException if {@code mapSupplier} throws while creating a result map
      * @throws NullPointerException if {@code mapSupplier} returns {@code null} and a row value must be inserted into that map
      * @see #toMap(FieldList, FieldValueList, IntFunction)
@@ -1525,14 +1701,17 @@ public class BigQueryExecutor {
 
         for (int i = 0; i < fields.size(); i++) {
             final FieldValue cell = row.get(i);
+            final Object value;
 
             if (isRecordCell(cell)) {
-                values.add(readRow(subFieldsOf(fields.get(i)), (FieldValueList) cell.getValue(), List.class));
+                value = readRow(subFieldsOf(fields.get(i)), (FieldValueList) cell.getValue(), List.class);
             } else if (isRepeatedCell(cell)) {
-                values.add(unwrapRepeatedValue(fields.get(i), (List<?>) cell.getValue()));
+                value = unwrapRepeatedValue(fields.get(i), (List<?>) cell.getValue());
             } else {
-                values.add(cell.getValue());
+                value = cell.getValue();
             }
+
+            addRowValue(values, fields.get(i).getName(), value);
         }
 
         return toRowClass(values, rowClass);
@@ -1770,12 +1949,16 @@ public class BigQueryExecutor {
      * <ul>
      *   <li>An entity bean class &rarr; each row is mapped via
      *       {@link #toEntity(FieldList, FieldValueList, Class)}.</li>
-     *   <li>{@link Map} or a {@link Map} subclass &rarr; each row becomes a map of column-to-value.</li>
+     *   <li>{@link Map} or a {@link Map} subclass &rarr; each row becomes a map of column-to-value. A map that rejects a
+     *       value, such as a {@code ConcurrentHashMap} or {@code Hashtable} for a {@code NULL} cell, fails the row with
+     *       {@link IllegalArgumentException} naming the column.</li>
      *   <li>An object-array class (e.g. {@code Object[].class}) or {@code null} &rarr; each row is
      *       returned as an object array sized to the row width. {@code Object[]} rows keep the raw cell values; a typed
      *       array class (e.g. {@code Long[].class}) converts each cell to its component type.</li>
      *   <li>A {@link Collection} subclass &rarr; each row becomes a collection of values in column
-     *       order, subject to that collection's ordering, duplicate and null rules. An {@link ArrayBlockingQueue}
+     *       order, subject to that collection's ordering, duplicate and null rules; a value it rejects, such as a {@code NULL}
+     *       cell for an {@link ArrayBlockingQueue}, {@code ArrayDeque} or {@code TreeSet}, fails the row with
+     *       {@link IllegalArgumentException} naming the column. An {@link ArrayBlockingQueue}
      *       has capacity for the row (at least one for an empty row); a {@link CopyOnWriteArrayList} is populated in bulk.</li>
      *   <li>Any other class, including recognized scalar types such as {@link java.util.Calendar} and {@link ByteBuffer},
      *       &rarr; the result is treated as a single-column scalar; the first column's value is converted to {@code targetClass}.
@@ -1795,7 +1978,8 @@ public class BigQueryExecutor {
      * // Edge: an empty result (getTotalRows() == 0) yields an empty list
      * BigQueryExecutor.toList(emptyResult, Customer.class).isEmpty();        // returns true
      *
-     * // Edge: a DML TableResult (null schema, getTotalRows() > 0) also yields an empty list
+     * // Edge: a DML TableResult yields an empty list. Its getTotalRows() may be the affected-row count
+     * // (the client reports it there when the result carries a schema), which is not taken as a row count
      * BigQueryExecutor.toList(dmlResult, Customer.class).isEmpty();          // returns true
      * }</pre>
      *
@@ -1803,12 +1987,16 @@ public class BigQueryExecutor {
      * @param tableResult the BigQuery query result to materialise; must not be {@code null}
      * @param targetClass selects the per-row mapping strategy as described above; may be
      *                    {@code null} to fall back to {@code Object[]} rows
-     * @return a {@link List} containing one element per data row, sized to
-     *         {@link TableResult#getTotalRows()}; an empty list if the result has no rows or no
-     *         schema (e.g. a DML statement)
-     * @throws IllegalArgumentException if {@code tableResult} is {@code null}, or if {@code targetClass} is incompatible with the row width
-     *         (see scalar case above)
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @return a {@link List} containing one element per data row; an empty list if the result has no
+     *         schema or reports no rows. {@link TableResult#getTotalRows()} is taken as the row count only for a
+     *         result without {@link TableResult#getNumDmlAffectedRows() a DML affected-row count}: for a DML statement
+     *         the client can report the affected-row count there, so the rows the result holds (none) are read instead
+     * @throws IllegalArgumentException if {@code tableResult} is {@code null}, if {@code targetClass} is incompatible with the row width
+     *         (see scalar case above), if a {@code Map} or {@code Collection} row of {@code targetClass} rejects a cell value (see
+     *         above), or if the container of a collection or map property of an entity bean {@code targetClass} rejects a decoded
+     *         element (see {@link #toEntity(FieldList, FieldValueList, Class)})
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @throws RuntimeException if retrieving a result page fails, a field cannot be converted, or a target bean or container cannot be constructed or
      *         populated
      * @see #toEntity(FieldValueList, Class)
@@ -1820,14 +2008,12 @@ public class BigQueryExecutor {
 
         final Schema schema = tableResult.getSchema();
 
-        // A null schema (e.g. a DML statement's TableResult) has no result columns regardless of the
-        // affected-row count — checked before toIntExact, which would overflow on a DML statement that
-        // touched more than Integer.MAX_VALUE rows.
+        // A null schema has no result columns.
         if (schema == null) {
             return new ArrayList<>(0);
         }
 
-        final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
+        final int rowCount = resultRowCountOf(tableResult);
 
         if (rowCount == 0) {
             return new ArrayList<>(0);
@@ -1836,7 +2022,7 @@ public class BigQueryExecutor {
         final FieldList fields = schema.getFields();
         final Iterable<FieldValueList> rows = tableResult.iterateAll();
 
-        final List<T> resultList = new ArrayList<>(rowCount);
+        final List<T> resultList = new ArrayList<>(initialRowCapacity(rowCount));
         final Function<? super FieldValueList, ? extends T> mapper = createRowMapper(targetClass, fields);
 
         for (final FieldValueList row : rows) {
@@ -1844,6 +2030,25 @@ public class BigQueryExecutor {
         }
 
         return resultList;
+    }
+
+    /** Upper bound on the capacity pre-allocated from a result's reported row count (lists grow past it as rows arrive). */
+    private static final int MAX_PRESIZED_ROW_COUNT = 1 << 14;
+
+    // WHY: for a DML statement google-cloud-bigquery reports the affected-row count as getTotalRows() (BigQueryImpl sets it
+    // from numDmlAffectedRows for a jobs.query response that carries a schema, and for an Arrow DML result whose schema comes
+    // from the job statistics), so a non-null schema did not mean getTotalRows() counted result rows: toList/extractData did
+    // toIntExact on it (ArithmeticException above Integer.MAX_VALUE affected rows) and pre-sized their lists to the affected-row
+    // count. A result with getNumDmlAffectedRows() != null now has no known row count (-1): the rows it holds (none for a DML
+    // statement) are read without trusting getTotalRows(). Otherwise getTotalRows() is the result row count.
+    private static int resultRowCountOf(final TableResult tableResult) {
+        return tableResult.getNumDmlAffectedRows() != null ? -1 : Numbers.toIntExact(tableResult.getTotalRows());
+    }
+
+    // The reported total is only a sizing hint (an Arrow result reports the read session's estimate): pre-size to at most
+    // MAX_PRESIZED_ROW_COUNT, nothing for an unknown (-1) count.
+    private static int initialRowCapacity(final int rowCount) {
+        return rowCount <= 0 ? 0 : Math.min(rowCount, MAX_PRESIZED_ROW_COUNT);
     }
 
     /**
@@ -1880,19 +2085,24 @@ public class BigQueryExecutor {
      * // Map hint keeps nested STRUCTs as Maps
      * Dataset asMaps = BigQueryExecutor.extractData(tableResult, Map.class);
      *
-     * // Edge: a DML TableResult (null schema) yields an empty Dataset
+     * // Edge: a DML TableResult yields a Dataset with no rows (and no columns when it has no schema),
+     * // even when its getTotalRows() reports the affected-row count
      * Dataset empty = BigQueryExecutor.extractData(dmlResult, Customer.class);
      * empty.size();                                      // returns 0
-     * empty.columnCount();                               // returns 0
      * }</pre>
      *
      * @param tableResult the BigQuery query result to materialise; must not be {@code null}
      * @param targetClass type hint used to choose per-column conversion as described above; may be
      *                    {@code null}
      * @return a {@link RowDataset} backed by per-column lists, or {@link N#newEmptyDataset()} if
-     *         {@code tableResult} has no schema (e.g. it came from a DML statement)
-     * @throws IllegalArgumentException if {@code tableResult} is {@code null}
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     *         {@code tableResult} has no schema. {@link TableResult#getTotalRows()} is not taken as the row count of a result
+     *         with {@link TableResult#getNumDmlAffectedRows() a DML affected-row count} (the client can report the affected-row
+     *         count there, with a schema): its rows (none for a DML statement) are read as they are
+     * @throws IllegalArgumentException if {@code tableResult} is {@code null}, or if the container of a collection or map property of
+     *         an entity bean {@code targetClass} rejects a decoded element of its {@code STRUCT} or {@code REPEATED} column (see
+     *         {@link #toEntity(FieldList, FieldValueList, Class)})
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @throws RuntimeException if retrieving a result page fails, a field cannot be converted, or a target bean or container cannot be constructed or
      *         populated
      * @see RowDataset
@@ -1905,13 +2115,11 @@ public class BigQueryExecutor {
 
         final Schema schema = tableResult.getSchema();
 
-        // Null schema (DML statement) checked before toIntExact: getTotalRows() is the affected-row
-        // count there and could overflow the int conversion.
         if (schema == null) {
             return N.newEmptyDataset();
         }
 
-        final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
+        final int rowCount = initialRowCapacity(resultRowCountOf(tableResult));
 
         final FieldList fields = schema.getFields();
         final Iterable<FieldValueList> rows = tableResult.iterateAll();
@@ -2909,10 +3117,11 @@ public class BigQueryExecutor {
     public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters)
             throws IllegalArgumentException, RuntimeException, ArithmeticException {
         final TableResult tableResult = execute(query, parameters);
-        // For DML statements BigQuery reports the affected-row count via getTotalRows() while
-        // getValues() is empty. Drive off the iterator rather than the row count so we don't
-        // throw NoSuchElementException in that case.
-        if (tableResult.getTotalRows() <= 0) {
+        // A DML statement has no result rows, but getTotalRows() can still be positive: the client reports the
+        // affected-row count there (with a schema) when the statement completes within jobs.query, and for an Arrow result
+        // (the job fallback reports the server's result-set count; the DML count itself is getNumDmlAffectedRows()). It is a row count only
+        // without a DML count (as in toList); the iterator decides, so a DML result does not throw NoSuchElementException.
+        if (tableResult.getNumDmlAffectedRows() == null && tableResult.getTotalRows() <= 0) {
             return (Nullable<V>) Nullable.empty();
         }
 
@@ -3040,10 +3249,11 @@ public class BigQueryExecutor {
     public final <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters)
             throws IllegalArgumentException, RuntimeException, ArithmeticException, NullPointerException {
         final TableResult tableResult = execute(query, parameters);
-        // For DML statements BigQuery reports the affected-row count via getTotalRows() while
-        // getValues() is empty. Drive off the iterator rather than the row count so we don't
-        // throw NoSuchElementException in that case.
-        if (tableResult.getTotalRows() <= 0) {
+        // A DML statement has no result rows, but getTotalRows() can still be positive: the client reports the
+        // affected-row count there (with a schema) when the statement completes within jobs.query, and for an Arrow result
+        // (the job fallback reports the server's result-set count; the DML count itself is getNumDmlAffectedRows()). It is a row count only
+        // without a DML count (as in toList); the iterator decides, so a DML result does not throw NoSuchElementException.
+        if (tableResult.getNumDmlAffectedRows() == null && tableResult.getTotalRows() <= 0) {
             return (Optional<V>) Optional.empty();
         }
 
@@ -3113,7 +3323,8 @@ public class BigQueryExecutor {
      *         null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL builder
      * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
      *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @see #query(Class, Collection, Condition)
      * @see Dataset
      */
@@ -3155,7 +3366,8 @@ public class BigQueryExecutor {
      *         builder
      * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
      *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @see #query(Class, String, Object...)
      */
     public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
@@ -3200,7 +3412,8 @@ public class BigQueryExecutor {
      *         typed {@code QueryParameterValue})
      * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
      *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @see #execute(String, Object...)
      * @see Dataset
      */
@@ -3247,7 +3460,8 @@ public class BigQueryExecutor {
      *         null operator or is or contains a {@code Criteria}, SQL clause, JOIN, or other non-predicate condition rejected by the SQL builder
      * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
      *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, Collection, Condition)
      */
@@ -3288,7 +3502,8 @@ public class BigQueryExecutor {
      *         builder
      * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
      *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, String, Object...)
      */
@@ -3335,7 +3550,8 @@ public class BigQueryExecutor {
      *         typed {@code QueryParameterValue})
      * @throws RuntimeException if parameter conversion fails, BigQuery rejects the query or fetching a result page fails, the waiting thread is
      *         interrupted, or a returned value cannot be decoded or mapped to the requested Java type
-     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
+     * @throws ArithmeticException if the result has a schema and no DML affected-row count, and its reported row count exceeds
+     *         {@link Integer#MAX_VALUE}
      * @see #execute(String, Object...)
      * @see #toList(TableResult, Class)
      */
@@ -3652,8 +3868,10 @@ public class BigQueryExecutor {
      *                   statement has no parameters
      * @return the {@link TableResult} returned by BigQuery; for SELECT statements this contains the
      *         rows, for DML the affected-row count via {@link TableResult#getNumDmlAffectedRows()} (not
-     *         {@link TableResult#getTotalRows()}, which the client sets to that count only when the statement completes
-     *         within the initial {@code jobs.query} call and otherwise to the result's row count, {@code 0}), for DDL
+     *         {@link TableResult#getTotalRows()}, which the client sets to that count, on a result that carries a schema, when the
+     *         statement completes within the initial {@code jobs.query} call or results are read in the Arrow format, and
+     *         otherwise to the server's result-set row count; {@link #toList(TableResult, Class)} and
+     *         {@link #extractData(TableResult, Class)} do not take it as a row count when a DML count is present), for DDL
      *         a result with no schema
      * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
      *         typed {@code QueryParameterValue})

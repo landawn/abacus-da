@@ -48,7 +48,10 @@ import com.landawn.abacus.util.stream.Stream;
  * no entry for that CQL text (always the first time it is used), the statement is prepared through the session's
  * blocking {@code prepare}: the calling thread waits for that round trip to Cassandra, and on a driver I/O thread (for
  * example inside a callback of a {@code CompletionStage} returned by the session) the call throws
- * {@link IllegalStateException}. The {@link Statement} overloads submit the given statement without preparing it.</p>
+ * {@link IllegalStateException}. The {@link Statement} overloads submit the given statement without preparing it. A
+ * {@link ResultSet} consumed past its first page on such a thread throws {@link IllegalStateException} as well (see
+ * {@link #execute(String)}), because the next page is fetched with a blocking wait; consume paged results on an
+ * application thread.</p>
  *
  * @see CassandraExecutor
  * @see AsyncCassandraExecutorBase

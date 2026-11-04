@@ -128,6 +128,9 @@ public abstract class DynamoDBExecutorBase {
      * accessors copy it (a getter returning a copy, a setter storing one) is written and then set on its owner again, so the
      * value is kept. In a builder-based target bean, whose builder has no getters, the first intermediate of a path is the one
      * created for an earlier dotted attribute of the item (a plain attribute of that property before it is replaced). A path
+     * through a collection property is left whole to the dependency's path setter, which writes into the first element of the
+     * collection, or into a new bean it adds when the collection is missing or empty; in a builder-based target bean it reads
+     * the first property of the path from the builder and fails the item with {@link ClassCastException}. A path
      * through a nested record or another bean without a no-args constructor fails the item ({@link IllegalArgumentException}
      * when the intermediate value is missing, {@link ClassCastException} when an earlier attribute already set it); such a
      * nested bean is read from an {@code M} attribute instead. A read-only property is skipped in every context,

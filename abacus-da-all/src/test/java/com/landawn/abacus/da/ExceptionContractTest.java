@@ -156,6 +156,9 @@ public class ExceptionContractTest extends TestBase {
     void bigQueryRowCountOverflowOnlyAppliesToResultsWithASchema() {
         final TableResult result = mock(TableResult.class);
         when(result.getTotalRows()).thenReturn((long) Integer.MAX_VALUE + 1);
+        // Mockito answers a Long getter with 0L, which would mark the mock as a DML result (whose
+        // getTotalRows() is not taken as a row count); a query result has no DML affected-row count.
+        when(result.getNumDmlAffectedRows()).thenReturn(null);
 
         assertTrue(BigQueryExecutor.toList(result, Object[].class).isEmpty());
         when(result.getSchema()).thenReturn(Schema.of(Field.of("value", StandardSQLTypeName.INT64)));

@@ -73,9 +73,22 @@ import com.mongodb.client.result.UpdateResult;
  * <ul>
  *   <li>A {@link String}- or {@link ObjectId}-typed entity property annotated with {@code @Id} (or
  *       named {@code id} when no annotation is present) is mapped to MongoDB's {@code _id} field on
- *       writes and back to the same property on reads. An id property of any other type (e.g.
+ *       writes and back to the same property on reads. The type is the one the entity class gives the property: an
+ *       id declared by a generic superclass ({@code class Base<K> { @Id K id; }}) is mapped for
+ *       {@code Entity extends Base<String>} or {@code Base<ObjectId>}, whether or not the subclass overrides the accessors
+ *       (earlier versions tested the erased {@code Object} type and stored such an id as an ordinary {@code id} field next
+ *       to a generated {@code _id}). Such a stored document still reads back with its own stored {@code id} (a non-null
+ *       {@code id} field next to {@code _id} marks it), but the id-keyed methods and {@code _id} filters do not match it by
+ *       that id, so a replace or update by that id matches nothing: migrate such documents by storing the {@code id} value
+ *       as their {@code _id}. New inserts store no {@code id} field, so filters on the {@code id} field stop matching them
+ *       (filter on {@code _id}, as the id-keyed methods do). Not mapped for {@code Base<Long>}. An id property of any other type (e.g.
  *       {@code long}) is stored as an ordinary field under its own name, and MongoDB assigns a
- *       separate {@code _id}.</li>
+ *       separate {@code _id}. So is a non-null {@code id} component of a record entity, which has no setter to
+ *       receive {@code _id}: the record reads back with that component taken from its own field, but the
+ *       id-keyed methods (such as {@link #get(String)}) and {@code _id} filters do not match it. A record inserted
+ *       with a {@code null} id stores no such field; when that component is {@code String}- or {@code ObjectId}-typed it
+ *       reads back with the generated {@code _id} in it (as a hex string for a {@code String} component), while one of
+ *       any other type (such as {@code Long}) reads back {@code null}.</li>
  *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId} during insert. For a
  *       bean entity (or any other non-{@link Document} entity, such as a {@code Map}, which is copied into a
  *       new document) the generated value is <strong>not</strong> written back: the entity's id property
@@ -1768,7 +1781,12 @@ public final class MongoCollectionMapper<T> {
     /**
      * Returns the value of {@code propName} from the first document matching {@code filter}, as the specified type.
      *
-     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.
+     * Dotted property paths (e.g. {@code "address.city"}) are supported and resolve to the nested value. An embedded document
+     * requested as a bean class is read as the embedded document of a bean property is read (the elements of a
+     * {@code List<Long>} property become {@code Long}s, a {@code LocalDate} property is read in UTC, a {@code String} or
+     * {@code ObjectId} id property takes the document's own {@code id} field, if any, over its {@code _id}), and an array of
+     * embedded documents requested as a bean array likewise element by element.</p>
      *
      * <p><b>Empty vs. present semantics:</b> this method returns {@code Nullable.empty()} when no nonempty document is found.
      * For a matched document, the {@code Nullable} holds the converted field value. A missing or BSON {@code null} field
@@ -1801,7 +1819,7 @@ public final class MongoCollectionMapper<T> {
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
-     *         while converting the selected value
+     *         while converting the selected value, or constructing or populating a result bean fails
      * @see Nullable
      */
     public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType)
@@ -1812,7 +1830,10 @@ public final class MongoCollectionMapper<T> {
     /**
      * Returns the non-null value of {@code propName} from the first document matching {@code filter}, as the specified type.
      *
-     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.
+     * Dotted property paths (e.g. {@code "address.city"}) are supported and resolve to the nested value. An embedded document
+     * requested as a bean class is read as the embedded document of a bean property is read, as by
+     * {@link #queryForSingleValue(String, Bson, Class)}.</p>
      *
      * <p><b>Empty vs. present semantics:</b> this method returns {@code Optional.empty()} when no nonempty document is found.
      * For a matched document, its selected field is converted before {@link Optional#of(Object)} wraps the result.
@@ -1842,7 +1863,7 @@ public final class MongoCollectionMapper<T> {
      * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @throws ClassCastException if a dotted property path traverses a non-null value that is not a Document
      * @throws RuntimeException if numeric conversion overflows the target range, or a registered converter or type handler throws
-     *         while converting the selected value
+     *         while converting the selected value, or constructing or populating a result bean fails
      * @throws NullPointerException if a nonempty document is matched and conversion of its selected field to {@code valueType}
      *         yields {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(String, Bson, Class)

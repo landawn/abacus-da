@@ -272,6 +272,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return get(targetClass, null, whereClause);
@@ -318,6 +320,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
             throws IllegalArgumentException, RuntimeException {
@@ -454,6 +458,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         return gett(targetClass, null, whereClause);
@@ -497,6 +503,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
             throws IllegalArgumentException, RuntimeException {
@@ -1409,7 +1417,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
-     * @param whereClause the WHERE condition to evaluate
+     * @param whereClause the WHERE condition to evaluate; pass {@code null} to check whether the table has at least one row
      * @return a future whose payload is {@code true} if at least one matching row exists,
      *         {@code false} otherwise
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or not a bean class, the supplied
@@ -1417,6 +1425,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Condition whereClause) throws IllegalArgumentException, RuntimeException {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1484,7 +1494,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
-     * @param whereClause the WHERE condition to evaluate
+     * @param whereClause the WHERE condition to evaluate; pass {@code null} to count all rows in the table
      * @return a future whose payload is the number of matching rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
@@ -1562,7 +1572,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param <T> the entity type
      * @param targetClass the entity class to map result rows to
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null} to select every row)
      * @return a future whose payload is a {@link List} of mapped entities (empty if no row matches)
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
@@ -1600,7 +1610,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to map result rows to
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null} to select every row)
      * @return a future whose payload is a {@link List} of mapped entities (empty if no row matches)
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
@@ -1731,7 +1741,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table and column mappings
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null} to select every row)
      * @return a future whose payload is a {@link Dataset} containing the result rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
@@ -1768,7 +1778,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table and column mappings
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null} to select every row)
      * @return a future whose payload is a {@link Dataset} containing the result rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
      *         the supplied condition contains a relation unsupported by CQL, or a condition value is rejected when converted
@@ -1881,7 +1891,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param <T> the entity type
      * @param targetClass the entity class to map result rows to
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null} to stream every row)
      * @return a future whose payload is a {@link Stream} of mapped entities, backed by the
      *         underlying result-set iterator; further result pages are fetched (blocking) while the stream is
      *         consumed, so a page-fetch or row-mapping failure is thrown by the stream's terminal operation rather than reported
@@ -1922,7 +1932,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to map result rows to
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null} to stream every row)
      * @return a future whose payload is a {@link Stream} of mapped entities; further result pages are fetched
      *         (blocking) while the stream is consumed, so a page-fetch or row-mapping failure is thrown by the stream's terminal
      *         operation rather than reported by the future
@@ -2095,7 +2105,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param <T> the entity type
      * @param targetClass the entity class to map the first row to
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null})
      * @return a future whose payload is an {@link Optional} containing the first mapped entity,
      *         or empty if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
@@ -2103,6 +2113,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Condition whereClause)
             throws IllegalArgumentException, RuntimeException {
@@ -2135,7 +2147,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to map the first row to
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
-     * @param whereClause the WHERE condition selecting rows
+     * @param whereClause the WHERE condition selecting rows (may be {@code null})
      * @return a future whose payload is an {@link Optional} containing the first mapped entity,
      *         or empty if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
@@ -2143,6 +2155,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
             throws IllegalArgumentException, RuntimeException {
@@ -2278,6 +2292,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2319,6 +2335,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalChar> queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2360,6 +2378,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalByte> queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2401,6 +2421,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalShort> queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2442,6 +2464,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalInt> queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2483,6 +2507,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalLong> queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2524,6 +2550,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalFloat> queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2565,6 +2593,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<OptionalDouble> queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2606,6 +2636,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<Nullable<String>> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2646,6 +2678,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         rejected when converted to its column's type (see <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public ContinuableFuture<Nullable<Date>> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause)
@@ -2688,6 +2722,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     @Beta
     public <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName,
@@ -2737,6 +2773,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) throws IllegalArgumentException, RuntimeException {
@@ -2797,6 +2835,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         <i>Bind Value Conversion</i> in {@link CassandraExecutorBase})
      * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
      *         submission; failures after submission are reported by the returned future
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (see <i>Row Limits</i> in
+     *         {@link CassandraExecutorBase}); thrown at the call site, before any future is created
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) throws IllegalArgumentException, RuntimeException {

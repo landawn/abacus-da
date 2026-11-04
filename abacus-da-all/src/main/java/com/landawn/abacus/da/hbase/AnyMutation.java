@@ -566,6 +566,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * AnyPut counter = AnyPut.of("user123").addColumn("stats", "visits", 5);
      * counter.has("stats", "visits", 5);                    // returns false (timestamp 5)
      * counter.has("stats", "visits", Integer.valueOf(5));   // returns true
+     *
+     * // Trap: a boxed number is encoded as its decimal text, as AnyPut stored it above, but an AnyIncrement queues its
+     * // amounts as 8-byte longs. Look for an increment amount by its bytes.
+     * AnyIncrement increment = AnyIncrement.of("user123").addColumn("stats", "visits", 5L);
+     * increment.has("stats", "visits", Long.valueOf(5));    // returns false (the text "5" is one byte)
+     * increment.has("stats", "visits", Bytes.toBytes(5L));  // returns true
      * }</pre>
      *
      * @param family the column-family name
@@ -573,7 +579,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}, so an empty value
      *        wrapper such as {@code Optional.empty()} encodes to {@code null} bytes like {@code null}. A primitive
      *        {@code byte}, {@code short}, {@code char}, {@code int} or {@code long} argument does not reach this overload: it selects
-     *        {@link #has(String, String, long)}, which compares it with the cell timestamp; pass a boxed value instead
+     *        {@link #has(String, String, long)}, which compares it with the cell timestamp; pass a boxed value instead. A boxed
+     *        number is encoded as its decimal text, so it never matches an {@link AnyIncrement} amount (queued as an 8-byte
+     *        long): pass {@code Bytes.toBytes(amount)} for that
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if {@code value} is {@code null} or an empty value wrapper and a queued cell matches {@code family} and
      *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], byte[])} while comparing values), or traversal of the requested family reaches a null cell
@@ -610,7 +618,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param qualifier the column-qualifier name
      * @param ts the cell timestamp, in milliseconds since the epoch
      * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}, so an empty value
-     *        wrapper such as {@code Optional.empty()} encodes to {@code null} bytes like {@code null}
+     *        wrapper such as {@code Optional.empty()} encodes to {@code null} bytes like {@code null}. A boxed number is
+     *        encoded as its decimal text, so it never matches an {@link AnyIncrement} amount (queued as an 8-byte long):
+     *        pass {@code Bytes.toBytes(amount)} for that
      * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @throws NullPointerException if {@code value} is {@code null} or an empty value wrapper and a queued cell matches {@code family} and
      *         {@code qualifier} (raised by {@link Mutation#has(byte[], byte[], long, byte[])} while comparing values), or traversal of the requested family reaches a null cell

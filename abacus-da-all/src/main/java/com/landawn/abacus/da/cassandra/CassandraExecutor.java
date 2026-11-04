@@ -731,6 +731,20 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * a non-bean type, scalar values retain their driver types. Nested {@link Row} values become maps
      * for a map target, or {@code Object[]} when no bean-property type is available.</p>
      *
+     * <p>For a bean target, each column is typed by the property it names. A column a getter answers (the property's name, also
+     * with a get/set/is/has prefix or in another case, or its {@code @Column} name) is typed by that getter's property. A column
+     * that names a property backed only by a public field, by its own name or {@code @Column} name, is typed by that property even
+     * when a getter-backed property answers the name only through a get/set/is/has-prefixed spelling (for example
+     * {@code haschildren} for {@code hasChildren}, or {@code active_flag} for {@code @Column("active_flag") public String isActive}
+     * beside {@code getActive()}), or only by ignoring case if the column names it exactly ({@code ID} for a {@code public String ID}
+     * beside {@code getId()}); such a column is typed, as {@link #toEntity(Row, Class)} resolves it, by a property named after it
+     * before one whose {@code @Column} name it is. Any other column is typed by the property the bean's {@code BeanInfo} resolves
+     * it to, as toEntity resolves it, whether or not that property has a getter: so a column named after the
+     * {@code @JsonXmlField} name or alias of a getter-backed property is typed by it ({@code nm} for
+     * {@code @JsonXmlField(aliases = "nm") private Long name} reads as a {@code Long}), although binding a bean as named
+     * parameters does not resolve such a name (see {@link #prepareStatement(String, Object...)}). A column matching no property
+     * keeps its raw driver value.</p>
+     *
      * <p>Remaining rows are mapped as pages are consumed, without first collecting the driver rows.
      * If mapping a row fails, that row has been consumed, but later rows are not drained.</p>
      *
@@ -774,6 +788,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         // The declared type of an Optional, Nullable or Holder column property, for which a blob is converted (see toWrapperValue).
         final Type<?>[] wrapperTypes = new Type<?>[columnCount];
         final Map<String, String> columnToPropNameMap = isEntity ? QueryUtil.columnToPropNameMap(targetClass) : null;
+        final BeanInfo entityInfo = isEntity ? ParserUtil.getBeanInfo(targetClass) : null;
 
         for (int i = 0; i < columnCount; i++) {
             columnNameList.add(columnDefinitions.get(i).getName().asInternal());
@@ -781,16 +796,60 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             if (isEntity) {
                 final String columnName = columnNameList.get(i);
                 Method method = Beans.getPropGetter(targetClass, columnName);
+                String propName = null;
 
-                if (method == null) {
-                    final String propName = columnToPropNameMap.get(columnName);
+                if (fieldOnlyPropInfoShadowedByGetterAlias(targetClass, columnName, method) != null) {
+                    // WHY: the getter lookup also accepts a get/set/is/has-prefixed spelling, so the column "haschildren" of a
+                    // field-only property hasChildren was typed by a getter-backed property children (and failed to convert or
+                    // was mis-typed), while toEntity, whose BeanInfo lookup ranks the exact name first, writes hasChildren.
+                    // Type the column by that field-only property, as toEntity resolves it (the branch below).
+                    method = null;
+                } else if (method == null) {
+                    propName = columnToPropNameMap.get(columnName);
                     method = propName == null ? null : Beans.getPropGetter(targetClass, propName);
+
+                    if (fieldOnlyPropInfoShadowedByGetterAlias(targetClass, propName, method) != null) {
+                        // WHY: the same prefix/case-tolerant getter lookup on the @Column route took a field-only property over too:
+                        // the column "active_flag" of @Column("active_flag") public String isActive was typed by getActive() (an
+                        // Integer), while toEntity writes isActive. Resolve the column in the branch below, in toEntity's order (a
+                        // property named after the column first, then the field-only property its @Column name maps to).
+                        method = null;
+                    }
                 }
 
-                columnClasses[i] = method != null ? method.getReturnType() : null;
-                // WHY (fixD): the getter's class alone has no element type, so a blob for an Optional<Long> property would be held in an
-                // Optional as the buffer; convert it for the declared type, as toEntity does (an Optional<String> gets the base64 text).
-                wrapperTypes[i] = method != null && isObjectWrapperClass(columnClasses[i]) ? wrapperPropType(targetClass, method) : null;
+                if (method != null) {
+                    final java.lang.reflect.Type genericReturnType = method.getGenericReturnType();
+                    final PropInfo propInfo = genericReturnType instanceof java.lang.reflect.TypeVariable
+                            || genericReturnType instanceof java.lang.reflect.GenericArrayType ? entityInfo.getPropInfo(Beans.getPropNameByMethod(method))
+                                    : null;
+
+                    if (propInfo != null && propInfo.clazz != method.getReturnType() && method.getReturnType().isAssignableFrom(propInfo.clazz)) {
+                        // WHY: a getter declared by a generic superclass (T getValue() or T[] getValues() of Base<T>, read on a class
+                        // extending Base<Long>) returns the erasure of its type variable (Object, Object[]), so its column kept the raw driver
+                        // value (an int as an Integer for a Long property, an inet as an InetAddress for a String one) or became an Object[]
+                        // for a String[] one, where toEntity converts it for the property's resolved type. Type the column by that type.
+                        columnClasses[i] = propInfo.clazz;
+                        wrapperTypes[i] = isObjectWrapperClass(propInfo.clazz) ? propInfo.type : null;
+                    } else {
+                        columnClasses[i] = method.getReturnType();
+                        // WHY (fixD): the getter's class alone has no element type, so a blob for an Optional<Long> property would be held
+                        // in an Optional as the buffer; convert it for the declared type, as toEntity does (an Optional<String> gets the
+                        // base64 text).
+                        wrapperTypes[i] = isObjectWrapperClass(columnClasses[i]) ? wrapperPropType(targetClass, method) : null;
+                    }
+                } else {
+                    // WHY: a property backed only by a public field has no getter, so its column kept the raw driver value (a blob as a
+                    // ByteBuffer for a byte[] field, an inet as an InetAddress for a String one) where toEntity converts it. Resolve the
+                    // column as toEntity does: the bean's own property names, then the @Column names; a column matching none stays raw.
+                    PropInfo propInfo = entityInfo.getPropInfo(columnName);
+
+                    if (propInfo == null && propName != null) {
+                        propInfo = entityInfo.getPropInfo(propName);
+                    }
+
+                    columnClasses[i] = propInfo == null ? null : propInfo.clazz;
+                    wrapperTypes[i] = propInfo != null && isObjectWrapperClass(propInfo.clazz) ? propInfo.type : null;
+                }
             } else {
                 // null = no per-column conversion (raw driver values), per the documented contract for
                 // non-bean targets; nested Row values still flatten through readRow below. Object[].class
@@ -852,8 +911,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p>Single-value conversion is applied independently to each row, including rows decoded by a custom codec.
      * An earlier value that already has the requested type does not change how later values or {@code NULL}s are mapped.</p>
      *
-     * <p>For raw-row targets, the list returned by {@link ResultSet#all()} is returned unchanged.
-     * Other targets are mapped as pages are consumed, without first collecting the driver rows.
+     * <p>For raw-row targets, the list returned by {@link ResultSet#all()} is returned unchanged. The driver's own result sets
+     * return their immutable empty list ({@code Collections.emptyList()}) when no row remains, and otherwise a new mutable list of
+     * the remaining rows; the result set into which the {@link AsyncCassandraExecutor} wraps each {@code AsyncResultSet} before
+     * passing it here returns a new mutable list, also when empty.
+     * Other targets are mapped as pages are consumed, without first collecting the driver rows (into a new mutable list, also when
+     * empty).
      * If mapping a row fails, that row has been consumed, but later rows are not drained.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -886,8 +949,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *        array class); must not be {@code null}
      * @return a List containing all rows converted to the specified type
      * @throws IllegalArgumentException if {@code resultSet} or {@code targetClass} is {@code null}, if {@code targetClass} is a single-value
-     *         type but the result set does not have exactly one column, or if a map {@code targetClass} rejects a column entry (a {@code NULL}
-     *         column in a {@code ConcurrentHashMap}, for example)
+     *         type but the result set does not have exactly one column, or if a map or collection {@code targetClass} rejects a column value
+     *         (a {@code NULL} column in a {@code ConcurrentHashMap} or an {@code ArrayBlockingQueue}, or values a {@code TreeSet} cannot
+     *         compare, for example)
      * @throws RuntimeException if the driver fails to fetch a remaining result page, a column value cannot be converted
      *         to the requested Java type, a bean property cannot be read or written, or a bean cannot be created (see
      *         {@link #toEntity(Row, Class)})
@@ -932,7 +996,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     path that does not resolve, or whose last property is read-only, is ignored. A missing intermediate bean is created
      *     through its no-argument constructor and assigned first, and the value is written into the instance its owner then
      *     holds (the created one when the getter returns a new copy on every read), so a setter that stores a copy of its
-     *     argument keeps the value</li>
+     *     argument keeps the value. A path through a collection property is left whole to the dependency's path setter, which
+     *     writes into the first element of the collection, or into a new bean it adds when the collection is missing or empty;
+     *     in a builder-based target bean it reads the first property of the path from the builder and fails the row with
+     *     {@link ClassCastException}</li>
      * <li><strong>Type conversion:</strong> Automatic conversion between compatible types (see the class documentation for
      *     the {@code timestamp}, {@code date}, {@code inet} and {@code blob} rules; a {@code blob} read into a {@code String}
      *     property is the base64 text of its bytes, one read into a property declared as a collection of an element type is that
@@ -1943,11 +2010,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             for (int i = 0; i < columnCount; i++) {
                 value = row.getObject(i);
 
-                if (value instanceof Row) {
-                    c.add(readRow(List.class, (Row) value));
-                } else {
-                    addRowValue(c, "Column", columnDefinitions.get(i).getName().asInternal(), value);
-                }
+                // A nested row is added as its List through addRowValue too: a sorted row class (TreeSet) rejects that List
+                // with a bare ClassCastException that did not name the column.
+                addRowValue(c, "Column", columnDefinitions.get(i).getName().asInternal(), value instanceof Row ? readRow(List.class, (Row) value) : value);
             }
 
             res = asRowClass(c, rowClass);
@@ -2028,11 +2093,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 for (int i = 0; i < columnCount; i++) {
                     value = row.getObject(i);
 
-                    if (value instanceof Row) {
-                        c.add(readRow(List.class, (Row) value));
-                    } else {
-                        addRowValue(c, "Column", columnDefinitions.get(i).getName().asInternal(), value);
-                    }
+                    // A nested row's List goes through addRowValue as well (see readRow).
+                    addRowValue(c, "Column", columnDefinitions.get(i).getName().asInternal(), value instanceof Row ? readRow(List.class, (Row) value) : value);
                 }
 
                 return asRowClass(c, rowClass);
@@ -2083,12 +2145,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param whereClause the WHERE condition
      * @return an instance of {@code targetClass} populated with data from the single matching row,
      *         or {@code null} when no row matches
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code whereClause} contains a relation unsupported by CQL,
-     *         or a condition value is rejected when converted to its column's type (see <i>Number and Blob Conversion</i> in the class
-     *         documentation)
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped, {@code whereClause}
+     *         contains a relation unsupported by CQL, or a condition value is rejected when converted to its column's type (see <i>Number and
+     *         Blob Conversion</i> in the class documentation)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one row matches the WHERE condition
+     * @throws IllegalStateException if {@code whereClause} already carries a {@code LIMIT} (this method appends its own {@code LIMIT 2};
+     *         see <i>Row Limits</i> in {@link CassandraExecutorBase})
      */
     @Override
     public <T> T gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
@@ -2267,8 +2331,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *         returned; {@code Optional.empty()} when the query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed parameter
      *         markers, the supplied parameter count or names do not match the prepared statement, a parameter value is rejected when
-     *         converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation), or {@code targetClass} is a
-     *         single-value type but the first row does not have exactly one column
+     *         converted to its column's type (see <i>Number and Blob Conversion</i> in the class documentation), {@code targetClass} is a
+     *         single-value type but the first row does not have exactly one column, or a map or collection {@code targetClass} rejects a
+     *         column value (a {@code NULL} column in a {@code ConcurrentHashMap} or an {@code ArrayBlockingQueue}, or values a
+     *         {@code TreeSet} cannot compare, for example)
      * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
      *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if the first row maps to a null value, which {@link Optional#of(Object)} cannot contain
@@ -2883,8 +2949,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * usual parameter-container behavior; in particular, a Map keyed by the name of a query's single named
      * marker is always read as the named-parameter container, even when that marker's column is itself a map
      * type. A bean's properties are matched to parameter names by property name (naming-policy variants
-     * included) or by the column name declared with {@code @Column}. A single value of a type that abacus handles as a
-     * value although it has getters and setters (e.g. a {@code Calendar} or {@code ByteBuffer}) is one positional value,
+     * included) or by the column name declared with {@code @Column}, and read through their getters or, for a property backed
+     * only by a public field, that field. A name that names a field-only property, such as {@code isActive}, or is its
+     * {@code @Column} name reads that field even when a getter-backed property answers it only through a get/set/is/has-prefixed
+     * spelling (or, for a name naming the field-only property exactly, such as {@code ID} beside {@code getId()} or {@code url}
+     * beside {@code getURL()}, only by ignoring case), while a getter-backed property is not matched
+     * through an {@code @JsonXmlField} name or alias, so such a name is a missing parameter. A single value of a type
+     * that abacus handles as a value although it has getters and setters (e.g. a {@code Calendar} or {@code ByteBuffer}) is one positional value,
      * not a bean. A single empty map, collection, or array supplies no values, so it is accepted for a query without
      * bind markers.</p>
      *
@@ -2991,7 +3062,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 final Object entity = parameter_0;
                 final Class<?> clazz = entity.getClass();
                 Map<String, String> columnToPropNameMap = null;
+                BeanInfo beanInfo = null;
                 Method propGetMethod = null;
+                String propName = null;
 
                 for (int i = 0; i < parameterCount; i++) {
                     parameterName = isCassandraNamedParameters ? columnDefinitions.get(i).getName().asInternal() : namedParameters.get(i);
@@ -3001,21 +3074,56 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     }
 
                     propGetMethod = Beans.getPropGetter(clazz, parameterName);
+                    propName = null;
 
-                    if (propGetMethod == null) {
+                    if (fieldOnlyPropInfoShadowedByGetterAlias(clazz, parameterName, propGetMethod) != null) {
+                        // WHY: the getter lookup also accepts a get/set/is/has-prefixed spelling, so the marker ":isActive" bound the
+                        // getter-backed property active (getActive()) instead of the field-only property isActive. Read the field-only
+                        // property the bean's BeanInfo resolves the name to (the branch below).
+                        propGetMethod = null;
+                    } else if (propGetMethod == null) {
                         if (columnToPropNameMap == null) {
                             columnToPropNameMap = QueryUtil.columnToPropNameMap(clazz);
                         }
 
-                        final String propName = columnToPropNameMap.get(parameterName);
+                        propName = columnToPropNameMap.get(parameterName);
                         propGetMethod = propName == null ? null : Beans.getPropGetter(clazz, propName);
+
+                        if (fieldOnlyPropInfoShadowedByGetterAlias(clazz, propName, propGetMethod) != null) {
+                            // WHY: the same lookup on the @Column route took a field-only property over too: ":active_flag" (or a "?"
+                            // of the column active_flag) of @Column("active_flag") public String isActive bound getActive(). Resolve
+                            // the name in the branch below, in toEntity's order (a property named after it first, then the field-only
+                            // property its @Column name maps to).
+                            propGetMethod = null;
+                        }
                     }
 
-                    if (propGetMethod == null) {
-                        throw new IllegalArgumentException("Missing required parameter: '" + parameterName + "'");
-                    }
+                    if (propGetMethod != null) {
+                        values[i] = ClassUtil.invokeMethod(entity, propGetMethod);
+                    } else {
+                        // WHY: a property backed only by a public field has no getter, so a bean of such properties (which abacus,
+                        // insert/update and toEntity read through its BeanInfo) failed with "Missing required parameter". Resolve
+                        // the name as toEntity resolves a column: the bean's own property names, then the @Column names.
+                        // WHY: only to a property WITHOUT a getter of its own (withoutOwnGetter): PropInfo.getPropValue reads the field,
+                        // so a getter-backed property
+                        // reached through a BeanInfo alias (an @JsonXmlField alias) bound the raw field and bypassed its getter; such a
+                        // name stays unresolved, as before the fallback existed.
+                        if (beanInfo == null) {
+                            beanInfo = ParserUtil.getBeanInfo(clazz);
+                        }
 
-                    values[i] = ClassUtil.invokeMethod(entity, propGetMethod);
+                        PropInfo propInfo = withoutOwnGetter(clazz, beanInfo.getPropInfo(parameterName));
+
+                        if (propInfo == null && propName != null) {
+                            propInfo = withoutOwnGetter(clazz, beanInfo.getPropInfo(propName));
+                        }
+
+                        if (propInfo == null) {
+                            throw new IllegalArgumentException("Missing required parameter: '" + parameterName + "'");
+                        }
+
+                        values[i] = propInfo.getPropValue(entity);
+                    }
                 }
             }
         } else if ((parameters.length == 1) && (parameters[0] != null)) {
@@ -3643,7 +3751,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                 /**
                  * @throws IllegalArgumentException if the UDT value is non-null and the configured Java type is neither a collection, map, nor bean,
-                 *         or a map type rejects a field entry (a {@code NULL} field in a {@code ConcurrentHashMap}, for example)
+                 *         or a map or collection type rejects a field value (a {@code NULL} field in a {@code ConcurrentHashMap} or an
+                 *         {@code ArrayBlockingQueue}, or values a {@code TreeSet} cannot compare, for example)
                  * @throws RuntimeException if reading a UDT field, creating the target object, or assigning a bean property fails
                  */
                 @Override

@@ -70,6 +70,14 @@ import com.landawn.abacus.util.stream.Stream;
  * begun: the scan is read when the scanner opens): the task may or may not see such a change, and neither
  * the HBase operations nor the collections they hold are thread-safe.</p>
  *
+ * <p><b>Lifecycle:</b> this wrapper has no {@code close()} of its own; it lives as long as the
+ * {@link HBaseExecutor} it wraps. {@link HBaseExecutor#close()} closes the shared {@code Connection} without
+ * waiting for submitted tasks and without shutting down the {@link AsyncExecutor}. Calls are still accepted
+ * afterwards, but an operation that reaches HBase after the close fails: its future completes with an
+ * {@code ExecutionException} (this includes a task that was still queued), and a scan stream fails once it
+ * needs rows from the server. Close the executor only after the outstanding futures have completed and
+ * their scan streams have been closed.</p>
+ *
  * <h2>Key Features</h2>
  * <ul>
  * <li><strong>Caller-side offloading</strong>: Operations run on worker threads and return a {@code ContinuableFuture}; resolving a future may still block</li>
@@ -1859,7 +1867,8 @@ public final class AsyncHBaseExecutor {
      * ideal for maintaining counters without race conditions. If a target cell does not yet exist,
      * it is initialised to the increment amount. With return-results enabled (the default), the
      * returned {@link ContinuableFuture} contains the post-increment cell values; callers that
-     * disable return-results must not rely on its value.</p>
+     * disable return-results must not rely on its value. The cells must hold 8-byte long counters, not the decimal text
+     * {@code put} and entity mapping write for a number (see {@link HBaseExecutor#increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1904,7 +1913,9 @@ public final class AsyncHBaseExecutor {
      * HBase native {@link Increment} API. If a target cell does not yet exist, it is initialised
      * to the increment amount. With return-results enabled (the default), the returned
      * {@link ContinuableFuture} contains the post-increment cell values; callers that set
-     * {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on its value.</p>
+     * {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on its value. The cells must hold 8-byte long
+     * counters, not the decimal text {@code put} and entity mapping write for a number (see
+     * {@link HBaseExecutor#increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1943,7 +1954,9 @@ public final class AsyncHBaseExecutor {
      * <p>Atomically increments a specific column's long-encoded value by the given amount. This is
      * a convenience method for incrementing a single counter without constructing an
      * {@link Increment}. If the cell does not yet exist, it is initialised to {@code amount}. The
-     * returned {@link ContinuableFuture} completes with the new value after the increment.</p>
+     * returned {@link ContinuableFuture} completes with the new value after the increment. The cell must hold an 8-byte long
+     * counter, not the decimal text {@code put} and entity mapping write for a number (see
+     * {@link HBaseExecutor#increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1985,7 +1998,8 @@ public final class AsyncHBaseExecutor {
      * <p>Atomically increments a specific column's long-encoded value by the given amount with
      * control over write durability. The durability setting determines how the WAL is flushed
      * (e.g., {@link Durability#SYNC_WAL}, {@link Durability#ASYNC_WAL}, {@link Durability#SKIP_WAL}).
-     * The returned {@link ContinuableFuture} completes with the new value.</p>
+     * The returned {@link ContinuableFuture} completes with the new value. The cell must hold an 8-byte long counter, not the
+     * decimal text {@code put} and entity mapping write for a number (see {@link HBaseExecutor#increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2026,7 +2040,8 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Atomically increments a specific column's long-encoded value by the given amount. If the
      * cell does not yet exist, it is initialised to {@code amount}. The returned
-     * {@link ContinuableFuture} completes with the new value.</p>
+     * {@link ContinuableFuture} completes with the new value. The cell must hold an 8-byte long counter, not the decimal text
+     * {@code put} and entity mapping write for a number (see {@link HBaseExecutor#increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2066,7 +2081,8 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Atomically increments a specific column's long-encoded value by the given amount with
      * control over WAL durability. The returned {@link ContinuableFuture} completes with the new
-     * value.</p>
+     * value. The cell must hold an 8-byte long counter, not the decimal text {@code put} and entity mapping write for a number
+     * (see {@link HBaseExecutor#increment(String, Increment)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

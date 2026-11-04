@@ -39,7 +39,8 @@ import java.lang.annotation.Target;
  *
  * <h3>Default Behavior (No Annotation)</h3>
  * <p>Without this annotation, field names are mapped directly to column family names
- * in HBase, with an empty column qualifier:</p>
+ * in HBase, with an empty column qualifier (or the field's {@code @Column} value), and a nested
+ * entity field without {@code @Column} is flattened into one qualifier per nested property:</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -141,8 +142,11 @@ public @interface ColumnFamily {
      * A field therefore uses a nonempty class-level column family when one is present.
      * Otherwise:</p>
      * <ul>
-     *   <li>For scalar (non-entity) fields: field name becomes the column family, qualifier is empty</li>
-     *   <li>For entity fields: field name becomes the column family, nested field names become qualifiers</li>
+     *   <li>For scalar (non-entity) fields: field name becomes the column family, qualifier is empty (or the
+     *       field's {@code @Column} value)</li>
+     *   <li>For entity fields: field name becomes the column family, nested field names become qualifiers. An
+     *       entity field with {@code @Column} is not flattened (here or in a class- or field-level family): it
+     *       is stored as a single cell under that qualifier.</li>
      * </ul>
      * 
      * <p><strong>Naming conventions:</strong></p>

@@ -1,7 +1,7 @@
 # abacus-da
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.9.2)
-[![Javadocs](https://img.shields.io/badge/javadoc-2.9.2-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.9.2/index.html)
+[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.9.3)
+[![Javadocs](https://img.shields.io/badge/javadoc-2.9.3-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.9.3/index.html)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE.txt)
 
 **abacus-da** is a Java data-access toolkit for MongoDB, Cassandra, DynamoDB, HBase,
@@ -79,7 +79,7 @@ For synchronous MongoDB, add these dependencies inside your application's Maven
 <dependency>
     <groupId>com.landawn.abacus</groupId>
     <artifactId>abacus-da-mongodb</artifactId>
-    <version>2.9.2</version>
+    <version>2.9.3</version>
 </dependency>
 ```
 
@@ -93,7 +93,7 @@ java {
 }
 
 dependencies {
-    implementation("com.landawn.abacus:abacus-da-mongodb:2.9.2")
+    implementation("com.landawn.abacus:abacus-da-mongodb:2.9.3")
 }
 ```
 

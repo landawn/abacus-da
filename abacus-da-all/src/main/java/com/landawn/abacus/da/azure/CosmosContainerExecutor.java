@@ -180,16 +180,29 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h3>Streaming and Read-Ahead</h3>
  * <p>The {@code streamItems} and {@code streamAllItems} methods read the SDK's {@link CosmosPagedIterable} page by page. No page
- * is requested until the stream is consumed; the stream then requests one page ahead of the consumer, and closing the stream
- * cancels the remaining reads. The SDK's query pipeline prefetches a little beyond that on its own: about one more page for a
- * single-partition query or {@code readAllItems}, and pages of several partitions at once for a cross-partition query (bounded
- * by the options' {@code maxBufferedItemCount} and {@code maxDegreeOfParallelism}). Abacus streams close themselves when a
- * terminal operation completes, so {@code first()} or {@code limit(n).toList()} reads only the pages it needs plus that small
- * read-ahead; close a stream that is iterated through {@code iterator()} or abandoned before a terminal operation (for example
- * with try-with-resources). A Cosmos service failure is raised as a {@link CosmosException} when the stream is consumed.
- * Iterating a {@link CosmosPagedIterable} returned by {@code queryItems} or {@code readAllItems} item by item instead lets the
- * SDK read up to 256 pages ahead (it flattens the pages with Reactor's {@code flatMap}); its {@code iterableByPage()} requests
- * one page at a time, with the same pipeline prefetch.</p>
+ * is requested until the stream is consumed, a stream closed without being consumed sends no request, and closing a stream
+ * cancels the reads still in progress. Once consumption starts, however, the SDK's query pipeline (which also serves
+ * {@code readAllItems}) reads ahead on its own, whatever the consumer requests: it fetches page after page until its internal
+ * Reactor buffers are full, which with azure-cosmos 4.83 is somewhat more than 256 pages ahead of the consumer for a query
+ * (Reactor's default {@code flatMap} concurrency, plus the prefetch of the partitions being read) and about 85 to 105 pages for
+ * {@code readAllItems} (by default the SDK sizes that prefetch by the number of CPUs). When an availability strategy of the
+ * end-to-end latency policy applies to two or more regions, the SDK also passes the pages of {@code readAllItems} through a
+ * default-concurrency {@code flatMap}, so it too reads more than 256 pages ahead. The options' {@code maxBufferedItemCount}
+ * and {@code maxDegreeOfParallelism} do not lower that bound much: they only size the prefetch of each partition (the
+ * buffered item count divided by the page size and the number of partitions read at once, at most 32 pages), so a small
+ * {@code maxBufferedItemCount} lowers the read-ahead by up to about 30 pages, while the fixed share stays (the 256-page
+ * {@code flatMap} of a query, and about 64 pages from the two {@code flatMap}s with which the SDK resolves the container and
+ * partition of {@code readAllItems}). {@code maxDegreeOfParallelism} lets a cross-partition query read several partitions
+ * at once (by default they are read one after another, except by an {@code ORDER BY} query, which reads all of them at
+ * once). The SDK also passes a page on only after it has read the next one. Abacus streams close themselves when a terminal
+ * operation completes, so {@code first()} typically reads two pages and {@code limit(n).toList()} about one page more than
+ * it needs; but a stream consumed more slowly than the service responds can hold that many pages in memory, and a stream
+ * iterated through {@code iterator()} or abandoned before a terminal operation keeps the SDK reading until it is closed, so
+ * close it (for example with try-with-resources). A Cosmos service failure is raised as a {@link CosmosException} when the
+ * stream is consumed. A {@link CosmosPagedIterable} returned by {@code queryItems}
+ * or {@code readAllItems} reads ahead the same way through its {@code iterableByPage()}, and about another 200 to 250 pages
+ * further (a second {@code flatMap} flattens the pages into items) when it is iterated item by item or through its
+ * {@code stream()}, which also starts reading as soon as that stream is created.</p>
  *
  * <h3>Lifecycle</h3>
  * <p>This executor does not own or close the client from which the container was obtained. The caller remains
@@ -1471,10 +1484,11 @@ public class CosmosContainerExecutor {
      * and supports the usual pipeline operations (filter, map, collect, etc.). Iteration is on
      * the calling thread; the Cosmos SDK handles continuation tokens internally.</p>
      *
-     * <p>Pages are requested only when the stream is consumed, one page ahead of the consumer (plus the SDK's own small
-     * prefetch), so applying {@code limit}/{@code takeWhile} early in the pipeline avoids fetching later pages;
-     * closing the stream, which a terminal operation does, cancels the remaining reads (see
-     * "Streaming and Read-Ahead" in the class documentation).</p>
+     * <p>No page is requested until the stream is consumed. The SDK then reads ahead of the consumer on its own, up to about
+     * 100 pages (more than 256 when an availability strategy of the end-to-end latency policy applies to two or more regions),
+     * until the stream is closed; a terminal operation closes it, so {@code first()} or an early
+     * {@code limit}/{@code takeWhile} stops the reads once the terminal operation completes (see "Streaming and Read-Ahead"
+     * in the class documentation).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1766,8 +1780,9 @@ public class CosmosContainerExecutor {
      *
      * <p>Executes a SQL query and returns results as a Stream for functional-style
      * processing, enabling pipeline operations like filtering, mapping, and reduction.
-     * Pages are fetched only as the stream is consumed, a page or a few ahead, so large result sets
-     * are not held in memory (see "Streaming and Read-Ahead" in the class documentation).</p>
+     * No page is fetched until the stream is consumed; the SDK then reads ahead of the consumer on its own, more than 256 pages
+     * for a consumer slower than the service, until the stream is closed (see "Streaming and Read-Ahead" in the class
+     * documentation).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2261,12 +2276,16 @@ public class CosmosContainerExecutor {
      */
     private static <T> Stream<T> streamByPage(final CosmosPagedIterable<T> pagedIterable) {
         // WHY: CosmosPagedIterable.stream() subscribes at once to the SDK's item flux, which flattens the pages with a flatMap that
-        // requests 256 pages, so the SDK read up to 256 pages ahead even for first()/limit(n), also for a stream never consumed, and
-        // closing the stream did not cancel it. streamByPage() requests one page at a time (Reactor's blocking iterator prefetches
-        // one page, and the SDK's paginator one more, or a few per partition for a cross-partition query) and
-        // cancels the subscription when the stream is closed, which the abacus stream does after its terminal operation; deferring
-        // it sends nothing until the stream is consumed. Failures are still thrown on consumption, as before. Not Stream.defer: closing
-        // a deferred stream that was never consumed runs its supplier, which subscribed and requested the first page only to cancel it.
+        // requests 256 pages on top of the SDK pipeline's own read-ahead, so it read several hundred pages ahead (461 measured against a
+        // fake gateway with azure-cosmos 4.83), also for a stream never consumed, and closing the stream did not cancel it.
+        // streamByPage() adds only the blocking iterator's one-page prefetch to the pipeline's own read-ahead (for a query, a flatMap
+        // of 256 pages plus the partition prefetch: 261 to 273 pages measured; readAllItems has no such flatMap (unless an
+        // availability strategy applies to two or more regions, which adds a default-concurrency one), only the about 64
+        // pages of its two container/partition flatMaps plus the partition prefetch: 85 to 105 measured, with 2 to 64 CPUs; no
+        // option lowers either much) and cancels the subscription when the stream is closed, which the abacus stream does after its
+        // terminal operation; deferring it sends nothing until the stream is consumed. Failures are still thrown on consumption, as
+        // before. Not Stream.defer: closing a deferred stream that was never consumed runs its supplier, which subscribed and
+        // requested the first page only to cancel it.
         final Holder<java.util.stream.Stream<FeedResponse<T>>> pages = new Holder<>();
 
         return Stream.of(ObjIterator.<FeedResponse<T>> defer(() -> {
@@ -2510,12 +2529,11 @@ public class CosmosContainerExecutor {
             } else if (ch == '\'' || ch == '"') {
                 quote = ch;
                 sb.append(ch);
-            } else if (ch == '.' && i > 0 && i + 1 < len && isCosmosMemberAccessTarget(query.charAt(i - 1))
-                    && Character.isJavaIdentifierStart(query.charAt(i + 1))) {
+            } else if (ch == '.' && i > 0 && i + 1 < len && isCosmosMemberAccessTarget(query, i - 1) && isCosmosNameStart(query, i + 1)) {
                 // A leading '$' ($type) is included: the grammar has no '$' token at all, so only c["$type"] can reach such a name.
                 int nameEnd = i + 1;
 
-                while (++nameEnd < len && Character.isJavaIdentifierPart(query.charAt(nameEnd))) {
+                while (++nameEnd < len && isCosmosNamePart(query, nameEnd)) {
                     // scan the complete property name
                 }
 
@@ -2542,8 +2560,10 @@ public class CosmosContainerExecutor {
         return escapedQuery.equals(query) ? sp : new SP(escapedQuery, sp.parameters());
     }
 
-    private static boolean isCosmosMemberAccessTarget(final char previousChar) {
-        return Character.isJavaIdentifierPart(previousChar) || previousChar == ']' || previousChar == ')';
+    private static boolean isCosmosMemberAccessTarget(final CharSequence text, final int previousIndex) {
+        final char previousChar = text.charAt(previousIndex);
+
+        return isCosmosNamePart(text, previousIndex) || previousChar == ']' || previousChar == ')';
     }
 
     private static boolean isCosmosReservedWord(final String identifier) {
@@ -2577,6 +2597,35 @@ public class CosmosContainerExecutor {
         }
 
         return true;
+    }
+
+    /**
+     * {@link Character#isJavaIdentifierPart(int)} for the character at {@code index} of {@code text}. Either half of a surrogate pair
+     * answers for the whole code point, so a name containing a character outside the BMP (such as U+20000) is scanned as one name:
+     * the {@code char} overload is false for every surrogate, which split such a name ({@code a𠀀b = ?} became {@code c.a𠀀c.b = @p0}).
+     */
+    private static boolean isCosmosNamePart(final CharSequence text, final int index) {
+        final char ch = text.charAt(index);
+
+        return Character.isSurrogate(ch) ? Character.isJavaIdentifierPart(codePointAround(text, index)) : Character.isJavaIdentifierPart(ch);
+    }
+
+    /** {@link Character#isJavaIdentifierStart(int)} for the character at {@code index}, surrogate pairs as in {@link #isCosmosNamePart}. */
+    private static boolean isCosmosNameStart(final CharSequence text, final int index) {
+        final char ch = text.charAt(index);
+
+        return Character.isSurrogate(ch) ? Character.isJavaIdentifierStart(codePointAround(text, index)) : Character.isJavaIdentifierStart(ch);
+    }
+
+    /** The code point of the surrogate pair the char at {@code index} belongs to, or that char itself if it is unpaired. */
+    private static int codePointAround(final CharSequence text, final int index) {
+        final char ch = text.charAt(index);
+
+        if (Character.isLowSurrogate(ch) && index > 0 && Character.isHighSurrogate(text.charAt(index - 1))) {
+            return Character.toCodePoint(text.charAt(index - 1), ch);
+        }
+
+        return Character.codePointAt(text, index);
     }
 
     private static SP toCosmosConditionSyntax(final SP sp, final NamingPolicy namingPolicy) {
@@ -2663,7 +2712,7 @@ public class CosmosContainerExecutor {
     private static void truncateBeforeCosmosFunctionCall(final StringBuilder sb, final int expressionStart) {
         sb.setLength(expressionStart);
 
-        if (expressionStart > 0 && Character.isJavaIdentifierPart(sb.charAt(expressionStart - 1))) {
+        if (expressionStart > 0 && isCosmosNamePart(sb, expressionStart - 1)) {
             sb.append(' ');
         }
     }
@@ -2690,7 +2739,7 @@ public class CosmosContainerExecutor {
                 quote = ch;
                 sb.append(ch);
             } else if ((ch == 'A' || ch == 'a') && i + 1 < query.length() && (query.charAt(i + 1) == 'S' || query.charAt(i + 1) == 's')
-                    && (i == 0 || (!Character.isJavaIdentifierPart(query.charAt(i - 1)) && query.charAt(i - 1) != '.')) && i + 2 < query.length()
+                    && (i == 0 || (!isCosmosNamePart(query, i - 1) && query.charAt(i - 1) != '.')) && i + 2 < query.length()
                     && Character.isWhitespace(query.charAt(i + 2))) {
                 int aliasStart = i + 2;
 
@@ -2748,12 +2797,12 @@ public class CosmosContainerExecutor {
             } else if (ch == ')' && subqueryParenthesisDepth > 0) {
                 subqueryParenthesisDepth--;
                 sb.append(ch);
-            } else if (Character.isJavaIdentifierStart(ch)) {
+            } else if (isCosmosNameStart(query, i)) {
                 // A name may start with '$' (the common JSON "$type"): Cosmos DB has no '$' token, so an unqualified $type is always a
                 // syntax error, while c.$type is rewritten to the valid c["$type"] by escapeCosmosReservedPropertyNames.
                 final int identifierStart = i;
 
-                while (++i < len && Character.isJavaIdentifierPart(query.charAt(i))) {
+                while (++i < len && isCosmosNamePart(query, i)) {
                     // scan the complete identifier
                 }
 
@@ -2789,8 +2838,7 @@ public class CosmosContainerExecutor {
                         && COSMOS_ALIAS.equalsIgnoreCase(identifier) && !COSMOS_ALIAS.equals(identifier);
                 final boolean keywordOrAlias = COSMOS_ALIAS.equals(identifier) && (nextChar == '.' || nextChar == '[') || upperCasedAliasAccessor
                         || keywordToken;
-                final boolean attachedToPreviousIdentifier = identifierStart > conditionStart
-                        && Character.isJavaIdentifierPart(query.charAt(identifierStart - 1));
+                final boolean attachedToPreviousIdentifier = identifierStart > conditionStart && isCosmosNamePart(query, identifierStart - 1);
                 final boolean standalone = !alreadyQualified && !functionOrObjectKey && !attachedToPreviousIdentifier;
 
                 if (subqueryParenthesisDepth == 0 && "SELECT".equals(normalizedIdentifier) && previousChar == '('
@@ -2838,7 +2886,7 @@ public class CosmosContainerExecutor {
 
         final int keywordStart = keywordEnd - "EXISTS".length();
         return keywordStart >= conditionStart && query.regionMatches(true, keywordStart, "EXISTS", 0, "EXISTS".length())
-                && (keywordStart == conditionStart || !Character.isJavaIdentifierPart(query.charAt(keywordStart - 1)) && query.charAt(keywordStart - 1) != '.');
+                && (keywordStart == conditionStart || !isCosmosNamePart(query, keywordStart - 1) && query.charAt(keywordStart - 1) != '.');
     }
 
     /**
@@ -2983,11 +3031,11 @@ public class CosmosContainerExecutor {
             i++;
         }
 
-        if (i >= query.length() || !Character.isJavaIdentifierStart(query.charAt(i))) {
+        if (i >= query.length() || !isCosmosNameStart(query, i)) {
             return false;
         }
 
-        while (++i < query.length() && Character.isJavaIdentifierPart(query.charAt(i))) {
+        while (++i < query.length() && isCosmosNamePart(query, i)) {
             // scan the alias
         }
 
@@ -3040,9 +3088,9 @@ public class CosmosContainerExecutor {
 
                     // Without an input source, FROM is a property in expressions such as (select * from + 1), not a clause.
                     final char firstSourceChar = query.charAt(sourceStart);
-                    if (Character.isJavaIdentifierStart(firstSourceChar)) {
+                    if (isCosmosNameStart(query, sourceStart)) {
                         int sourceEnd = sourceStart + 1;
-                        while (sourceEnd < query.length() && Character.isJavaIdentifierPart(query.charAt(sourceEnd))) {
+                        while (sourceEnd < query.length() && isCosmosNamePart(query, sourceEnd)) {
                             sourceEnd++;
                         }
 
@@ -3123,7 +3171,7 @@ public class CosmosContainerExecutor {
         // Literal keywords remain literals in these ambiguous positions.
         int previousTokenStart = previous + 1;
 
-        while (previousTokenStart > conditionStart && Character.isJavaIdentifierPart(query.charAt(previousTokenStart - 1))) {
+        while (previousTokenStart > conditionStart && isCosmosNamePart(query, previousTokenStart - 1)) {
             previousTokenStart--;
         }
 
@@ -3170,13 +3218,13 @@ public class CosmosContainerExecutor {
             return true;
         }
 
-        if (!Character.isJavaIdentifierStart(ch)) {
+        if (!isCosmosNameStart(query, start)) {
             return false;
         }
 
         int end = start + 1;
 
-        while (end < query.length() && Character.isJavaIdentifierPart(query.charAt(end))) {
+        while (end < query.length() && isCosmosNamePart(query, end)) {
             end++;
         }
 
@@ -3224,13 +3272,13 @@ public class CosmosContainerExecutor {
             return true;
         }
 
-        if (!Character.isJavaIdentifierPart(previousChar)) {
+        if (!isCosmosNamePart(query, previous)) {
             return false;
         }
 
         int tokenStart = previous;
 
-        while (tokenStart > conditionStart && Character.isJavaIdentifierPart(query.charAt(tokenStart - 1))) {
+        while (tokenStart > conditionStart && isCosmosNamePart(query, tokenStart - 1)) {
             tokenStart--;
         }
 
@@ -3244,7 +3292,7 @@ public class CosmosContainerExecutor {
         final int notStart = previous - "NOT".length() + 1;
 
         if (notStart < conditionStart || !query.regionMatches(true, notStart, "NOT", 0, "NOT".length()) || notStart > conditionStart
-                && (Character.isJavaIdentifierPart(query.charAt(notStart - 1)) || query.charAt(notStart - 1) == '.' || query.charAt(notStart - 1) == '@')) {
+                && (isCosmosNamePart(query, notStart - 1) || query.charAt(notStart - 1) == '.' || query.charAt(notStart - 1) == '@')) {
             return previous;
         }
 
@@ -3265,11 +3313,11 @@ public class CosmosContainerExecutor {
             i++;
         }
 
-        if (i >= len || !Character.isJavaIdentifierStart(query.charAt(i))) {
+        if (i >= len || !isCosmosNameStart(query, i)) {
             return false;
         }
 
-        while (++i < len && Character.isJavaIdentifierPart(query.charAt(i))) {
+        while (++i < len && isCosmosNamePart(query, i)) {
             // scan the function name
         }
 
@@ -3283,7 +3331,7 @@ public class CosmosContainerExecutor {
     private static boolean startsWithCosmosKeyword(final String query, final int start, final String keyword) {
         final int end = start + keyword.length();
         return end <= query.length() && query.regionMatches(true, start, keyword, 0, keyword.length())
-                && (end == query.length() || !Character.isJavaIdentifierPart(query.charAt(end)));
+                && (end == query.length() || !isCosmosNamePart(query, end));
     }
 
     private static boolean isCosmosLiteralOrPredicateKeyword(final String identifier) {
@@ -3381,7 +3429,7 @@ public class CosmosContainerExecutor {
      * property after a path separator, and not followed by an identifier character.
      */
     private static boolean endsWithLogicalKeyword(final StringBuilder sb, final int endIndex) {
-        if (endIndex < sb.length() && Character.isJavaIdentifierPart(sb.charAt(endIndex))) {
+        if (endIndex < sb.length() && isCosmosNamePart(sb, endIndex)) {
             return false;
         }
 
@@ -3389,7 +3437,7 @@ public class CosmosContainerExecutor {
             final int startIndex = endIndex - keyword.length();
 
             if (startIndex >= 0 && endsWith(sb, endIndex, keyword)
-                    && (startIndex == 0 || !Character.isJavaIdentifierPart(sb.charAt(startIndex - 1)) && sb.charAt(startIndex - 1) != '.')) {
+                    && (startIndex == 0 || !isCosmosNamePart(sb, startIndex - 1) && sb.charAt(startIndex - 1) != '.')) {
                 return true;
             }
         }
